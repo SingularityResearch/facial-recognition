@@ -1,0 +1,6 @@
+opencv-python>=4.8,<6
+numpy
+scikit-learn
+pillow
+pillow-heif
+onnxruntime-directml; sys_platform == "win32"

@@ -1,0 +1,20 @@
+{
+ "CPU": {
+  "ms": 11.95,
+  "agreement": 1.0,
+  "setup_s": 0.2,
+  "provider": "CPUExecutionProvider"
+ },
+ "GPU": {
+  "ms": 2.63,
+  "agreement": 1.0,
+  "setup_s": 1.0,
+  "provider": "DmlExecutionProvider"
+ },
+ "NPU": {
+  "ms": 25.21,
+  "agreement": 0.9997,
+  "setup_s": 342.0,
+  "provider": "VitisAIExecutionProvider"
+ }
+}

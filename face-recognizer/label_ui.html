@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Face Labels</title>
+<style>
+  :root {
+    --bg: #f3f4f2; --panel: #ffffff; --fg: #1b1f1d; --muted: #66706b; --line: #dde1de; --hover: #e9ecea;
+    --accent: #1f7a68; --accent-ink: #ffffff; --accent-soft: #dcefe9; --warn: #b7791f; --bad: #c2362b; --bad-bg: #fbe9e7;
+    --shade: rgb(10 14 12 / .86);
+    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --tile: 88px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121614; --panel: #1a201d; --fg: #e5eae7; --muted: #8f9a95; --line: #2b3330; --hover: #222a26;
+            --accent: #3fb59b; --accent-ink: #06231c; --accent-soft: #173a31; --warn: #e0a33a; --bad: #ff7a6e; --bad-bg: #3a1f1c;
+            color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); display: grid; grid-template-rows: auto 1fr; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  kbd { font: 600 11.5px var(--sans); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel); color: var(--fg); }
+
+  /* ---------- top bar */
+  header { background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 16px; padding: 10px 16px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+  .spacer { flex: 1; }
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--hover); }
+  .btn:disabled { opacity: .45; cursor: default; background: var(--panel); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.danger { color: var(--bad); }
+  .btn.small { padding: 3px 9px; font-size: 13px; border-radius: 7px; }
+  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; user-select: none; }
+  #progress { display: none; align-items: center; gap: 10px; min-width: 0; flex: 1 1 360px; }
+  #progress.on { display: flex; }
+  #progress .bar { flex: 0 0 140px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  #progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  #progress .txt { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* ---------- layout */
+  .shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 0; }
+  @media (max-width: 760px) { .shell { grid-template-columns: minmax(0, 1fr); } nav { display: none; } }
+  nav { border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 8px 24px; background: var(--panel); }
+  nav h2 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 16px 10px 6px; }
+  nav h2:first-child { margin-top: 2px; }
+  .nav { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; padding: 6px 10px; border-radius: 8px; cursor: pointer; text-align: left; }
+  .nav:hover { background: var(--hover); }
+  .nav[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
+  .nav .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 400; }
+  .nav .n.hot { color: var(--accent); font-weight: 650; }
+  .nav img, .nav .ph { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; background: var(--line); }
+  .nav .warn { color: var(--warn); font-size: 12px; }
+  main { overflow-y: auto; padding: 18px 22px 120px; position: relative; }
+  .head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .head h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0 0 16px; max-width: 72ch; }
+  .empty { color: var(--muted); padding: 60px 0; text-align: center; }
+  .empty b { display: block; color: var(--fg); font-size: 16px; margin-bottom: 4px; }
+
+  /* ---------- sections and groups */
+  section.sec { margin: 0 0 26px; }
+  .sechead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; position: sticky; top: -18px; background: var(--bg); padding: 8px 0; z-index: 2; }
+  .sechead img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
+  .sechead h3 { margin: 0; font-size: 15px; font-weight: 650; }
+  .sechead .cnt { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sechead .acts { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .card .sechead { position: static; background: transparent; padding: 0 0 8px; }
+  .hint { border: 1px dashed var(--accent); color: var(--accent); background: transparent; border-radius: 999px; padding: 3px 10px; cursor: pointer; font-size: 13px; }
+  .hint:hover { background: var(--accent-soft); }
+  .namefield { border: 1px solid var(--line); background: var(--bg); border-radius: 7px; padding: 4px 9px; width: 170px; }
+
+  /* ---------- face tiles */
+  .grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .face { position: relative; width: var(--tile); height: var(--tile); padding: 0; border: 0; border-radius: 9px; overflow: hidden;
+          cursor: pointer; background: var(--line); outline-offset: 2px; flex: none; }
+  .face img { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; }
+  .face .sc { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--accent); }
+  .face .sc.mid { background: var(--warn); }
+  .face .tag { position: absolute; left: 4px; top: 4px; font: 650 10px var(--sans); padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .62); color: #fff; }
+  .face .tag.low { color: #fbbf24; }
+  .face .zoom { position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; border-radius: 6px; border: 0; background: rgb(0 0 0 / .55); color: #fff;
+                display: none; place-items: center; cursor: zoom-in; padding: 0; }
+  .face:hover .zoom, .face:focus-visible .zoom { display: grid; }
+  .face.sel { box-shadow: 0 0 0 3px var(--accent); }
+  .face.sel::after { content: "✓"; position: absolute; right: 4px; bottom: 7px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+                     background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 700; }
+  .face.gone { opacity: .2; pointer-events: none; transition: opacity .2s; }
+  .more { width: var(--tile); height: var(--tile); border: 1px dashed var(--line); border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; }
+  #band { position: fixed; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); pointer-events: none; display: none; z-index: 20; }
+
+  /* ---------- checks */
+  .row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .row .why { flex: 1 1 220px; min-width: 0; }
+  .row .why small { display: block; color: var(--muted); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 11px; cursor: pointer; }
+  .chip:hover { background: var(--hover); }
+  details summary { cursor: pointer; color: var(--muted); }
+  details li { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+
+  /* ---------- selection bar */
+  #selbar { position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, calc(100% + 40px)); visibility: hidden; background: var(--fg); color: var(--bg); border-radius: 14px;
+            padding: 8px 8px 8px 16px; display: flex; gap: 8px; align-items: center; box-shadow: 0 10px 30px rgb(0 0 0 / .25); z-index: 30; max-width: calc(100vw - 32px); flex-wrap: wrap; }
+  #selbar.on { transform: translate(-50%, 0); visibility: visible; }
+  @media (prefers-reduced-motion: no-preference) { #selbar { transition: transform .18s ease-out, visibility .18s; } }
+  #selbar .count { font-weight: 650; margin-right: 6px; font-variant-numeric: tabular-nums; }
+  #selbar button { border: 0; border-radius: 9px; padding: 6px 11px; cursor: pointer; background: color-mix(in srgb, var(--bg) 14%, transparent); color: var(--bg); }
+  #selbar button:hover { background: color-mix(in srgb, var(--bg) 26%, transparent); }
+  #selbar button.go { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  #selbar kbd { background: transparent; color: inherit; border-color: color-mix(in srgb, var(--bg) 40%, transparent); margin-left: 4px; }
+
+  /* ---------- toast */
+  #toast { position: fixed; left: 18px; bottom: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 9px 14px;
+           display: none; gap: 12px; align-items: center; box-shadow: 0 6px 20px rgb(0 0 0 / .14); z-index: 31; max-width: min(460px, calc(100vw - 36px)); }
+  #toast.on { display: flex; }
+  #toast.err { border-color: var(--bad); color: var(--bad); }
+  #toast button { border: 0; background: transparent; color: var(--accent); font-weight: 650; cursor: pointer; padding: 2px 4px; }
+
+  /* ---------- name picker */
+  .modal { position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: none; place-items: start center; padding-top: 14vh; z-index: 40; }
+  .modal.on { display: grid; }
+  .picker { width: min(420px, calc(100vw - 32px)); background: var(--panel); border-radius: 14px; box-shadow: 0 18px 50px rgb(0 0 0 / .3); overflow: hidden; }
+  .picker .ttl { padding: 12px 16px 0; color: var(--muted); font-size: 13px; }
+  .picker input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 10px 16px 12px; font-size: 18px; outline: none; }
+  .picker ul { list-style: none; margin: 0; padding: 6px; max-height: 320px; overflow-y: auto; }
+  .picker li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+  .picker li img, .picker li .ph { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: var(--line); flex: none; }
+  .picker li .ph { display: grid; place-items: center; font-weight: 700; color: var(--accent); background: var(--accent-soft); }
+  .picker li small { margin-left: auto; color: var(--muted); }
+  .picker li[aria-selected="true"] { background: var(--accent-soft); }
+  .form { padding: 16px; display: grid; gap: 10px; }
+  .form input[type=text] { font-size: 15px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .form p { margin: 0; color: var(--muted); font-size: 13px; }
+  .form .acts { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ---------- photo viewer */
+  #viewer { position: fixed; inset: 0; background: var(--shade); display: none; z-index: 50; grid-template-columns: minmax(0, 1fr) 300px; }
+  #viewer.on { display: grid; }
+  @media (max-width: 760px) { #viewer { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; } }
+  .stage { position: relative; display: grid; place-items: center; padding: 24px; min-height: 0; }
+  .stage .wrap { position: relative; max-width: 100%; max-height: 100%; }
+  .stage img { display: block; max-width: calc(100vw - 360px); max-height: calc(100vh - 48px); border-radius: 4px; }
+  @media (max-width: 760px) { .stage img { max-width: calc(100vw - 48px); max-height: 60vh; } }
+  .box { position: absolute; border: 2px solid rgb(255 255 255 / .75); border-radius: 4px; cursor: pointer; }
+  .box.me { border-color: var(--accent); border-width: 3px; box-shadow: 0 0 0 2000px rgb(0 0 0 / .18); }
+  .box span { position: absolute; left: -2px; bottom: 100%; margin-bottom: 3px; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: rgb(0 0 0 / .7); color: #fff; }
+  .box.me span { background: var(--accent); color: var(--accent-ink); }
+  .stage .nofile { color: #d8ddda; text-align: center; }
+  .side { background: var(--panel); padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .side .who { font-size: 20px; font-weight: 650; }
+  .side .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .side .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .side .keys { color: var(--muted); font-size: 12.5px; line-height: 1.9; margin-top: auto; }
+  .navbtn { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 64px; border: 0; border-radius: 10px; background: rgb(255 255 255 / .12); color: #fff; font-size: 22px; cursor: pointer; }
+  .navbtn:hover { background: rgb(255 255 255 / .22); }
+  .navbtn.prev { left: 10px; } .navbtn.next { right: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Face Labels</h1>
+  <div id="progress" aria-live="polite"><div class="bar"><i></i></div><span class="txt"></span><button class="btn small" id="stopimp">Stop</button></div>
+  <div class="spacer"></div>
+  <label class="toggle" title="Faces too blurry or small to learn from are hidden from the review lists"><input type="checkbox" id="low"> Show blurry faces</label>
+  <button class="btn" id="undo" disabled title="Undo (Z)">Undo</button>
+  <button class="btn primary" id="add">Add photos</button>
+</header>
+<div class="shell">
+  <nav aria-label="Views">
+    <h2>To review</h2>
+    <button class="nav" data-v="suggested">Suggestions <span class="n" id="n-suggested"></span></button>
+    <button class="nav" data-v="unknown">New faces <span class="n" id="n-unknown"></span></button>
+    <button class="nav" data-v="auto">Named automatically <span class="n" id="n-auto"></span></button>
+    <button class="nav" data-v="checks">Checks <span class="n" id="n-checks"></span></button>
+    <h2>People</h2>
+    <div id="people"></div>
+  </nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+<div id="band"></div>
+
+<div id="selbar" role="toolbar" aria-label="Selected faces"></div>
+<div id="toast" role="status"><span class="msg"></span><button class="undo">Undo</button></div>
+
+<div class="modal" id="namer"><div class="picker" role="dialog" aria-label="Choose a name">
+  <div class="ttl"></div>
+  <input id="nameinput" autocomplete="off" placeholder="Type a name" aria-label="Name">
+  <ul id="namelist" role="listbox"></ul>
+</div></div>
+
+<div class="modal" id="importer"><div class="picker" role="dialog" aria-label="Add photos">
+  <form class="form" id="impform">
+    <b>Add photos</b>
+    <p>Type or paste the folder that holds the new photos (subfolders are included). Photos already added, and copies of them, are skipped. Faces the model is sure about are named for you.</p>
+    <input type="text" id="impfolder" list="folders" placeholder="E:\Users\Chris\Pictures\New" aria-label="Photo folder">
+    <datalist id="folders"></datalist>
+    <p id="imperr" style="color:var(--bad)"></p>
+    <div class="acts"><button type="button" class="btn" id="impcancel">Cancel</button><button class="btn primary">Start adding</button></div>
+  </form>
+</div></div>
+
+<div class="modal" id="renamer"><div class="picker" role="dialog" aria-label="Rename person">
+  <form class="form" id="renform">
+    <b id="rentitle">Rename</b>
+    <p>Using a name that already exists merges the two people.</p>
+    <input type="text" id="renname" list="peoplelist" aria-label="New name">
+    <datalist id="peoplelist"></datalist>
+    <div class="acts"><button type="button" class="btn" id="rencancel">Cancel</button><button class="btn primary">Rename</button></div>
+  </form>
+</div></div>
+
+<div id="viewer" role="dialog" aria-label="Photo">
+  <div class="stage"><div class="wrap" id="vwrap"></div><button class="navbtn prev" id="vprev" aria-label="Previous face">‹</button><button class="navbtn next" id="vnext" aria-label="Next face">›</button></div>
+  <div class="side" id="vside"></div>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const IGN = "#ignore";
+const label = n => n === IGN ? "Ignored" : n;
+const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
+
+let SUM = null, FIDS = [], view = { v: "suggested" }, showLow = false;
+let sel = new Set(), order = [], secOf = new Map(), anchor = null, lastFaces = 0, importWasRunning = false;
+const PAGE = 160;     // faces shown per section before "show more"
+
+async function get(p) {
+  const r = await fetch(p);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+async function post(p, body) {
+  const r = await fetch(p, { method: "POST", headers: { "Content-Type": "application/json", "X-Face-Tool": "1" }, body: JSON.stringify(body || {}) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+const thumb = i => `/thumb/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}`;
+
+// ------------------------------------------------------------------ summary + rail
+async function loadSummary() {
+  SUM = await get("/api/summary");
+  if (SUM.faces !== FIDS.length) FIDS = (await get("/api/fids")).fids;
+  const set = (id, n, hot) => { const e = $("#n-" + id); e.textContent = n ? n.toLocaleString() : ""; e.classList.toggle("hot", !!hot && n > 0); };
+  set("suggested", SUM.suggested, true); set("unknown", SUM.unknown, true); set("auto", SUM.auto); set("checks", SUM.checks);
+  const few = new Set();
+  const ppl = $("#people");
+  ppl.innerHTML = SUM.people.map(p => `<button class="nav" data-person="${esc(p.name)}">
+      <img src="${thumb(p.cover)}" alt="">${esc(label(p.name))}
+      ${p.name !== IGN && p.usable < 5 ? `<span class="warn" title="Only ${p.usable} usable faces: add more photos of ${esc(p.name)} for reliable recognition">!</span>` : ""}
+      <span class="n">${p.faces}</span></button>`).join("") || `<p class="lede" style="padding:0 10px">Nobody named yet.</p>`;
+  ppl.querySelectorAll("[data-person]").forEach(b => b.onclick = () => go({ v: "person", name: b.dataset.person }));
+  $("#undo").disabled = !SUM.canUndo;
+  $("#undo").title = SUM.canUndo ? `Undo: ${SUM.undoText} (Z)` : "Nothing to undo";
+  $("#folders").innerHTML = SUM.settings.folders.map(f => `<option value="${esc(f)}">`).join("");
+  $("#peoplelist").innerHTML = names().map(n => `<option value="${esc(n)}">`).join("");
+  markNav();
+  showImport(SUM.import);
+}
+const names = () => (SUM?.people || []).filter(p => p.name !== IGN).map(p => p.name);
+const person = n => (SUM?.people || []).find(p => p.name === n);
+
+function markNav() {
+  document.querySelectorAll("nav .nav").forEach(b => b.setAttribute("aria-current",
+    b.dataset.v ? String(view.v === b.dataset.v) : String(view.v === "person" && view.name === b.dataset.person)));
+}
+
+// ------------------------------------------------------------------ views
+function go(v) { view = v; clearSel(); render(true); }
+
+async function render(top) {
+  const main = $("#main");
+  const scroll = top ? 0 : main.scrollTop;
+  markNav();
+  let html;
+  order = []; secOf = new Map();
+  try {
+    const low = showLow ? "1" : "0";
+    if (view.v === "suggested") html = viewSuggested(await get(`/api/suggested?low=${low}`));
+    else if (view.v === "unknown") html = viewUnknown(await get(`/api/unknown?low=${low}${view.regroup ? "&regroup=1" : ""}`));
+    else if (view.v === "auto") html = viewAuto(await get("/api/auto"));
+    else if (view.v === "checks") html = viewChecks(await get("/api/checks"));
+    else html = viewPerson(await get(`/api/person?name=${encodeURIComponent(view.name)}`));
+  } catch (e) { html = `<div class="empty"><b>Couldn't load this view</b>${esc(e.message)}. Is the Face Labels window still open?</div>`; }
+  view.regroup = false;
+  main.innerHTML = html;
+  main.querySelectorAll(".grid").forEach(g => fillGrid(g));
+  wire(main);
+  main.scrollTop = scroll;
+  pruneSel();
+}
+
+// sections hold their faces until drawn, so huge views stay fast
+const SECTIONS = new Map();
+let secId = 0;
+function grid(faces, sec, opts = {}) {
+  const id = "g" + (++secId);
+  SECTIONS.set(id, { faces, sec, opts });
+  return `<div class="grid" data-grid="${id}"></div>`;
+}
+function fillGrid(g, all) {
+  const { faces, sec, opts } = SECTIONS.get(g.dataset.grid);
+  const show = all ? faces : faces.slice(0, PAGE);
+  g.innerHTML = show.map(f => tile(f, opts)).join("") +
+    (show.length < faces.length ? `<button class="more">+${(faces.length - show.length).toLocaleString()} more</button>` : "");
+  for (const f of show) { order.push(f.i); secOf.set(f.i, sec); }
+  const more = g.querySelector(".more");
+  if (more) more.onclick = () => { order = order.filter(i => !faces.some(f => f.i === i)); fillGrid(g, true); wireTiles(g); };
+  if (all) wireTiles(g);
+}
+function tile(f, o) {
+  const s = f.s, q = f.q;
+  const lo = q != null && q < SUM.settings.qEnroll;
+  let bar = "";
+  if (s != null && o.score !== false) {
+    const pct = Math.max(6, Math.min(100, (s - 0.25) / 0.5 * 100));
+    bar = `<i class="sc ${s < SUM.settings.auto ? "mid" : ""}" style="width:${pct}%"></i>`;
+  }
+  const tags = [o.auto !== false && f.by === "auto" ? `<span class="tag">auto</span>` : "", lo ? `<span class="tag low">blurry</span>` : ""].join("");
+  const tip = (s != null ? `score ${s.toFixed(2)}` : "") + (lo ? (s != null ? ", " : "") + "too blurry to learn from" : "");
+  return `<button class="face ${sel.has(f.i) ? "sel" : ""}" data-i="${f.i}" title="${tip}" aria-pressed="${sel.has(f.i)}">
+    <img loading="lazy" src="${thumb(f.i)}" alt="">${bar}${tags}<span class="zoom" aria-hidden="true">⤢</span></button>`;
+}
+const F3 = a => ({ i: a[0], s: a[1], q: a[2], by: a[3] });
+
+function head(title, count, lede) {
+  return `<div class="head"><h2>${title}</h2>${count != null ? `<span class="cnt" style="color:var(--muted)">${count}</span>` : ""}</div>` + (lede ? `<p class="lede">${lede}</p>` : "");
+}
+function avatar(n) { const p = person(n); return p ? `<img src="${thumb(p.cover)}" alt="">` : ""; }
+
+function viewSuggested(d) {
+  SECTIONS.clear();
+  const total = d.groups.reduce((a, g) => a + g.faces.length, 0);
+  let h = head("Suggestions", total ? plural(total, "face") : null,
+    `The model thinks it knows these faces. Click any that are wrong (or drag across them) and press <kbd>R</kbd> for "not this person", then accept the rest. Least certain faces come first; the bar under each face shows how sure it is.`);
+  if (!d.groups.length) return h + `<div class="empty"><b>Nothing to confirm</b>New suggestions appear after you add photos or name more faces.</div>`;
+  for (const g of d.groups) {
+    const n = g.faces.length;
+    h += `<section class="sec" data-sec="${esc(g.name)}"><div class="sechead">${avatar(g.name)}<h3>${esc(label(g.name))}?</h3><span class="cnt">${n}</span>
+      <div class="acts"><button class="btn small" data-act="reject-sel">Not ${esc(label(g.name))}</button>
+      <button class="btn small primary" data-act="accept-rest" title="Accept every face in this group that isn't selected (A)">Accept ${n === 1 ? "" : "all "}${n}</button></div></div>
+      ${grid(g.faces.map(F3), g.name)}</section>`;
+  }
+  return h;
+}
+
+function viewAuto(d) {
+  SECTIONS.clear();
+  const total = d.groups.reduce((a, g) => a + g.faces.length, 0);
+  let h = head("Named automatically", total ? plural(total, "face") : null,
+    `These faces were named because the model was very sure. You don't have to review them, but a quick look catches the rare mistake: select any that are wrong and press <kbd>R</kbd>. Least certain first.`);
+  if (!d.groups.length) return h + `<div class="empty"><b>No automatic names to review</b>Faces get named automatically when you add photos of people you've already named.</div>`;
+  for (const g of d.groups) {
+    h += `<section class="sec" data-sec="${esc(g.name)}"><div class="sechead">${avatar(g.name)}<h3>${esc(label(g.name))}</h3><span class="cnt">${g.faces.length}</span>
+      <div class="acts"><button class="btn small" data-act="reject-sel">Not ${esc(label(g.name))}</button>
+      <button class="btn small" data-act="confirm-rest" title="Mark every face here that isn't selected as checked">Looks right</button></div></div>
+      ${grid(g.faces.map(f => ({ i: f[0], s: f[1], q: f[2] })), g.name, { auto: false })}</section>`;
+  }
+  return h;
+}
+
+function viewUnknown(d) {
+  SECTIONS.clear();
+  const n = d.groups.reduce((a, g) => a + g.faces.length, 0) + d.singles.length;
+  let h = head("New faces", n ? plural(n, "face") : null,
+    `Faces that don't look like anyone you've named, grouped by look-alikes. Name a group, or select some of its faces first to name only those. Faces of strangers, artwork or tattoos: <b>Ignore</b>.`) +
+    `<p style="margin:-6px 0 16px"><button class="btn small" id="regroup" title="Group the faces again, including faces that arrived since">Regroup</button></p>`;
+  if (!n) return h + `<div class="empty"><b>No new faces</b>Everyone found so far is named, suggested or ignored.</div>`;
+  for (const g of d.groups) {
+    const sec = "u" + g.id;
+    h += `<div class="card" data-sec="${sec}" data-group="1"><div class="sechead"><h3>${plural(g.faces.length, "face")}</h3>
+      ${g.hint ? `<button class="hint" data-hint="${esc(g.hint.name)}" title="Average score ${g.hint.s.toFixed(2)}">Looks like ${esc(label(g.hint.name))}? Add to ${esc(label(g.hint.name))}</button>` : ""}
+      <div class="acts"><button class="btn small" data-act="name-group">Name… <kbd>N</kbd></button><button class="btn small" data-act="ignore-group">Ignore</button></div></div>
+      ${grid(g.faces.map(f => ({ i: f[0], q: f[1] })), sec)}</div>`;
+  }
+  if (d.singles.length) {
+    h += `<section class="sec" data-sec="singles"><div class="sechead"><h3>Seen once</h3><span class="cnt">${d.singles.length}</span>
+      <div class="acts" style="color:var(--muted);font-size:13px">Select faces, then <kbd>N</kbd> to name or <kbd>X</kbd> to ignore</div></div>
+      ${grid(d.singles.map(f => ({ i: f[0], q: f[1] })), "singles")}</section>`;
+  }
+  return h;
+}
+
+function viewChecks(d) {
+  SECTIONS.clear();
+  let h = head("Checks", null, "Possible labeling mistakes and gaps the recognizer would trip over.");
+  h += `<section class="sec"><div class="sechead"><h3>Might be mislabeled</h3><span class="cnt">${d.mislabeled.length}</span></div>`;
+  if (!d.mislabeled.length) h += `<p class="lede">Every named face looks like the rest of its person.</p>`;
+  for (const m of d.mislabeled) {
+    order.push(m.i);
+    h += `<div class="row" data-i="${m.i}">${tile({ i: m.i, q: m.q }, { score: false })}
+      <div class="why">Named <b>${esc(m.name)}</b>${m.by === "auto" ? " automatically" : ""}
+        <small>${m.other && m.os > m.s ? `Looks more like ${esc(label(m.other))} (${m.os.toFixed(2)} vs ${m.s.toFixed(2)})` : `Doesn't look much like ${esc(m.name)}'s other photos (${m.s.toFixed(2)})`}</small></div>
+      <div class="chips"><button class="chip" data-row="ok">Keep ${esc(m.name)}</button>
+      ${m.other && m.os > m.s ? `<button class="chip" data-row="move" data-to="${esc(m.other)}">${m.other === IGN ? "Ignore" : "It's " + esc(m.other)}</button>` : ""}
+      <button class="chip" data-row="reject" data-name="${esc(m.name)}">Not ${esc(m.name)}</button>
+      <button class="chip" data-row="photo">See photo</button></div></div>`;
+  }
+  h += `</section><section class="sec"><div class="sechead"><h3>Needs more photos</h3><span class="cnt">${d.few.length}</span></div>`;
+  h += d.few.length ? `<p class="lede">People need about 5 clear faces to be recognized reliably from different angles and lighting.</p><div class="chips">` +
+    d.few.map(f => `<button class="chip" data-person="${esc(f.name)}">${esc(f.name)}: ${f.usable} clear face${f.usable === 1 ? "" : "s"}</button>`).join("") + `</div>`
+    : `<p class="lede">Everyone has enough clear faces.</p>`;
+  h += `</section><section class="sec"><div class="sechead"><h3>Duplicate photos skipped</h3><span class="cnt">${d.duplicates.length}</span></div>`;
+  h += d.duplicates.length ? `<details><summary>Show the copies that were skipped</summary><ul>${d.duplicates.slice(0, 500).map(x => `<li>${esc(x.path)}<br>copy of ${esc(x.of)}</li>`).join("")}</ul></details>`
+    : `<p class="lede">None so far.</p>`;
+  return h + `</section>`;
+}
+
+function viewPerson(d) {
+  SECTIONS.clear();
+  const n = d.name, p = person(n);
+  if (!d.faces.length) return head(esc(label(n))) + `<div class="empty"><b>No faces named ${esc(label(n))}</b></div>`;
+  const autoN = d.faces.filter(f => f[3] === "auto").length;
+  const lede = n === IGN ? "Strangers, artwork and other faces that are never recognized. Select faces and press <kbd>N</kbd> to give them a name instead."
+    : `${p ? plural(p.usable, "clear face") + " used for recognition" : ""}${autoN ? `, ${autoN} named automatically` : ""}. Faces that look least like ${esc(n)} come first, so mistakes surface at the top.`;
+  return `<div class="head">${n !== IGN ? avatar(n).replace("<img", '<img style="width:44px;height:44px;border-radius:50%;object-fit:cover"') : ""}<h2>${esc(label(n))}</h2>
+      <span style="color:var(--muted)">${plural(d.faces.length, "face")}</span>
+      ${n !== IGN ? `<button class="btn small" id="rename">Rename or merge</button>` : ""}</div><p class="lede">${lede}</p>
+    <section class="sec" data-sec="${esc(n)}">${grid(d.faces.map(F3), n)}</section>`;
+}
+
+// ------------------------------------------------------------------ wiring
+function wire(root) {
+  wireTiles(root);
+  root.querySelectorAll("[data-act]").forEach(b => b.onclick = () => sectionAct(b.dataset.act, b.closest("[data-sec]")));
+  root.querySelectorAll("[data-hint]").forEach(b => b.onclick = () => {
+    const box = b.closest("[data-sec]"); act("name", facesIn(box, true), b.dataset.hint);
+  });
+  root.querySelectorAll("[data-person]").forEach(b => b.onclick = () => go({ v: "person", name: b.dataset.person }));
+  root.querySelectorAll("[data-row]").forEach(b => b.onclick = () => {
+    const i = +b.closest(".row").dataset.i, k = b.dataset.row;
+    if (k === "ok") act("ok", [i]);
+    if (k === "move") b.dataset.to === IGN ? act("ignore", [i]) : act("name", [i], b.dataset.to);
+    if (k === "reject") act("reject", [i], b.dataset.name);
+    if (k === "photo") openPhoto(i);
+  });
+  const rg = root.querySelector("#regroup"); if (rg) rg.onclick = () => { view.regroup = true; render(); };
+  const rn = root.querySelector("#rename"); if (rn) rn.onclick = () => openRename(view.name);
+}
+function wireTiles(root) {
+  root.querySelectorAll(".face").forEach(b => {
+    const i = +b.dataset.i;
+    b.onclick = e => {
+      if (e.target.closest(".zoom") || !secOf.has(i)) return openPhoto(i);
+      if (e.shiftKey && anchor != null) {
+        const a = order.indexOf(anchor), z = order.indexOf(i);
+        if (a >= 0 && z >= 0) for (let k = Math.min(a, z); k <= Math.max(a, z); k++) setSel(order[k], true);
+      } else { setSel(i, !sel.has(i)); anchor = i; }
+      selbar();
+    };
+    b.ondblclick = () => openPhoto(i);
+  });
+}
+function facesIn(box, onlySelIfAny) {
+  const all = [...box.querySelectorAll(".face")].map(b => +b.dataset.i);
+  const grid = box.querySelector("[data-grid]");
+  const full = grid ? SECTIONS.get(grid.dataset.grid).faces.map(f => f.i) : all;
+  const picked = full.filter(i => sel.has(i));
+  return onlySelIfAny && picked.length ? picked : full;
+}
+async function sectionAct(kind, box) {
+  const sec = box.dataset.sec, full = facesIn(box, false), picked = full.filter(i => sel.has(i));
+  if (kind === "reject-sel") {
+    if (!picked.length) return toast(`Select the faces that aren't ${label(sec)} first`, true);
+    return sec === IGN ? act("clear", picked) : act("reject", picked, sec);
+  }
+  if (kind === "accept-rest") {
+    const rest = full.filter(i => !sel.has(i));
+    return sec === IGN ? act("ignore", rest) : act("name", rest, sec);
+  }
+  if (kind === "confirm-rest") return act("confirm", full.filter(i => !sel.has(i)));
+  if (kind === "ignore-group") return act("ignore", picked.length ? picked : full);
+  if (kind === "name-group") {
+    const faces = picked.length ? picked : full;
+    const n = await pickName(`Name ${plural(faces.length, "face")}`);
+    if (n) act(n === IGN ? "ignore" : "name", faces, n);
+  }
+}
+
+// ------------------------------------------------------------------ selection
+function setSel(i, on) {
+  on ? sel.add(i) : sel.delete(i);
+  document.querySelectorAll(`.face[data-i="${i}"]`).forEach(b => { b.classList.toggle("sel", on); b.setAttribute("aria-pressed", on); });
+}
+function clearSel() { [...sel].forEach(i => setSel(i, false)); selbar(); }
+function pruneSel() { for (const i of [...sel]) if (!secOf.has(i)) sel.delete(i); selbar(); }
+function selSections() { return new Set([...sel].map(i => secOf.get(i))); }
+function personSec(s) { return s && !/^u\d+$/.test(s) && s !== "singles" ? s : null; }
+
+function selbar() {
+  const bar = $("#selbar");
+  if (!sel.size) { bar.classList.remove("on"); return; }
+  const secs = [...selSections()], one = secs.length === 1 ? personSec(secs[0]) : null;
+  const named = secs.every(personSec);
+  const inSugg = view.v === "suggested";
+  bar.innerHTML = `<span class="count">${plural(sel.size, "face")}</span>
+    ${inSugg ? `<button class="go" data-k="a">Accept<kbd>A</kbd></button>` : ""}
+    <button data-k="n">Name…<kbd>N</kbd></button>
+    ${named ? `<button data-k="r">${one ? "Not " + esc(label(one)) : "Not this person"}<kbd>R</kbd></button>` : ""}
+    <button data-k="x">Ignore<kbd>X</kbd></button>
+    ${sel.size === 1 ? `<button data-k="p">See photo<kbd>Space</kbd></button>` : ""}
+    <button data-k="esc" title="Clear selection (Esc)">✕</button>`;
+  bar.querySelectorAll("button").forEach(b => b.onclick = () => key(b.dataset.k));
+  bar.classList.add("on");
+}
+
+async function key(k) {
+  const faces = [...sel];
+  if (k === "esc") return clearSel();
+  if (!faces.length) return;
+  if (k === "p") return openPhoto(faces[0]);
+  if (k === "x") return act("ignore", faces);
+  if (k === "n") {
+    const n = await pickName(`Name ${plural(faces.length, "face")}`);
+    if (n) act(n === IGN ? "ignore" : "name", faces, n);
+  }
+  if (k === "a" && view.v === "suggested") {      // accept each selected face as its section's person
+    const by = groupBy(faces);
+    for (const [s, f] of by) await act(s === IGN ? "ignore" : "name", f, s, by.size > 1);
+    if (by.size > 1) done(`Accepted ${plural(faces.length, "face")}`);
+  }
+  if (k === "r") {
+    const by = groupBy(faces);
+    if ([...by.keys()].some(s => !personSec(s))) return;
+    for (const [s, f] of by) await act(s === IGN ? "clear" : "reject", f, s, by.size > 1);
+    if (by.size > 1) done(`Marked ${plural(faces.length, "face")} as not who they were suggested as`);
+  }
+}
+function groupBy(faces) { const m = new Map(); for (const i of faces) { const s = secOf.get(i); m.set(s, [...(m.get(s) || []), i]); } return m; }
+
+async function act(action, faces, name, quiet) {
+  if (!faces.length) return;
+  document.querySelectorAll(faces.map(i => `.face[data-i="${i}"]`).join(",")).forEach(b => b.classList.add("gone"));
+  try {
+    const r = await post("/api/act", { action, faces, name });
+    faces.forEach(i => sel.delete(i));
+    if (!quiet) done(r.undo);
+  } catch (e) { toast(e.message, true); render(); }
+}
+async function done(msg) { await loadSummary(); await render(); toast(msg, false, true); }
+async function undo() {
+  try { const r = await post("/api/undo"); if (r.undone) { await loadSummary(); await render(); toast("Undone: " + r.undone); } }
+  catch (e) { toast(e.message, true); }
+}
+
+// ------------------------------------------------------------------ rubber-band selection
+(() => {
+  const main = $("#main"), band = $("#band");
+  let start = null, base = null;
+  main.addEventListener("mousedown", e => {
+    if (e.button !== 0 || e.target.closest("button, input, a, summary, .row")) return;
+    start = { x: e.clientX, y: e.clientY }; base = e.shiftKey || e.ctrlKey ? new Set(sel) : new Set();
+    e.preventDefault();
+  });
+  addEventListener("mousemove", e => {
+    if (!start) return;
+    const x1 = Math.min(start.x, e.clientX), y1 = Math.min(start.y, e.clientY), x2 = Math.max(start.x, e.clientX), y2 = Math.max(start.y, e.clientY);
+    if (x2 - x1 < 4 && y2 - y1 < 4) return;
+    Object.assign(band.style, { display: "block", left: x1 + "px", top: y1 + "px", width: x2 - x1 + "px", height: y2 - y1 + "px" });
+    main.querySelectorAll(".grid .face").forEach(b => {
+      const r = b.getBoundingClientRect(), i = +b.dataset.i;
+      const hit = r.right > x1 && r.left < x2 && r.bottom > y1 && r.top < y2;
+      setSel(i, hit || base.has(i));
+    });
+    selbar();
+  });
+  addEventListener("mouseup", () => {
+    if (start && band.style.display !== "block" && !base.size) clearSel();   // plain click on empty space
+    start = null; band.style.display = "none";
+  });
+})();
+
+// ------------------------------------------------------------------ name picker
+let pickResolve = null, pickItems = [], pickIdx = 0;
+function pickName(title) {
+  $("#namer .ttl").textContent = title;
+  $("#nameinput").value = "";
+  $("#namer").classList.add("on");
+  $("#nameinput").focus();
+  fillPicker();
+  return new Promise(r => pickResolve = r);
+}
+function fillPicker() {
+  const q = $("#nameinput").value.trim(), ql = q.toLowerCase();
+  const ppl = (SUM.people || []).filter(p => p.name !== IGN);
+  let items = ppl.filter(p => !ql || p.name.toLowerCase().includes(ql))
+    .sort((a, b) => (b.name.toLowerCase().startsWith(ql) - a.name.toLowerCase().startsWith(ql)) || b.faces - a.faces)
+    .map(p => ({ name: p.name, html: `<img src="${thumb(p.cover)}" alt="">${esc(p.name)}<small>${p.faces}</small>` }));
+  if (q && !ppl.some(p => p.name.toLowerCase() === ql) && !q.startsWith("#"))
+    items.push({ name: q, html: `<span class="ph">+</span>New person: <b>${esc(q)}</b>` });
+  items.push({ name: IGN, html: `<span class="ph">✕</span>Ignore (stranger, artwork, not a face)` });
+  pickItems = items; pickIdx = 0;
+  $("#namelist").innerHTML = items.map((it, k) => `<li role="option" data-k="${k}" aria-selected="${k === 0}">${it.html}</li>`).join("");
+  $("#namelist").querySelectorAll("li").forEach(li => li.onclick = () => closePicker(pickItems[+li.dataset.k].name));
+}
+function movePick(d) {
+  pickIdx = (pickIdx + d + pickItems.length) % pickItems.length;
+  $("#namelist").querySelectorAll("li").forEach((li, k) => { li.setAttribute("aria-selected", k === pickIdx); if (k === pickIdx) li.scrollIntoView({ block: "nearest" }); });
+}
+function closePicker(v) { $("#namer").classList.remove("on"); const r = pickResolve; pickResolve = null; r && r(v || null); }
+$("#nameinput").oninput = fillPicker;
+$("#nameinput").onkeydown = e => {
+  if (e.key === "ArrowDown") { e.preventDefault(); movePick(1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); movePick(-1); }
+  else if (e.key === "Enter") { e.preventDefault(); closePicker(pickItems[pickIdx]?.name); }
+  else if (e.key === "Escape") { e.preventDefault(); closePicker(null); }
+};
+$("#namer").onclick = e => { if (e.target.id === "namer") closePicker(null); };
+
+// ------------------------------------------------------------------ rename
+function openRename(n) {
+  $("#rentitle").textContent = `Rename ${n}`;
+  $("#renname").value = n;
+  $("#renamer").classList.add("on");
+  $("#renname").select();
+}
+$("#rencancel").onclick = () => $("#renamer").classList.remove("on");
+$("#renform").onsubmit = async e => {
+  e.preventDefault();
+  const nw = $("#renname").value.trim(), old = view.name;
+  if (!nw || nw === old) return $("#renamer").classList.remove("on");
+  try {
+    await post("/api/rename", { old, new: nw });
+    $("#renamer").classList.remove("on");
+    view = { v: "person", name: nw };
+    done(names().includes(nw) ? `Merged ${old} into ${nw}` : `Renamed ${old} to ${nw}`);
+  } catch (err) { toast(err.message, true); }
+};
+
+// ------------------------------------------------------------------ photo viewer
+let vIndex = null;
+async function openPhoto(i) {
+  vIndex = i;
+  $("#viewer").classList.add("on");
+  const info = await get(`/api/photoinfo/${i}`).catch(() => null);
+  if (vIndex !== i) return;
+  const me = info?.faces.find(f => f.i === i);
+  const nm = me?.name;
+  $("#vwrap").innerHTML = info?.exists
+    ? `<img id="vimg" src="/photo/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}" alt="Photo">`
+    : `<div class="nofile"><img src="${thumb(i)}" alt="" style="width:224px;height:224px;border-radius:12px"><p>The original photo isn't on this computer any more,<br>so only the face is shown.</p></div>`;
+  const img = $("#vimg");
+  if (img) img.onload = () => {
+    const s = img.clientWidth / img.naturalWidth;
+    for (const f of info.faces) {
+      const b = document.createElement("div");
+      b.className = "box" + (f.i === i ? " me" : "");
+      Object.assign(b.style, { left: f.box[0] * s + "px", top: f.box[1] * s + "px", width: f.box[2] * s + "px", height: f.box[3] * s + "px" });
+      b.innerHTML = `<span>${esc(f.name ? label(f.name) : "?")}</span>`;
+      b.title = f.name ? label(f.name) : "Not named yet";
+      b.onclick = () => openPhoto(f.i);
+      $("#vwrap").appendChild(b);
+    }
+  };
+  const others = (info?.faces || []).filter(f => f.i !== i);
+  $("#vside").innerHTML = `
+    <div><div class="who">${nm ? esc(label(nm)) : "Not named yet"}</div>
+      <div class="meta">${info?.date ? esc(info.date) + "<br>" : ""}${esc(info?.path || "")}</div></div>
+    <div class="acts"><button class="btn primary" data-v="n">Name… <kbd>N</kbd></button>
+      ${nm && nm !== IGN ? `<button class="btn" data-v="r">Not ${esc(nm)} <kbd>R</kbd></button>` : ""}
+      ${nm !== IGN ? `<button class="btn" data-v="x">Ignore <kbd>X</kbd></button>` : ""}</div>
+    ${others.length ? `<div class="meta">Also in this photo: ${others.map(f => esc(f.name ? label(f.name) : "someone not named yet")).join(", ")}. Click a box to switch to that face.</div>` : ""}
+    <div class="keys"><kbd>←</kbd> <kbd>→</kbd> previous / next face<br><kbd>Esc</kbd> close</div>`;
+  $("#vside").querySelectorAll("[data-v]").forEach(b => b.onclick = () => viewerKey(b.dataset.v));
+  const k = order.indexOf(i);
+  $("#vprev").style.visibility = k > 0 ? "visible" : "hidden";
+  $("#vnext").style.visibility = k >= 0 && k < order.length - 1 ? "visible" : "hidden";
+}
+function closePhoto() { $("#viewer").classList.remove("on"); vIndex = null; }
+function stepPhoto(d) { const k = order.indexOf(vIndex); if (k >= 0 && order[k + d] != null) openPhoto(order[k + d]); }
+async function viewerKey(k) {
+  const i = vIndex, info = await get(`/api/photoinfo/${i}`), nm = info.faces.find(f => f.i === i)?.name;
+  if (k === "n") { const n = await pickName("Name this face"); if (n) { await act(n === IGN ? "ignore" : "name", [i], n); openPhoto(i); } }
+  if (k === "x") { await act("ignore", [i]); openPhoto(i); }
+  if (k === "r" && nm && nm !== IGN) { await act("reject", [i], nm); openPhoto(i); }
+}
+$("#vprev").onclick = () => stepPhoto(-1);
+$("#vnext").onclick = () => stepPhoto(1);
+$("#viewer").onclick = e => { if (e.target.classList.contains("stage")) closePhoto(); };
+
+// ------------------------------------------------------------------ import
+$("#add").onclick = () => { $("#imperr").textContent = ""; $("#importer").classList.add("on"); $("#impfolder").focus(); };
+$("#impcancel").onclick = () => $("#importer").classList.remove("on");
+$("#impform").onsubmit = async e => {
+  e.preventDefault();
+  try { await post("/api/import", { folder: $("#impfolder").value }); $("#importer").classList.remove("on"); pollImport(); }
+  catch (err) { $("#imperr").textContent = err.message; }
+};
+$("#stopimp").onclick = () => post("/api/import/stop").catch(() => {});
+let polling = false;
+async function pollImport() {
+  if (polling) return; polling = true;
+  let last = 0;
+  try {
+    while (true) {
+      const st = await get("/api/import");
+      showImport(st);
+      if (!st.running) break;
+      if (Date.now() - last > 6000) { last = Date.now(); loadSummary().catch(() => {}); }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  } finally { polling = false; }
+  await loadSummary(); await render();
+}
+function showImport(st) {
+  const p = $("#progress");
+  if (!st || (!st.running && !st.stage)) { p.classList.remove("on"); return; }
+  if (st.running && !polling) pollImport();
+  p.classList.add("on");
+  const pct = st.total ? st.done / st.total * 100 : 0;
+  p.querySelector("i").style.width = pct + "%";
+  const el = (Date.now() / 1000 - st.started);
+  const rate = st.done - st.known > 0 ? (st.done - st.known) / el : 0;
+  const left = rate > 0 ? Math.round((st.total - st.done) / rate) : null;
+  const parts = [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} photos`, plural(st.faces, "face") + " found",
+    `${st.auto.toLocaleString()} named automatically`];
+  if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
+  if (st.errors) parts.push(`${st.errors} unreadable`);
+  let txt = st.running ? `${st.stage}: ${parts.join(", ")}${left != null && st.stage === "Reading photos" ? `, about ${left < 90 ? left + " s" : Math.round(left / 60) + " min"} left` : ""}`
+    : st.error ? `Adding photos failed: ${st.error}` : `${st.stage === "Stopped" ? "Stopped" : "Finished"}: ${parts.join(", ")}.`;
+  p.querySelector(".txt").textContent = txt;
+  p.querySelector(".txt").title = txt;
+  $("#stopimp").style.display = st.running ? "" : "none";
+}
+
+// ------------------------------------------------------------------ toast
+let toastT = null;
+function toast(msg, err, withUndo) {
+  const t = $("#toast");
+  t.querySelector(".msg").textContent = msg;
+  t.classList.toggle("err", !!err);
+  t.querySelector(".undo").style.display = withUndo ? "" : "none";
+  t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), err ? 7000 : 5000);
+}
+$("#toast .undo").onclick = () => { $("#toast").classList.remove("on"); undo(); };
+
+// ------------------------------------------------------------------ keys + start
+addEventListener("keydown", e => {
+  if (e.target.matches("input, textarea") || e.ctrlKey && e.key !== "z" || e.altKey || e.metaKey) return;
+  const k = e.key.toLowerCase();
+  if ($("#viewer").classList.contains("on")) {
+    if (k === "escape") closePhoto();
+    else if (k === "arrowleft") stepPhoto(-1);
+    else if (k === "arrowright") stepPhoto(1);
+    else if (["n", "x", "r"].includes(k)) viewerKey(k);
+    else return;
+    return e.preventDefault();
+  }
+  if (document.querySelector(".modal.on")) { if (k === "escape") document.querySelectorAll(".modal.on").forEach(m => m.classList.remove("on")); return; }
+  if (k === "z") { e.preventDefault(); return undo(); }
+  if (k === "escape") return clearSel();
+  if (k === " " && sel.size === 1) { e.preventDefault(); return openPhoto([...sel][0]); }
+  if (k === " ") { const h = document.querySelector(".face:hover"); if (h) { e.preventDefault(); return openPhoto(+h.dataset.i); } }
+  if (["a", "n", "x", "r"].includes(k)) { e.preventDefault(); key(k); }
+});
+document.querySelectorAll("nav [data-v]").forEach(b => b.onclick = () => go({ v: b.dataset.v }));
+$("#undo").onclick = undo;
+$("#low").onchange = e => { showLow = e.target.checked; render(); };
+
+(async () => {
+  try {
+    await loadSummary();
+    view = { v: SUM.suggested ? "suggested" : SUM.unknown ? "unknown" : "checks" };
+    await render(true);
+  } catch (e) {
+    $("#main").innerHTML = `<div class="empty"><b>Couldn't reach Face Labels</b>Start it with label.bat (or python label_tool.py) and reload this page.</div>`;
+  }
+})();
+</script>
+</body>
+</html>
