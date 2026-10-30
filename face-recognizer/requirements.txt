@@ -1,6 +1,3 @@
-opencv-python>=4.8,<6
-numpy
-scikit-learn
-pillow
-pillow-heif
-onnxruntime-directml; sys_platform == "win32"
+version https://git-lfs.github.com/spec/v1
+oid sha256:ee6f038298bcb7af968d4dc143a3d39b4d0b3a44fae194f28b3fda5ea957a7a5
+size 106

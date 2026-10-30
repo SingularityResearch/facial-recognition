@@ -1,20 +1,3 @@
-{
- "CPU": {
-  "ms": 11.95,
-  "agreement": 1.0,
-  "setup_s": 0.2,
-  "provider": "CPUExecutionProvider"
- },
- "GPU": {
-  "ms": 2.63,
-  "agreement": 1.0,
-  "setup_s": 1.0,
-  "provider": "DmlExecutionProvider"
- },
- "NPU": {
-  "ms": 25.21,
-  "agreement": 0.9997,
-  "setup_s": 342.0,
-  "provider": "VitisAIExecutionProvider"
- }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:51cf48ff668165905d15d6221be1e6f2f65febc5136eef2495a265259a710916
+size 341

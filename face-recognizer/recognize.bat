@@ -1,26 +1,3 @@
-@echo off
-cd /d "%~dp0"
-title Face Tracker
-rem Prefer the Python 3.12 that setup.bat installs: other apps (AI toolkits, ComfyUI...) may add
-rem newer Pythons that "py -3" would pick, and those don't have this tool's libraries.
-set "PY="
-if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set PY="%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-if not defined PY py -3.12 -c "import sys; sys.exit(42)" >nul 2>&1
-if not defined PY if errorlevel 42 if not errorlevel 43 set "PY=py -3.12"
-if not defined PY py -3 -c "import sys; sys.exit(42)" >nul 2>&1
-if not defined PY if errorlevel 42 if not errorlevel 43 set "PY=py -3"
-if not defined PY python -c "import sys; sys.exit(42)" >nul 2>&1
-if not defined PY if errorlevel 42 if not errorlevel 43 set "PY=python"
-if not defined PY (
-  echo Python is not installed yet. Double-click setup.bat first, then run this again.
-  pause
-  exit /b 1
-)
-%PY% -c "import cv2, numpy" >nul 2>&1
-if errorlevel 1 (
-  echo The libraries are not installed yet. Double-click setup.bat first, then run this again.
-  pause
-  exit /b 1
-)
-%PY% tracker.py
-if errorlevel 1 pause
+version https://git-lfs.github.com/spec/v1
+oid sha256:9f53f3a2372c12d57cf79bc57512596a7fb5dc53d7fbbaa84310ca866da3a1e3
+size 1140

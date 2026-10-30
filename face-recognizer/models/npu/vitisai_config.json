@@ -1,1 +1,3 @@
-{"passes": [{"name": "init", "plugin": "vaip-pass_init"}, {"name": "vaiml_partition", "plugin": "vaip-pass_vaiml_partition", "vaiml_config": {"enable_f32_to_bf16_conversion": true, "preferred_data_storage": "auto"}}], "target": "VAIML", "targets": [{"name": "VAIML", "pass": ["init", "vaiml_partition"]}]}
+version https://git-lfs.github.com/spec/v1
+oid sha256:47680bf0962940909906fc9a906c99def27118b99ea03ba7c2f7b2b6513ee14e
+size 305
