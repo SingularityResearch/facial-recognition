@@ -1,0 +1,12 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Logs and scratch files from running the tools
+*.log
+*.tmp
+*.tmp.npz
+*.joining
+
+# Rolling labels.json copies made at each start of the labeling tool (recreated automatically)
+face-recognizer/data/backups/

@@ -1,3 +1,498 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:296fed9abb58f10d8d12f1e963516150fa1f97e7a1e955c0785eadf779972f94
-size 27851
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Face Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+  /* Layout: viewfinder on the left, controls and readout on the right; stacks on narrow screens */
+  :root {
+    --bg: #eef1f0; --panel: #ffffff; --fg: #18211f; --muted: #5d6b67;
+    --line: #d3dbd8; --accent: #0e9f6e; --warn: #c2410c; --unknown: #e0574a;
+    --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1413; --panel: #171e1c; --fg: #e4ebe8; --muted: #8b9a95;
+            --line: #2a3431; --accent: #34d399; --warn: #fb923c; --unknown: #ff7b6e; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px;
+          grid-template-columns: minmax(0, 1fr) 320px; align-items: start; }
+  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+  header { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font: 600 22px var(--mono); letter-spacing: -.01em; }
+  .status { font: 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+  .status.live .dot { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .status.err { color: var(--warn); } .status.err .dot { background: var(--warn); }
+
+  .stage { position: relative; background: #000; border-radius: 6px; overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; }
+  .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .stage.mirror video, .stage.mirror canvas { transform: scaleX(-1); }
+  .empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 12px; color: #c9d4d0; padding: 24px; }
+  .empty p { margin: 0; max-width: 44ch; }
+  [hidden] { display: none !important; }
+
+  aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .label { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat b { display: block; font: 600 26px var(--mono); font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  button { font: 600 13px var(--sans); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--panel); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06231a; }
+  button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  select { font: 13px var(--sans); padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); width: 100%; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--muted); margin: -6px 0 0; }
+  .faces { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+  .faces li { display: flex; justify-content: space-between; gap: 8px; }
+  .faces .who { font-weight: 600; font-family: var(--sans); font-size: 13px; }
+  .faces .unk { color: var(--unknown); }
+  .faces .none { color: var(--muted); }
+  .faces .usual, .faces .unsure { color: var(--muted); }
+  .faces .change { color: var(--accent); font-weight: 600; }
+  .faces .evidence { color: var(--muted); font-size: 11px; justify-content: flex-start; margin-top: -4px; padding-left: 16px; }
+  button.small { font-size: 12px; padding: 6px 10px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .people { display: flex; flex-wrap: wrap; gap: 6px; }
+  details.card > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; user-select: none; }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+                                   transform: rotate(-45deg); transition: transform .15s; margin: 0 2px 2px 0; }
+  details.card[open] > summary::before { transform: rotate(45deg); margin-bottom: 4px; }
+  details.card > summary .num { margin-left: auto; text-transform: none; letter-spacing: 0; }
+  .chip { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .chip.on { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 18%, transparent); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Face Tracker</h1>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting to recognizer…</span></div>
+  </header>
+
+  <div class="stage mirror" id="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div class="empty" id="empty">
+      <p>Pick a camera and press Start camera, or open a video file. Faces you named in the labeling tool are shown by name.</p>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <div class="label">Source</div>
+      <div class="row">
+        <button class="primary" id="camBtn">Start camera</button>
+        <button id="fileBtn">Open video</button>
+        <input type="file" id="fileInput" accept="video/*" hidden>
+      </div>
+      <label for="camSelect" class="label">Camera</label>
+      <select id="camSelect"><option value="">Default camera</option></select>
+    </div>
+
+    <div class="card">
+      <div class="label">Live readout</div>
+      <div class="stats">
+        <div class="stat"><b id="count">0</b><span>faces</span></div>
+        <div class="stat"><b id="known">0</b><span>recognized</span></div>
+        <div class="stat"><b id="fps">0</b><span>checks / sec</span></div>
+      </div>
+      <ul class="faces" id="faces"><li class="none">No faces tracked</li></ul>
+      <p class="hint" id="devices" hidden></p>
+    </div>
+
+    <details class="card" id="peopleCard">
+      <summary class="label">Known people <span id="peopleCount" class="num"></span></summary>
+      <div class="people" id="people"><span class="chip">Loading…</span></div>
+    </details>
+
+    <details class="card" id="testCard">
+      <summary class="label">Expression test <span id="testCount" class="num"></span></summary>
+      <p class="hint" style="margin:0">Measures how well expression reading works on your own face and webcam. You're asked to make each of the 7 expressions for a few seconds. Only numbers are saved (the expression asked for, the model's scores and face-shape cues; no pictures) in data\expr_eval. Run tools\expr_eval.py to see the results.</p>
+      <div class="row">
+        <button class="small" id="testBtn">Start test</button>
+        <button class="small" id="testDelete">Delete test sessions</button>
+      </div>
+    </details>
+
+    <div class="card">
+      <div class="label">Display</div>
+      <label class="toggle" for="optMirror">Mirror view <input type="checkbox" id="optMirror" checked></label>
+      <label class="toggle" for="optPoints">Keypoints (eyes, nose, mouth) <input type="checkbox" id="optPoints" checked></label>
+      <label class="toggle" for="optTrail">Motion trail <input type="checkbox" id="optTrail" checked></label>
+      <label class="toggle" for="optUnknown">Show unknown faces <input type="checkbox" id="optUnknown" checked></label>
+      <label class="toggle" for="optBlur">Blur unknown faces <input type="checkbox" id="optBlur"></label>
+      <label class="toggle" for="optExpr">Show expression <input type="checkbox" id="optExpr" checked></label>
+      <label class="toggle" for="optCalib">Calibrate to each person <input type="checkbox" id="optCalib" checked></label>
+      <p class="hint" id="exprHint">Expression is read from sharp, camera-facing frames and averaged over the last second. With calibration on, each named person's usual look is learned over about a minute; a reading that departs from it is highlighted, one that matches it is marked "usual".</p>
+      <label class="toggle" for="optEvidence">Show expression evidence <input type="checkbox" id="optEvidence"></label>
+      <div class="row"><button class="small" id="calibReset">Forget learned usual looks</button></div>
+      <div>
+        <div class="toggle"><span>Smoothing</span><span id="smoothVal" class="num">0.50</span></div>
+        <input type="range" id="optSmooth" min="0" max="0.9" step="0.05" value="0.5" aria-label="Smoothing">
+      </div>
+      <div>
+        <div class="toggle"><span>Match strictness</span><span id="threshVal" class="num">0.35</span></div>
+        <input type="range" id="optThresh" min="0.2" max="0.6" step="0.01" value="0.35" aria-label="Match strictness">
+      </div>
+      <p class="hint">Higher strictness means fewer wrong names but more "Unknown". 0.35 is the measured best for your photos with the ArcFace model.</p>
+    </div>
+  </aside>
+</div>
+
+<script src="/expression.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
+const COLORS = ["#34d399", "#60a5fa", "#f472b6", "#fbbf24", "#a78bfa", "#2dd4bf", "#fb923c", "#a3e635"];
+const UNKNOWN = getComputedStyle(document.documentElement).getPropertyValue("--unknown").trim() || "#e0574a";
+const SEND_MAX = 960;                      // frames are shrunk to this before being sent for recognition
+const grab = document.createElement("canvas"), gctx = grab.getContext("2d");
+
+let stream = null, running = false, busy = false, tracks = [], people = [];
+let expressions = null;                    // label list from the recognizer, null when its expression model isn't installed
+let cuesOn = false;                        // the recognizer can send face-shape cues (MediaPipe installed)
+let test = null;                           // running expression test: { session, label, prompt }
+let threshTouched = false;                 // the strictness slider was moved, so don't reset it to the model's default
+let checks = 0, fpsT = performance.now(), lastErr = 0;
+
+function setStatus(text, cls = "") { $("statusText").textContent = text; $("status").className = "status " + cls; }
+const colorFor = name => name === "Unknown" ? UNKNOWN : COLORS[[...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % COLORS.length];
+
+async function loadPeople() {
+  try {
+    const r = await (await fetch("/api/people")).json();
+    people = r.people;
+    setExpressions(r.expressions || null);
+    cuesOn = !!r.cues; showDevices(r.devices, r.warmup_ms);
+    $("testCount").textContent = r.sessions ? `${r.sessions} saved` : "";
+    if (!threshTouched && r.threshold) {         // start the slider at the active model's measured setting
+      $("optThresh").value = r.threshold; $("threshVal").textContent = (+r.threshold).toFixed(2);
+    }
+    const where = r.device ? ` · ${r.device.split(" ")[0]}` : "";
+    if (!running) setStatus(people.length ? `Ready · knows ${people.length} people${where}` : "Ready · nobody named yet (use the labeling tool)");
+    renderPeople();
+    return true;
+  } catch { setStatus("Recognizer isn't running. Start it with recognize.bat", "err"); return false; }
+}
+
+function renderPeople() {
+  const here = new Set(tracks.filter(t => t.missed === 0).map(t => t.name));
+  $("peopleCount").textContent = people.length ? `${here.size ? here.size + " of " : ""}${people.length}` : "";
+  $("people").innerHTML = people.length
+    ? people.map(p => `<span class="chip${here.has(p) ? " on" : ""}">${esc(p)}</span>`).join("")
+    : '<span class="chip">Nobody named yet</span>';
+}
+
+// ---------------------------------------------------------------- cameras
+async function listCameras(activeId) {
+  try {
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+    const sel = $("camSelect"), keep = activeId || sel.value;
+    sel.innerHTML = '<option value="">Default camera</option>' +
+      cams.map((c, i) => `<option value="${esc(c.deviceId)}">${esc(c.label || "Camera " + (i + 1))}</option>`).join("");
+    if (keep) sel.value = keep;
+  } catch {}
+}
+
+async function startCamera() {
+  if (stream) { stopCamera(); return; }
+  try {
+    const id = $("camSelect").value;
+    stream = await navigator.mediaDevices.getUserMedia({ video: {
+      width: { ideal: 1280 }, height: { ideal: 720 }, ...(id ? { deviceId: { exact: id } } : {}) } });
+    video.srcObject = stream; video.removeAttribute("src");
+    $("optMirror").checked = true; applyMirror();
+    await video.play();
+    const activeId = stream.getVideoTracks()[0]?.getSettings().deviceId;
+    listCameras(activeId);
+    remember("camera", activeId || ""); remember("autostart", "1");
+    $("camBtn").textContent = "Stop camera";
+    begin();
+  } catch (e) {
+    stream = null;
+    setStatus(e.name === "NotReadableError" ? "That camera is busy in another app. Close it there, or pick another camera."
+            : e.name === "NotAllowedError" ? "Camera blocked. Allow camera access for this page and try again."
+            : "Couldn't start that camera. Try another one from the list.", "err");
+  }
+}
+
+function stopCamera() {
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null; video.srcObject = null; running = false;
+  $("camBtn").textContent = "Start camera";
+  $("empty").hidden = false; tracks = []; ctx.clearRect(0, 0, canvas.width, canvas.height);
+  renderList(); renderPeople(); loadPeople();
+}
+
+function openFile(file) {
+  if (!file) return;
+  if (stream) stopCamera();
+  video.srcObject = null; video.src = URL.createObjectURL(file); video.loop = true;
+  $("optMirror").checked = false; applyMirror();
+  video.play().then(begin);
+}
+
+function begin() {
+  $("empty").hidden = true; tracks = [];
+  setStatus("Tracking", "live");
+  if (!running) { running = true; requestAnimationFrame(draw); sendLoop(); }
+}
+
+// ---------------------------------------------------------------- recognition requests
+async function sendLoop() {
+  while (running) {
+    if (video.readyState < 2 || busy) { await new Promise(r => setTimeout(r, 30)); continue; }
+    const vw = video.videoWidth, vh = video.videoHeight, s = Math.min(1, SEND_MAX / Math.max(vw, vh));
+    grab.width = Math.round(vw * s); grab.height = Math.round(vh * s);
+    gctx.drawImage(video, 0, 0, grab.width, grab.height);
+    const blob = await new Promise(r => grab.toBlob(r, "image/jpeg", 0.85));
+    busy = true;
+    try {
+      const want = new URLSearchParams({ t: $("optThresh").value });
+      if (cuesOn && ($("optEvidence").checked || test?.label)) want.set("c", "1");
+      if (test?.label) { want.set("rec", test.label); want.set("session", test.session); }
+      const r = await fetch(`/api/recognize?${want}`, { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg", "X-Face-Tool": "1" } });
+      const res = await r.json();
+      if (!r.ok) throw new Error(res.error || r.status);
+      updateTracks(res.faces.map(f => ({ ...f, box: f.box.map(v => v / s), kps: f.kps.map(([x, y]) => [x / s, y / s]) })));
+      checks++;
+      if ($("status").classList.contains("err")) setStatus("Tracking", "live");
+    } catch (e) {
+      if (performance.now() - lastErr > 2000) setStatus("Lost the recognizer. Is the tracker window still open?", "err");
+      lastErr = performance.now();
+      await new Promise(r => setTimeout(r, 500));
+    } finally { busy = false; }
+  }
+}
+
+// Match new detections to existing tracks by nearest centre; vote on names over recent checks.
+function updateTracks(dets) {
+  const used = new Set();
+  for (const t of tracks) t.matched = false;
+  for (const d of dets) {
+    const [x, y, w, h] = d.box, cx = x + w / 2, cy = y + h / 2;
+    let best = null, bestDist = Infinity;
+    for (const t of tracks) {
+      if (used.has(t)) continue;
+      const dist = Math.hypot(t.tcx - cx, t.tcy - cy);
+      if (dist < Math.max(t.tw, w) * 0.9 && dist < bestDist) { best = t; bestDist = dist; }
+    }
+    if (!best) {
+      best = { x, y, w, h, kp: d.kps, trail: [], votes: [], xt: new Expression.Track(), expr: null, name: d.name, sim: d.sim };
+      tracks.push(best);
+    }
+    used.add(best); best.matched = true; best.missed = 0;
+    Object.assign(best, { tx: x, ty: y, tw: w, th: h, tcx: cx, tcy: cy, tkp: d.kps, score: d.score });
+    // Each frame votes with a weight from its face quality, so sharp frames outvote blurry ones
+    const qw = d.quality == null ? 0.5 : Math.max(0.05, d.quality);
+    best.votes.push([d.name, d.sim, qw]); if (best.votes.length > 7) best.votes.shift();
+    const tally = {};
+    for (const [n, s, w] of best.votes) tally[n] = (tally[n] || 0) + w * (1 + s);   // quality-weighted; similarity breaks ties
+    best.name = Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0];
+    const mine = best.votes.filter(v => v[0] === best.name);
+    const wsum = mine.reduce((a, v) => a + v[2], 0);
+    best.sim = mine.reduce((a, v) => a + v[1] * v[2], 0) / wsum;
+    // Expression votes the same way (expression.js). Frames the recognizer didn't score (blurry,
+    // turned away) cast no vote; after ten such frames in a row the reading is dropped.
+    best.xt.add(d.expr, d.quality, d.xskip, d.cues);
+    best.expr = readExpression(best);
+  }
+  for (const t of tracks) if (!t.matched) t.missed++;
+  tracks = tracks.filter(t => t.missed < 4);
+  renderList(); renderPeople();
+}
+
+// ---------------------------------------------------------------- expression
+// Voting, confidence and each person's usual look are in expression.js (with tests); this part
+// connects them to the page.
+const usualLooks = new Expression.UsualLooks((() => { try { return localStorage; } catch { return null; } })());
+
+function setExpressions(list) {
+  const was = expressions; expressions = list;
+  for (const id of ["optExpr", "optCalib", "calibReset", "optEvidence", "testBtn"]) $(id).disabled = !list;
+  $("exprHint").textContent = list ? $("exprHint").dataset.on
+    : "Expression model not installed: put facial_expression_recognition_mobilefacenet_2022july.onnx (OpenCV Zoo) in the models folder and restart recognize.bat.";
+  if (was && !list) for (const t of tracks) { t.xt.clear(); t.expr = null; }
+}
+
+function readExpression(t) {
+  return Expression.read(t.xt, expressions, t.name, $("optCalib").checked ? usualLooks : null);
+}
+
+function exprText(t) {
+  return t.expr && $("optExpr").checked ? Expression.text(t.expr) : "";
+}
+
+function showDevices(devices, warmup) {
+  const short = v => v.split(" ")[0];
+  $("devices").textContent = devices ? "Runs on: " + Object.entries(devices).filter(([, v]) => v)
+    .map(([k, v]) => `${k} ${short(v)}${warmup?.[k] != null ? ` (${warmup[k]} ms first)` : ""}`).join(" · ") : "";
+}
+
+// Posed expression test: asks for each expression in turn while frames are sent with rec=<label>
+const pause = ms => new Promise(r => setTimeout(r, ms));
+async function runTest() {
+  if (test) { test = null; return; }                       // pressing again stops it
+  if (!stream) { setStatus("Start the camera first, then start the test.", "err"); return; }
+  const d = new Date(), z = v => String(v).padStart(2, "0");
+  const session = `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+  $("testBtn").textContent = "Stop test";
+  test = { session };
+  for (const label of expressions) {
+    if (test?.session !== session) break;
+    test = { session, label: null, prompt: `Next: look ${label}` }; await pause(2500);
+    if (test?.session !== session) break;
+    test = { session, label, prompt: `Look ${label}: hold it` }; await pause(4000);
+  }
+  test = null; $("testBtn").textContent = "Start test";
+  loadPeople();
+}
+
+// ---------------------------------------------------------------- drawing (every animation frame)
+function draw() {
+  if (!running) return;
+  if (video.videoWidth && canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
+  const a = 1 - parseFloat($("optSmooth").value) * 0.9;          // easing toward the latest detection
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const lw = Math.max(2, canvas.width / 450), mirrored = $("optMirror").checked;
+  for (const t of tracks) {
+    if (t.tx === undefined) continue;
+    t.x += (t.tx - t.x) * a; t.y += (t.ty - t.y) * a; t.w += (t.tw - t.w) * a; t.h += (t.th - t.h) * a;
+    t.kp = t.kp.map(([x, y], i) => [x + (t.tkp[i][0] - x) * a, y + (t.tkp[i][1] - y) * a]);
+    const unknown = t.name === "Unknown";
+    if (unknown && !$("optUnknown").checked) continue;
+    const col = colorFor(t.name);
+    t.trail.push([t.x + t.w / 2, t.y + t.h / 2]); if (t.trail.length > 40) t.trail.shift();
+    ctx.globalAlpha = t.missed ? 0.45 : 1;
+    if (unknown && $("optBlur").checked) {
+      ctx.save(); ctx.beginPath(); ctx.rect(t.x, t.y, t.w, t.h); ctx.clip();
+      ctx.filter = `blur(${Math.round(t.w / 9)}px)`; ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.restore(); ctx.filter = "none";
+    }
+    if ($("optTrail").checked && t.trail.length > 1) {
+      ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.globalAlpha *= 0.5;
+      ctx.beginPath(); t.trail.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+      ctx.globalAlpha = t.missed ? 0.45 : 1;
+    }
+    ctx.strokeStyle = col; ctx.lineWidth = lw * 1.5;
+    const c = Math.min(t.w, t.h) * 0.22;
+    ctx.beginPath();
+    [[t.x, t.y, 1, 1], [t.x + t.w, t.y, -1, 1], [t.x, t.y + t.h, 1, -1], [t.x + t.w, t.y + t.h, -1, -1]].forEach(([x, y, dx, dy]) => {
+      ctx.moveTo(x + dx * c, y); ctx.lineTo(x, y); ctx.lineTo(x, y + dy * c);
+    });
+    ctx.stroke();
+    if ($("optPoints").checked) {
+      ctx.fillStyle = col;
+      for (const [x, y] of t.kp) { ctx.beginPath(); ctx.arc(x, y, lw * 1.4, 0, Math.PI * 2); ctx.fill(); }
+    }
+    // Name overlaid on the face itself: centred band across the top of the head
+    const cx = t.x + t.w / 2;
+    const size = Math.max(14, Math.min(t.w / 5.5, canvas.width / 30));
+    ctx.save();
+    if (mirrored) { ctx.translate(cx, 0); ctx.scale(-1, 1); ctx.translate(-cx, 0); }   // keep text readable when mirrored
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = `700 ${size}px "IBM Plex Sans", "Segoe UI", sans-serif`;
+    const name = unknown ? "Unknown" : t.name;
+    const pct = unknown ? "" : `${Math.round(t.sim * 100)}%`;
+    const nw = ctx.measureText(name).width;
+    ctx.font = `600 ${size * 0.62}px "IBM Plex Mono", Consolas, monospace`;
+    const pw = pct ? ctx.measureText(pct).width : 0;
+    const xt = exprText(t), xw = xt ? ctx.measureText(xt).width : 0;
+    const bw = Math.max(nw, pw, xw) + size * 1.1, bh = size * (1.45 + (pct ? 0.6 : 0) + (xt ? 0.7 : 0));
+    const by = Math.max(0, t.y - bh * 0.45);        // across the forehead / top of the head
+    ctx.fillStyle = "rgba(8, 19, 15, 0.62)";
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(cx - bw / 2, by, bw, bh, size * 0.35) : ctx.rect(cx - bw / 2, by, bw, bh); ctx.fill();
+    ctx.fillStyle = col; ctx.fillRect(cx - bw / 2, by, bw, Math.max(2, size * 0.12));
+    ctx.font = `700 ${size}px "IBM Plex Sans", "Segoe UI", sans-serif`;
+    ctx.fillStyle = "#ffffff"; ctx.fillText(name, cx, by + size * 0.78);
+    if (pct) { ctx.font = `600 ${size * 0.62}px "IBM Plex Mono", Consolas, monospace`; ctx.fillStyle = col; ctx.fillText(pct, cx, by + size * 1.6); }
+    if (xt) {   // expression under the name: bright when it departs from the person's usual look, dim otherwise
+      ctx.font = `600 ${size * 0.62}px "IBM Plex Mono", Consolas, monospace`;
+      ctx.fillStyle = t.expr.state === "change" || t.expr.state === "plain" ? "#ffffff" : "rgba(255,255,255,0.6)";
+      ctx.fillText(xt, cx, by + size * (pct ? 2.3 : 1.6));
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+  if (test?.prompt) {
+    const size = Math.max(20, canvas.width / 24);
+    ctx.save();
+    if (mirrored) { ctx.translate(canvas.width, 0); ctx.scale(-1, 1); }
+    ctx.font = `700 ${size}px "IBM Plex Sans", "Segoe UI", sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const w = ctx.measureText(test.prompt).width + size * 1.2;
+    ctx.fillStyle = test.label ? "rgba(14, 159, 110, 0.85)" : "rgba(8, 19, 15, 0.75)";
+    ctx.fillRect((canvas.width - w) / 2, size * 0.5, w, size * 1.6);
+    ctx.fillStyle = "#ffffff"; ctx.fillText(test.prompt, canvas.width / 2, size * 1.3);
+    ctx.restore();
+  }
+  const now = performance.now();
+  if (now - fpsT > 1000) { $("fps").textContent = Math.round(checks * 1000 / (now - fpsT)); checks = 0; fpsT = now; }
+  requestAnimationFrame(draw);
+}
+
+function renderList() {
+  const live = tracks.filter(t => t.missed === 0);
+  $("count").textContent = live.length;
+  $("known").textContent = live.filter(t => t.name !== "Unknown").length;
+  const ul = $("faces");
+  if (!tracks.length) { ul.innerHTML = '<li class="none">No faces tracked</li>'; return; }
+  const showEv = $("optEvidence").checked && $("optExpr").checked;
+  ul.innerHTML = tracks.map(t => {
+    const unk = t.name === "Unknown";
+    const xt = exprText(t), xs = xt ? `<span class="${t.expr.state}">${xt}</span> · ` : "";
+    const ev = showEv ? (t.expr ? Expression.evidence(t.expr) : t.xt.skip ? `no reading: ${t.xt.skip}` : "") : "";
+    return `<li><span class="who${unk ? " unk" : ""}"><span class="sw" style="background:${colorFor(t.name)}"></span>${esc(t.name)}</span>` +
+           `<span>${unk ? "" : Math.round(t.sim * 100) + "% · "}${xs}${Math.round(t.tw || t.w)}px${t.missed ? " · lost" : ""}</span></li>` +
+           (ev ? `<li class="evidence">${esc(ev)}</li>` : "");
+  }).join("");
+  $("devices").hidden = !showEv;
+}
+
+function applyMirror() { $("stage").classList.toggle("mirror", $("optMirror").checked); }
+
+$("camBtn").onclick = () => { if (stream) remember("autostart", "0"); startCamera(); };
+$("fileBtn").onclick = () => $("fileInput").click();
+$("fileInput").onchange = e => openFile(e.target.files[0]);
+$("camSelect").onchange = async () => { if (stream) { stopCamera(); await startCamera(); } };
+$("optMirror").onchange = applyMirror;
+$("peopleCard").open = recall("people") === "1";             // collapsed unless you opened it last time
+$("peopleCard").ontoggle = () => remember("people", $("peopleCard").open ? "1" : "0");
+$("exprHint").dataset.on = $("exprHint").textContent;
+$("optExpr").onchange = $("optCalib").onchange = $("optEvidence").onchange = renderList;
+$("calibReset").onclick = () => { usualLooks.forget(); renderList(); };
+$("testBtn").onclick = runTest;
+$("testDelete").onclick = async () => {
+  if (!confirm("Delete all saved expression test sessions?")) return;
+  try { await fetch("/api/expr-eval/delete", { method: "POST", headers: { "X-Face-Tool": "1" } }); } catch {}
+  loadPeople();
+};
+$("optSmooth").oninput = e => $("smoothVal").textContent = (+e.target.value).toFixed(2);
+$("optThresh").oninput = e => { threshTouched = true; $("threshVal").textContent = (+e.target.value).toFixed(2); };
+navigator.mediaDevices?.addEventListener?.("devicechange", () => listCameras());
+// Remember the camera and start it automatically next time (unless you pressed Stop camera)
+function remember(k, v) { try { localStorage.setItem("ft-" + k, v); } catch {} }
+function recall(k) { try { return localStorage.getItem("ft-" + k); } catch { return null; } }
+(async () => {
+  await listCameras(recall("camera"));
+  if (recall("autostart") !== "0") startCamera();
+})();
+loadPeople();
+setInterval(() => { if (!running) loadPeople(); }, 10000);   // pick up names saved in the labeling tool
+</script>
+</body>
+</html>
