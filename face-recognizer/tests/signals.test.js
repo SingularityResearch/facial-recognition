@@ -90,6 +90,55 @@ test("voice: clip returns the latest audio, and avd readings smooth", () => {
   assert.equal(v.currentAvd(9000), null);
 });
 
+// Body points in tracker.py's order: nose, earL, earR, shL, shR, elL, elR, wrL, wrR, ixL, ixR, hipL, hipR.
+// A person facing the camera: their left shoulder appears on the image's right.
+const body = ({ dy = 0, noseUp = 100, earUp = 80, shoulderY = 300, wrists = "down", tilt = 0 } = {}) => {
+  const y = shoulderY + dy, v = 0.9, gone = [0, 0, 0];
+  const wr = wrists === "crossed" ? [[350, y + 80, v], [450, y + 80, v]] : wrists === "down" ? [[520, y + 150, v], [280, y + 150, v]] : [gone, gone];
+  return [[400, y - noseUp, v], [440, y - earUp, v], [360, y - earUp, v], [500, y + tilt, v], [300, y - tilt, v],
+          [520, y + 80, v], [280, y + 80, v], wr[0], wr[1], gone, gone, [470, y + 250, v], [330, y + 250, v]];
+};
+
+test("posture: head height, neck, tilt, arms crossed", () => {
+  const q = S.postureOf(body());
+  assert.equal(q.sw, 200);
+  assert.equal(q.head, 0.5);                                      // nose 100 px above a 200 px shoulder line
+  assert.equal(q.neck, 0.4);
+  assert.equal(q.tilt, 0);
+  assert.equal(q.armsCrossed, false);
+  assert.equal(S.postureOf(body({ wrists: "crossed" })).armsCrossed, true);
+  assert.ok(Math.abs(S.postureOf(body({ tilt: 20 })).tilt - 11.3) < 0.1);
+  assert.ok(S.postureOf(body({ noseUp: 40 })).head < q.head);     // head dropped
+  const noShoulders = body(); noShoulders[3] = [0, 0, 0.1];
+  assert.equal(S.postureOf(noShoulders), null);
+});
+
+test("posture over time: leaning in, hand on face, body movement", () => {
+  const f = new S.FaceSignals();
+  for (let i = 0; i < 20; i++) f.addPose(i * 100, body(), false);
+  const wide = body().map(([x, y, v]) => [400 + (x - 400) * 1.3, y, v]);   // shoulders 30% wider: leaning in
+  f.addPose(2000, wide, true);
+  const q = f.posture(2000);
+  assert.ok(q.lean > 0.08, `lean ${q.lean}`);
+  assert.equal(q.hand, true);
+  assert.ok(f.bodyMotion(1900) < 1e-9);
+  const g = new S.FaceSignals();
+  for (let i = 0; i <= 10; i++) g.addPose(i * 100, body({ dy: i * 20 }), false);   // 200 px/s = 1 shoulder width/s
+  assert.ok(Math.abs(g.bodyMotion(1000) - 1) < 0.01);
+  assert.match(S.bodyEvidence(f, 2000), /head \.\d+ · neck \.\d+ · tilt 0° · leaning in · .*hand on face/);
+});
+
+test("breathing: 15 breaths a minute from the shoulders' rise and fall", () => {
+  const f = new S.FaceSignals();
+  for (let t = 0; t <= 30000; t += 100) f.addPose(t, body({ dy: 3 * Math.sin(2 * Math.PI * 0.25 * t / 1000) + t / 3000 }), false);
+  const b = f.breathing(30000);
+  assert.ok(Math.abs(b.bpm - 15) <= 1, `bpm ${b.bpm}`);
+  assert.ok(b.snr > 0);
+  const moving = new S.FaceSignals();
+  for (let t = 0; t <= 30000; t += 100) moving.addPose(t, body({ dy: (t / 100) % 2 ? 40 : 0 }), false);
+  assert.equal(moving.breathing(30000), null);                    // too much movement to read breathing
+});
+
 test("summary has every feature, and applyFit uses the person's model or the shared one", () => {
   const f = new S.FaceSignals();
   for (let i = 0; i < 50; i++) {

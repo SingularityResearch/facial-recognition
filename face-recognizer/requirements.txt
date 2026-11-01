@@ -4,4 +4,4 @@ scikit-learn
 pillow
 pillow-heif
 onnxruntime-directml; sys_platform == "win32"
-mediapipe        # optional: face-shape cues in the live tracker (pulls in opencv-contrib-python)
+mediapipe        # optional: face-shape cues and body posture in the live tracker (pulls in opencv-contrib-python)

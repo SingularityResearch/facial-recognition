@@ -14,6 +14,7 @@ Recognizes specific people (by name) on a webcam or in photos and videos, traine
 - **Face quality:** eDifFIQA (`models/ediffiqa_tiny_jun2024.onnx`) scores each face. Faces below 0.30 (blurry, tiny, turned away) aren't used to learn a person, and in the live tracker sharp frames outweigh blurry ones when deciding a name.
 - **Expression:** OpenCV Zoo's facial expression model (`models/facial_expression_recognition_mobilefacenet_2022july.onnx`, MobileFaceNet, Apache 2.0; 88% on the RAF-DB benchmark) reads each face as angry, disgust, fearful, happy, neutral, sad or surprised. The live tracker shows it under the name; see **Expression** below for how it's kept honest.
 - **Face-shape cues (optional):** MediaPipe Face Landmarker (`models/face_landmarker.task`, Apache 2.0, `pip install mediapipe`) measures 52 facial movements such as smile, brow raise and jaw drop. The tracker shows them as evidence next to the expression; they don't change the label.
+- **Body posture (optional):** MediaPipe Pose Landmarker lite (`models/pose_landmarker_lite.task`, Apache 2.0) finds 33 body points; the tracker uses the head, shoulders, arms and hips. About 15 ms a frame on the CPU.
 - **Voice (optional):** audEERING's Wav2Small (`models/wav2small.onnx`, 17K parameters, made by `python tools\get_wav2small.py` from the official weights) reads arousal, dominance and valence from speech when you turn on the microphone. Licensed CC BY-NC-SA 4.0: non-commercial use only, like the ArcFace weights.
 - **Security:** the labeling tool and tracker only accept requests from their own pages (see `localguard.py`), so other websites can't change your labels.
 
@@ -86,7 +87,7 @@ Double-click **recognize.bat**. Your browser opens the Face Tracker:
 - **Display**: mirror view, keypoints, motion trail, show or blur unknown faces, smoothing.
 - **Match strictness**: raise it if wrong names appear, lower it if known people show as Unknown.
 - **Show expression** / **Calibrate to each person** / **Show expression evidence** / **Expression test**: see below.
-- **Listen to voice** / **Webcam pulse** / **Skip expression while talking** / **Use state model** / **Feeling check**: see **Other signals** below.
+- **Listen to voice** / **Webcam pulse** / **Body posture** / **Skip expression while talking** / **Skip expression when a hand is on the face** / **Use state model** / **Feeling check**: see **Other signals** below.
 - Names you save in the labeling tool are picked up automatically.
 
 ### Expression
@@ -103,7 +104,7 @@ What to expect: "happy", "surprised" and "neutral" are the reliable labels. "Fea
 
 `python tools\expr_check.py` scores a sample of your stored faces (time per face, label spread, how often the mirrored views agree, broken down by label, face quality and face size) and runs one tracker request on a stored photo: a quick check that the models are installed and working. On your photos, blurry faces get a "clear" reading just as often as sharp ones, which is why blurry frames get no reading at all.
 
-Expression isn't stored anywhere; it's only shown live. The one exception is the **Expression test**, which you start yourself, to measure how well the reading works on your own face and webcam. The page asks you to make each of the 7 expressions for a few seconds, then to talk for a few seconds (neutral, then smiling), and for each readable frame it saves only numbers (the expression asked for, whether you were asked to talk, the model's scores, the face-shape cues, the talking signals, quality, head turn, face size and brightness; no pictures, no audio) to `data\expr_eval\`. `python tools\expr_eval.py` then shows, per expression, how often the model got it right frame by frame and after the vote, what it was mistaken for, and which cues separate the expressions on your face. That's the measurement needed before any expression setting is changed or the cues are allowed to affect the label. Posed faces are exaggerated, so treat the results as a best case. **Delete test data** (or deleting the folder) removes them, together with feeling reports.
+Expression isn't stored anywhere; it's only shown live. The one exception is the **Expression test**, which you start yourself, to measure how well the reading works on your own face and webcam. The page asks you to make each of the 7 expressions for a few seconds, then to talk for a few seconds (neutral, then smiling), then to rest your chin on your hand, and for each readable frame it saves only numbers (the expression asked for, whether you were asked to talk, the model's scores, the face-shape cues, the talking signals, the body points and whether a hand was on the face, quality, head turn, face size and brightness; no pictures, no audio) to `data\expr_eval\`. `python tools\expr_eval.py` then shows, per expression, how often the model got it right frame by frame and after the vote, what it was mistaken for, and which cues separate the expressions on your face. That's the measurement needed before any expression setting is changed or the cues are allowed to affect the label. Posed faces are exaggerated, so treat the results as a best case. **Delete test data** (or deleting the folder) removes them, together with feeling reports.
 
 ### Other signals
 
@@ -113,6 +114,15 @@ A face's expression is only one channel, and a weak one on its own (see [Why exp
 - **Talking:** how much the jaw moves over the last 1.5 seconds ("jaw moving" / "jaw still"). With the microphone on, the jaw has to move *and* there has to be voice before the face counts as **talking**. Talking matters because speech makes mouth shapes the expression model reads as "surprised" or "happy".
 - **Blinks per minute** (rough: about 10 checks a second can miss short blinks), **gaze away** (how often the eyes look well off-centre), **smile rise** (how fast a smile came on), **smile asym** (left/right difference while smiling) and **held** (how long the current reading has lasted). Spontaneous smiles tend to rise smoothly and be symmetric; posed ones less so.
 - **Webcam pulse** (off by default): heart rate from tiny skin-colour changes in the forehead and cheeks (the POS method of remote photoplethysmography). It needs a still face and steady light, and shows its signal-to-noise ratio; below 0 dB it's marked "weak". Treat it as experimental.
+- **Body posture** (off by default): a third evidence line, starting "body:", and the body's outline on the video (with Keypoints on). It shows:
+    - **head**: how high the nose is above the shoulders, in shoulder widths. Lower means head down or slumped.
+    - **neck**: how high the ears are above the shoulders. Smaller means raised shoulders, as in a shrug or tension.
+    - **tilt**: the shoulder line's angle, and **leaning in** / **leaning back** compared with the last 30 seconds.
+    - **body**: how much the shoulders and hands move. More movement goes with higher arousal.
+    - **breathing**: breaths per minute from the slow rise and fall of the shoulders, only while you sit still, with its signal-to-noise ratio.
+    - **hand on face** and **arms crossed**.
+
+  For intense emotions the body often tells more than the face, and movement tracks arousal well. A posture still doesn't map to one emotion: a slump can be sadness or tiredness. That is why these too are evidence, and part of the feeling reports.
 - **Listen to voice** (off by default): the browser analyses your microphone live, never recording it. It shows how much of the time someone is speaking, loudness above the room's background noise, pitch and its variability (in semitones), and speaking rate (loudness peaks per second, about syllables). Every second that contains speech, the last 2 seconds of audio go to the tracker program on this computer, where the voice model scores arousal and valence ("voice A.62 V.48"). The audio is thrown away after scoring. The voice is attributed to whoever is talking, or to the only face in view.
 
 Microphone tips:
@@ -123,9 +133,10 @@ Microphone tips:
 
 More on the voice measures, the model and its limits: [Voice](../README.md#voice) in the repository README.
 
-These signals are evidence only. They never change the expression label, with two exceptions that are off by default because they aren't measured yet:
+These signals are evidence only. They never change the expression label, with three exceptions that are off by default because they aren't measured yet:
 
 - **Skip expression while talking:** frames where the face is talking cast no expression vote ("no reading: talking"), the same way blurry frames don't.
+- **Skip expression when a hand is on the face:** a hand on the chin or mouth hides part of the face, so those frames cast no vote ("no reading: hand"). Needs Body posture installed.
 - **Use state model for expression:** instead of averaging the last ten frames, a small hidden-Markov "state model" keeps a running belief about each face's expression: it assumes an expression usually continues, and blurry or turned-away frames simply hold the belief. The evidence line shows the state model's answer ("state happy 78%") whenever it disagrees with the vote.
 
 Run the Expression test and `tools\expr_eval.py` before turning either on: it reports how both would have done on your own face.
@@ -136,6 +147,7 @@ Run the Expression test and `tools\expr_eval.py` before turning either on: it re
 - compares the state model with the vote on your test sessions;
 - calibrates confidence: it measures how often a reading at a given share is actually right and fits a correction, saved to `data\expr_calibration.json`. From then on the evidence shows "cal 64%", meaning readings like this are right about 64% of the time;
 - breaks accuracy down by person, face quality, face size, head turn and brightness;
+- measures the body channel: how well the hand-on-face detector works and what a hand on the chin does to the reading, and posture by expression;
 - measures talking: how often talking faces are misread, how well the jaw-movement detector and the microphone tell talking from silence, and the best talking threshold on your data;
 - from your feeling reports, shows which signals go with how you said you felt. Once there are 15 reports for a person (or 20 in all), it fits valence/arousal to that person and keeps the fit only if it predicts your answers better than always guessing your average. The fit is saved to `data\va_fit.json`, and the evidence then shows "V+0.3 A+0.5 fit" instead of the textbook placement.
 
@@ -183,7 +195,7 @@ Measured on this PC (AMD Ryzen AI Max+ 395: 16-core CPU, Radeon 8060S GPU, XDNA 
 | CPU (OpenCV) | ~12 ms | fallback |
 | NPU (Ryzen AI 1.8, BF16) | ~25 ms | low power; results 99.97% identical; first start compiles for ~6 minutes |
 
-The recognizer, quality and expression models use the GPU automatically (`onnxruntime-directml`, installed by setup.bat). Face detection (YuNet) stays on the CPU, where it takes a few milliseconds. To choose explicitly, set `FACE_DEVICE` to `gpu`, `cpu` or `npu` before starting. `npu` needs the Ryzen AI environment's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`); `tools/hw_bench.py` compiles the NPU model and re-measures all three. At startup the tracker runs each model once (so the first camera frame isn't the slow one) and lists which processor runs it and how long that first run took.
+The recognizer, quality and expression models use the GPU automatically (`onnxruntime-directml`, installed by setup.bat). Face detection (YuNet) stays on the CPU, where it takes a few milliseconds, as do the optional MediaPipe face-shape cues (about 10 ms a face), body posture (about 15 ms a frame) and the voice model (a few milliseconds per 2-second clip). To choose explicitly, set `FACE_DEVICE` to `gpu`, `cpu` or `npu` before starting. `npu` needs the Ryzen AI environment's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`); `tools/hw_bench.py` compiles the NPU model and re-measures all three. At startup the tracker runs each model once (so the first camera frame isn't the slow one) and lists which processor runs it and how long that first run took.
 
 **Bigger models tried:** AdaFace IR-101 (WebFace12M, `tools/get_adaface.py` converts the official weights) ran at 8.5 ms per face on the GPU but didn't beat ArcFace on your photos: 95.5% vs 99.4% of labeled faces correct, about the same on blurry frames. Combining both models didn't help either (`tools/eval_models.py` reproduces the comparison).
 

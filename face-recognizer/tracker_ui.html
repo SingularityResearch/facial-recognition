@@ -144,7 +144,7 @@
 
     <details class="card" id="testCard">
       <summary class="label">Expression test <span id="testCount" class="num"></span></summary>
-      <p class="hint" style="margin:0">Measures how well expression reading works on your own face and webcam. You're asked to make each of the 7 expressions for a few seconds, then to talk for a few seconds (to measure the talking detector). Only numbers are saved (the expression asked for, the model's scores, face-shape cues and talking signals; no pictures, no audio) in data\expr_eval. Run tools\expr_eval.py to see the results.</p>
+      <p class="hint" style="margin:0">Measures how well expression reading works on your own face and webcam. You're asked to make each of the 7 expressions for a few seconds, then to talk for a few seconds and to rest your chin on your hand (to measure the talking and hand detectors). Only numbers are saved (the expression asked for, the model's scores, face-shape cues, body points and talking signals; no pictures, no audio) in data\expr_eval. Run tools\expr_eval.py to see the results.</p>
       <div class="row">
         <button class="small" id="testBtn">Start test</button>
       </div>
@@ -176,7 +176,9 @@
       <label class="toggle" for="optPulse">Webcam pulse (experimental) <input type="checkbox" id="optPulse"></label>
       <label class="toggle" for="optTalkGate">Skip expression while talking <input type="checkbox" id="optTalkGate"></label>
       <label class="toggle" for="optState">Use state model for expression <input type="checkbox" id="optState"></label>
-      <p class="hint" id="signalsHint">Voice is analysed live and never recorded: loudness, pitch, speaking rate, and the voice model's arousal/valence. Pulse reads tiny skin-colour changes and needs a still face in steady light. The last two options change the expression reading and aren't measured yet; run the Expression test and tools\expr_eval.py first.</p>
+      <label class="toggle" for="optPose">Body posture <input type="checkbox" id="optPose"></label>
+      <label class="toggle" for="optHandGate">Skip expression when a hand is on the face <input type="checkbox" id="optHandGate"></label>
+      <p class="hint" id="signalsHint">Voice is analysed live and never recorded: loudness, pitch, speaking rate, and the voice model's arousal/valence. Pulse reads tiny skin-colour changes and needs a still face in steady light. Body posture adds head height, shoulders, lean, body movement, breathing, hand on face and crossed arms. The "skip" and "state model" options change the expression reading and aren't measured yet; run the Expression test and tools\expr_eval.py first.</p>
       <div>
         <div class="toggle"><span>Smoothing</span><span id="smoothVal" class="num">0.50</span></div>
         <input type="range" id="optSmooth" min="0" max="0.9" step="0.05" value="0.5" aria-label="Smoothing">
@@ -207,6 +209,7 @@ let cuesOn = false;                        // the recognizer can send face-shape
 let test = null;                           // running expression test: { session, label, talk, prompt }
 let calibration = null, vaFit = null;      // fitted by tools/expr_eval.py (data/expr_calibration.json, data/va_fit.json)
 let voiceModel = false;                    // the recognizer has the voice model (models/wav2small.onnx)
+let poseOn = false;                        // the recognizer can send body points (MediaPipe pose model installed)
 let threshTouched = false;                 // the strictness slider was moved, so don't reset it to the model's default
 let checks = 0, fpsT = performance.now(), lastErr = 0;
 
@@ -220,6 +223,7 @@ async function loadPeople() {
     setExpressions(r.expressions || null);
     cuesOn = !!r.cues; showDevices(r.devices, r.warmup_ms);
     calibration = r.calibration || null; vaFit = r.vaFit || null; voiceModel = !!r.voice;
+    poseOn = !!r.pose; $("optPose").disabled = $("optHandGate").disabled = !poseOn;
     $("testCount").textContent = [r.sessions ? `${r.sessions} tests` : "", r.reports ? `${r.reports} reports` : ""].filter(Boolean).join(" · ");
     if (!threshTouched && r.threshold) {         // start the slider at the active model's measured setting
       $("optThresh").value = r.threshold; $("threshVal").textContent = (+r.threshold).toFixed(2);
@@ -306,9 +310,11 @@ async function sendLoop() {
     try {
       const want = new URLSearchParams({ t: $("optThresh").value });
       if (cuesOn && needCues()) want.set("c", "1");
+      if (poseOn && ($("optPose").checked || $("optHandGate").checked)) want.set("p", "1");
       if (test?.label) {
         want.set("rec", test.label); want.set("session", test.session);
         if (test.talk) want.set("talk", "1");
+        if (test.hand) want.set("hand", "1");
         const big = largestTrack(), now = performance.now(), k = big?.fs.talking(now);
         if (k) want.set("tv", k.score.toFixed(4));
         if (voice) want.set("vad", voice.active(now) ? "1" : "0");
@@ -316,7 +322,8 @@ async function sendLoop() {
       const r = await fetch(`/api/recognize?${want}`, { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg", "X-Face-Tool": "1" } });
       const res = await r.json();
       if (!r.ok) throw new Error(res.error || r.status);
-      updateTracks(res.faces.map(f => ({ ...f, box: f.box.map(v => v / s), kps: f.kps.map(([x, y]) => [x / s, y / s]) })));
+      updateTracks(res.faces.map(f => ({ ...f, box: f.box.map(v => v / s), kps: f.kps.map(([x, y]) => [x / s, y / s]),
+                                         pose: f.pose && f.pose.map(([x, y, v]) => [x / s, y / s, v]) })));
       checks++;
       if ($("status").classList.contains("err")) setStatus("Tracking", "live");
     } catch (e) {
@@ -358,10 +365,13 @@ function updateTracks(dets) {
     // Other signals (signals.js): motion, face-shape cues over time, expression shares for reports
     const now = performance.now();
     best.fs.addPosition(now, d.box); best.fs.addCues(now, d.cues); best.fs.addExpr(now, d.expr);
+    best.fs.addPose(now, d.pose, d.hand); best.pose = d.pose;
     best.talking = isTalking(best, now, dets.length);
     // Expression votes the same way (expression.js). Frames the recognizer didn't score (blurry,
-    // turned away; or talking, with that option on) cast no vote; after ten in a row the reading is dropped.
+    // turned away; or talking / a hand on the face, with those options on) cast no vote; after ten
+    // in a row the reading is dropped.
     if (best.talking && d.expr && $("optTalkGate").checked) best.xt.add(null, d.quality, "talking", d.cues);
+    else if (d.hand && d.expr && $("optHandGate").checked) best.xt.add(null, d.quality, "hand", d.cues);
     else best.xt.add(d.expr, d.quality, d.xskip, d.cues);
     best.expr = readExpression(best);
     best.fs.addLabel(now, best.expr && best.expr.state !== "unsure" ? best.expr.label : null);
@@ -512,7 +522,9 @@ function showDevices(devices, warmup) {
 // then to talk (with a neutral face, then smiling) so the talking detector and the talking gate can
 // be measured: frames are sent with talk=1 and the page's talking signals.
 const pause = ms => new Promise(r => setTimeout(r, ms));
-const TALK_STEPS = [{ label: "neutral", prompt: "Talk about your day, neutral face" }, { label: "happy", prompt: "Keep talking, now smiling" }];
+const TALK_STEPS = [{ label: "neutral", talk: true, prompt: "Talk about your day, neutral face" },
+                    { label: "happy", talk: true, prompt: "Keep talking, now smiling" },
+                    { label: "neutral", hand: true, prompt: "Chin on your hand, neutral face" }];
 async function runTest() {
   if (test) { test = null; return; }                       // pressing again stops it
   if (!stream) { setStatus("Start the camera first, then start the test.", "err"); return; }
@@ -530,7 +542,7 @@ async function runTest() {
     if (test?.session !== session) break;
     test = { session, label: null, prompt: `Next: ${step.prompt.toLowerCase()}` }; await pause(2500);
     if (test?.session !== session) break;
-    test = { session, label: step.label, talk: true, prompt: step.prompt }; await pause(6000);
+    test = { session, label: step.label, talk: !!step.talk, hand: !!step.hand, prompt: step.prompt }; await pause(6000);
   }
   test = null; $("testBtn").textContent = "Start test";
   loadPeople();
@@ -573,6 +585,7 @@ function draw() {
     if ($("optPoints").checked) {
       ctx.fillStyle = col;
       for (const [x, y] of t.kp) { ctx.beginPath(); ctx.arc(x, y, lw * 1.4, 0, Math.PI * 2); ctx.fill(); }
+      if (t.pose && $("optPose").checked && !t.missed) drawBody(t.pose, col, lw);
     }
     // Name overlaid on the face itself: centred band across the top of the head
     const cx = t.x + t.w / 2;
@@ -619,6 +632,14 @@ function draw() {
   requestAnimationFrame(draw);
 }
 
+// Body lines: shoulders, arms, torso (points in tracker.py's order; only those seen)
+const BONES = [[3, 4], [3, 5], [5, 7], [7, 9], [4, 6], [6, 8], [8, 10], [3, 11], [4, 12], [11, 12]];
+function drawBody(p, col, lw) {
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.globalAlpha *= 0.7; ctx.beginPath();
+  for (const [a, b] of BONES) if (p[a][2] >= 0.5 && p[b][2] >= 0.5) { ctx.moveTo(p[a][0], p[a][1]); ctx.lineTo(p[b][0], p[b][1]); }
+  ctx.stroke(); ctx.restore();
+}
+
 function renderList() {
   const live = tracks.filter(t => t.missed === 0);
   $("count").textContent = live.length;
@@ -631,9 +652,11 @@ function renderList() {
     const xt = exprText(t), xs = xt ? `<span class="${t.expr.state}">${xt}</span> · ` : "";
     const ev = showEv ? (t.expr ? Expression.evidence(t.expr) : t.xt.skip ? `no reading: ${t.xt.skip}` : "") : "";
     const sv = showEv ? Signals.evidence(t.fs, now, voiceFor(t, now), t.talking) : "";
+    const bv = showEv && $("optPose").checked ? Signals.bodyEvidence(t.fs, now) : "";
     return `<li><span class="who${unk ? " unk" : ""}"><span class="sw" style="background:${colorFor(t.name)}"></span>${esc(t.name)}</span>` +
            `<span>${unk ? "" : Math.round(t.sim * 100) + "% · "}${xs}${Math.round(t.tw || t.w)}px${t.missed ? " · lost" : ""}</span></li>` +
-           (ev ? `<li class="evidence">${esc(ev)}</li>` : "") + (sv ? `<li class="evidence">${esc(sv)}</li>` : "");
+           (ev ? `<li class="evidence">${esc(ev)}</li>` : "") + (sv ? `<li class="evidence">${esc(sv)}</li>` : "") +
+           (bv ? `<li class="evidence">body: ${esc(bv)}</li>` : "");
   }).join("");
   $("devices").hidden = !showEv;
 }
@@ -652,7 +675,7 @@ $("optExpr").onchange = $("optCalib").onchange = $("optEvidence").onchange = ren
 $("calibReset").onclick = () => { usualLooks.forget(); renderList(); };
 $("testBtn").onclick = runTest;
 $("optVoice").onchange = () => { if ($("optVoice").checked) startVoice(); else stopVoice(); };
-$("optState").onchange = $("optTalkGate").onchange = renderList;   // takes effect from the next check
+$("optState").onchange = $("optTalkGate").onchange = $("optHandGate").onchange = $("optPose").onchange = renderList;   // from the next check
 $("feelBtn").onclick = openFeel;
 $("feelSave").onclick = saveFeel;
 $("feelSkip").onclick = closeFeel;

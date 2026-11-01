@@ -119,6 +119,7 @@ measured. The [README](../face-recognizer/README.md) ("Other signals") has the d
 | Talking detection and an optional talking gate | `signals.js` (jaw movement plus microphone voice activity); talking steps in the Expression test |
 | Timing: smile rise, symmetry, how long a reading held | `signals.js` |
 | Independent channels: motion, blinks, gaze, webcam pulse, voice | `signals.js`; voice model Wav2Small in `face_id.Voice` |
+| Body posture: head height, shoulders, lean, movement, breathing, hand on face | `signals.js`; MediaPipe pose in `face_id.Faces.poses` |
 | Valence and arousal fitted to the person | `tools/expr_eval.py` → `data/va_fit.json`; "fit" in the evidence |
 | State model instead of voting | `expression.js` (optional; compared with the vote by `expr_eval.py`) |
 | Accuracy per condition | `tools/expr_eval.py` (person, quality, size, head turn, brightness) |
