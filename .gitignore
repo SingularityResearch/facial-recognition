@@ -8,5 +8,3 @@ __pycache__/
 *.tmp.npz
 *.joining
 
-# Rolling labels.json copies made at each start of the labeling tool (recreated automatically)
-face-recognizer/data/backups/
