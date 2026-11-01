@@ -1,0 +1,127 @@
+{
+ "fbe0cb6a4556b715-101-361": {
+  "when": "2026-11-01 01:28",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "sitting"
+    ],
+    "names": [
+     "light-hearted",
+     "Sitting",
+     "Living room",
+     "Room"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "91aab322bedac1c7-886-233": {
+  "when": "2026-11-01 01:28",
+  "suggestions": [
+   {
+    "name": "Michael Shuman",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Michael Shuman (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q1386203",
+     "https://www.imdb.com/name/nm0795836"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Michael Shuman",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q1386203",
+      "https://www.imdb.com/name/nm0795836"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "billboard"
+    ],
+    "names": [
+     "Josh Homme",
+     "Jon Theodore",
+     "Queens of the Stone Age",
+     "Tetris Kelly",
+     "Billboard's on the Record",
+     "Billboard",
+     "Billboard Music Awards",
+     "Stoner rock"
+    ],
+    "pages": [
+     {
+      "title": "Billboard Live From the 2025 AMAs Red Carpet - YouTube",
+      "url": "https://www.youtube.com/watch?v=5yWkfOq1gSU",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Billboard - Facebook",
+      "url": "https://www.facebook.com/Billboard/posts/1473576977976209/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Introducing BillboardTV Tap in for 24/7 programming showcasing ...",
+      "url": "https://www.facebook.com/Billboard/videos/watch-billboardtv-on-samsung-tv-plus/1332602001611812/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Get It Together With Loud Luxury | White Claw x Billboard",
+      "url": "https://www.billboard.com/video/loud-luxury-white-claw-x-billboard/",
+      "domain": "www.billboard.com",
+      "match": "partial"
+     },
+     {
+      "title": "How TV, Social Media, Music Streaming Revived Catalog Music",
+      "url": "https://www.billboard.com/video/how-tv-social-media-music-streaming-revived-catalog-music/",
+      "domain": "www.billboard.com",
+      "match": "partial"
+     },
+     {
+      "title": "Billboard Explains The Billboard Music Awards - YouTube",
+      "url": "https://www.youtube.com/watch?v=kULpq0JU2zs",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Billboard Music Awards 2020: Post Malone, BTS, John Legend ...",
+      "url": "https://www.youtube.com/watch?v=bBEmjTtUl00",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Us | Biography, Music & News | Billboard",
+      "url": "https://www.billboard.com/artist/us/",
+      "domain": "www.billboard.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ }
+}

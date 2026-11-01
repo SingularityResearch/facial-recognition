@@ -188,6 +188,289 @@ def register_faceless(store, scanned_names, by_name):
     return n
 
 
+# --------------------------------------------------------------------------- what a photo says about itself
+TAKEN_NEAR_H = 12        # photos taken within this many hours of each other count as one occasion
+FOLDER_NEAR = 6          # photo without a camera date: this many photos with faces either side in its folder
+CLOSEST = 3              # closest people listed for a face (a hint to you, never a label)
+NS = dict(rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+          mwg="http://www.metadataworkinggroup.com/schemas/regions/",
+          area="http://ns.adobe.com/xmp/sType/Area#",
+          dim="http://ns.adobe.com/xap/1.0/sType/Dimensions#",
+          mpri="http://ns.microsoft.com/photo/1.2/t/RegionInfo#",
+          mpreg="http://ns.microsoft.com/photo/1.2/t/Region#",
+          iptc="http://iptc.org/std/Iptc4xmpExt/2008-02-29/")
+
+
+def _val(el, ns, name):
+    """An XMP property written either as an attribute (here or on a nested rdf:Description) or as an element."""
+    tag = f"{{{NS[ns]}}}{name}"
+    for e in el.iter():
+        v = e.get(tag) if e.tag != tag else e.text
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
+
+
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def xmp_people(xml):
+    """People tags in an XMP packet: face regions (MWG: Lightroom, Picasa, digiKam; iPhones write unnamed ones; Microsoft:
+    Windows Photo Gallery) and plain names (IPTC PersonInImage). Rectangles are normalized top-left
+    [x, y, w, h]; 'frame' says whether they apply to the photo as stored or as displayed (rotated)."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return []
+    out = []
+    for rl in root.iter(f"{{{NS['mwg']}}}Regions"):
+        dims = next(rl.iter(f"{{{NS['mwg']}}}AppliedToDimensions"), None)
+        applied = (_num(_val(dims, "dim", "w")), _num(_val(dims, "dim", "h"))) if dims is not None else None
+        for li in rl.iter(f"{{{NS['rdf']}}}li"):
+            area = next(li.iter(f"{{{NS['mwg']}}}Area"), None)
+            if area is None or (_val(li, "mwg", "Type") or "Face") != "Face" or (_val(area, "area", "unit") or "normalized") != "normalized":
+                continue
+            x, y, w, h = (_num(_val(area, "area", k)) for k in "xywh")
+            if None in (x, y, w, h):
+                continue
+            out.append(dict(name=_val(li, "mwg", "Name"), rect=[x - w / 2, y - h / 2, w, h], kind="mwg", applied=applied))
+    for rl in root.iter(f"{{{NS['mpri']}}}Regions"):
+        for li in rl.iter(f"{{{NS['rdf']}}}li"):
+            r = [_num(v) for v in (_val(li, "mpreg", "Rectangle") or "").split(",")]
+            out.append(dict(name=_val(li, "mpreg", "PersonDisplayName"), kind="mp", applied=None,
+                            rect=r if len(r) == 4 and None not in r else None))
+    for p in root.iter(f"{{{NS['iptc']}}}PersonInImage"):
+        out += [dict(name=li.text.strip(), rect=None, kind="iptc") for li in p.iter(f"{{{NS['rdf']}}}li") if li.text and li.text.strip()]
+    return out
+
+
+def _xmp_packets(data):
+    out, k = [], 0
+    while (k := data.find(b"<x:xmpmeta", k)) >= 0:
+        e = data.find(b"</x:xmpmeta>", k)
+        if e < 0:
+            break
+        out.append(data[k:e + 12])
+        k = e
+    return out
+
+
+def _orient(r, o):
+    """Normalized top-left rect on the photo as stored -> on the photo as displayed (EXIF orientation o)."""
+    x, y, w, h = r
+    return {2: [1 - x - w, y, w, h], 3: [1 - x - w, 1 - y - h, w, h], 4: [x, 1 - y - h, w, h],
+            5: [y, x, h, w], 6: [1 - y - h, x, h, w], 7: [1 - y - h, 1 - x - w, h, w],
+            8: [y, 1 - x - w, h, w]}.get(o, [x, y, w, h])
+
+
+def _iou(a, b):
+    ix = max(0.0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    return inter / (a[2] * a[3] + b[2] * b[3] - inter + 1e-9)
+
+
+def match_regions(regions, boxes):
+    """Pair tagged face regions (pixel boxes) with found faces: greedy by overlap, at least 0.2.
+    Tag regions are drawn looser than the detector's boxes, so a face well inside a region also counts."""
+    pairs = []
+    for a, r in enumerate(regions):
+        for b, f in enumerate(boxes):
+            s = _iou(r, f)
+            cx, cy = f[0] + f[2] / 2, f[1] + f[3] / 2
+            if s < 0.2 and r[0] <= cx <= r[0] + r[2] and r[1] <= cy <= r[1] + r[3] and f[2] * f[3] >= 0.15 * r[2] * r[3]:
+                s = 0.2
+            if s >= 0.2:
+                pairs.append((s, a, b))
+    used_a, used_b, out = set(), set(), {}
+    for s, a, b in sorted(pairs, reverse=True):
+        if a not in used_a and b not in used_b:
+            used_a.add(a), used_b.add(b)
+            out[b] = a
+    return out
+
+
+class PhotoFacts:
+    """What each photo says about itself, read in the background: when the camera took it, and who it
+    is tagged with (photo-app face tags inside the file or in a .xmp sidecar, or a Google Takeout
+    .json). Saved in data/photo_facts.json; a photo is read again only when it, its sidecar files, or
+    the faces found in it change. Nothing here is ever a label by itself.
+    Tag rectangles are taken as applying to the photo as stored (before EXIF rotation), as MWG says:
+    on the rotated iPhone photos here that paired 71 of 76 tag boxes with found faces, against 32 the other way."""
+    FILE = "photo_facts.json"
+
+    def __init__(self, db):
+        self.db = db
+        self.facts = {}                  # photo hash -> {"t": camera time or None, "tags": [...], "faces": {face: name}, "key": ...}
+        self.lock = threading.Lock()
+        self.status = {"running": False, "done": 0, "total": 0, "read": 0}
+        self.version = 0
+        self._dirs = {}
+        self.thread = None
+        idx_of = {f: i for i, f in enumerate(db.store.fid)}
+        for h, f in F.load_json(self.FILE, {}).items():
+            faces = {idx_of[k]: nm for k, nm in f.get("faces", {}).items() if k in idx_of}
+            self.facts[h] = dict(f, faces=faces)
+
+    def save(self):
+        fid = self.db.store.fid
+        with self.lock:
+            out = {h: dict(f, faces={fid[i]: nm for i, nm in f["faces"].items()}) for h, f in self.facts.items() if f.get("key")}
+        F.save_json(self.FILE, out)
+
+    def key(self, h):
+        """What a photo's facts depend on: the file, its sidecar files, and where its faces are."""
+        p = Path(self.db.store.photos[h]["path"])
+        st = p.stat()
+        n = p.name.lower()
+        side = [(k, v.stat().st_mtime) for ext in (".xmp", ".json") for k, v in sorted(self._listing(p.parent, ext).items())
+                if k.startswith(p.stem.lower()) or k.startswith(n[:40])]
+        with self.db.lock:
+            geo = [[round(float(v)) for v in self.db.store.box[i][:4]] for i in self.db.by_photo().get(h, [])]
+        return hashlib.sha1(repr((st.st_size, int(st.st_mtime), side, geo)).encode()).hexdigest()[:16]
+
+    def _fresh(self, h):
+        """Saved facts if nothing they depend on changed, else read the photo again."""
+        try:
+            k = self.key(h)
+        except OSError:
+            return self.facts.get(h) or self._read_safe(h), False
+        with self.lock:
+            f = self.facts.get(h)
+        if f and f.get("key") == k:
+            return f, False
+        f = self._read_safe(h)
+        f["key"] = k
+        return f, True
+
+    def start(self, hashes=None):
+        """Read every photo with faces (or just these), in the background."""
+        with self.db.lock:
+            todo = [h for h in (hashes if hashes is not None else self.db.by_photo())
+                    if self.db.store.photos.get(h, {}).get("path")]
+        if self.thread and self.thread.is_alive():
+            if hashes is None:
+                return
+            self.thread.join()
+        self.thread = threading.Thread(target=self._run, args=(todo,), daemon=True)
+        self.thread.start()
+
+    def _run(self, todo):
+        st = self.status = {"running": True, "done": 0, "total": len(todo), "read": 0}
+        with ThreadPoolExecutor(8) as ex:
+            for h, (f, new) in zip(todo, ex.map(self._fresh, todo)):
+                with self.lock:
+                    self.facts[h] = f
+                st["done"] += 1
+                st["read"] += new
+        if st["read"]:
+            self.save()
+        self.version += 1
+        st["running"] = False
+
+    def get(self, h):
+        """Facts for one photo, reading it now if the background pass hasn't yet."""
+        with self.lock:
+            f = self.facts.get(h)
+        if f is None:
+            f = self._read_safe(h)
+            with self.lock:
+                self.facts[h] = f
+        return f
+
+    def items(self):
+        with self.lock:
+            return list(self.facts.items())
+
+    def _read_safe(self, h):
+        try:
+            return self.read(h)
+        except Exception:                # an unreadable photo just has no facts
+            return {"t": None, "tags": [], "faces": {}}
+
+    def _listing(self, folder, ext):
+        k = (folder, ext)
+        if k not in self._dirs:
+            try:
+                self._dirs[k] = {p.name.lower(): p for p in Path(folder).iterdir() if p.suffix.lower() == ext}
+            except OSError:
+                self._dirs[k] = {}
+        return self._dirs[k]
+
+    def read(self, h):
+        t, tags = self.tags(h)
+        named = [r for r in tags if r.get("name")]
+        with self.db.lock:
+            idx = self.db.by_photo().get(h, [])
+            boxes = [[float(v) for v in self.db.store.box[i][:4]] for i in idx]
+        regions = [r for r in named if r.get("box")]
+        pairs = match_regions([r["box"] for r in regions], boxes)
+        return {"t": t, "tags": sorted({r["name"] for r in named}), "faces": {idx[b]: regions[a]["name"] for b, a in pairs.items()}}
+
+    def tags(self, h):
+        """(camera time, people tags with 'box' in face-box pixels where the tag has a rectangle)."""
+        from PIL import Image
+        p = Path(self.db.store.photos[h]["path"])
+        if p.suffix.lower() in (".heic", ".heif"):
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        with Image.open(p) as im:
+            size, ex = im.size, im.getexif()
+        o = ex.get(0x0112, 1)
+        d = ex.get_ifd(0x8769).get(36867) or ex.get(306)
+        try:
+            t = time.mktime(time.strptime(str(d)[:19], "%Y:%m:%d %H:%M:%S")) if d else None
+        except ValueError:
+            t = None
+        with open(p, "rb") as fh:
+            packets = _xmp_packets(fh.read(1 << 20))
+        side = self._listing(p.parent, ".xmp")
+        for k in (p.stem.lower() + ".xmp", p.name.lower() + ".xmp"):
+            if k in side:
+                packets += _xmp_packets(side[k].read_bytes())
+        tags = [r for x in packets for r in xmp_people(x)]
+        tags += self._takeout(p)
+
+        # tag rectangles -> boxes on the photo the faces were found in (upright, shrunk to MAX_SIDE)
+        W, H = size
+        Wd, Hd = (H, W) if o in (5, 6, 7, 8) else (W, H)
+        s = min(1.0, F.MAX_SIDE / max(W, H))
+        sw, sh = round(Wd * s), round(Hd * s)
+        for r in tags:
+            if r.get("rect"):
+                a = r.get("applied")
+                displayed = r["kind"] == "mp" or (a and o in (5, 6, 7, 8) and (round(a[0] or 0), round(a[1] or 0)) == (H, W))
+                x, y, w, hh = r["rect"] if displayed else _orient(r["rect"], o)
+                r["box"] = [x * sw, y * sh, w * sw, hh * sh]
+        return t, tags
+
+    def _takeout(self, p):
+        """People named in a Google Takeout sidecar (photo.jpg.json, photo.jpg.supplemental-metadata.json;
+        long file names are cut short in the export, so other .json files starting the same way are checked)."""
+        js = self._listing(p.parent, ".json")
+        if not js:
+            return []
+        n = p.name.lower()
+        exact = [js[k] for k in (n + ".json", n + ".supplemental-metadata.json") if k in js]
+        cands = exact + [v for k, v in js.items() if k.startswith(n[:40]) and v not in exact][:6]
+        for c in cands:
+            try:
+                j = json.loads(c.read_text("utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(j, dict) or not (c in exact or (j.get("title") or "").lower() == n):
+                continue
+            if isinstance(j.get("people"), list):
+                return [dict(name=str(x["name"]).strip(), rect=None, kind="takeout")
+                        for x in j["people"] if isinstance(x, dict) and str(x.get("name", "")).strip()]
+        return []
+
+
 # --------------------------------------------------------------------------- engine
 class LabelDB:
     """All faces + their labels. Thread-safe: the labeling page's requests and a background photo
@@ -206,6 +489,7 @@ class LabelDB:
         self.groups = None               # cached groups of unknown faces (lists of face indices)
         self._grouped = set()
         self._fp, self._fp_keys = None, []
+        self.facts = PhotoFacts(self)    # camera dates and people tags; start() reads them in the background
         if backup:
             self.backup()
 
@@ -395,6 +679,77 @@ class LabelDB:
                 out.setdefault(r["n"], []).append(i)
         return out
 
+    # ----- hints from the photo itself
+    def tag_names(self, h, f=None):
+        """{face: name} from the photo's people tags: tag rectangles that sit on a face, plus a tag
+        without a rectangle when it is the only name left and only one face is still unnamed."""
+        f = f or self.facts.get(h)
+        out = dict(f["faces"])
+        idx = self.by_photo().get(h, [])
+        left = set(f["tags"]) - set(out.values()) - {self.name(i) for i in idx}
+        open_ = [i for i in idx if i not in out and not self.name(i)]
+        if len(left) == 1 and len(open_) == 1:
+            out[open_[0]] = left.pop()
+        return out
+
+    def tagged(self, show_low=False):
+        """Unnamed faces the photo's own people tags name, grouped by that name."""
+        key = ("tagged", show_low, self.facts.version, len(self.facts.facts))
+        if key not in self._cache:
+            out = {}
+            for h, f in self.facts.items():
+                for i, nm in self.tag_names(h, f).items():
+                    if not self.name(i) and nm not in self.rec(i).get("not", ()) and not self.hidden(i, show_low):
+                        out.setdefault(nm, []).append([i, self.q(i)])
+            known = set(self.people_faces())
+            self._cache[key] = sorted(({"name": k, "faces": v, "known": k in known} for k, v in out.items()),
+                                      key=lambda g: -len(g["faces"]))
+        return self._cache[key]
+
+    def occasion(self, h):
+        """Named people in photos from the same occasion: taken within TAKEN_NEAR_H hours (camera date),
+        else the photos next to it in its folder."""
+        bp, f = self.by_photo(), self.facts.get(h)
+        if f["t"]:
+            near = sorted((abs(g["t"] - f["t"]), k) for k, g in self.facts.items()
+                          if k != h and k in bp and g.get("t") and abs(g["t"] - f["t"]) <= TAKEN_NEAR_H * 3600)
+            near, how = [k for _, k in near[:40]], f"taken within {TAKEN_NEAR_H} hours of it"
+        else:
+            if self._cache.get("fold_n") != self.n:
+                fold = {}
+                for k in bp:
+                    p = self.store.photos.get(k, {}).get("path")
+                    if p:
+                        fold.setdefault(str(Path(p).parent), []).append((Path(p).name.lower(), k))
+                self._cache["fold"] = {d: [k for _, k in sorted(v)] for d, v in fold.items()}
+                self._cache["fold_n"] = self.n
+            p = self.store.photos.get(h, {}).get("path")
+            row = self._cache["fold"].get(str(Path(p).parent), []) if p else []
+            k = row.index(h) if h in row else -1
+            near = [x for x in row[max(0, k - FOLDER_NEAR):k + FOLDER_NEAR + 1] if x != h] if k >= 0 else []
+            how = "next to it in its folder"
+        count, example = {}, {}
+        for k in near:
+            for j in bp[k]:
+                nm = self.name(j)
+                if nm and nm != IGNORE:
+                    count[nm] = count.get(nm, 0) + 1
+                    example.setdefault(nm, j)
+        people = sorted(({"name": nm, "n": c, "i": example[nm]} for nm, c in count.items()), key=lambda x: -x["n"])
+        return {"how": how, "photos": len(near), "people": people}
+
+    def hints(self, i):
+        """Everything that might tell you who face i is: the closest people (however weak), the photo's
+        people tags, and who else was photographed at the same occasion."""
+        h = self.store.photo[i]
+        closest = []
+        if not self.name(i):
+            names, P = self.score([i])
+            closest = [{"name": names[j], "s": round(float(P[0, j]), 3)} for j in np.argsort(-P[0])
+                       if names[j] != IGNORE and P[0, j] > 0][:CLOSEST]
+        f = self.facts.get(h)
+        return {"closest": closest, "tag": self.tag_names(h, f).get(i), "tags": f["tags"], "occasion": self.occasion(h)}
+
     def checks(self):
         """Possible mistakes and gaps:
         mislabeled  named faces that look more like someone else, or not like the rest of their person
@@ -442,6 +797,7 @@ class LabelDB:
         return {"faces": self.n, "photos": len(self.store.photos), "suggested": sugg, "unknown": unk,
                 "hiddenLow": low, "auto": sum(1 for r in self.labels.values() if r.get("by") == "auto" and r.get("n")),
                 "checks": len(chk["mislabeled"]) + len(chk["few"]), "people": people,
+                "tagged": sum(len(g["faces"]) for g in self.tagged()), "facts": self.facts.status,
                 "canUndo": bool(self.undo_stack), "undoText": self.undo_stack[-1]["text"] if self.undo_stack else "",
                 "settings": {"match": MATCH, "auto": AUTO, "margin": MARGIN, "qEnroll": F.Q_ENROLL,
                              "model": self.store.model, "folders": settings()["folders"]}}
@@ -641,6 +997,7 @@ class Importer:
         st = self.status = dict(running=True, folder=str(folder), stage="Loading the face models", total=0, done=0,
                                 new=0, known=0, duplicates=0, faces=0, auto=0, errors=0, started=time.time(), error=None)
         pending = []                              # new faces not yet saved and auto-named
+        added = []                                # new photos with faces: their dates and people tags are read after
         try:
             if self.faces is None:
                 self.faces = F.Faces()
@@ -712,6 +1069,8 @@ class Importer:
                                 for row, emb, crop, q in found:
                                     pending.append(store.add(h, f.name, row, emb, crop, q))
                                 store.photos[h] = dict(meta, fp=fp, faces=len(found), name=f.name)
+                                if found:
+                                    added.append(h)
                                 db._fp = None
                                 db.changed()
                             st["new"] += 1
@@ -734,6 +1093,8 @@ class Importer:
             with db.lock:
                 db.groups = None                  # regroup unknown faces with the new ones
                 db.changed()
+            if added:
+                db.facts.start(added)
             st["running"] = False
             st["elapsed"] = round(time.time() - st["started"], 1)
 

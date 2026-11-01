@@ -115,13 +115,14 @@
 
   /* ---------- toast */
   #toast { position: fixed; left: 18px; bottom: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 9px 14px;
-           display: none; gap: 12px; align-items: center; box-shadow: 0 6px 20px rgb(0 0 0 / .14); z-index: 31; max-width: min(460px, calc(100vw - 36px)); }
+           display: none; gap: 12px; align-items: center; box-shadow: 0 6px 20px rgb(0 0 0 / .14); z-index: 61; max-width: min(460px, calc(100vw - 36px)); }
   #toast.on { display: flex; }
   #toast.err { border-color: var(--bad); color: var(--bad); }
   #toast button { border: 0; background: transparent; color: var(--accent); font-weight: 650; cursor: pointer; padding: 2px 4px; }
 
   /* ---------- name picker */
-  .modal { position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: none; place-items: start center; padding-top: 14vh; z-index: 40; }
+  .modal { position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: none; place-items: start center; padding-top: 14vh; z-index: 60; }
+  #namer { z-index: 70; }       /* naming from the web-search results opens over that dialog */
   .modal.on { display: grid; }
   .picker { width: min(420px, calc(100vw - 32px)); background: var(--panel); border-radius: 14px; box-shadow: 0 18px 50px rgb(0 0 0 / .3); overflow: hidden; }
   .picker .ttl { padding: 12px 16px 0; color: var(--muted); font-size: 13px; }
@@ -154,6 +155,26 @@
   .side .who { font-size: 20px; font-weight: 650; }
   .side .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
   .side .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sechead .newp { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+  .side .clue { display: flex; flex-direction: column; gap: 6px; }
+  .side .clue h4 { margin: 0; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .side .clue .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg); }
+  .side .clue .chip img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; margin-left: -6px; }
+  .side .clue .chip small { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .side .clue .see { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 13px; }
+  .side .clue .see:hover { color: var(--fg); }
+  .wssug { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .wssug .acts { align-items: center; }
+  .lvl { font-size: 12px; font-weight: 650; border-radius: 999px; padding: 1px 8px; margin-left: 6px; white-space: nowrap; }
+  .lvl-very-high, .lvl-high { background: var(--accent); color: var(--accent-ink); }
+  .lvl-medium { border: 1px solid var(--accent); color: var(--accent); }
+  .lvl-low { border: 1px solid var(--line); color: var(--muted); }
+  #wserr { color: var(--bad); margin: 0; }
+  #wsres { display: flex; flex-direction: column; gap: 8px; }
+  #wsres:empty { display: none; }
+  #wsres ul { margin: 0; padding-left: 18px; font-size: 13px; max-height: 140px; overflow-y: auto; }
+  #wsres a { color: var(--accent); overflow-wrap: anywhere; }
+  #wsres small { color: var(--muted); }
   .side .keys { color: var(--muted); font-size: 12.5px; line-height: 1.9; margin-top: auto; }
   .navbtn { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 64px; border: 0; border-radius: 10px; background: rgb(255 255 255 / .12); color: #fff; font-size: 22px; cursor: pointer; }
   .navbtn:hover { background: rgb(255 255 255 / .22); }
@@ -174,6 +195,7 @@
     <h2>To review</h2>
     <button class="nav" data-v="suggested">Suggestions <span class="n" id="n-suggested"></span></button>
     <button class="nav" data-v="unknown">New faces <span class="n" id="n-unknown"></span></button>
+    <button class="nav" data-v="tagged">From photo tags <span class="n" id="n-tagged"></span></button>
     <button class="nav" data-v="auto">Named automatically <span class="n" id="n-auto"></span></button>
     <button class="nav" data-v="checks">Checks <span class="n" id="n-checks"></span></button>
     <h2>People</h2>
@@ -213,6 +235,23 @@
   </form>
 </div></div>
 
+<div class="modal" id="websearch"><div class="picker" role="dialog" aria-label="Web search">
+  <div class="form">
+    <b>Web search</b>
+    <div id="wsres" aria-live="polite"></div>
+    <p id="wserr" role="alert"></p>
+    <details id="wsmore"><summary>Settings and other ways to search</summary>
+      <p class="meta">Web search sends this face to Amazon (celebrity recognition) and this photo to Google (pages with the same picture), both US companies, and keeps English results from US sites only.
+        The pictures leave this computer and may be kept by them. Each service stops itself before $10 a month.</p>
+      <div class="acts"><button type="button" class="btn small" id="wslens" title="Copies the face and opens Google Images: click the camera icon there and press Ctrl+V">Copy face, open Google Lens</button>
+        <button type="button" class="btn small" id="wssave">Save face picture</button></div>
+      <p class="meta" id="wskeys"></p>
+      <div class="acts"><input type="password" id="wskeyin" autocomplete="off" placeholder="Google Cloud Vision API key" aria-label="Google Cloud Vision API key" style="flex:1">
+        <button type="button" class="btn small" id="wskeysave">Save key</button></div></details>
+    <div class="acts"><button type="button" class="btn" id="wscancel">Close</button><button type="button" class="btn primary" id="wsgo">Search again</button></div>
+  </div>
+</div></div>
+
 <div id="viewer" role="dialog" aria-label="Photo">
   <div class="stage"><div class="wrap" id="vwrap"></div><button class="navbtn prev" id="vprev" aria-label="Previous face">‹</button><button class="navbtn next" id="vnext" aria-label="Next face">›</button></div>
   <div class="side" id="vside"></div>
@@ -250,6 +289,7 @@ async function loadSummary() {
   if (SUM.faces !== FIDS.length) FIDS = (await get("/api/fids")).fids;
   const set = (id, n, hot) => { const e = $("#n-" + id); e.textContent = n ? n.toLocaleString() : ""; e.classList.toggle("hot", !!hot && n > 0); };
   set("suggested", SUM.suggested, true); set("unknown", SUM.unknown, true); set("auto", SUM.auto); set("checks", SUM.checks);
+  set("tagged", SUM.tagged, true);
   const ppl = $("#people");
   ppl.innerHTML = SUM.people.map(p => `<button class="nav" data-person="${esc(p.name)}">
       <img src="${thumb(p.cover)}" alt="">${esc(label(p.name))}
@@ -285,6 +325,7 @@ async function render(top) {
     if (view.v === "suggested") html = viewSuggested(await get(`/api/suggested?low=${low}`));
     else if (view.v === "unknown") html = viewUnknown(await get(`/api/unknown?low=${low}${view.regroup ? "&regroup=1" : ""}`));
     else if (view.v === "auto") html = viewAuto(await get("/api/auto"));
+    else if (view.v === "tagged") html = viewTagged(await get(`/api/tagged?low=${low}`));
     else if (view.v === "checks") html = viewChecks(await get("/api/checks"));
     else html = viewPerson(await get(`/api/person?name=${encodeURIComponent(view.name)}`));
   } catch (e) { html = `<div class="empty"><b>Couldn't load this view</b>${esc(e.message)}. Is the Face Labels window still open?</div>`; }
@@ -350,6 +391,23 @@ function viewSuggested(d) {
   return h;
 }
 
+function viewTagged(d) {
+  SECTIONS.clear();
+  const total = d.groups.reduce((a, g) => a + g.faces.length, 0), st = SUM.facts || {};
+  let h = head("From photo tags", total ? plural(total, "face") : null,
+    `Faces the photos themselves name: face tags saved by photo apps (Windows Photo Gallery, Lightroom, Picasa, digiKam) or a Google Takeout <code>.json</code> next to the photo. Check them like suggestions: select any that are wrong and press <kbd>R</kbd>, then accept the rest. If a tag spells a name differently from yours, select the faces and press <kbd>N</kbd> instead.` +
+    (st.running ? ` <b>Still reading photo tags: ${st.done.toLocaleString()} of ${st.total.toLocaleString()} photos.</b>` : ""));
+  if (!d.groups.length) return h + `<div class="empty"><b>No tagged faces waiting</b>Add an export from a photo app that saves people tags (for example a Google Takeout of Google Photos, or photos tagged in Lightroom or digiKam) with <b>Add photos</b>.</div>`;
+  for (const g of d.groups) {
+    const n = g.faces.length;
+    h += `<section class="sec" data-sec="${esc(g.name)}"><div class="sechead">${avatar(g.name)}<h3>${esc(g.name)}</h3>${g.known ? "" : `<span class="newp">new person</span>`}<span class="cnt">${n}</span>
+      <div class="acts"><button class="btn small" data-act="reject-sel">Not ${esc(g.name)}</button>
+      <button class="btn small primary" data-act="accept-rest" title="Accept every face here that isn't selected (A)">Accept ${n === 1 ? "" : "all "}${n}</button></div></div>
+      ${grid(g.faces.map(f => ({ i: f[0], q: f[1] })), g.name)}</section>`;
+  }
+  return h;
+}
+
 function viewAuto(d) {
   SECTIONS.clear();
   const total = d.groups.reduce((a, g) => a + g.faces.length, 0);
@@ -381,7 +439,7 @@ function viewUnknown(d) {
   }
   if (d.singles.length) {
     h += `<section class="sec" data-sec="singles"><div class="sechead"><h3>Seen once</h3><span class="cnt">${d.singles.length}</span>
-      <div class="acts" style="color:var(--muted);font-size:13px">Select faces, then <kbd>N</kbd> to name or <kbd>X</kbd> to ignore</div></div>
+      <div class="acts" style="color:var(--muted);font-size:13px">Select faces, then <kbd>N</kbd> to name or <kbd>X</kbd> to ignore. Open one (double-click) for clues to who it is.</div></div>
       ${grid(d.singles.map(f => ({ i: f[0], q: f[1] })), "singles")}</section>`;
   }
   return h;
@@ -498,7 +556,7 @@ function selbar() {
   if (!sel.size) { bar.classList.remove("on"); return; }
   const secs = [...selSections()], one = secs.length === 1 ? personSec(secs[0]) : null;
   const named = secs.every(personSec);
-  const inSugg = view.v === "suggested";
+  const inSugg = view.v === "suggested" || view.v === "tagged";
   bar.innerHTML = `<span class="count">${plural(sel.size, "face")}</span>
     ${inSugg ? `<button class="go" data-k="a">Accept<kbd>A</kbd></button>` : ""}
     <button data-k="n">Name…<kbd>N</kbd></button>
@@ -520,7 +578,7 @@ async function key(k) {
     const n = await pickName(`Name ${plural(faces.length, "face")}`);
     if (n) act(n === IGN ? "ignore" : "name", faces, n);
   }
-  if (k === "a" && view.v === "suggested") {      // accept each selected face as its section's person
+  if (k === "a" && (view.v === "suggested" || view.v === "tagged")) {      // accept each selected face as its section's person
     const by = groupBy(faces);
     for (const [s, f] of by) await act(s === IGN ? "ignore" : "name", f, s, by.size > 1);
     if (by.size > 1) done(`Accepted ${plural(faces.length, "face")}`);
@@ -578,11 +636,12 @@ async function undo() {
 
 // ------------------------------------------------------------------ name picker
 let pickResolve = null, pickItems = [], pickIdx = 0;
-function pickName(title) {
+function pickName(title, start = "") {
   $("#namer .ttl").textContent = title;
-  $("#nameinput").value = "";
+  $("#nameinput").value = start;
   $("#namer").classList.add("on");
   $("#nameinput").focus();
+  $("#nameinput").select();
   fillPicker();
   return new Promise(r => pickResolve = r);
 }
@@ -634,7 +693,7 @@ $("#renform").onsubmit = async e => {
 };
 
 // ------------------------------------------------------------------ photo viewer
-let vIndex = null;
+let vIndex = null, vInfo = null;
 async function openPhoto(i) {
   vIndex = i;
   $("#viewer").classList.add("on");
@@ -659,6 +718,7 @@ async function openPhoto(i) {
     }
   };
   const others = (info?.faces || []).filter(f => f.i !== i);
+  vInfo = info;
   $("#vside").innerHTML = `
     <div><div class="who">${nm ? esc(label(nm)) : "Not named yet"}</div>
       <div class="meta">${info?.date ? esc(info.date) + "<br>" : ""}${esc(info?.path || "")}</div></div>
@@ -666,12 +726,117 @@ async function openPhoto(i) {
       ${nm && nm !== IGN ? `<button class="btn" data-v="r">Not ${esc(nm)} <kbd>R</kbd></button>` : ""}
       ${nm !== IGN ? `<button class="btn" data-v="x">Ignore <kbd>X</kbd></button>` : ""}</div>
     ${others.length ? `<div class="meta">Also in this photo: ${others.map(f => esc(f.name ? label(f.name) : "someone not named yet")).join(", ")}. Click a box to switch to that face.</div>` : ""}
+    ${nm ? "" : clues(info?.hints)}
+    <div class="acts"><button class="btn" id="wsopen" title="Sends this face to Amazon and this photo to Google, and suggests who it is">Web search</button></div>
     <div class="keys"><kbd>←</kbd> <kbd>→</kbd> previous / next face<br><kbd>Esc</kbd> close</div>`;
   $("#vside").querySelectorAll("[data-v]").forEach(b => b.onclick = () => viewerKey(b.dataset.v));
+  $("#vside").querySelectorAll("[data-nm]").forEach(b => b.onclick = async () => { await act("name", [i], b.dataset.nm); openPhoto(i); });
+  $("#vside").querySelectorAll("[data-see]").forEach(b => b.onclick = () => openPhoto(+b.dataset.see));
+  $("#wsopen").onclick = () => { $("#websearch").classList.add("on"); webSearch(false); };
   const k = order.indexOf(i);
   $("#vprev").style.visibility = k > 0 ? "visible" : "hidden";
   $("#vnext").style.visibility = k >= 0 && k < order.length - 1 ? "visible" : "hidden";
 }
+// clues to who an unnamed face is; a chip names the face (Z undoes), ⤢ opens that person's face from the occasion
+function clues(h) {
+  if (!h) return "";
+  const chip = (n, extra) => `<button class="chip" data-nm="${esc(n)}" title="Name this face ${esc(n)}">${avatar(n)}${esc(n)}${extra || ""}</button>`;
+  let out = "";
+  if (h.tag) out += `<div class="clue"><h4>The photo's own tags</h4><div class="chips">${chip(h.tag)}</div></div>`;
+  else if (h.tags.length) out += `<div class="clue"><h4>The photo is tagged with</h4><div class="chips">${h.tags.map(n => chip(n)).join("")}</div></div>`;
+  const web = h.web;
+  if (web) out += `<div class="clue"><h4>Web search (${esc(web.when)})</h4>${web.suggestions.length
+    ? `<div class="chips">${web.suggestions.map(s => chip(s.name, ` <small>${esc(s.level)}</small>`)).join("")}</div>`
+    : `<div class="meta">No suggestions found.</div>`}</div>`;
+  if (h.closest.length) out += `<div class="clue"><h4>Closest people (weak guesses)</h4><div class="chips">${h.closest.map(c => chip(c.name, ` <small>${c.s.toFixed(2)}</small>`)).join("")}</div></div>`;
+  const o = h.occasion;
+  if (o.people.length) out += `<div class="clue"><h4>Same occasion</h4><div class="meta">Named people in ${plural(o.photos, "photo")} ${esc(o.how)}:</div>
+    <div class="chips">${o.people.slice(0, 8).map(p => `<span>${chip(p.name, ` <small>×${p.n}</small>`)}<button class="see" data-see="${p.i}" title="See ${esc(p.name)} in that photo">⤢</button></span>`).join("")}</div></div>`;
+  else if (o.photos) out += `<div class="clue"><h4>Same occasion</h4><div class="meta">Nobody is named yet in the ${plural(o.photos, "photo")} ${esc(o.how)}.</div></div>`;
+  return out;
+}
+
+// Web search: the server sends the face to Amazon and the photo to Google (websearch.py) and combines what
+// they say into suggestions with a confidence level. Runs when you click Web search.
+function wsPicture(what) {
+  return new Promise((res, rej) => {
+    const c = document.createElement("canvas"), img = $("#vimg"), me = vInfo?.faces.find(f => f.i === vIndex);
+    const draw = (src, x, y, w, h, k) => { c.width = Math.round(w * k); c.height = Math.round(h * k);
+      c.getContext("2d").drawImage(src, x, y, w, h, 0, 0, c.width, c.height); c.toBlob(b => b ? res(b) : rej(new Error("no picture")), "image/jpeg", 0.92); };
+    if (!img || !img.naturalWidth) {                  // original photo gone: the stored face is all there is
+      const t = new Image(); t.onload = () => draw(t, 0, 0, t.naturalWidth, t.naturalHeight, 1); t.onerror = () => rej(new Error("no picture")); t.src = thumb(vIndex); return;
+    }
+    if (what === "photo" || !me) return draw(img, 0, 0, img.naturalWidth, img.naturalHeight, 1);
+    const [bx, by, bw, bh] = me.box, m = 0.5;          // the face with some hair, chin and background around it
+    const x = Math.max(0, bx - bw * m), y = Math.max(0, by - bh * m);
+    const w = Math.min(img.naturalWidth, bx + bw * (1 + m)) - x, h = Math.min(img.naturalHeight, by + bh * (1 + m)) - y;
+    draw(img, x, y, w, h, Math.max(1, 400 / Math.max(w, h)));
+  });
+}
+// the clipboard takes PNG only
+const toPng = jpg => new Promise((res, rej) => {
+  const im = new Image();
+  im.onload = () => { const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
+    c.getContext("2d").drawImage(im, 0, 0); URL.revokeObjectURL(im.src); c.toBlob(b => b ? res(b) : rej(new Error("no picture")), "image/png"); };
+  im.onerror = rej; im.src = URL.createObjectURL(jpg);
+});
+const LEVEL_TEXT = { "very high": "Very high confidence", high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
+async function webSearch(refresh) {
+  const i = vIndex, res = $("#wsres"), go = $("#wsgo");
+  $("#wserr").textContent = ""; go.disabled = true;
+  res.innerHTML = `<p class="meta" style="margin:0">Searching…</p>`;
+  showServices();
+  try {
+    const r = await post("/api/websearch", { face: i, refresh });
+    if (vIndex !== i) return;
+    const s = r.suggestions;
+    res.innerHTML = (s.length
+      ? `<div><b>${s.length === 1 ? "Suggestion" : "Suggestions"}</b></div>` + s.map(x => `<div class="wssug">
+          <div><b>${esc(x.name)}</b> <span class="lvl lvl-${x.level.replace(" ", "-")}">${LEVEL_TEXT[x.level]}</span></div>
+          <div class="meta">${x.why.map(esc).join(". ")}.</div>
+          <div class="acts"><button class="btn small primary" data-tag="${esc(x.name)}">Name this face ${esc(x.name)}</button>
+            ${x.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(new URL(u).hostname.replace(/^www\./, ""))} ↗</a>`).join(" ")}</div></div>`).join("")
+      : `<div><b>No suggestions found.</b></div><div class="meta">${r.checked.length ? "Checked: " + r.checked.map(esc).join("; ") + "." : ""}
+          Amazon only knows well-known people, and Google only helps when this same picture is posted online.</div>`) +
+      (r.cached ? `<div><small>Saved answer from your search on ${esc(r.when)}: nothing was sent again. <b>Search again</b> asks anew.</small></div>` : "") +
+      (r.cached ? "" : `<div><small>This month: ${Object.entries(r.usage).map(([k, u]) => `${k === "vision" ? "Google" : "Amazon"} ${u.used.toLocaleString()} of ${u.cap.toLocaleString()}`).join(", ")} searches (each stops before $10).</small></div>`);
+    if (r.errors.length) $("#wserr").textContent = r.errors.join("; ");
+    res.querySelectorAll("[data-tag]").forEach(b => b.onclick = async () => {
+      const n = await pickName("Name this face", b.dataset.tag);
+      if (n) { $("#websearch").classList.remove("on"); await act(n === IGN ? "ignore" : "name", [i], n); openPhoto(i); }
+    });
+  } catch (e) { res.innerHTML = `<div><b>Web search didn't work.</b></div>`; $("#wserr").textContent = e.message; }
+  finally { go.disabled = false; }
+}
+$("#wsgo").onclick = () => webSearch(true);
+async function showServices() {
+  const r = await get("/api/websearch/key").catch(() => null);
+  if (r) $("#wskeys").textContent = `Amazon: ${r.services.rekognition ? "set up" : "not set up"}. Google: ${r.services.vision ? "key saved (paste a new one to replace it, or save empty to remove it)" : "no key"}.`;
+}
+// Google Lens only accepts pictures from its own page: copy the face (while this page has focus), then open it
+$("#wslens").onclick = async () => {
+  const png = wsPicture("face").then(toPng);
+  const copied = navigator.clipboard && window.ClipboardItem
+    ? navigator.clipboard.write([new ClipboardItem({ "image/png": png })]) : Promise.reject(new Error("no clipboard"));
+  const ok = await copied.then(() => true, () => false);
+  window.open("https://images.google.com/?hl=en&gl=us", "_blank", "noopener");
+  $("#wserr").textContent = ok ? "" : "Couldn't copy the face: use Save face picture and drag the file onto the camera icon.";
+};
+$("#wskeysave").onclick = async () => {
+  try { await post("/api/websearch/key", { key: $("#wskeyin").value }); $("#wskeyin").value = ""; showServices(); }
+  catch (e) { $("#wserr").textContent = e.message; }
+};
+$("#wssave").onclick = async () => {
+  try {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await wsPicture("face"));
+    a.download = `face-${vIndex}.jpg`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) { $("#wserr").textContent = "Couldn't make the picture: " + e.message; }
+};
+$("#wscancel").onclick = () => $("#websearch").classList.remove("on");
+$("#websearch").onclick = e => { if (e.target.id === "websearch") $("#websearch").classList.remove("on"); };
+
 function closePhoto() { $("#viewer").classList.remove("on"); vIndex = null; }
 function stepPhoto(d) { const k = order.indexOf(vIndex); if (k >= 0 && order[k + d] != null) openPhoto(order[k + d]); }
 async function viewerKey(k) {
@@ -745,6 +910,7 @@ $("#toast .undo").onclick = () => { $("#toast").classList.remove("on"); undo(); 
 addEventListener("keydown", e => {
   if (e.target.matches("input, textarea") || e.ctrlKey && e.key !== "z" || e.altKey || e.metaKey) return;
   const k = e.key.toLowerCase();
+  if ($("#websearch").classList.contains("on")) { if (k === "escape") $("#websearch").classList.remove("on"); return; }
   if ($("#viewer").classList.contains("on")) {
     if (k === "escape") closePhoto();
     else if (k === "arrowleft") stepPhoto(-1);

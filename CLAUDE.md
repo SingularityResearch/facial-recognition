@@ -2,7 +2,8 @@
 
 Local face recognition for a USB webcam: learn specific people from a photo library, name/ignore faces
 in a labeling tool, and show names + match confidence (+ optional expression) on faces live in the
-browser. Everything runs on this machine; no data leaves it.
+browser. Everything runs on this machine; no data leaves it, except a face or photo the owner sends
+on purpose with the labeling tool's **Web search** (face to Amazon, photo to Google; never automatic).
 
 Goals, key decisions and research value: [`README.md`](README.md).
 Full background, history, measured tuning values and gotchas: **see [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).**
@@ -17,7 +18,8 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
 - `face-recognizer/` — the Python project. All programs share `face-recognizer/data/`:
   - `face_id.py` — core library + CLI (`scan`, `cluster`, `name`, `people`, `recognize`, `reembed`, `migrate`).
   - `labels.py` — labeling engine: per-face labels (`LabelDB`), background photo `Importer`,
-    auto-naming, duplicate-photo detection, undo history.
+    auto-naming, duplicate-photo detection, undo history, `PhotoFacts` (camera dates + people tags, saved in `data/photo_facts.json`)
+    and clues for unnamed faces (`hints`: closest people, photo tags, same occasion).
   - `label_tool.py` + `label_ui.html` / `label.bat` — labeling web app on `http://127.0.0.1:8765`.
     Chris calls this "the recognizer".
   - `tracker.py` + `tracker_ui.html` / `recognize.bat` — live tracker on `http://127.0.0.1:8766`.
@@ -26,6 +28,7 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
     each person's normal for every signal (`Baselines`, alone and in company),
     feeling-report summaries, fitted valence/arousal (browser; served by `tracker.py`; tests in `tests/`).
+  - `websearch.py` — the labeling tool's **Web search**: Amazon Rekognition celebrity recognition + Google Cloud Vision web detection, combined into suggestions with a confidence level (on click only; US services, English results, each capped under $10/month; keys in `%APPDATA%\FaceLabels`, never in the repo).
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
   - `models/` — YuNet (detect), ArcFace R50 (recognize; also shipped split as `.part0`–`.part8`, rejoined
@@ -33,7 +36,7 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     `npu/` (static ArcFace + VitisAI config/cache), `face_landmarker.task` (MediaPipe blendshape cues, optional),
     `wav2small.onnx` (voice arousal/dominance/valence, optional; made by `tools/get_wav2small.py`),
     `pose_landmarker_lite.task` (MediaPipe body posture, optional).
-  - `tools/` — `eval_models.py`, `hw_bench.py`, `expr_check.py`, `expr_eval.py`, `get_adaface.py`, `get_wav2small.py`, `import_bench.py`.
+  - `tools/` — `eval_models.py`, `hw_bench.py`, `expr_check.py`, `expr_eval.py`, `get_adaface.py`, `get_wav2small.py`, `import_bench.py`, `websearch_check.py`.
 
 ## Running
 

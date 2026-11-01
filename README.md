@@ -20,7 +20,7 @@ Everything runs on one Windows PC. No photos, video, audio or face data leave th
 | Part | What it does | Start it |
 |---|---|---|
 | [face-recognizer/](face-recognizer/README.md) | The Python project: photo import, face recognition, labeling, live tracker, measurement tools | `face-recognizer\setup.bat` once, then the two apps below |
-| Labeling tool (`label_tool.py`) | Add photos, confirm suggested names, name new people, fix mistakes | `face-recognizer\label.bat` → http://127.0.0.1:8765 |
+| Labeling tool (`label_tool.py`) | Add photos, confirm suggested names, name new people, fix mistakes; clues for unknown faces (closest people, photo tags, same occasion) and one-click **Web search** | `face-recognizer\label.bat` → http://127.0.0.1:8765 |
 | Live tracker (`tracker.py`) | Names, match confidence, expression and other signals on each face | `face-recognizer\recognize.bat` → http://127.0.0.1:8766 |
 | Measurement (`tools/expr_eval.py`, `tools/eval_models.py`, `tools/hw_bench.py`) | Accuracy, calibration, talking, per-condition breakdowns, valence/arousal fit, model and hardware comparisons | `python tools\expr_eval.py` from `face-recognizer\` |
 | [face-tracker/](face-tracker/README.md) | The original standalone browser face tracker (MediaPipe), no install | Double-click `index.html` |
@@ -29,7 +29,7 @@ Everything runs on one Windows PC. No photos, video, audio or face data leave th
 
 | Decision | Why |
 |---|---|
-| **Local only**: two tiny servers on 127.0.0.1, with request checks (`localguard.py`) | Faces and voices are personal data. Nothing is uploaded, and other websites can't reach the servers. |
+| **Local only**: two tiny servers on 127.0.0.1, with request checks (`localguard.py`) | Faces and voices are personal data. Nothing is uploaded, and other websites can't reach the servers. The one exception is opt-in per click: the labeling tool's **Web search** sends that face to Amazon and that photo to Google (US services, English results) to suggest who it is. |
 | **Thresholds are measured values**, never guesses | Each matching, quality and voting threshold was measured on the owner's labeled photos, for example ArcFace match 0.35: 100% of labeled faces correct, 0% of strangers named. Changing one means re-measuring. |
 | **ArcFace for recognition**, with SFace as a fallback; AdaFace evaluated and rejected | ArcFace named 76% of blurry webcam-like faces correctly vs 44% for SFace. AdaFace was slower and less accurate on these photos (95.5% vs 99.4%). |
 | **Labels per face, not per cluster** | Cluster numbers change on every regrouping. A permanent ID per face keeps every decision, with undo history. |
@@ -40,6 +40,8 @@ Everything runs on one Windows PC. No photos, video, audio or face data leave th
 | **Self-report is the only ground truth for feelings** | An opt-in "feeling check" asks how you feel on two 1–7 scales. Without it, accuracy can only be measured against posed expressions, never against feelings. |
 | **Only numbers are stored for research** | Posed tests and feeling reports save scores and signals (including body points): no pictures, no audio. Live expression, voice, pulse and posture are never written down. |
 | **Two separate apps** (labeling and tracking) | Owner preference. Each stays simple, and both can run at once. |
+| **Clues before guesses for unknown faces** | A face seen once can't be learned from, so the labeling tool shows what else is known: the closest people (with their scores), the photo's own people tags (photo apps, Google Takeout), and who was photographed at the same occasion. None of these ever labels a face by itself. |
+| **Web search: US services, English, capped, saved** | Owner's rules. Amazon Rekognition names well-known people from the face with a match percentage; Google Cloud Vision only helps when the same picture is online, since it doesn't identify faces. The tool combines them into one suggestion with a confidence level, or says it found none. Each service stops itself before $10 a month, keys stay outside the (public) repository, and each face's answer is saved so it is never paid for twice. |
 
 The reasoning behind the layered design, with references: [docs/WHY_LAYERED_EXPRESSION.md](docs/WHY_LAYERED_EXPRESSION.md).
 
@@ -203,6 +205,7 @@ from audEERING.
 - The newer signals (talking gate, hand-on-face gate, state model, pulse, body posture and breathing,
   voice model) work in the page but haven't been validated on enough real sessions. Their thresholds are first guesses, marked as such in the code.
 - The valence/arousal fit needs about 15–20 feeling reports per person before it exists at all.
+- Web search names well-known people reliably (two tests, 99.4% and 100%) but never private people, and its confidence bands haven't been measured on this project's faces.
 - This is a single-user personal system, not a product. Expression and feeling readings must not be used
   to make decisions about people. The EU AI Act bans emotion recognition in workplaces and schools.
 
@@ -210,7 +213,8 @@ from audEERING.
 
 `face-recognizer/data/` is published on purpose, as example research data. It holds what the tools derived
 from the photo library they were run on: face prints, face thumbnails, contact sheets, labels, model and
-hardware benchmarks, and one posed expression test session (numbers only). The photos it was built from
+hardware benchmarks, one posed expression test session (numbers only), photo dates and people tags
+(`photo_facts.json`), and saved Web search answers (`web_suggestions.json`). The photos it was built from
 are public-domain images.
 
 If you run the tools on your own photos, your `data/` folder will hold the same kinds of personal data
@@ -227,6 +231,7 @@ about the people in them. Keep it out of any public repository (add `face-recogn
 | eDifFIQA (tiny) | Face quality | See its upstream repository |
 | MediaPipe Face Landmarker | Blendshape cues | Apache 2.0 |
 | MediaPipe Pose Landmarker lite | Body posture | Apache 2.0 |
+| Amazon Rekognition, Google Cloud Vision (online services, optional) | Web search in the labeling tool | Paid per use under each provider's terms; your own keys |
 
 Because of the ArcFace and Wav2Small terms, the project as a whole is for **non-commercial use** unless
 those models are replaced or licensed.

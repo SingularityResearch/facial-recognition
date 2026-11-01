@@ -2062,14 +2062,13 @@
   "by": "me"
  },
  "00de82c9eecc9d43-292-632": {
-  "n": "#ignore",
-  "by": "auto",
-  "s": 0.457
+  "n": "Beaux",
+  "by": "me"
  },
  "233010b68e4fd156-143-93": {
-  "n": "#ignore",
-  "by": "auto",
-  "s": 0.664
+  "n": "Beaux",
+  "by": "me",
+  "ok": true
  },
  "2e2fbba2a5c0e5ef-184-366": {
   "n": "Emiliann",
@@ -3030,11 +3029,13 @@
  },
  "e3e4def67ecba4f3-295-185": {
   "n": "Joey",
-  "by": "me"
+  "by": "me",
+  "ok": true
  },
  "de177cb5966f3b76-339-586": {
   "n": "Joey",
-  "by": "me"
+  "by": "me",
+  "ok": true
  },
  "e30f26258369e47f-489-170": {
   "n": "Shane",
@@ -3167,8 +3168,7 @@
  },
  "ea36c1fe5cd12c1e-167-591": {
   "n": "Mom",
-  "by": "auto",
-  "s": 0.554
+  "by": "me"
  },
  "3af7b55730c1e6af-758-543": {
   "n": "Rodney",
@@ -3676,7 +3676,8 @@
  },
  "44ace88ed1699864-446-595": {
   "n": "Jacob G",
-  "by": "me"
+  "by": "me",
+  "ok": true
  },
  "ee7468ea3816fa87-287-660": {
   "n": "Murr",
@@ -3745,5 +3746,342 @@
  "c99a8a397c2502b3-303-109": {
   "n": "Chrititan",
   "by": "me"
+ },
+ "e9d70e8732b3528f-300-114": {
+  "n": "Chrititan",
+  "by": "me"
+ },
+ "cbe93d0a38e9b04d-518-496": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "7c6fcb8afb57c2c0-475-497": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "16c567ad6552d9b7-452-515": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "71a04b60dce18e79-475-325": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "b10132b4530b6c57-490-623": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "88962378a703d461-392-147": {
+  "n": "Jesus A",
+  "by": "me"
+ },
+ "6e93be3e925d4cd3-344-385": {
+  "n": "Jesus A",
+  "by": "me"
+ },
+ "b59daf8981322047-268-338": {
+  "n": "Jesus A",
+  "by": "me"
+ },
+ "3d73d68917926a69-580-357": {
+  "n": "Jesus A",
+  "by": "me"
+ },
+ "4d2686ce5bbe168e-644-116": {
+  "n": "Spock",
+  "by": "me"
+ },
+ "2fedd85018b946cd-791-223": {
+  "n": "Gretchen M",
+  "by": "me"
+ },
+ "388b4200ea32ee51-522-283": {
+  "n": "Gretchen M",
+  "by": "me"
+ },
+ "6a0176a79dc852f6-773-381": {
+  "n": "Gretchen M",
+  "by": "me"
+ },
+ "c430677b5bfb56df-677-596": {
+  "n": "Abraham Lincoln",
+  "by": "me"
+ },
+ "cafd3e0354714b4a-504-438": {
+  "n": "Abraham Lincoln",
+  "by": "me"
+ },
+ "eb1df2a96229b183-315-797": {
+  "n": "Abraham Lincoln",
+  "by": "me"
+ },
+ "cf6d13b9317640f1-395-251": {
+  "n": "Maria",
+  "by": "me"
+ },
+ "cf6d13b9317640f1-148-352": {
+  "n": "Maria",
+  "by": "me"
+ },
+ "527ddd112783a162-571-272": {
+  "n": "Jeff G",
+  "by": "me"
+ },
+ "4cf337a214942280-430-372": {
+  "n": "Billy Joel",
+  "by": "me"
+ },
+ "9c4fdae378df139d-237-320": {
+  "n": "Alfred E. Neuman",
+  "by": "me"
+ },
+ "ba60ee4ce7d21d69-106-470": {
+  "n": "Zack",
+  "by": "me"
+ },
+ "af2a78ae8d551ede-589-588": {
+  "n": "Zack",
+  "by": "me"
+ },
+ "b62da93598174670-1081-427": {
+  "n": "Tom Cruise",
+  "by": "me"
+ },
+ "f6084424b6f8b721-580-426": {
+  "n": "John Gibson",
+  "by": "me"
+ },
+ "778dadc77a70acc9-974-218": {
+  "n": "Chris Cornell",
+  "by": "me"
+ },
+ "778dadc77a70acc9-284-263": {
+  "n": "Tom Morrello",
+  "by": "me"
+ },
+ "6daaadefc9ba84c8-504-502": {
+  "n": "Chad G",
+  "by": "me"
+ },
+ "e30f26258369e47f-1073-510": {
+  "n": "Jeff C",
+  "by": "me"
+ },
+ "e30f26258369e47f-811-569": {
+  "n": "Johnson Tran",
+  "by": "me"
+ },
+ "aa9b19b86ef02a1f-218-139": {
+  "n": "Jon Sorrenson",
+  "by": "me"
+ },
+ "aa9b19b86ef02a1f-99-169": {
+  "n": "Jega R",
+  "by": "me"
+ },
+ "6b3be32680010643-428-529": {
+  "n": "Shiva",
+  "by": "me",
+  "ok": true
+ },
+ "af2a78ae8d551ede-478-186": {
+  "n": "Jon Sorrenson",
+  "by": "me"
+ },
+ "ba60ee4ce7d21d69-150-237": {
+  "n": "Jon Sorrenson",
+  "by": "me"
+ },
+ "ba60ee4ce7d21d69-910-658": {
+  "n": "Johnson Tran",
+  "by": "me"
+ },
+ "af2a78ae8d551ede-1029-226": {
+  "n": "Johnson Tran",
+  "by": "me"
+ },
+ "ba60ee4ce7d21d69-906-422": {
+  "n": "Jeff C",
+  "by": "me"
+ },
+ "107594a715118b62-481-335": {
+  "n": "Jega R",
+  "by": "me"
+ },
+ "36bae926bedb1e45-137-503": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "63a9ab551d534ac2-439-334": {
+  "n": "Tim",
+  "by": "me"
+ },
+ "5480246c008cf703-1182-341": {
+  "n": "Jacob G",
+  "by": "me",
+  "ok": true
+ },
+ "7a6b02299f1f1214-516-353": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "ca4f1acbb928835e-306-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "b94073a049bee1f9-307-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "d29963936745c17b-307-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "e5a9749056d0b1d5-306-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "a4da6f1619d9227a-305-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "d9d260a52e6a8778-308-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "d3320463e7256c78-307-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "b56269628536fe6d-307-422": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "941de2ecba4c9201-307-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "30a25c196e204b79-622-512": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "12209b7fd6072114-723-374": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "4baf7019d410d40a-767-552": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "50b262c2d61a7285-813-495": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "ed6ecbaf35459ff3-689-440": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "de36788c9da91c0c-464-313": {
+  "n": "Sophia Loren",
+  "by": "me"
+ },
+ "5669efb7d0ab8ee8-343-318": {
+  "n": "Sabastian",
+  "by": "me"
+ },
+ "4b8eb4e8e09ce3f4-412-167": {
+  "n": "Sophia Loren",
+  "by": "me"
+ },
+ "4cc159e23a8455dc-461-255": {
+  "n": "Gretchen",
+  "by": "me",
+  "ok": true
+ },
+ "4cc159e23a8455dc-653-264": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "4cc159e23a8455dc-236-265": {
+  "n": "Gretchen",
+  "by": "me",
+  "ok": true
+ },
+ "f2d91f84519b429e-269-713": {
+  "n": "Bernie Sanders",
+  "by": "me"
+ },
+ "e47ce21f6e89e523-500-92": {
+  "n": "Lynda Carter",
+  "by": "me"
+ },
+ "91aab322bedac1c7-684-271": {
+  "n": "Josh Homme",
+  "by": "me"
+ },
+ "de717cedf2f8a89a-606-357": {
+  "n": "Hyper Realistic Popeye",
+  "by": "me"
+ },
+ "0c17d866a8d0c75e-221-356": {
+  "n": "Jaclyn Smith",
+  "by": "me"
+ },
+ "e99d7cdc635e2f20-821-309": {
+  "n": "Josh Homme",
+  "by": "me"
+ },
+ "e1689d8af5f113f7-308-649": {
+  "n": "Jaclyn Smith",
+  "by": "me"
+ },
+ "f5e0a57ba000eb14-419-696": {
+  "n": "Rosamund Pike",
+  "by": "me"
+ },
+ "e5be1641c9209a96-591-310": {
+  "n": "Javier Bardem",
+  "by": "me"
+ },
+ "a42317819cd58945-672-438": {
+  "n": "Daniel Day-Lewis",
+  "by": "me"
+ },
+ "eb145b9506e4c40e-680-523": {
+  "n": "David Spade",
+  "by": "me"
+ },
+ "ebe7c59cbcf97714-664-209": {
+  "n": "Rosamund Pike",
+  "by": "me"
+ },
+ "1f9d52ba62db1c04-729-555": {
+  "n": "Daniel Day-Lewis",
+  "by": "me"
+ },
+ "3ff66dcc4877cbaa-669-440": {
+  "n": "Javier Bardem",
+  "by": "me"
+ },
+ "a877577bec776dd4-1006-177": {
+  "n": "Miley Cyrus",
+  "by": "me"
+ },
+ "91aab322bedac1c7-886-233": {
+  "n": "Michael Shuman",
+  "by": "me"
+ },
+ "e99d7cdc635e2f20-1058-272": {
+  "n": "Michael Shuman",
+  "by": "me"
+ },
+ "071196066f3f25d9-505-199": {
+  "n": "Will N",
+  "by": "me"
+ },
+ "ae9bd09cd48b5851-209-538": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.592
  }
 }
