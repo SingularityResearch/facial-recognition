@@ -174,12 +174,16 @@ from audEERING.
 - This is a single-user personal system, not a product. Expression and feeling readings must not be used
   to make decisions about people. The EU AI Act bans emotion recognition in workplaces and schools.
 
-## Privacy note about this repository
+## About the data in this repository
 
-`face-recognizer/data/` is tracked in git and holds personal data derived from the owner's photo library:
-face prints, face thumbnails, contact sheets, labels and test sessions. **Don't push this repository to a
-public or shared remote with `data/` included.** To share the code as research material, remove `data/`
-from the history first, or publish a copy without it.
+`face-recognizer/data/` is published on purpose, as example research data. It holds what the tools derived
+from the photo library they were run on: face prints, face thumbnails, contact sheets, labels, model and
+hardware benchmarks, and one posed expression test session (numbers only). The photos it was built from
+are public-domain images.
+
+If you run the tools on your own photos, your `data/` folder will hold the same kinds of personal data
+about the people in them. Keep it out of any public repository (add `face-recognizer/data/` to
+`.gitignore`) unless you have the right to publish those faces.
 
 ## Licenses of third-party models
 
