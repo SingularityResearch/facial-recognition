@@ -29,7 +29,8 @@ A fully local face-recognition system for a USB webcam, built for Chris:
 4. **Live tracker** — a local browser app that overlays each person's name, match confidence, and
    (optionally) a facial-expression reading directly on their face.
 
-Nothing leaves the machine. No photos or face data are sent anywhere.
+Nothing leaves the machine. No photos or face data are sent anywhere, except one face or photo when the
+owner clicks **Web search** in the labeling tool: the face goes to Amazon Rekognition and the photo to Google Cloud Vision (never automatic).
 
 ---
 
@@ -136,15 +137,57 @@ Every change is logged to `history.jsonl` and can be undone. `people.npz` is reb
   already read (by content hash, so renamed/moved photos are recognized) and copies of photos (re-saved or
   resized; picture fingerprints within `DUP_BITS` = 12 bits **and** matching faces). New faces that clearly
   match a named person are **named automatically**.
-- Views: **Suggestions** (per person, least certain first), **New faces** (look-alike groups),
+- Views: **Suggestions** (per person, least certain first), **New faces** (look-alike groups, then
+  **Seen once**), **From photo tags**,
   **Named automatically** (review, least certain first), **Checks** (named faces that look more like someone
   else, people with fewer than `FEW` = 5 clear faces, skipped duplicates), **People** (all faces of a person,
   least typical first; **Rename or merge**).
 - Double-click / Space shows the whole photo with everyone boxed and named. Keys: A accept, N name,
   R not this person, X ignore, Z undo, Esc clear selection, Shift-click range.
 - Faces too blurry to learn from are hidden unless **Show blurry faces** is on.
-- API: GET `/api/summary`, `/api/fids`, `/api/suggested`, `/api/unknown`, `/api/auto`, `/api/person`,
-  `/api/checks`, `/api/import`, `/api/photoinfo/…`; POST `/api/act`, `/api/rename`, `/api/undo`,
+- The name picker and toast sit above the photo viewer (z-index 60/61 vs 50). Before 2026-11-01 the picker
+  opened hidden behind the viewer, so naming a face from the photo view seemed to do nothing.
+- **Clues for unnamed faces** (photo view, `LabelDB.hints`): closest 3 people with scores (`CLOSEST`, display
+  only, no threshold), the photo's own people tags, and the **same occasion**: named people in photos taken
+  within `TAKEN_NEAR_H` = 12 h (EXIF camera date), else the `FOLDER_NEAR` = 6 photos either side in its folder
+  by file name. These constants only choose what is shown; they never label anything.
+- **From photo tags** (`PhotoFacts`, `LabelDB.tagged`): at start and after each import a background pass
+  (8 threads, ~1,100 photos in a few seconds) reads each photo-with-faces' camera date and people tags: MWG
+  face regions (Lightroom/Picasa/digiKam; iPhones write unnamed ones), Microsoft regions (Windows Photo
+  Gallery), IPTC PersonInImage, `.xmp` sidecars, and Google Takeout `.json` (`people`). Rectangles are matched
+  to found faces by overlap (`match_regions`); names without a box apply when exactly one face is still
+  unnamed. Measured on 190 iPhone photos with face regions: MWG rectangles apply to the photo **as stored**
+  (rotated photos: 71 of 76 paired vs 32 the other way). Saved in `data/photo_facts.json` with a key per photo (file size + date, sidecar files, face boxes); a start re-reads only photos whose key changed (all 1,127: 1.9 s; none changed: 0.4 s). On 2026-11-01 only one photo
+  in `data/` carried a named tag.
+- **Web search** (photo view, one click, `websearch.suggest`): POST `/api/websearch {face}`;
+  `label_tool.search_picture` makes the face JPEG (50% margin, enlarged to ≥ 400 px) for **Amazon
+  Rekognition** `RecognizeCelebrities` and the whole-photo JPEG for **Google Cloud Vision** web detection.
+  Owner's rule (2026-11-01): US services only, English results only, nothing from non-US sites. Combined
+  into suggestions: Amazon match ≥ 95% high, ≥ 85% medium, else low (display bands, not measured here);
+  Google names only count when the *exact* picture is on pages (person-like names, medium); both naming
+  the same person → very high. Otherwise "No suggestions found". Tested: a phone photo of a TV still →
+  Javier Bardem 99.4%; a Bernie Sanders DJ meme panel → Bernie Sanders 100%. Google alone gave
+  nothing useful for either ("no expression", "rock concert", "David Penn" at relevance weight 10.72 for an
+  unrelated DJ): Google does not identify faces, its "partial" pages are usually just similar scenes
+  (9–12, none with the photo), and its entity scores are unbounded weights, so neither is used.
+  Setup 2026-11-01. Amazon: account 605748908874, IAM user `face-labels-rekognition` (inline policy
+  `rekognition:RecognizeCelebrities` only), key in `%APPDATA%\FaceLabels\aws_rekognition.json`, budget
+  $10/month on Amazon Rekognition (alerts 50/90/100% to shivachrome@gmail.com); the CLI's root sign-in was
+  removed (`aws logout`). Google: gcloud on shivachrome@gmail.com, project `face-labels-vision-5614`,
+  billing "Chris Personal Billing Account", key restricted to `vision.googleapis.com`, budget $10/month;
+  key in `%APPDATA%\FaceLabels\google_vision_key.txt` or `GOOGLE_VISION_API_KEY`. Budgets only warn, so
+  `CAPS` stops each service in the tool: 9,000 Amazon ($9) and 3,700 Google ($9.45) per calendar month,
+  counted in `%APPDATA%\FaceLabels\<service>_usage.json` before each call. Keys are never in the repo (public).
+  Answers are saved per face ID in `data/web_suggestions.json` (`label_tool.WEB_SAVED`; complete answers only)
+  and served again with no new calls (a repeat took 4 ms instead of 1.4 s); **Search again** sends `refresh`.
+  `tools/websearch_check.py` runs the same search on files. Google Lens is still offered under
+  Settings as copy + open `images.google.com` + paste: a form POST to `lens.google.com/v3/upload` gets 403
+  even from a normal Edge window, and a server-side upload's results link is tied to that upload's `NID`
+  cookie, so it opened without the picture in the owner's browser. Tried and dropped: Yandex (named Bernie
+  Sanders, but non-US and mixed-language), Bing (only describes), TinEye (robot check). This is the only
+  path by which anything leaves the machine.
+- API: GET `/api/summary`, `/api/fids`, `/api/suggested`, `/api/unknown`, `/api/tagged`, `/api/auto`, `/api/person`,
+  `/api/checks`, `/api/import`, `/api/photoinfo/…` (includes `hints`); POST `/api/act`, `/api/rename`, `/api/undo`,
   `/api/import`, `/api/import/stop`, `/api/autoname`.
 
 ### CLI (face_id.py)

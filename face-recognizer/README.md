@@ -18,7 +18,7 @@ Recognizes specific people (by name) on a webcam or in photos and videos, traine
 - **Voice (optional):** audEERING's Wav2Small (`models/wav2small.onnx`, 17K parameters, made by `python tools\get_wav2small.py` from the official weights) reads arousal, dominance and valence from speech when you turn on the microphone. Licensed CC BY-NC-SA 4.0: non-commercial use only, like the ArcFace weights.
 - **Security:** the labeling tool and tracker only accept requests from their own pages (see `localguard.py`), so other websites can't change your labels.
 
-Everything runs locally. No photos leave your computer.
+Everything runs locally. No photos leave your computer, with one exception you start yourself: **Web search** in the photo view (see below) sends that face to Amazon and that photo to Google to suggest who it is.
 
 ## Setup (once)
 
@@ -31,7 +31,8 @@ Double-click **setup.bat**. It installs Python 3.12 if needed (with winget), ins
 1. Put the new photos in a folder, for example `E:\Users\Chris\Pictures\New`. Subfolders are included. Supported: JPG, PNG, HEIC/HEIF, WebP, BMP, GIF, TIFF.
 2. Double-click **label.bat**. **Face Labels** opens in your browser at http://127.0.0.1:8765/.
 3. Click **Add photos** (top right), type or paste the folder path, and click **Start adding**. Folders you've added before are offered as you type.
-4. A progress bar at the top shows photos read, faces found and faces named automatically. You can keep labeling while it runs, and **Stop** ends it early. Photos already read are kept, and the rest are read the next time you add the folder.
+4. Exports from photo apps work well here: a Google Takeout of Google Photos, or a folder tagged in Lightroom, Picasa, digiKam or Windows Photo Gallery. Their people tags show up under **From photo tags**. (Photos straight from an iPhone carry face boxes but no names, so they add nothing here.)
+5. A progress bar at the top shows photos read, faces found and faces named automatically. You can keep labeling while it runs, and **Stop** ends it early. Photos already read are kept, and the rest are read the next time you add the folder.
 
 Adding the same folder again is safe: photos already read are skipped, even if they've been renamed or moved, and so are re-saved or resized copies of them. Faces that clearly match someone you've already named are named automatically.
 
@@ -45,8 +46,9 @@ In Face Labels, work down the **To review** list on the left. Every change is sa
 2. **New faces**: faces that look like nobody you've named, in groups of look-alikes. Click **Name…** (or press **N**), pick a name or type a new one, and press Enter. To name only some faces in a group, select them first. Use **Ignore** (**X**) for strangers, artwork and tattoos so they aren't asked about again. If a group shows "Looks like ...?", click it to add the group to that person.
 3. **Named automatically** (optional): glance over the automatic names. Select any wrong ones and press **R**; **Looks right** marks the rest as checked.
 4. **Checks**: fix faces that look more like someone else, and see who needs more photos. Each person needs about 5 clear faces to be recognized reliably.
+5. **From photo tags**: faces that the photos' own people tags name (from photo apps or a Google Takeout export). Check them like suggestions.
 
-Double-click a face (or press **Space**) to see the whole photo. To fix a person's name or merge two people, click them under **People** and use **Rename or merge**. More detail is in **Label people** below.
+Double-click a face (or press **Space**) to see the whole photo. For a face nobody has named, the photo view also shows clues: the closest people (even weak matches), the photo's own tags, and who is named in other photos from the same occasion. Click a name to use it. **Web search** asks Amazon and Google and suggests who it is, with a confidence level. To fix a person's name or merge two people, click them under **People** and use **Rename or merge**. More detail is in **Label people** below.
 
 ### 3. Recompute the data (only when needed)
 
@@ -170,7 +172,37 @@ Also:
 - **Named automatically**: check the automatic names, if you like, least certain first.
 - **Checks**: named faces that look more like someone else, people with fewer than 5 clear faces, and the duplicate photos that were skipped.
 - **People**: click a person to see all their faces, least typical first, so mistakes are at the top. **Rename or merge** fixes a name or combines two people.
-- Double-click a face (or press Space) to see the whole photo with everyone in it boxed and named; ← → step through faces.
+- Double-click a face (or press Space) to see the whole photo with everyone in it boxed and named; ← → step through faces. Click a box to switch to that face.
+- **From photo tags**: faces named by the photo itself. Face tags saved inside the photo or in a `.xmp` file beside it (Windows Photo Gallery, Lightroom, Picasa, digiKam; the face boxes an iPhone saves carry no names) are matched to the face they sit on. Names without a box (Google Takeout `.json` files, IPTC "person in image") are used when only one face in the photo is still unnamed. The tags and camera dates are read in the background and saved in `data/photo_facts.json`; after that a photo is read again only if the file, a `.xmp`/`.json` beside it, or the faces found in it change. Nothing is named until you accept it.
+
+**Clues for a face nobody has named** (photo view, under the buttons). Clicking a name names the face; **Z** undoes it.
+- **Closest people (weak guesses)**: the three people the face scores highest against, with the score, even far below the suggestion setting. A hint only: below 0.35 most of these are wrong.
+- **The photo's own tags**, when it has any.
+- **Same occasion**: who is named in photos taken within 12 hours of this one (camera date), or, for photos without a camera date (downloads, scans), the 6 photos either side of it in its folder. **⤢** opens that person's face in that photo.
+
+**Web search** (photo view, one click): sends this face to **Amazon** and this photo to **Google**, both US companies, and answers in one line. Either it gives a **suggestion with a confidence level** (click **Name this face …** to open the name picker with it filled in, then press Enter), or it says **No suggestions found**. Results are in English, and only US sites are used.
+
+| What was found | Confidence |
+|---|---|
+| Amazon's celebrity recognition knows the face, and Google finds this exact picture on pages naming the same person | very high |
+| Amazon knows the face with a match of 95% or more | high |
+| Amazon, 85–95%, or Google finds this exact picture on web pages naming someone (no face match) | medium |
+| Amazon, below 85% | low |
+
+The bands are for reading, not measured on this project's faces. Tested 2026-11-01: a phone photo of a TV still came back "Javier Bardem, high confidence (99.4% match)", and a Bernie Sanders DJ meme "Bernie Sanders, high (100%)". Amazon only knows well-known people and never names private people, so most family photos get **No suggestions found**. That is the honest answer, not a failure. Google never names anyone from the face itself; it only helps when the same picture was posted online with a caption. Pages that share only *part* of the picture (usually just a similar scene) and Google's relevance weights are not used for suggestions.
+
+**Setup (done 2026-11-01).** Keys are kept in `%APPDATA%\FaceLabels\`, never in the project, because the repository is public and anyone could spend from a published key.
+- Amazon: AWS account 605748908874, IAM user `face-labels-rekognition` that may only call `rekognition:RecognizeCelebrities`; its key is in `aws_rekognition.json`. Budget "Face Labels Rekognition - 10 USD/month" emails shivachrome@gmail.com at 50%, 90% and 100%. About $1 per 1,000 searches.
+- Google: project `face-labels-vision-5614` (shivachrome@gmail.com, Chris Personal Billing Account), API key limited to the Vision API, in `google_vision_key.txt` (or the `GOOGLE_VISION_API_KEY` environment variable; it can also be pasted under **Settings** in the dialog). $10/month budget with alerts. 1,000 free searches a month, then $3.50 per 1,000.
+- Budgets only warn, so the tool itself stops each service before $10 a month: 9,000 Amazon searches and 3,700 Google searches per calendar month (`CAPS` in `websearch.py`). The counts are shown under each search.
+
+**Settings and other ways to search** (in the dialog): **Copy face, open Google Lens** copies the face and opens Google Images; click the camera icon and press Ctrl+V. (Google only accepts pictures from its own page.) **Save face picture** keeps a copy.
+
+**Each face is searched once.** The answer (suggestions or none, with the date) is saved in `data/web_suggestions.json` by face ID, shown under the face's clues from then on, and returned again without sending anything when you click **Web search** on that face. **Search again** asks anew (and counts toward the limits). Only complete answers are saved: if a service failed, the next click tries again. Like the rest of `data/`, this file is published with the project.
+
+To try it without the page: `python tools\websearch_check.py picture.jpg [--face x0,y0,x1,y1]`.
+
+**This is the only feature that sends anything off your computer**: the face goes to Amazon and the photo to Google, which may keep them, and only when you click **Web search**. Tried and dropped: Yandex (named people well, but it's non-US and returns mixed languages), Bing (only describes a picture), and TinEye (robot check).
 - Keys: **A** accept, **N** name, **R** not this person, **X** ignore, **Z** undo, **Esc** clear the selection. Shift-click selects a range.
 - Faces too blurry or small to learn from are hidden from the lists; **Show blurry faces** brings them back.
 
@@ -219,6 +251,10 @@ Face prints from different models can't be mixed. After changing models, run `py
 - `data/history.jsonl`: every labeling change, with the time; `data/backups/`: a copy of labels.json from each start of Face Labels (last 20)
 - `data/people.npz`: face prints of the named people (what the tracker and `recognize` use)
 - `data/settings.json`: photo folders you've added
+- `data/photo_facts.json`: each photo's camera date and people tags (read again only when the photo, a file beside it, or its faces change)
+- `data/web_suggestions.json`: the saved Web search answer for each face searched (suggestions or none, with the date)
+- Outside the project, in `%APPDATA%\FaceLabels\`: the Web search keys (`google_vision_key.txt`, `aws_rekognition.json`) and this month's search counts (`vision_usage.json`, `rekognition_usage.json`). Never put the keys in the repository.
+- `websearch.py`: the Web search (Amazon + Google, combined); `tools\websearch_check.py`: the same search on picture files
 - `data/expr_eval/`: expression test sessions (`<date>-<time>.jsonl`) and feeling reports (`feel-<date>.jsonl`), only if you've run the Expression test or reported how you feel (numbers only: no pictures, no audio). **Delete test data** on the tracker page removes them.
 - `data/expr_calibration.json`, `data/va_fit.json`: fitted by `tools\expr_eval.py` from those (a few numbers each; delete them to go back to the defaults)
 - Live expression readings, voice and pulse aren't written to `data`. The expression model, MediaPipe and the voice model are optional (the tracker says so at startup if one is missing). The usual looks live in the browser's storage for the tracker page.
