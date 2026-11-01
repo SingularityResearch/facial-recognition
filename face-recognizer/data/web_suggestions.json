@@ -123,5 +123,257 @@
     "exactPages": 0
    }
   }
+ },
+ "0ebd13740128239e-812-127": {
+  "when": "2026-11-01 01:56",
+  "suggestions": [
+   {
+    "name": "Jimi Hendrix",
+    "level": "high",
+    "confidence": 99.9,
+    "why": [
+     "Amazon recognizes Jimi Hendrix (99.9% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q5928",
+     "https://www.imdb.com/name/nm0001342"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Jimi Hendrix",
+     "confidence": 99.9,
+     "links": [
+      "https://www.wikidata.org/wiki/Q5928",
+      "https://www.imdb.com/name/nm0001342"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "television set"
+    ],
+    "names": [
+     "TV",
+     "LCD television",
+     "Television",
+     "Cable television",
+     "LED-backlit LCD",
+     "Liquid-crystal display",
+     "Light-emitting diode",
+     "Backlight"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "2503d35ad5db96ab-469-660": {
+  "when": "2026-11-01 01:56",
+  "suggestions": [
+   {
+    "name": "Pablo Picasso",
+    "level": "very high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Pablo Picasso (100.0% match)",
+     "Google finds this exact picture on 1 web page naming Pablo Picasso"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q5593",
+     "https://www.imdb.com/name/nm0681444"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Pablo Picasso",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q5593",
+      "https://www.imdb.com/name/nm0681444"
+     ]
+    }
+   ],
+   "google": {
+    "match": "exact",
+    "guess": [
+     "pablo picasso"
+    ],
+    "names": [
+     "Pablo Picasso",
+     "Portrait of Pablo Picasso",
+     "Artist",
+     "Dove of Peace",
+     "Art",
+     "Cubism",
+     "Painting",
+     "Artwork"
+    ],
+    "pages": [
+     {
+      "title": "Pablo Picasso art on display at Park West Museum - Facebook",
+      "url": "https://www.facebook.com/ParkWestGallery/posts/happy-birthday-to-spanish-painter-sculptor-and-printmaker-pablo-picasso-nearly-1/10155849193916810/",
+      "domain": "www.facebook.com",
+      "match": "exact"
+     },
+     {
+      "title": "Gertrude Stein And Pablo Picasso: The Language of Friendship",
+      "url": "https://www.sothebys.com/en/articles/gertrude-stein-and-pablo-picasso-the-language-of-friendship",
+      "domain": "www.sothebys.com",
+      "match": "partial"
+     },
+     {
+      "title": "Dove of Peace 1949 by Pablo Picasso Artwork Explained - Facebook",
+      "url": "https://www.facebook.com/artpeople1/videos/dove-of-peace-1949-by-pablo-picasso/1753923911684537/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Pablo Picasso - Biography - Renssen Art Gallery",
+      "url": "https://renssenartgallery.com/artists/26-pablo-picasso/biography/",
+      "domain": "renssenartgallery.com",
+      "match": "partial"
+     },
+     {
+      "title": "Pablo Picasso studio views. Happy Friday #pablopicasso #picasso",
+      "url": "https://www.instagram.com/reel/DJb3JlRic21/?hl=en",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "Pablo Picasso Art Photographs for sale | eBay",
+      "url": "https://www.ebay.com/b/Pablo-Picasso-Art-Photographs/2211/bn_24914928",
+      "domain": "www.ebay.com",
+      "match": "partial"
+     },
+     {
+      "title": "Portrait of Pablo Picasso, by Juan Gris, 1912, by @carlsonphotos",
+      "url": "https://www.instagram.com/p/C1XYs9Xu8ug/",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "Arnold Newman | Pablo Picasso, Valluris, France - Sotheby's",
+      "url": "https://www.sothebys.com/en/buy/auction/2025/picasso-ceramics-l25163/pablo-picasso-valluris-france",
+      "domain": "www.sothebys.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 1
+   }
+  }
+ },
+ "9300b92a1e6a131c-673-539": {
+  "when": "2026-11-01 01:58",
+  "suggestions": [
+   {
+    "name": "Al Pacino",
+    "level": "high",
+    "confidence": 99.9,
+    "why": [
+     "Amazon recognizes Al Pacino (99.9% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q41163",
+     "https://www.imdb.com/name/nm0000199"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Al Pacino",
+     "confidence": 99.9,
+     "links": [
+      "https://www.wikidata.org/wiki/Q41163",
+      "https://www.imdb.com/name/nm0000199"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "Al Pacino"
+    ],
+    "names": [
+     "Al Pacino",
+     "Serpico",
+     "Frank Serpico",
+     "Actor",
+     "loved",
+     "Ertflix",
+     "Image",
+     "Photograph"
+    ],
+    "pages": [
+     {
+      "title": "After he decided to make the film, Al Pacino invited Frank Serpico to ...",
+      "url": "https://www.instagram.com/reel/DeM0n85KFzZ/?hl=en",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "\"Al Pacino considers this movie to be one of his greatest ... - Instagram",
+      "url": "https://www.instagram.com/reel/DeFDDk0Ab7K/",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "\"After he decided to make the film, Al Pacino invited Frank Serpico to ...",
+      "url": "https://www.instagram.com/p/C4sfDnpvyjX/",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "Al Pacino is my favorite male crush!!! He was so handsome when he ...",
+      "url": "https://www.facebook.com/simone.simmons.1610/posts/al-pacino-is-my-favorite-male-crush-he-was-so-handsome-when-he-was-younger/2561365861032116/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "BOOK NOW: SERPICO (4K RESTORATION) Al Pacino leads Sidney ...",
+      "url": "https://www.facebook.com/tynesidecinema/posts/book-now-serpico-4k-restorational-pacino-leads-sidney-lumets-1973-crime-classic-/687671096730345/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Al Pacino - IMDb",
+      "url": "https://www.imdb.com/name/nm0000199/mediaviewer/rm238748160/",
+      "domain": "www.imdb.com",
+      "match": "partial"
+     },
+     {
+      "title": "Aurora on X: \"Al Pacino as Sidney Lumet's SERPICO (1973)\" / X",
+      "url": "https://x.com/CitizenScreen/status/1855124428918530252",
+      "domain": "x.com",
+      "match": "partial"
+     },
+     {
+      "title": "Now, who is the actor with the most range? : r/popculturechat - Reddit",
+      "url": "https://www.reddit.com/r/popculturechat/comments/15q2zlu/now_who_is_the_actor_with_the_most_range/",
+      "domain": "www.reddit.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
  }
 }
