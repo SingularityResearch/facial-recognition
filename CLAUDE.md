@@ -24,6 +24,7 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `expression.js` — expression voting, state model, confidence flags, evidence, per-person usual look (browser;
     served by `tracker.py`). Tests: `node --test tests` from `face-recognizer\`.
   - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
+    each person's normal for every signal (`Baselines`, alone and in company),
     feeling-report summaries, fitted valence/arousal (browser; served by `tracker.py`; tests in `tests/`).
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
@@ -64,5 +65,6 @@ Use the Python 3.12 the .bat files pick (`%LOCALAPPDATA%\Programs\Python\Python3
 - Camera opening on Windows: try `CAP_DSHOW` → `CAP_MSMF` → `CAP_ANY`, retry `cap.read()` while the webcam warms up.
 - Face-shape cues are evidence only until fusion is measured with `tools/expr_eval.py` on posed sessions.
 - Expression is display-only and never stored (except opt-in posed test sessions and feeling reports in `data/expr_eval/`,
-  numbers only); microphone audio is analysed live and never stored; keep README wording honest ("looks", not "feels").
+  numbers only); microphone audio is analysed live and never stored; per-person baselines and usual looks live in the
+  browser's storage only (never `data/`, which is published); keep README wording honest ("looks", not "feels").
 - InsightFace ArcFace and audEERING Wav2Small weights are non-commercial; note this if the project is ever redistributed.

@@ -169,9 +169,12 @@
       <label class="toggle" for="optBlur">Blur unknown faces <input type="checkbox" id="optBlur"></label>
       <label class="toggle" for="optExpr">Show expression <input type="checkbox" id="optExpr" checked></label>
       <label class="toggle" for="optCalib">Calibrate to each person <input type="checkbox" id="optCalib" checked></label>
-      <p class="hint" id="exprHint">Expression is read from sharp, camera-facing frames and averaged over the last second. With calibration on, each named person's usual look is learned over about a minute; a reading that departs from it is highlighted, one that matches it is marked "usual".</p>
+      <p class="hint" id="exprHint">Expression is read from sharp, camera-facing frames and averaged over the last second. With calibration on, each named person's usual look is learned over about a minute; a reading that departs from it is highlighted, one that matches it is marked "usual". Calibration also learns each person's normal for every other signal (posture, movement, voice, pulse...), alone and in company, over a few minutes, and the evidence shows what is unusual for them. All of it stays in this browser.</p>
       <label class="toggle" for="optEvidence">Show expression evidence <input type="checkbox" id="optEvidence"></label>
-      <div class="row"><button class="small" id="calibReset">Forget learned usual looks</button></div>
+      <div class="row">
+        <select id="forgetWho" aria-label="Person to forget" style="width:auto"></select>
+        <button class="small" id="calibReset">Forget what's learned</button>
+      </div>
       <label class="toggle" for="optVoice">Listen to voice (microphone) <input type="checkbox" id="optVoice"></label>
       <label class="toggle" for="optPulse">Webcam pulse (experimental) <input type="checkbox" id="optPulse"></label>
       <label class="toggle" for="optTalkGate">Skip expression while talking <input type="checkbox" id="optTalkGate"></label>
@@ -375,6 +378,13 @@ function updateTracks(dets) {
     else best.xt.add(d.expr, d.quality, d.xskip, d.cues);
     best.expr = readExpression(best);
     best.fs.addLabel(now, best.expr && best.expr.state !== "unsure" ? best.expr.label : null);
+    // This person's normal, alone or in company: learn it, and keep the current signals to compare with it
+    best.ctx = dets.length > 1 ? "company" : "alone";
+    if ($("optCalib").checked && best.name !== "Unknown") {
+      best.snap = best.fs.snapshot(now, voiceFor(best, now));
+      const known = best.name in baselines.people;
+      if (baselines.learn(best.name, best.snap, best.ctx, now) && !known) renderForget();   // a new name to list
+    } else best.snap = null;
     if (best.expr && vaFit) best.expr.vaFit = Signals.applyFit(vaFit, best.name, best.fs.summary(now, voiceFor(best, now)));
   }
   for (const t of tracks) if (!t.matched) t.missed++;
@@ -385,11 +395,21 @@ function updateTracks(dets) {
 // ---------------------------------------------------------------- expression
 // Voting, confidence and each person's usual look are in expression.js (with tests); this part
 // connects them to the page.
-const usualLooks = new Expression.UsualLooks((() => { try { return localStorage; } catch { return null; } })());
+const store = (() => { try { return localStorage; } catch { return null; } })();
+const usualLooks = new Expression.UsualLooks(store);
+const baselines = new Signals.Baselines(store);     // each person's normal for every signal (signals.js)
+
+// People something has been learned about, for "Forget what's learned"
+function renderForget() {
+  const names = [...new Set([...baselines.names(), ...Object.keys(usualLooks.looks)])].sort();
+  const keep = $("forgetWho").value;
+  $("forgetWho").innerHTML = `<option value="">Everyone</option>` + names.map(n => `<option>${esc(n)}</option>`).join("");
+  if (names.includes(keep)) $("forgetWho").value = keep;
+}
 
 function setExpressions(list) {
   const was = expressions; expressions = list;
-  for (const id of ["optExpr", "optCalib", "calibReset", "optEvidence", "testBtn", "optTalkGate", "optState"]) $(id).disabled = !list;
+  for (const id of ["optExpr", "optEvidence", "testBtn", "optTalkGate", "optState"]) $(id).disabled = !list;
   $("exprHint").textContent = list ? $("exprHint").dataset.on
     : "Expression model not installed: put facial_expression_recognition_mobilefacenet_2022july.onnx (OpenCV Zoo) in the models folder and restart recognize.bat.";
   if (was && !list) for (const t of tracks) { t.xt.clear(); t.expr = null; }
@@ -484,7 +504,7 @@ function openFeel() {
   if (!running) { setStatus("Start the camera first, then report how you feel.", "err"); return; }
   const now = performance.now(), live = tracks.filter(t => t.missed === 0).sort((a, b) => b.tw * b.th - a.tw * a.th);
   const snap = {};
-  for (const t of live) if (!snap[t.name]) snap[t.name] = t.fs.summary(now, voiceFor(t, now));
+  for (const t of live) if (!snap[t.name]) snap[t.name] = { ...t.fs.summary(now, voiceFor(t, now)), withOthers: live.length > 1 ? 1 : 0 };
   const names = Object.keys(snap);
   if (!names.length) { setStatus("No face in view to report for.", "err"); return; }
   feel = snap;
@@ -653,10 +673,11 @@ function renderList() {
     const ev = showEv ? (t.expr ? Expression.evidence(t.expr) : t.xt.skip ? `no reading: ${t.xt.skip}` : "") : "";
     const sv = showEv ? Signals.evidence(t.fs, now, voiceFor(t, now), t.talking) : "";
     const bv = showEv && $("optPose").checked ? Signals.bodyEvidence(t.fs, now) : "";
+    const nv = showEv && t.snap ? Signals.unusualEvidence(baselines, t.name, t.snap, t.ctx) : "";
     return `<li><span class="who${unk ? " unk" : ""}"><span class="sw" style="background:${colorFor(t.name)}"></span>${esc(t.name)}</span>` +
            `<span>${unk ? "" : Math.round(t.sim * 100) + "% · "}${xs}${Math.round(t.tw || t.w)}px${t.missed ? " · lost" : ""}</span></li>` +
            (ev ? `<li class="evidence">${esc(ev)}</li>` : "") + (sv ? `<li class="evidence">${esc(sv)}</li>` : "") +
-           (bv ? `<li class="evidence">body: ${esc(bv)}</li>` : "");
+           (bv ? `<li class="evidence">body: ${esc(bv)}</li>` : "") + (nv ? `<li class="evidence">${esc(nv)}</li>` : "");
   }).join("");
   $("devices").hidden = !showEv;
 }
@@ -672,7 +693,14 @@ $("peopleCard").open = recall("people") === "1";             // collapsed unless
 $("peopleCard").ontoggle = () => remember("people", $("peopleCard").open ? "1" : "0");
 $("exprHint").dataset.on = $("exprHint").textContent;
 $("optExpr").onchange = $("optCalib").onchange = $("optEvidence").onchange = renderList;
-$("calibReset").onclick = () => { usualLooks.forget(); renderList(); };
+$("calibReset").onclick = () => {
+  const who = $("forgetWho").value;
+  if (!confirm(who ? `Forget everything learned about ${who} (usual look and normal signals)?` : "Forget everything learned about everyone?")) return;
+  usualLooks.forget(who || undefined); baselines.forget(who || undefined);
+  renderForget(); renderList();
+};
+renderForget();
+addEventListener("pagehide", () => { baselines.save(); usualLooks.save(); });   // keep the last few seconds' learning
 $("testBtn").onclick = runTest;
 $("optVoice").onchange = () => { if ($("optVoice").checked) startVoice(); else stopVoice(); };
 $("optState").onchange = $("optTalkGate").onchange = $("optHandGate").onchange = $("optPose").onchange = renderList;   // from the next check

@@ -36,6 +36,7 @@ Everything runs on one Windows PC. No photos, video, audio or face data leave th
 | **"Looks", not "feels"** | Research shows facial expression is a weak, context-dependent indicator of felt emotion. The wording follows the evidence. |
 | **Layered expression reading** | A quality gate, then voting over time, then a per-person "usual look", then evidence. Each layer fixes a specific failure of single-frame emotion detection. |
 | **New signals are evidence only until measured** | Face-shape cues, talking, motion, blinks, gaze, pulse, body posture, voice and the state model are shown but don't change the label. The options that would change it (skip while talking, skip when a hand is on the face, state model) are off by default. |
+| **Every signal is read against the person's own normal** | People differ more from each other than from their own good and bad days, so a population norm says little about one person (the idiographic view, Molenaar 2004). Each named person's usual level of every signal is learned, separately alone and in company, and the tracker shows departures ("head -2.3 SD for Chris"). Kept in the browser only, and forgettable per person. |
 | **Self-report is the only ground truth for feelings** | An opt-in "feeling check" asks how you feel on two 1–7 scales. Without it, accuracy can only be measured against posed expressions, never against feelings. |
 | **Only numbers are stored for research** | Posed tests and feeling reports save scores and signals (including body points): no pictures, no audio. Live expression, voice, pulse and posture are never written down. |
 | **Two separate apps** (labeling and tracking) | Owner preference. Each stays simple, and both can run at once. |
@@ -61,6 +62,10 @@ useful beyond its own use:
   shoulders, lean, movement, breathing, hand on face) and voice prosody plus a voice arousal/valence model
   (see [Body](#body) and [Voice](#voice)). Combining signals only helps when their errors are independent, so
   `expr_eval.py` measures before anything is combined.
+- **Identity makes context possible.** Because people are recognized, every signal can be read against that
+  person's own normal, alone or in company, instead of a population average. The next step is the
+  interaction between identified people (Kenny's Social Relations Model: what is the person's own style,
+  what a partner brings out, and what is unique to the pair).
 - **A complete measurement harness.** In one script: vote vs state-model accuracy, confidence calibration,
   accuracy by person, face quality, size, head turn and brightness, talking-detector thresholds and
   microphone agreement, and correlations between signals and self-reported feelings. It also produces a

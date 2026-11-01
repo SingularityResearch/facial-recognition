@@ -423,6 +423,23 @@ Added as a third channel, evidence only:
 - Checked on real photos (13/13 points, correct face matching, 45 ms per frame with everything on) and in
   headless Edge; breathing and posture thresholds (`LEAN_ON`, `CROSS_FRAC`, `BREATH_*`) are first guesses.
 
+### Each person's normal (2026-10-31)
+
+Chris: the posture answers are obvious one by one; what matters is reading them in the context of the
+individual, and of interactions between identified people. Step 1 (done): per-person baselines.
+- `signals.js` `Baselines`: for each named person, a running mean and spread of 17 signals (`B_KEYS`:
+  head, neck, tilt, body/head motion, smile, jaw, blinks, gaze, pitch, pitch SD, loudness, speech rate,
+  voice arousal/valence, pulse, breathing), one sample a second, trusted after 120 samples (2 min), then
+  a slow running average (`B_RATE` 1/600, ~10 min). Kept per context: `alone` (only face in view) and
+  `company`, falling back to the overall normal until the context's own is trusted. Spread floors per
+  signal so near-constant signals don't produce huge z values.
+- `FaceSignals.snapshot()` gives the current values; `unusualEvidence()` shows |z| >= 2 ("unusual for
+  Chris (alone): head -2.3 SD"). Controlled by "Calibrate to each person"; stored in localStorage
+  `ft-baselines` (never in `data/`, which is published). "Forget what's learned" works for everyone or
+  one person (usual looks too). Feeling reports gain `withOthers`.
+- Step 2 (to discuss): interaction layer between identified people (turn-taking, attention, movement
+  synchrony, mimicry, approach), framed by Kenny's Social Relations Model (actor, partner, relationship).
+
 ## 10. Open items / ideas not yet done
 
 - Record more posed sessions (now with the talking and "chin on hand" steps) and feeling reports; then

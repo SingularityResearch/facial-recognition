@@ -139,6 +139,70 @@ test("breathing: 15 breaths a minute from the shoulders' rise and fall", () => {
   assert.equal(moving.breathing(30000), null);                    // too much movement to read breathing
 });
 
+const memStore = () => { const m = {}; return { getItem: k => m[k] ?? null, setItem: (k, v) => { m[k] = v; }, removeItem: k => { delete m[k]; }, m }; };
+// n one-a-second samples of a person, head height around `head` (±0.05), speaking pitch around `pitch`
+const teach = (b, name, n, { head = 0.5, pitch = 120, ctx = "alone", t0 = 0 } = {}) => {
+  for (let i = 0; i < n; i++) b.learn(name, { head: head + (i % 2 ? 0.05 : -0.05), pitch: pitch + (i % 2 ? 10 : -10) }, ctx, t0 + i * 1000);
+};
+
+test("baselines: learning until trusted, then departures in spreads from the person's normal", () => {
+  const b = new S.Baselines(memStore());
+  teach(b, "Chris", 60);
+  assert.deepEqual(b.z("Chris", { head: 0.2 }, "alone"), {});          // not trusted yet
+  assert.equal(b.progress("Chris"), 0.5);
+  assert.match(S.unusualEvidence(b, "Chris", { head: 0.2 }, "alone"), /learning Chris's normal 50%/);
+  teach(b, "Chris", 120, { t0: 60000 });
+  const z = b.z("Chris", { head: 0.3, pitch: 121 }, "alone");
+  assert.ok(z.head < -3, `head z ${z.head}`);                          // 0.2 below a normal of 0.5 ± 0.05
+  assert.ok(Math.abs(z.pitch) < 0.5);
+  assert.match(S.unusualEvidence(b, "Chris", { head: 0.3, pitch: 121 }, "alone"), /^unusual for Chris \(alone\): head -\d\.\d SD$/);
+  assert.equal(S.unusualEvidence(b, "Chris", { head: 0.5, pitch: 120 }, "alone"), "usual for Chris (alone)");
+});
+
+test("baselines: one sample a second, never for Unknown, people differ", () => {
+  const b = new S.Baselines(memStore());
+  assert.equal(b.learn("Chris", { head: 0.5 }, "alone", 0), true);
+  assert.equal(b.learn("Chris", { head: 0.5 }, "alone", 500), false);   // too soon
+  assert.equal(b.learn("Unknown", { head: 0.5 }, "alone", 0), false);
+  teach(b, "Chris", 150, { head: 0.5, t0: 2000 });
+  teach(b, "Mom", 150, { head: 0.3, t0: 2000 });
+  const head = { head: 0.3 };
+  assert.ok(b.z("Chris", head, "alone").head < -3);                    // low for Chris...
+  assert.ok(Math.abs(b.z("Mom", head, "alone").head) < 0.5);           // ...normal for Mom
+});
+
+test("baselines: company has its own normal, falling back to the overall one until trusted", () => {
+  const b = new S.Baselines(memStore());
+  teach(b, "Chris", 150, { pitch: 120, ctx: "alone" });
+  assert.equal(b.normal("Chris", "pitch", "company").scope, "all");    // no company normal yet: overall
+  teach(b, "Chris", 150, { pitch: 160, ctx: "company", t0: 200000 });
+  const n = b.normal("Chris", "pitch", "company");
+  assert.equal(n.scope, "company");
+  assert.ok(Math.abs(n.m - 160) < 1);
+  assert.ok(Math.abs(b.z("Chris", { pitch: 160 }, "company").pitch) < 0.5);   // usual in company...
+  assert.ok(b.z("Chris", { pitch: 160 }, "alone").pitch > 2);                // ...unusual alone
+});
+
+test("baselines: saved in the store, forgotten per person or all", () => {
+  const store = memStore(), b = new S.Baselines(store);
+  teach(b, "Chris", 130); teach(b, "Mom", 130);
+  b.save();
+  assert.deepEqual(new S.Baselines(store).names(), ["Chris", "Mom"]);
+  b.forget("Mom");
+  assert.deepEqual(new S.Baselines(store).names(), ["Chris"]);
+  b.forget();
+  assert.equal(store.m["ft-baselines"], undefined);
+  assert.deepEqual(b.names(), []);
+});
+
+test("snapshot has every baseline signal", () => {
+  const f = new S.FaceSignals();
+  for (let i = 0; i < 12; i++) { f.addPosition(i * 100, [100, 100, 200, 200]); f.addCues(i * 100, { smile: 0.4, jaw: 0.1 }); f.addPose(i * 100, body(), false); }
+  const s = f.snapshot(1100, { stats: { pitch: 150, pitchSd: 2, loudness: 15, rate: 4 }, avd: [0.6, 0.5, 0.4] });
+  assert.deepEqual(Object.keys(s).sort(), Object.keys(S.B_KEYS).sort());
+  assert.equal(s.head, 0.5); assert.ok(Math.abs(s.smile - 0.4) < 1e-9); assert.equal(s.pitch, 150); assert.equal(s.voiceValence, 0.4);
+});
+
 test("summary has every feature, and applyFit uses the person's model or the shared one", () => {
   const f = new S.FaceSignals();
   for (let i = 0; i < 50; i++) {

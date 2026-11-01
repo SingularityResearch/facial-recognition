@@ -110,7 +110,10 @@
     save() { this.saved = Date.now(); try { this.store?.setItem(STORE_KEY, JSON.stringify(this.looks)); } catch {} }
     progress(name) { return Math.min(1, (this.looks[name]?.n || 0) / X_SETTLED); }   // 1 = trusted
     usual(name) { const b = this.looks[name]; return b && b.n >= X_SETTLED ? b.p : null; }
-    forget() { this.looks = {}; try { this.store?.removeItem(STORE_KEY); } catch {} }
+    forget(name) {                              // one person, or everyone
+      if (name) { delete this.looks[name]; this.save(); return; }
+      this.looks = {}; try { this.store?.removeItem(STORE_KEY); } catch {}
+    }
   }
 
   const rank = q => q.map((v, i) => i).sort((i, j) => q[j] - q[i]);

@@ -25,6 +25,11 @@
 //              and fall of the shoulders. For intense emotions the body is often more telling than
 //              the face (Aviezer et al. 2012); movement tracks arousal well, valence poorly.
 //
+// Each named person's normal: what counts as "head low" or "fast speech" differs a lot between people
+// (a soft-spoken person isn't sad, a habitual slouch isn't dejection), so Baselines learns every
+// signal's usual level and spread for each person, separately alone and in company, kept in this
+// browser only. Readings are then shown as departures from that person's normal ("head -2.1 SD").
+//
 // All of these are evidence: shown, never used to change the expression label. The one exception is
 // the page's "skip expression while talking" option (off by default). None of the thresholds below
 // are measured yet: tools/expr_eval.py measures the talking detector on posed test sessions and fits
@@ -49,6 +54,14 @@
   const LEAN_ON = 0.08;                           // shoulder width this much (log) above/below the last 30 s = leaning in/back
   const CROSS_FRAC = 0.15;                        // a wrist this far (shoulder widths) past the body's midline counts as crossed
   const BREATH_MS = 30000, BREATH_MIN_MS = 15000, BREATH_HZ = 5, BREATH_BPM = [6, 30], BREATH_MAX_MOTION = 0.1;
+  // Per-person baselines: one sample a second; trusted after 2 minutes of a person; after that a slow
+  // running average (about 10 minutes' memory). A reading B_Z spreads from the person's normal is shown.
+  const B_EVERY_MS = 1000, B_SETTLED = 120, B_RATE = 1 / 600, B_Z = 2, B_STORE = "ft-baselines";
+  // Signals with a per-person baseline, and the smallest spread that counts (so a signal that never
+  // varies doesn't make tiny changes look huge)
+  const B_KEYS = { head: 0.02, neck: 0.02, tilt: 1, bodyMotion: 0.02, motion: 0.02, smile: 0.03, jaw: 0.02,
+                   blinkRate: 2, gazeAway: 0.05, pitch: 5, pitchSd: 0.3, loudness: 1, speechRate: 0.3,
+                   voiceArousal: 0.03, voiceValence: 0.03, pulse: 3, breathing: 1 };
   // Body points as sent by tracker.py (face_id.POSE_POINTS order)
   const P = { nose: 0, earL: 1, earR: 2, shL: 3, shR: 4, elL: 5, elR: 6, wrL: 7, wrR: 8, ixL: 9, ixR: 10, hipL: 11, hipR: 12 };
 
@@ -249,6 +262,22 @@
       const m = this.motion(now);
       if (m && m.speed > PULSE_MAX_MOTION) return null;
       return pulseFrom(this.rgb);
+    }
+
+    // The signals right now, for the per-person baselines (B_KEYS; null where not available).
+    snapshot(now, voice) {
+      const q = this.posture(now), m = this.motion(now), cues = since(this.cues, now, 1000);
+      const s = voice?.stats, avd = voice?.avd, p = this.pulse(now), br = this.breathing(now);
+      return {
+        head: q?.head ?? null, neck: q?.neck ?? null, tilt: q?.tilt ?? null,
+        bodyMotion: this.bodyMotion(now), motion: m ? m.speed : null,
+        smile: cues.length ? mean(cues.map(c => c.smile ?? 0)) : null,
+        jaw: cues.length ? mean(cues.map(c => c.jaw ?? 0)) : null,
+        blinkRate: this.blinkRate(now), gazeAway: this.gazeAway(now, 5000),
+        pitch: s?.pitch ?? null, pitchSd: s?.pitchSd ?? null, loudness: s?.loudness ?? null, speechRate: s?.rate ?? null,
+        voiceArousal: avd ? avd[0] : null, voiceValence: avd ? avd[2] : null,
+        pulse: p && p.snr > 0 ? p.bpm : null, breathing: br && br.snr > 0 ? br.bpm : null,
+      };
     }
 
     // Numbers for a feeling report: averages over the last 30 s, named as in FEATURES.
@@ -462,6 +491,76 @@
     currentAvd(now) { return this.avd && now - this.avdT < 5000 ? this.avd : null; }
   }
 
+  // ------------------------------------------------------------------ each person's normal
+  // { "<name>": { all: {key: {n, m, v}}, alone: {...}, company: {...} } } in localStorage (B_STORE).
+  // ctx: "alone" (the only face in view) or "company".
+  class Baselines {
+    constructor(store) {
+      this.store = store; this.saved = 0; this.last = {};
+      try { this.people = JSON.parse(store?.getItem(B_STORE) || "{}"); } catch { this.people = {}; }
+    }
+    // Learn one sample (at most one a second per person). Returns true when it learned.
+    learn(name, snap, ctx, now) {
+      if (!name || name === "Unknown" || now - (this.last[name] ?? -Infinity) < B_EVERY_MS) return false;
+      this.last[name] = now;
+      const person = this.people[name] || (this.people[name] = {});
+      for (const scope of ["all", ctx]) {
+        const b = person[scope] || (person[scope] = {});
+        for (const k of Object.keys(B_KEYS)) {
+          const x = snap[k];
+          if (x == null || !isFinite(x)) continue;
+          const s = b[k] || (b[k] = { n: 0, m: x, v: 0 });
+          const rate = Math.max(B_RATE, 1 / (s.n + 1)), d = x - s.m;   // plain average at first, then slow
+          s.m += rate * d; s.v = (1 - rate) * (s.v + rate * d * d); s.n++;
+        }
+      }
+      if (now - this.saved > 5000) this.save(now);
+      return true;
+    }
+    save(now = 0) { this.saved = now; try { this.store?.setItem(B_STORE, JSON.stringify(this.people)); } catch {} }
+    // The person's normal for one signal: the context's own once trusted, else their overall one.
+    normal(name, k, ctx) {
+      const p = this.people[name];
+      for (const scope of [ctx, "all"]) { const s = p?.[scope]?.[k]; if (s && s.n >= B_SETTLED) return { m: s.m, sd: Math.max(Math.sqrt(s.v), B_KEYS[k]), scope }; }
+      return null;
+    }
+    // How far each current signal is from the person's normal, in spreads: { key: z }.
+    z(name, snap, ctx) {
+      const out = {};
+      for (const k of Object.keys(B_KEYS)) {
+        const x = snap[k], b = x == null ? null : this.normal(name, k, ctx);
+        if (b) out[k] = (x - b.m) / b.sd;
+      }
+      return out;
+    }
+    progress(name) {                              // 0..1: how far the person's normal has been learned
+      const all = this.people[name]?.all;
+      if (!all) return 0;
+      const ns = Object.values(all).map(s => s.n);
+      return Math.min(1, Math.max(...ns) / B_SETTLED);
+    }
+    names() { return Object.keys(this.people).sort(); }
+    forget(name) {
+      if (name) { delete this.people[name]; delete this.last[name]; } else { this.people = {}; this.last = {}; }
+      try { if (name) this.save(); else this.store?.removeItem(B_STORE); } catch {}
+    }
+  }
+
+  // Evidence line of departures from a person's normal: "unusual for Chris (alone): head -2.3 SD, pitch +2.1 SD",
+  // "learning Chris's normal 40%", or "" when nothing stands out.
+  function unusualEvidence(baselines, name, snap, ctx) {
+    if (!baselines || !name || name === "Unknown") return "";
+    const z = baselines.z(name, snap, ctx), keys = Object.keys(z);
+    if (!keys.length) {
+      const p = baselines.progress(name);
+      return p < 1 ? `learning ${name}'s normal ${Math.round(p * 100)}%` : "";
+    }
+    const odd = keys.filter(k => Math.abs(z[k]) >= B_Z).sort((a, b) => Math.abs(z[b]) - Math.abs(z[a]));
+    const scope = keys.some(k => baselines.normal(name, k, ctx)?.scope === ctx) ? ` (${ctx})` : "";
+    return odd.length ? `unusual for ${name}${scope}: ` + odd.map(k => `${k} ${z[k] > 0 ? "+" : ""}${z[k].toFixed(1)} SD`).join(", ")
+                      : `usual for ${name}${scope}`;
+  }
+
   // Valence/arousal from a fit made by tools/expr_eval.py on your feeling reports (data/va_fit.json):
   // { features: [...], models: { "<name>" | "*": { mean, scale, v: { w, b }, a: { w, b } } } }.
   // Uses the person's own model, else the shared one ("*"). Missing features count as average.
@@ -506,9 +605,11 @@
     return parts.join(" · ");
   }
 
-  const api = { FaceSignals, VoiceSignals, skinRegions, pulseFrom, applyFit, evidence, bodyEvidence, postureOf, spectralPeak, FEATURES,
+  const api = { FaceSignals, VoiceSignals, Baselines, unusualEvidence, skinRegions, pulseFrom, applyFit, evidence, bodyEvidence,
+                postureOf, spectralPeak, FEATURES, B_KEYS,
                 S: { TALK_JAW_SD, TALK_MS, TALK_MIN, MOTION_MS, BLINK_ON, BLINK_MIN_MS, GAZE_AWAY, SMILE_ON, SUMMARY_MS,
-                     PULSE_MS, PULSE_MIN_MS, PULSE_HZ, PULSE_MAX_MOTION, V_RATE, V_FRAME, V_ON_DB } };
+                     PULSE_MS, PULSE_MIN_MS, PULSE_HZ, PULSE_MAX_MOTION, V_RATE, V_FRAME, V_ON_DB,
+                     B_EVERY_MS, B_SETTLED, B_RATE, B_Z } };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.Signals = api;
 })(typeof window !== "undefined" ? window : globalThis);
