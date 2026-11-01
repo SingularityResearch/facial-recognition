@@ -106,15 +106,25 @@ show.
 The EU AI Act bans emotion recognition in workplaces and schools. That doesn't affect personal, local use
 like this project, but it matters if the project is ever used elsewhere.
 
-## Next experiments
+## What is implemented (2026-10-31)
 
-1. **Measure fusion.** Use posed sessions in `tools/expr_eval.py` to check whether the cues' errors are
-   uncorrelated before combining them.
-2. **Add motion as an arousal signal.** Use head speed and motion energy from the tracker. These don't
-   depend on appearance.
-3. **Add opt-in self-report.** It is the only way to get "feels" ground truth, even with a few dozen
-   samples per person. Any self-report would need to follow the rule that expression is never stored
-   outside opt-in test sessions.
+The suggestions from this document are built into the live tracker. Each one is evidence only until it is
+measured. The [README](../face-recognizer/README.md) ("Other signals") has the details.
+
+| Suggestion | Where |
+|---|---|
+| Self-report ground truth ("feeling check") | Tracker page → Expression test card; `data/expr_eval/feel-*.jsonl` |
+| Calibrated confidence | `tools/expr_eval.py` → `data/expr_calibration.json`; "cal NN%" in the evidence |
+| Talking detection and an optional talking gate | `signals.js` (jaw movement plus microphone voice activity); talking steps in the Expression test |
+| Timing: smile rise, symmetry, how long a reading held | `signals.js` |
+| Independent channels: motion, blinks, gaze, webcam pulse, voice | `signals.js`; voice model Wav2Small in `face_id.Voice` |
+| Valence and arousal fitted to the person | `tools/expr_eval.py` → `data/va_fit.json`; "fit" in the evidence |
+| State model instead of voting | `expression.js` (optional; compared with the vote by `expr_eval.py`) |
+| Accuracy per condition | `tools/expr_eval.py` (person, quality, size, head turn, brightness) |
+
+The first real test session shows why measurement comes first. The model was strongly overconfident (fitted
+temperature about 6). It read posed "angry" as disgust and posed "fearful" as happy, while "happy" and
+"neutral" were right 98% of the time.
 
 ## References
 

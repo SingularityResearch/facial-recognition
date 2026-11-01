@@ -11,6 +11,14 @@
 // usual look has been learned, face-shape cues, a rough valence/arousal) for the evidence view and
 // for tuning. The cues and valence/arousal are shown only; they never change the label.
 //
+// Alongside the vote, each track runs a small state model (a hidden Markov filter over the 7
+// expressions): an expression tends to continue from one check to the next, so each frame nudges a
+// running belief instead of being averaged in a fixed window, and blurry or turned-away frames
+// simply hold the belief. It's shown in the evidence when it disagrees with the vote, and replaces
+// the vote only when the page's "state model" option is on (not yet measured: compare the two with
+// tools/expr_eval.py before trusting it). A temperature fitted by expr_eval on your test sessions
+// turns the vote share into a calibrated confidence ("cal 64%" = right about 64% of the time).
+//
 // Runs in the browser (window.Expression) and in Node for the tests (tests/expression.test.js).
 (function (root) {
   "use strict";
@@ -24,6 +32,9 @@
   const X_LEARN_Q = 0.3;            // the usual look learns only from frames at least this sharp
   const X_CHANGE_SHARE = 0.25;      // a departure from the usual must also hold this much of the plain vote
   const STORE_KEY = "ft-usual";
+  // State model, not measured yet: chance an expression continues from one scored check to the next
+  // (0.9 = about ten checks, a second, on average), and the quality at which a frame counts fully.
+  const H_STAY = 0.9, H_FULL_Q = 0.5;
 
   // Rough place of each label on the valence (unpleasant..pleasant) / arousal (calm..excited) circle.
   // Textbook placements, not measured: shown in the evidence view only.
@@ -43,7 +54,7 @@
   // The recent expression checks of one tracked face.
   class Track {
     constructor() { this.clear(); }
-    clear() { this.votes = []; this.cues = []; this.miss = 0; this.skip = null; this.fresh = false; }
+    clear() { this.votes = []; this.cues = []; this.miss = 0; this.skip = null; this.fresh = false; this.state = null; }
 
     // One check of this face: probs is null when the recognizer couldn't read it, and skip says why
     // ("blurry", "turned"). Such checks cast no vote; after X_STALE of them in a row the reading is dropped.
@@ -55,11 +66,31 @@
         this.votes.push({ probs, weight, quality });
         if (this.votes.length > X_WINDOW) this.votes.shift();
         if (cues) { this.cues.push(cues); if (this.cues.length > X_WINDOW) this.cues.shift(); }
+        this.state = filterStep(this.state, probs, quality);
         this.miss = 0;
       } else if (++this.miss > X_STALE) {
-        this.votes = []; this.cues = [];
+        this.votes = []; this.cues = []; this.state = null;
       }
     }
+  }
+
+  // One step of the state model: the belief drifts toward "could be anything" by 1 - H_STAY, then is
+  // multiplied by this frame's probabilities (raised to a power below 1 for blurry frames, so they
+  // move it less) and renormalized.
+  function filterStep(state, probs, quality) {
+    const n = probs.length;
+    const w = quality == null ? 0.5 : Math.min(1, Math.max(0.1, quality / H_FULL_Q));
+    const prior = state || new Array(n).fill(1 / n);
+    const post = prior.map((v, i) => (H_STAY * v + (1 - H_STAY) / n) * Math.pow(Math.max(probs[i], 1e-6), w));
+    const s = post.reduce((a, v) => a + v, 0);
+    return post.map(v => v / s);
+  }
+
+  // Calibrated confidence of the top label: probabilities sharpened or softened by temperature t.
+  function calibrated(p, top, t) {
+    if (!t || !(t > 0)) return null;
+    const z = p.map(v => Math.pow(Math.max(v, 1e-9), 1 / t)), s = z.reduce((a, v) => a + v, 0);
+    return z[top] / s;
   }
 
   // Each named person's usual look: a running average of their expression probabilities.
@@ -89,17 +120,20 @@
   //   labels      expression names, in the recognizer's order
   //   name        the person's name ("Unknown" is never calibrated)
   //   usualLooks  a UsualLooks to learn from and compare with, or null when calibration is off
-  // Returns { label, share, lead, votes, state, flags, va, cues, learning }:
+  //   opts        { stateModel: use the state model's belief instead of the vote,
+  //                 temperature: fitted by expr_eval, for the calibrated confidence }
+  // Returns { label, share, lead, votes, state, flags, va, cues, learning, cal, belief }:
   //   state  "plain" clear winner | "change" departs from this person's usual | "usual" matches it |
   //          "unsure" no clear winner (shown dimmed with "?")
   //   flags  why it isn't clear, or what to keep in mind: few-votes, low-share, low-lead, blurry,
   //          turned (the latest frame couldn't be read), learning (usual look not trusted yet)
-  function read(track, labels, name, usualLooks) {
+  function read(track, labels, name, usualLooks, opts = {}) {
     if (!labels || !track.votes.length) return null;
-    const n = labels.length, p = new Array(n).fill(0);
-    let ws = 0;
+    const n = labels.length;
+    let p = new Array(n).fill(0), ws = 0;
     for (const { probs, weight } of track.votes) { for (let i = 0; i < n; i++) p[i] += probs[i] * weight; ws += weight; }
     for (let i = 0; i < n; i++) p[i] /= ws;
+    if (opts.stateModel && track.state) p = track.state.slice();
     const votes = track.votes.length;
     const flagsFor = (q, top, second) => [
       ...(votes < X_MIN_VOTES ? ["few-votes"] : []),
@@ -139,6 +173,11 @@
       out = reading(p, r0, r1, flagsFor(p, r0, r1).length === 0 ? "plain" : "unsure", extra);
     }
     out.learning = learning;
+    out.cal = calibrated(p, r0, opts.temperature);
+    if (track.state) {
+      const b = rank(track.state)[0];
+      out.belief = { label: labels[b], p: track.state[b] };
+    }
     return out;
   }
 
@@ -152,8 +191,11 @@
   function evidence(e) {
     if (!e) return "";
     const sign = v => (v >= 0 ? "+" : "") + v.toFixed(1);
+    const va = e.vaFit ? `V${sign(e.vaFit[0])} A${sign(e.vaFit[1])} fit` : `V${sign(e.va[0])} A${sign(e.va[1])}`;
     const parts = [`${e.votes} vote${e.votes === 1 ? "" : "s"}`, `${Math.round(e.share * 100)}%`,
-                   `lead ${Math.round(e.lead * 100)}`, `V${sign(e.va[0])} A${sign(e.va[1])}`];
+                   `lead ${Math.round(e.lead * 100)}`, va];
+    if (e.cal != null) parts.push(`cal ${Math.round(e.cal * 100)}%`);
+    if (e.belief && e.belief.label !== e.label) parts.push(`state ${e.belief.label} ${Math.round(e.belief.p * 100)}%`);
     if (e.cues && Object.keys(e.cues).length)
       parts.push(Object.entries(e.cues).map(([c, v]) => `${c} ${v.toFixed(2).replace(/^0/, "")}`).join(" "));
     if (e.learning != null) parts.push(`usual look ${Math.round(e.learning * 100)}% learned`);
@@ -162,8 +204,9 @@
     return parts.join(" · ");
   }
 
-  const api = { Track, UsualLooks, read, text, evidence, VA, CUE_SIGNS,
-                X: { X_SURE, X_MARGIN, X_MIN_VOTES, X_WINDOW, X_STALE, X_FLOOR, X_RATE, X_SETTLED, X_LEARN_Q, X_CHANGE_SHARE } };
+  const api = { Track, UsualLooks, read, text, evidence, filterStep, calibrated, VA, CUE_SIGNS,
+                X: { X_SURE, X_MARGIN, X_MIN_VOTES, X_WINDOW, X_STALE, X_FLOOR, X_RATE, X_SETTLED, X_LEARN_Q, X_CHANGE_SHARE,
+                     H_STAY, H_FULL_Q } };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.Expression = api;
 })(typeof window !== "undefined" ? window : globalThis);

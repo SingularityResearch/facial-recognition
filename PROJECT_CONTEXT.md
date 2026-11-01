@@ -50,6 +50,8 @@ X:\source\facial-recognition\
     ├── label_ui.html             labeling page (served by label_tool.py)
     ├── tracker.py                live tracker server → http://127.0.0.1:8766 (launch: recognize.bat)
     ├── tracker_ui.html           live tracker page (served by tracker.py)
+    ├── expression.js             expression vote, state model, usual looks, evidence (browser; tests\)
+    ├── signals.js                motion, talking, blinks, gaze, timing, pulse, voice, VA fit (browser; tests\)
     ├── localguard.py             refuse_reason(): request checks shared by both servers
     ├── setup.bat                 installs Python 3.12 via winget, then pip installs requirements.txt
     ├── recognize.bat             starts tracker.py (checks cv2/numpy are installed first)
@@ -60,7 +62,9 @@ X:\source\facial-recognition\
     │   ├── eval_models.py        ArcFace vs AdaFace vs both, on clean/blurred/tiny/motion faces → data\model_eval.json
     │   ├── hw_bench.py           CPU vs GPU vs NPU timing; compiles the NPU model → data\hw_bench.json
     │   ├── expr_check.py         sanity check for the expression model
+    │   ├── expr_eval.py          posed tests + feeling reports → accuracy, calibration, talking, VA fit
     │   ├── get_adaface.py        downloads the official AdaFace IR-101 weights and converts them to ONNX
+    │   ├── get_wav2small.py      downloads audEERING Wav2Small weights and converts them to ONNX
     │   └── import_bench.py       photo-import timing
     ├── models\
     │   ├── face_detection_yunet_2023mar.onnx           YuNet detector (OpenCV Zoo)
@@ -69,6 +73,8 @@ X:\source\facial-recognition\
     │   ├── ediffiqa_tiny_jun2024.onnx                  eDifFIQA face quality (optional)
     │   ├── facial_expression_recognition_mobilefacenet_2022july.onnx   7-class expression model (optional)
     │   ├── adaface_ir101_webface12m.onnx, adaface_src\  AdaFace, evaluated and not used
+    │   ├── face_landmarker.task                        MediaPipe blendshapes (optional)
+    │   ├── wav2small.onnx, wav2small_src\              voice arousal/dominance/valence, 69 KB (optional; CC BY-NC-SA)
     │   └── npu\                                        static batch-1 ArcFace, vitisai_config.json, compile cache
     └── data\                     produced by the tools; shared by all programs
         ├── faces.npz             every face found: permanent ID (fid), photo, box, face print, quality, thumbnail
@@ -370,7 +376,40 @@ Following the review in `Real-Time Facial Emotion Recognition.md`, with Chris's 
 - Caveat: `mediapipe` installs `opencv-contrib-python` alongside `opencv-python` (both 5.0.0.93; works,
   but keep their versions identical).
 
+### Other signals, voice and feeling reports (2026-10-31)
+
+Background and research: [docs/WHY_LAYERED_EXPRESSION.md](docs/WHY_LAYERED_EXPRESSION.md). Chris asked to
+implement every suggestion from it, including speech (camera + microphone + a voice-emotion model), and to
+fit valence/arousal from his own data rather than download a face valence/arousal model.
+- **`signals.js`** (browser, Node tests): head motion and approach, talking (jaw-opening spread over 1.5 s,
+  confirmed by mic voice activity), blink rate, gaze-away share, smile rise speed / asymmetry / how long a
+  reading held, **webcam pulse** (POS rPPG on forehead + cheeks, with SNR; off by default), **microphone**
+  features (noise-floor VAD, autocorrelation pitch, pitch SD in semitones, loudness, syllable-rate proxy;
+  off by default; audio never stored), feeling-report summaries, `applyFit`.
+- **Voice model:** audEERING **Wav2Small** (17K params, arousal/dominance/valence, CC BY-NC-SA 4.0,
+  non-commercial). `tools/get_wav2small.py` reads the safetensors as plain arrays, writes the network out
+  locally (no downloaded code runs) and exports `models/wav2small.onnx` (matches PyTorch to 1e-4). Runs on
+  CPU via ONNX Runtime in `face_id.Voice`; `POST /api/voice` takes 0.5–10 s of float32 16 kHz audio.
+  Validated only against PyTorch and a synthetic tone, not yet on real speech.
+- **`expression.js`:** state model (HMM filter, `H_STAY` 0.9, unmeasured) shown when it disagrees with the
+  vote; temperature-calibrated confidence ("cal NN%") from `data/expr_calibration.json`.
+- Two label-changing options, **off by default until measured**: skip expression while talking, use the
+  state model.
+- **Feeling check:** opt-in self-report (pleasant 1–7, energized 1–7, who) saved with a 28-number summary
+  of the previous 30 s to `data/expr_eval/feel-<day>.jsonl`; `POST /api/expr-eval/report` validates it.
+- **Expression test** now ends with two talking steps (neutral, smiling) recorded with `talk`, `tv` (jaw
+  score) and `vad`; frames also record face brightness.
+- **`tools/expr_eval.py`** sections: accuracy (vote vs state model), calibration (writes
+  `data/expr_calibration.json`), accuracy by person/quality/size/turn/brightness, talking (misreads, best
+  `TALK_JAW_SD`, mic agreement), cues, feeling reports (correlations; ridge fit per person ≥ 15 reports and
+  shared ≥ 20, kept only when leave-one-out beats guessing the average; writes `data/va_fit.json`).
+- First real session (2026-10-30, 549 frames): happy and neutral 98% voted+clear; posed angry read as
+  disgust 84%, fearful as happy 85%, sad as disgust 71%; fitted temperature ≈ 6 (strongly overconfident).
+
 ## 10. Open items / ideas not yet done
 
-- Record posed sessions, run `tools/expr_eval.py`, then decide whether/how cues are fused into the label. If continuing, re-measure thresholds after any
+- Record more posed sessions (now with the talking steps) and feeling reports; then decide on
+  `TALK_JAW_SD`, the talking gate, the state model and any cue fusion from `tools/expr_eval.py`.
+- Check the voice model and pulse on real speech and a still face; neither has been validated live yet.
+- If continuing, re-measure thresholds after any
 model change (`python face_id.py reembed`, then `tools\eval_models.py` and `people`).

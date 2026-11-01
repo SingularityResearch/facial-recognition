@@ -54,8 +54,13 @@ CUES = {
     "browDown": ["browDownLeft", "browDownRight"], "browInnerUp": ["browInnerUp"],
     "browOuterUp": ["browOuterUpLeft", "browOuterUpRight"], "eyeWide": ["eyeWideLeft", "eyeWideRight"],
     "eyeSquint": ["eyeSquintLeft", "eyeSquintRight"], "sneer": ["noseSneerLeft", "noseSneerRight"],
-    "upperLip": ["mouthUpperUpLeft", "mouthUpperUpRight"],
+    "upperLip": ["mouthUpperUpLeft", "mouthUpperUpRight"], "blink": ["eyeBlinkLeft", "eyeBlinkRight"],
 }
+# Eye directions for the "gaze" cue: (left eye, right eye) blendshapes that move together.
+GAZE = [("eyeLookOutLeft", "eyeLookInRight"), ("eyeLookInLeft", "eyeLookOutRight"),
+        ("eyeLookUpLeft", "eyeLookUpRight"), ("eyeLookDownLeft", "eyeLookDownRight")]
+VOICE_MODEL = MODELS / "wav2small.onnx"       # Wav2Small voice arousal/dominance/valence (optional; tools/get_wav2small.py)
+VOICE_RATE = 16000                            # samples per second it expects
 
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".gif", ".tif", ".tiff"}
 VIDEO_EXT = {".mov", ".mp4", ".m4v", ".avi", ".mkv"}
@@ -338,8 +343,39 @@ def expression_skip(row, quality):
 
 
 def face_cues(blendshapes):
-    """Reduce MediaPipe's 52 blendshapes to the CUES, each rounded to 2 decimals."""
-    return {cue: round(sum(blendshapes.get(n, 0.0) for n in names) / len(names), 2) for cue, names in CUES.items()}
+    """Reduce MediaPipe's 52 blendshapes to the CUES, plus smileAsym (left/right smile difference:
+    posed smiles tend to be less symmetric than spontaneous ones) and gaze (how far both eyes look
+    away from straight ahead, in the strongest direction), each rounded to 2 decimals."""
+    g = lambda n: blendshapes.get(n, 0.0)          # noqa: E731
+    out = {cue: round(sum(g(n) for n in names) / len(names), 2) for cue, names in CUES.items()}
+    out["smileAsym"] = round(abs(g("mouthSmileLeft") - g("mouthSmileRight")), 2)
+    out["gaze"] = round(max((g(a) + g(b)) / 2 for a, b in GAZE), 2)
+    return out
+
+
+class Voice:
+    """Wav2Small (audEERING; CC BY-NC-SA 4.0, non-commercial): arousal, dominance and valence of a
+    voice, each about 0..1, from 16 kHz mono speech. 17K parameters, so it runs on the CPU in about a
+    millisecond per second of audio. Optional: install it with tools/get_wav2small.py.
+    Audio is only scored here, never written anywhere."""
+
+    def __init__(self):
+        self._run = None
+        if VOICE_MODEL.exists() and _has_module("onnxruntime"):
+            import onnxruntime as ort
+            so = ort.SessionOptions()
+            so.log_severity_level = 3
+            sess = ort.InferenceSession(str(VOICE_MODEL), so, providers=["CPUExecutionProvider"])
+            self._run = lambda x: sess.run(None, {"audio": x})[0]
+        self.model = VOICE_MODEL.name if self._run else None
+        self.device = "CPU (ONNX Runtime)" if self._run else None
+
+    def avd(self, samples):
+        """[arousal, dominance, valence] for float32 samples at VOICE_RATE, or None without the model."""
+        if self._run is None:
+            return None
+        x = np.ascontiguousarray(np.asarray(samples, np.float32)[None])
+        return [float(v) for v in np.asarray(self._run(x)).ravel()[:3]]
 
 
 def _has_module(name):

@@ -110,6 +110,41 @@ test("usual look ignores blurry frames and Unknown faces, and can be forgotten",
   assert.deepEqual(looks.looks, {});
 });
 
+test("state model: follows a held expression, holds through unscored frames, resets when stale", () => {
+  const t = new X.Track();
+  feed(t, 6, probs("happy", 0.6));
+  let e = X.read(t, LABELS, "Unknown", null);
+  assert.equal(e.belief.label, "happy");
+  assert.ok(e.belief.p > 0.9, `belief ${e.belief.p}`);            // a held expression builds confidence
+  const before = t.state.slice();
+  t.add(null, 0.1, "blurry");
+  assert.deepEqual(t.state, before);
+  for (let i = 0; i < X.X.X_STALE; i++) t.add(null, 0.1, "blurry");
+  assert.equal(t.state, null);
+});
+
+test("state model: one odd frame moves it less than the vote; the option uses it for the label", () => {
+  const t = new X.Track();
+  feed(t, 8, probs("neutral", 0.6));
+  feed(t, 3, probs("surprised", 0.9));
+  const vote = X.read(t, LABELS, "Unknown", null), state = X.read(t, LABELS, "Unknown", null, { stateModel: true });
+  assert.equal(state.share, t.state[LABELS.indexOf(state.label)]);
+  assert.notEqual(vote.share, state.share);
+  const blurry = X.filterStep(null, probs("sad", 0.9), 0.05), sharp = X.filterStep(null, probs("sad", 0.9), 0.6);
+  assert.ok(blurry[LABELS.indexOf("sad")] < sharp[LABELS.indexOf("sad")]);   // blurry frames move it less
+});
+
+test("calibrated confidence: temperature 1 keeps the share, above 1 softens it", () => {
+  const t = new X.Track();
+  feed(t, 4, probs("happy", 0.7));
+  const plain = X.read(t, LABELS, "Unknown", null);
+  assert.equal(plain.cal, null);
+  assert.ok(Math.abs(X.read(t, LABELS, "Unknown", null, { temperature: 1 }).cal - 0.7) < 1e-9);
+  const soft = X.read(t, LABELS, "Unknown", null, { temperature: 2 });
+  assert.ok(soft.cal < 0.7);
+  assert.match(X.evidence(soft), /cal \d+%/);
+});
+
 test("valence/arousal and cues follow the votes", () => {
   const t = new X.Track();
   feed(t, 4, probs("happy", 1), 0.5, { smile: 0.8, cheek: 0.6, browDown: 0.1 });
