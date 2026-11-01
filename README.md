@@ -35,9 +35,10 @@ Everything runs on one Windows PC. No photos, video, audio or face data leave th
 | **Labels per face, not per cluster** | Cluster numbers change on every regrouping. A permanent ID per face keeps every decision, with undo history. |
 | **"Looks", not "feels"** | Research shows facial expression is a weak, context-dependent indicator of felt emotion. The wording follows the evidence. |
 | **Layered expression reading** | A quality gate, then voting over time, then a per-person "usual look", then evidence. Each layer fixes a specific failure of single-frame emotion detection. |
-| **New signals are evidence only until measured** | Face-shape cues, talking, motion, blinks, gaze, pulse, voice and the state model are shown but don't change the label. The options that would change it are off by default. |
+| **New signals are evidence only until measured** | Face-shape cues, talking, motion, blinks, gaze, pulse, body posture, voice and the state model are shown but don't change the label. The options that would change it (skip while talking, skip when a hand is on the face, state model) are off by default. |
+| **Every signal is read against the person's own normal** | People differ more from each other than from their own good and bad days, so a population norm says little about one person (the idiographic view, Molenaar 2004). Each named person's usual level of every signal is learned, separately alone and in company, and the tracker shows departures ("head -2.3 SD for Chris"). Kept in the browser only, and forgettable per person. |
 | **Self-report is the only ground truth for feelings** | An opt-in "feeling check" asks how you feel on two 1–7 scales. Without it, accuracy can only be measured against posed expressions, never against feelings. |
-| **Only numbers are stored for research** | Posed tests and feeling reports save scores and signals: no pictures, no audio. Live expression, voice and pulse are never written down. |
+| **Only numbers are stored for research** | Posed tests and feeling reports save scores and signals (including body points): no pictures, no audio. Live expression, voice, pulse and posture are never written down. |
 | **Two separate apps** (labeling and tracking) | Owner preference. Each stays simple, and both can run at once. |
 
 The reasoning behind the layered design, with references: [docs/WHY_LAYERED_EXPRESSION.md](docs/WHY_LAYERED_EXPRESSION.md).
@@ -57,9 +58,14 @@ useful beyond its own use:
   session the model read posed "angry" as disgust 84% of the time and was strongly overconfident (fitted
   temperature about 6), while "happy" and "neutral" were right 98% of the time.
 - **Several channels that fail in different ways.** Appearance (expression model and 52 blendshapes),
-  motion, talking, blinks, gaze, smile timing and symmetry, webcam pulse (rPPG) and voice prosody plus a
-  voice arousal/valence model (see [Voice](#voice)). Combining signals only helps when their errors are independent, so
+  motion, talking, blinks, gaze, smile timing and symmetry, webcam pulse (rPPG), body posture (head height,
+  shoulders, lean, movement, breathing, hand on face) and voice prosody plus a voice arousal/valence model
+  (see [Body](#body) and [Voice](#voice)). Combining signals only helps when their errors are independent, so
   `expr_eval.py` measures before anything is combined.
+- **Identity makes context possible.** Because people are recognized, every signal can be read against that
+  person's own normal, alone or in company, instead of a population average. The next step is the
+  interaction between identified people (Kenny's Social Relations Model: what is the person's own style,
+  what a partner brings out, and what is unique to the pair).
 - **A complete measurement harness.** In one script: vote vs state-model accuracy, confidence calibration,
   accuracy by person, face quality, size, head turn and brightness, talking-detector thresholds and
   microphone agreement, and correlations between signals and self-reported feelings. It also produces a
@@ -69,6 +75,32 @@ useful beyond its own use:
 - **A documented trail of decisions.** [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) records what was built, in
   what order, with which measured values and why. The design review that shaped the expression work is kept
   as [Real-Time Facial Emotion Recognition.md](Real-Time%20Facial%20Emotion%20Recognition.md).
+
+## Body
+
+The body is a third channel beside face and voice. For intense emotions it is often the more telling
+one: in Aviezer, Trope & Todorov (2012) people couldn't tell winning from losing tennis players by the
+face alone, but could from the body. Movement tracks arousal well (Wallbott 1998; Dael, Mortillaro &
+Scherer 2012). Some states have typical postures: pride is upright and expanded (Tracy & Robins 2004),
+sadness and shame are slumped with the head lowered. As with the voice, valence is hard to read from the
+body (Kleinsmith & Bianchi-Berthouze 2013), and no posture maps to a single emotion: a slump can be
+sadness or tiredness.
+
+A desk webcam mostly sees head and shoulders, so the tracker measures what that view supports. It uses
+MediaPipe Pose Landmarker lite (Apache 2.0, about 15 ms a frame on the CPU):
+
+| Measure | Meaning |
+|---|---|
+| Head height (nose above the shoulders, in shoulder widths) | Lower: head down or slumped |
+| Neck (ears above the shoulders) | Smaller: shoulders raised (shrug, tension) |
+| Shoulder tilt; leaning in or back against the last 30 s | Engagement or withdrawal |
+| Body movement (shoulders and hands) | Arousal |
+| Breathing rate from the shoulders' rise and fall (still body only) | Arousal and stress; a second body-based check beside the webcam pulse |
+| Hand on face; arms crossed | Self-touch, thinking or anxiety. A hand also hides the face, so the expression reading can skip those frames (option, off by default) |
+
+The Expression test now includes a "chin on your hand" step. `tools/expr_eval.py` reports how well the
+hand detector works and what a hand does to the reading. All body measures go into the feeling reports, so
+the per-person fit decides whether they predict how you feel.
 
 ## Voice
 
@@ -143,8 +175,8 @@ from audEERING.
 
 ### How the voice is measured
 
-- **Talking steps in the Expression test.** The test ends with two talking steps (a neutral face, then
-  smiling). `tools/expr_eval.py` reports how often the microphone's voice activity was on while talking
+- **Talking steps in the Expression test.** After the seven expressions, the test has two talking steps
+  (a neutral face, then smiling) and a "chin on your hand" step. `tools/expr_eval.py` reports how often the microphone's voice activity was on while talking
   versus silent, alongside the jaw-movement detector.
 - **Feeling reports.** `expr_eval.py` correlates the voice measures with how you said you felt, and
   includes them in the per-person valence/arousal fit. A voice measure earns weight only if it helps
@@ -168,8 +200,8 @@ from audEERING.
 - Recognition is mature and measured. On the first posed session, expression reading was right 98% of
   the time for "happy" and "neutral", about half the time for "surprised", and rarely for posed "angry",
   "fearful", "sad" and "disgust".
-- The newer signals (talking gate, state model, pulse, voice model) work in the page but haven't been
-  validated on enough real sessions. Their thresholds are first guesses, marked as such in the code.
+- The newer signals (talking gate, hand-on-face gate, state model, pulse, body posture and breathing,
+  voice model) work in the page but haven't been validated on enough real sessions. Their thresholds are first guesses, marked as such in the code.
 - The valence/arousal fit needs about 15–20 feeling reports per person before it exists at all.
 - This is a single-user personal system, not a product. Expression and feeling readings must not be used
   to make decisions about people. The EU AI Act bans emotion recognition in workplaces and schools.
@@ -194,6 +226,7 @@ about the people in them. Keep it out of any public repository (add `face-recogn
 | OpenCV Zoo YuNet, SFace, expression MobileFaceNet | Detection, fallback recognition, expression | Apache 2.0 / MIT (see OpenCV Zoo) |
 | eDifFIQA (tiny) | Face quality | See its upstream repository |
 | MediaPipe Face Landmarker | Blendshape cues | Apache 2.0 |
+| MediaPipe Pose Landmarker lite | Body posture | Apache 2.0 |
 
 Because of the ArcFace and Wav2Small terms, the project as a whole is for **non-commercial use** unless
 those models are replaced or licensed.

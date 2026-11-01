@@ -19,8 +19,10 @@ Prints:
   3. accuracy by condition: person, face quality, size, head turn and brightness
   4. talking: how often talking faces are misread, how well the jaw-movement detector (TALK_JAW_SD in
      signals.js) and the microphone tell talking from not, and what the talking gate would do
-  5. face-shape cues by expression
-  6. feeling reports: which signals go with how you said you felt, and a valence/arousal fit per
+  5. body: how well the hand-on-face detector works and what a hand on the chin does to the reading
+     (the test's 'chin on hand' step), and posture by expression asked for
+  6. face-shape cues by expression
+  7. feeling reports: which signals go with how you said you felt, and a valence/arousal fit per
      person (and shared) that's kept only if it beats guessing your average; writes data\va_fit.json
 Use it before changing any expression threshold or turning on the experimental options.
 Posed expressions are exaggerated compared with everyday ones, so treat 1-5 as an upper bound.
@@ -102,10 +104,15 @@ def state_model(segment):
     return out
 
 
+def kind(r):
+    """Which kind of posed step a frame is from: "talk", "hand" (chin on hand) or "plain"."""
+    return "talk" if r.get("talk") else "hand" if r.get("handAsked") else "plain"
+
+
 def segments_of(rows):
-    seg = defaultdict(list)                     # (session, posed, talk) -> frames in order
+    seg = defaultdict(list)                     # (session, posed, kind) -> frames in order
     for r in rows:
-        seg[(r["session"], r["posed"], bool(r.get("talk")))].append(r)
+        seg[(r["session"], r["posed"], kind(r))].append(r)
     return seg
 
 
@@ -124,8 +131,8 @@ def accuracy_table(rows, seg):
             continue
         idx = F.EXPRESSIONS.index(label)
         tops = [F.EXPRESSIONS[int(np.argmax(r["expr"]))] for r in rs]
-        votes = [v for (s, posed, talk), sg in seg.items() if posed == label and not talk for v in voted(sg)]
-        states = [v for (s, posed, talk), sg in seg.items() if posed == label and not talk for v in state_model(sg)]
+        votes = [v for (s, posed, k), sg in seg.items() if posed == label and k == "plain" for v in voted(sg)]
+        states = [v for (s, posed, k), sg in seg.items() if posed == label and k == "plain" for v in state_model(sg)]
         wrong = Counter(t for t in tops if t != label)
         print(f"{label:<10} {len(rs):>6} {pct(tops.count(label), len(rs)):>11} "
               f"{pct(sum(v == label for _, v, _ in votes), len(votes))} "
@@ -164,7 +171,7 @@ def ece(ps, ys, bins=10):
 
 def calibration(seg):
     pairs = [(p, F.EXPRESSIONS.index(posed), sg[0]["name"])
-             for (s, posed, talk), sg in seg.items() if not talk for p, _, _ in voted(sg)]
+             for (s, posed, k), sg in seg.items() if k == "plain" for p, _, _ in voted(sg)]
     if len(pairs) < MIN_CAL_FRAMES:
         print(f"Needs at least {MIN_CAL_FRAMES} test frames (have {len(pairs)}); run more Expression tests.")
         return
@@ -193,7 +200,7 @@ def calibration(seg):
 
 # ------------------------------------------------------------------------- 3. by condition
 def by_condition(seg):
-    rows = [(sg[i], v == posed and c) for (s, posed, talk), sg in seg.items() if not talk
+    rows = [(sg[i], v == posed and c) for (s, posed, k), sg in seg.items() if k == "plain"
             for i, (_, v, c) in enumerate(voted(sg))]
     if not rows:
         return
@@ -228,14 +235,15 @@ def talking(rows, seg):
     if not talk:
         print("No talking frames yet: run the Expression test (it ends with two talking steps).")
         return
-    quiet = [r for r in rows if not r.get("talk")]
+    quiet = [r for r in rows if kind(r) == "plain"]
     for label in sorted({r["posed"] for r in talk}):
-        tv = [v for (s, posed, t), sg in seg.items() if posed == label and t for v in voted(sg)]
-        qv = [v for (s, posed, t), sg in seg.items() if posed == label and not t for v in voted(sg)]
+        tv = [v for (s, posed, k), sg in seg.items() if posed == label and k == "talk" for v in voted(sg)]
+        qv = [v for (s, posed, k), sg in seg.items() if posed == label and k == "plain" for v in voted(sg)]
         wrong = Counter(v for _, v, c in tv if c and v != label)
         print(f"Asked '{label}': voted+clear right {pct(sum(v == label and c for _, v, c in tv), len(tv)).strip()} while talking, "
               f"{pct(sum(v == label and c for _, v, c in qv), len(qv)).strip()} silent; while talking misread as "
-              + (", ".join(f"{k} {n * 100 / len(tv):.0f}%" for k, n in wrong.most_common(3)) or "nothing"))
+              + (", ".join(f"{k} {n * 100 / len(tv):.0f}%" for k, n in wrong.most_common(3)) or "nothing")
+              + f"; unclear {pct(sum(not c for _, _, c in tv), len(tv)).strip()}")
     t_s = np.array([r["tv"] for r in talk if r.get("tv") is not None])
     q_s = np.array([r["tv"] for r in quiet if r.get("tv") is not None])
     thr = talk_threshold()
@@ -261,9 +269,55 @@ def talking(rows, seg):
               f"{pct(sum(qv_), len(qv_)).strip()} of silent ones.")
 
 
-# ------------------------------------------------------------------------- 5. cues
+# ------------------------------------------------------------------------- 5. body
+def posture(pts):
+    """Head height and neck (ears) above the shoulder line, in shoulder widths, as in signals.js."""
+    if not pts or pts[3][2] < F.POSE_VIS or pts[4][2] < F.POSE_VIS:
+        return None
+    sw = float(np.hypot(pts[4][0] - pts[3][0], pts[4][1] - pts[3][1]))
+    if sw <= 10:
+        return None
+    mid = (pts[3][1] + pts[4][1]) / 2
+    ears = [pts[i][1] for i in (1, 2) if pts[i][2] >= F.POSE_VIS]
+    return {"head": (mid - pts[0][1]) / sw if pts[0][2] >= F.POSE_VIS else None,
+            "neck": (mid - np.mean(ears)) / sw if ears else None}
+
+
+def body(rows, seg):
+    with_pose = [r for r in rows if r.get("pose")]
+    if not with_pose:
+        print("No body points recorded (the pose model wasn't installed, or no shoulders were in view).")
+        return
+    print(f"{len(with_pose)} test frames with body points ({pct(len(with_pose), len(rows)).strip()} of all).")
+    hand = [r for r in rows if kind(r) == "hand"]
+    if hand:
+        on = [r["hand"] for r in hand if r.get("hand") is not None]
+        off = [r["hand"] for r in rows if kind(r) == "plain" and r.get("hand") is not None]
+        print(f"Hand-on-face detector: on in {pct(sum(on), len(on)).strip()} of 'chin on hand' frames, "
+              f"{pct(sum(off), len(off)).strip()} of the other silent frames.")
+        hv = [v for (s, posed, k), sg in seg.items() if k == "hand" for v in voted(sg)]
+        nv = [v for (s, posed, k), sg in seg.items() if posed == "neutral" and k == "plain" for v in voted(sg)]
+        wrong = Counter(v for _, v, c in hv if c and v != "neutral")
+        print(f"'Neutral' voted+clear right {pct(sum(v == 'neutral' and c for _, v, c in hv), len(hv)).strip()} with a hand "
+              f"on the chin, {pct(sum(v == 'neutral' and c for _, v, c in nv), len(nv)).strip()} without; with the hand misread as "
+              + (", ".join(f"{k} {n * 100 / len(hv):.0f}%" for k, n in wrong.most_common(3)) or "nothing")
+              + f"; unclear {pct(sum(not c for _, _, c in hv), len(hv)).strip()}")
+        print("If the hand costs accuracy and the detector catches it, the 'skip when a hand is on the face' option is worth turning on.")
+    else:
+        print("No 'chin on hand' step yet: run the Expression test (it now ends with one).")
+    print("\nPosture by expression asked for (shoulder widths; head = nose above the shoulders, neck = ears above them):")
+    for label in F.EXPRESSIONS:
+        qs = [q for r in with_pose if r["posed"] == label and kind(r) == "plain" and (q := posture(r["pose"]))]
+        heads = [q["head"] for q in qs if q["head"] is not None]
+        necks = [q["neck"] for q in qs if q["neck"] is not None]
+        if qs:
+            print(f"  {label:<10} {len(qs):>4} frames  head {np.mean(heads) if heads else float('nan'):.2f}  "
+                  f"neck {np.mean(necks) if necks else float('nan'):.2f}")
+
+
+# ------------------------------------------------------------------------- 6. cues
 def cue_table(rows):
-    with_cues = [r for r in rows if r.get("blendshapes") and not r.get("talk")]
+    with_cues = [r for r in rows if r.get("blendshapes") and kind(r) == "plain"]
     if not with_cues:
         print("No face-shape cues recorded (MediaPipe wasn't installed during the test).")
         return
@@ -277,7 +331,7 @@ def cue_table(rows):
     print("Cues that rise clearly above the 'neutral' row for one expression are the ones worth fusing.")
 
 
-# ------------------------------------------------------------------------- 6. feeling reports
+# ------------------------------------------------------------------------- 7. feeling reports
 def design(reports, feats):
     X = np.array([[np.nan if r["features"].get(k) is None else float(r["features"][k]) for k in feats] for r in reports])
     y = np.array([[(r["valence"] - 4) / 3, (r["arousal"] - 4) / 3] for r in reports])
@@ -384,15 +438,16 @@ def main():
                  "or use 'Report how I feel'.")
     print(f"{len(rows)} readable test frames and {len(reports)} feeling reports from {len(files)} file(s)\n")
     seg = segments_of(rows)
-    silent = [r for r in rows if not r.get("talk")]
+    silent = [r for r in rows if kind(r) == "plain"]
     sections = [("1. Expression asked for vs read", lambda: accuracy_table(silent, seg)),
                 ("2. Confidence calibration", lambda: calibration(seg)),
                 ("3. Accuracy by condition (voted readings)", lambda: by_condition(seg)),
                 ("4. Talking", lambda: talking(rows, seg)),
-                ("5. Face-shape cues", lambda: cue_table(rows)),
-                ("6. Feeling reports", lambda: feelings(reports))]
+                ("5. Body: hand on face and posture", lambda: body(rows, seg)),
+                ("6. Face-shape cues", lambda: cue_table(rows)),
+                ("7. Feeling reports", lambda: feelings(reports))]
     for title, run in sections:
-        if title.startswith(("1", "2", "3", "4", "5")) and not rows:
+        if not title.startswith("7") and not rows:
             continue
         print(f"== {title}")
         run()

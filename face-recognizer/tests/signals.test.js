@@ -90,6 +90,119 @@ test("voice: clip returns the latest audio, and avd readings smooth", () => {
   assert.equal(v.currentAvd(9000), null);
 });
 
+// Body points in tracker.py's order: nose, earL, earR, shL, shR, elL, elR, wrL, wrR, ixL, ixR, hipL, hipR.
+// A person facing the camera: their left shoulder appears on the image's right.
+const body = ({ dy = 0, noseUp = 100, earUp = 80, shoulderY = 300, wrists = "down", tilt = 0 } = {}) => {
+  const y = shoulderY + dy, v = 0.9, gone = [0, 0, 0];
+  const wr = wrists === "crossed" ? [[350, y + 80, v], [450, y + 80, v]] : wrists === "down" ? [[520, y + 150, v], [280, y + 150, v]] : [gone, gone];
+  return [[400, y - noseUp, v], [440, y - earUp, v], [360, y - earUp, v], [500, y + tilt, v], [300, y - tilt, v],
+          [520, y + 80, v], [280, y + 80, v], wr[0], wr[1], gone, gone, [470, y + 250, v], [330, y + 250, v]];
+};
+
+test("posture: head height, neck, tilt, arms crossed", () => {
+  const q = S.postureOf(body());
+  assert.equal(q.sw, 200);
+  assert.equal(q.head, 0.5);                                      // nose 100 px above a 200 px shoulder line
+  assert.equal(q.neck, 0.4);
+  assert.equal(q.tilt, 0);
+  assert.equal(q.armsCrossed, false);
+  assert.equal(S.postureOf(body({ wrists: "crossed" })).armsCrossed, true);
+  assert.ok(Math.abs(S.postureOf(body({ tilt: 20 })).tilt - 11.3) < 0.1);
+  assert.ok(S.postureOf(body({ noseUp: 40 })).head < q.head);     // head dropped
+  const noShoulders = body(); noShoulders[3] = [0, 0, 0.1];
+  assert.equal(S.postureOf(noShoulders), null);
+});
+
+test("posture over time: leaning in, hand on face, body movement", () => {
+  const f = new S.FaceSignals();
+  for (let i = 0; i < 20; i++) f.addPose(i * 100, body(), false);
+  const wide = body().map(([x, y, v]) => [400 + (x - 400) * 1.3, y, v]);   // shoulders 30% wider: leaning in
+  f.addPose(2000, wide, true);
+  const q = f.posture(2000);
+  assert.ok(q.lean > 0.08, `lean ${q.lean}`);
+  assert.equal(q.hand, true);
+  assert.ok(f.bodyMotion(1900) < 1e-9);
+  const g = new S.FaceSignals();
+  for (let i = 0; i <= 10; i++) g.addPose(i * 100, body({ dy: i * 20 }), false);   // 200 px/s = 1 shoulder width/s
+  assert.ok(Math.abs(g.bodyMotion(1000) - 1) < 0.01);
+  assert.match(S.bodyEvidence(f, 2000), /head \.\d+ · neck \.\d+ · tilt 0° · leaning in · .*hand on face/);
+});
+
+test("breathing: 15 breaths a minute from the shoulders' rise and fall", () => {
+  const f = new S.FaceSignals();
+  for (let t = 0; t <= 30000; t += 100) f.addPose(t, body({ dy: 3 * Math.sin(2 * Math.PI * 0.25 * t / 1000) + t / 3000 }), false);
+  const b = f.breathing(30000);
+  assert.ok(Math.abs(b.bpm - 15) <= 1, `bpm ${b.bpm}`);
+  assert.ok(b.snr > 0);
+  const moving = new S.FaceSignals();
+  for (let t = 0; t <= 30000; t += 100) moving.addPose(t, body({ dy: (t / 100) % 2 ? 40 : 0 }), false);
+  assert.equal(moving.breathing(30000), null);                    // too much movement to read breathing
+});
+
+const memStore = () => { const m = {}; return { getItem: k => m[k] ?? null, setItem: (k, v) => { m[k] = v; }, removeItem: k => { delete m[k]; }, m }; };
+// n one-a-second samples of a person, head height around `head` (±0.05), speaking pitch around `pitch`
+const teach = (b, name, n, { head = 0.5, pitch = 120, ctx = "alone", t0 = 0 } = {}) => {
+  for (let i = 0; i < n; i++) b.learn(name, { head: head + (i % 2 ? 0.05 : -0.05), pitch: pitch + (i % 2 ? 10 : -10) }, ctx, t0 + i * 1000);
+};
+
+test("baselines: learning until trusted, then departures in spreads from the person's normal", () => {
+  const b = new S.Baselines(memStore());
+  teach(b, "Chris", 60);
+  assert.deepEqual(b.z("Chris", { head: 0.2 }, "alone"), {});          // not trusted yet
+  assert.equal(b.progress("Chris"), 0.5);
+  assert.match(S.unusualEvidence(b, "Chris", { head: 0.2 }, "alone"), /learning Chris's normal 50%/);
+  teach(b, "Chris", 120, { t0: 60000 });
+  const z = b.z("Chris", { head: 0.3, pitch: 121 }, "alone");
+  assert.ok(z.head < -3, `head z ${z.head}`);                          // 0.2 below a normal of 0.5 ± 0.05
+  assert.ok(Math.abs(z.pitch) < 0.5);
+  assert.match(S.unusualEvidence(b, "Chris", { head: 0.3, pitch: 121 }, "alone"), /^unusual for Chris \(alone\): head -\d\.\d SD$/);
+  assert.equal(S.unusualEvidence(b, "Chris", { head: 0.5, pitch: 120 }, "alone"), "usual for Chris (alone)");
+});
+
+test("baselines: one sample a second, never for Unknown, people differ", () => {
+  const b = new S.Baselines(memStore());
+  assert.equal(b.learn("Chris", { head: 0.5 }, "alone", 0), true);
+  assert.equal(b.learn("Chris", { head: 0.5 }, "alone", 500), false);   // too soon
+  assert.equal(b.learn("Unknown", { head: 0.5 }, "alone", 0), false);
+  teach(b, "Chris", 150, { head: 0.5, t0: 2000 });
+  teach(b, "Mom", 150, { head: 0.3, t0: 2000 });
+  const head = { head: 0.3 };
+  assert.ok(b.z("Chris", head, "alone").head < -3);                    // low for Chris...
+  assert.ok(Math.abs(b.z("Mom", head, "alone").head) < 0.5);           // ...normal for Mom
+});
+
+test("baselines: company has its own normal, falling back to the overall one until trusted", () => {
+  const b = new S.Baselines(memStore());
+  teach(b, "Chris", 150, { pitch: 120, ctx: "alone" });
+  assert.equal(b.normal("Chris", "pitch", "company").scope, "all");    // no company normal yet: overall
+  teach(b, "Chris", 150, { pitch: 160, ctx: "company", t0: 200000 });
+  const n = b.normal("Chris", "pitch", "company");
+  assert.equal(n.scope, "company");
+  assert.ok(Math.abs(n.m - 160) < 1);
+  assert.ok(Math.abs(b.z("Chris", { pitch: 160 }, "company").pitch) < 0.5);   // usual in company...
+  assert.ok(b.z("Chris", { pitch: 160 }, "alone").pitch > 2);                // ...unusual alone
+});
+
+test("baselines: saved in the store, forgotten per person or all", () => {
+  const store = memStore(), b = new S.Baselines(store);
+  teach(b, "Chris", 130); teach(b, "Mom", 130);
+  b.save();
+  assert.deepEqual(new S.Baselines(store).names(), ["Chris", "Mom"]);
+  b.forget("Mom");
+  assert.deepEqual(new S.Baselines(store).names(), ["Chris"]);
+  b.forget();
+  assert.equal(store.m["ft-baselines"], undefined);
+  assert.deepEqual(b.names(), []);
+});
+
+test("snapshot has every baseline signal", () => {
+  const f = new S.FaceSignals();
+  for (let i = 0; i < 12; i++) { f.addPosition(i * 100, [100, 100, 200, 200]); f.addCues(i * 100, { smile: 0.4, jaw: 0.1 }); f.addPose(i * 100, body(), false); }
+  const s = f.snapshot(1100, { stats: { pitch: 150, pitchSd: 2, loudness: 15, rate: 4 }, avd: [0.6, 0.5, 0.4] });
+  assert.deepEqual(Object.keys(s).sort(), Object.keys(S.B_KEYS).sort());
+  assert.equal(s.head, 0.5); assert.ok(Math.abs(s.smile - 0.4) < 1e-9); assert.equal(s.pitch, 150); assert.equal(s.voiceValence, 0.4);
+});
+
 test("summary has every feature, and applyFit uses the person's model or the shared one", () => {
   const f = new S.FaceSignals();
   for (let i = 0; i < 50; i++) {

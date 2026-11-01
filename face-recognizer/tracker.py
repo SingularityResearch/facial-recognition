@@ -5,9 +5,10 @@ The browser page (tracker_ui.html) picks the camera, shows the video and draws t
 This program does the recognition: the page sends it frames, it answers with faces, names and
 (when models/facial_expression_recognition_mobilefacenet_2022july.onnx is installed) expressions,
 plus face-shape cues when MediaPipe is installed; expression.js, served to the page, votes on them.
+With body posture on, each face also gets its body points (MediaPipe pose) and whether a hand is on it.
 When the page listens to the microphone it also sends short clips of speech, which the voice model
 (models/wav2small.onnx) scores for arousal, dominance and valence; audio is never stored.
-signals.js (motion, talking, blinks, pulse, voice features) runs in the page.
+signals.js (motion, talking, blinks, pulse, posture, breathing, voice features) runs in the page.
 It uses the same models and people as face_id.py, and picks up new names saved in
 label_tool.py automatically.
 
@@ -78,9 +79,10 @@ class Engine:
             self._reload()
             return self.ident.names if self.ident else []
 
-    def recognize(self, jpeg, threshold, cues=False, record=None):
+    def recognize(self, jpeg, threshold, cues=False, pose=False, record=None):
         """Faces in one webcam frame. cues=True adds the face-shape cues (about 10 ms a face on the
-        CPU, so only when the page shows or uses them). record=(session, posed label, extra) also
+        CPU, so only when the page shows or uses them). pose=True adds each face's body points and
+        whether a hand is on the face (10-20 ms a frame). record=(session, posed label, extra) also
         appends the largest readable face's numbers to a posed-expression session file (see Recorder)."""
         img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
         if img is None:
@@ -96,8 +98,10 @@ class Engine:
                      for (_, _, crop, _), skip in zip(found, skips)]
             shapes = [self.faces.blendshapes(img, row) if (cues or record) and skip is None else None
                       for (row, _, _, _), skip in zip(found, skips)]
+            poses = self.faces.poses(img) if (pose or record) and found else []
+        bodies = [F.pose_for_face(poses, row) for row, _, _, _ in found]
         out = []
-        for (row, emb, crop, quality), skip, expr, bs in zip(found, skips, exprs, shapes):
+        for (row, emb, crop, quality), skip, expr, bs, bi in zip(found, skips, exprs, shapes, bodies):
             name, sim = ident.who(emb, threshold) if ident else ("Unknown", 0.0)
             out.append({
                 "box": [round(float(v), 1) for v in row[:4]],
@@ -111,6 +115,8 @@ class Engine:
                 "expr": None if expr is None else [round(float(v), 3) for v in expr],   # EXPRESSIONS order
                 "xskip": skip if self.faces.expression_model else None,   # why there's no reading
                 "cues": F.face_cues(bs) if bs and cues else None,
+                "pose": F.pose_points(poses[bi]) if bi is not None else None,   # F.POSE_POINTS order
+                "hand": F.hand_on_face(poses[bi], row) if bi is not None else None,
             })
         if record:
             readable = [(f, bs) for f, bs in zip(out, shapes) if f["expr"] is not None]
@@ -125,13 +131,14 @@ class Recorder:
     """Expression test data: the only expression data ever written to disk, and only when you start
     it on the tracker page. All of it is numbers (no images, no audio) in data/expr_eval/:
 
-    <session>.jsonl  a posed test: you're asked to make each expression in turn (and, at the end, to
-                     read a sentence aloud); every readable frame appends the expression asked for,
-                     whether you were talking, the model's 7 probabilities, the 52 blendshapes,
-                     quality, head turn, face size and brightness, and the page's talking signals.
+    <session>.jsonl  a posed test: you're asked to make each expression in turn (then to talk, and to
+                     rest your chin on your hand); every readable frame appends the expression asked
+                     for, whether you were asked to talk or to put a hand on your chin, the model's 7
+                     probabilities, the 52 blendshapes, the body points and whether a hand is on the
+                     face, quality, head turn, face size and brightness, and the page's talking signals.
     feel-<day>.jsonl feeling reports: when you answer "how do you feel?" (pleasant and energized,
                      1-7), the answer plus the page's summary of the 30 seconds before the question
-                     (expression shares, cues, motion, voice and pulse numbers).
+                     (expression shares, cues, motion, posture, voice and pulse numbers).
 
     tools/expr_eval.py measures the model, the talking detector and the signals against them.
     "Delete test data" on the page (or deleting the folder) removes them."""
@@ -152,7 +159,7 @@ class Recorder:
         line = {"t": round(time.time(), 2), "posed": posed, "name": face["name"], "quality": face["quality"],
                 "turn": face["turn"], "size": round(face["box"][2]), "light": face["light"], "expr": face["expr"],
                 "blendshapes": None if blendshapes is None else {k: round(v, 3) for k, v in blendshapes.items()},
-                **extra}
+                "pose": face["pose"], "hand": face["hand"], **extra}
         self._append(session, line)
 
     def report(self, rep):
@@ -249,6 +256,7 @@ def make_handler(engine):
                                        "devices": devices, "warmup_ms": engine.warmup_ms,
                                        "expressions": F.EXPRESSIONS if engine.faces.expression_model else None,
                                        "cues": engine.faces.cues_available, "voice": bool(engine.voice.model),
+                                       "pose": engine.faces.pose_available, "posePoints": list(F.POSE_POINTS),
                                        "calibration": _read_json(CALIBRATION), "vaFit": _read_json(VA_FIT),
                                        "sessions": len(engine.recorder.sessions()),
                                        "reports": engine.recorder.reports()})
@@ -287,16 +295,17 @@ def make_handler(engine):
                 params = dict(parse_qsl(query))
                 threshold = min(0.9, max(0.1, float(params.get("t", F.MATCH))))
                 record = None
-                if "rec" in params:   # posed test: rec=<label>&session=<id>[&talk=1][&tv=<talk score>][&vad=0|1]
+                if "rec" in params:   # posed test: rec=<label>&session=<id>[&talk=1][&hand=1][&tv=<talk score>][&vad=0|1]
                     if params["rec"] not in F.EXPRESSIONS or not Recorder.SESSION.match(params.get("session", "")):
                         raise ValueError("bad test-session parameters")
-                    extra = {"talk": params.get("talk") == "1"}
+                    extra = {"talk": params.get("talk") == "1", "handAsked": params.get("hand") == "1"}
                     if "tv" in params:
                         extra["tv"] = round(min(1.0, max(0.0, float(params["tv"]))), 4)
                     if params.get("vad") in ("0", "1"):
                         extra["vad"] = params["vad"] == "1"
                     record = (params["session"], params["rec"], extra)
-                return self.send_json(engine.recognize(jpeg, threshold, cues=params.get("c") == "1", record=record))
+                return self.send_json(engine.recognize(jpeg, threshold, cues=params.get("c") == "1",
+                                                       pose=params.get("p") == "1", record=record))
             except (ValueError, TypeError) as e:
                 return self.send_json({"error": str(e)}, 400)
 
@@ -329,6 +338,8 @@ def main():
     if not engine.faces.cues_available:
         print(f"Face-shape cues: not installed (optional: pip install mediapipe, and models/{F.CUE_MODEL.name})")
     print(f"Voice model: {engine.voice.model or 'not installed (optional: python tools/get_wav2small.py)'}")
+    if not engine.faces.pose_available:
+        print(f"Body posture: not installed (optional: pip install mediapipe, and models/{F.POSE_MODEL.name})")
     print("Models: " + ", ".join(f"{k} on {v} ({engine.warmup_ms.get(k, '-')} ms first run)"
                                  for k, v in engine.faces.devices.items() if v))
     print(f"Face Tracker is open at {url}")

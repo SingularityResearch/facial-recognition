@@ -56,7 +56,7 @@ X:\source\facial-recognition\
     ├── setup.bat                 installs Python 3.12 via winget, then pip installs requirements.txt
     ├── recognize.bat             starts tracker.py (checks cv2/numpy are installed first)
     ├── label.bat                 starts label_tool.py
-    ├── requirements.txt          opencv-python, numpy, scikit-learn, pillow, pillow-heif, onnxruntime-directml
+    ├── requirements.txt          opencv-python, numpy, scikit-learn, pillow, pillow-heif, onnxruntime-directml, mediapipe
     ├── README.md                 user-facing docs; kept in sync with code changes
     ├── tools\
     │   ├── eval_models.py        ArcFace vs AdaFace vs both, on clean/blurred/tiny/motion faces → data\model_eval.json
@@ -75,6 +75,7 @@ X:\source\facial-recognition\
     │   ├── adaface_ir101_webface12m.onnx, adaface_src\  AdaFace, evaluated and not used
     │   ├── face_landmarker.task                        MediaPipe blendshapes (optional)
     │   ├── wav2small.onnx, wav2small_src\              voice arousal/dominance/valence, 69 KB (optional; CC BY-NC-SA)
+    │   ├── pose_landmarker_lite.task                   MediaPipe body posture, 5.8 MB (optional; Apache 2.0)
     │   └── npu\                                        static batch-1 ArcFace, vitisai_config.json, compile cache
     └── data\                     produced by the tools; shared by all programs
         ├── faces.npz             every face found: permanent ID (fid), photo, box, face print, quality, thumbnail
@@ -406,10 +407,45 @@ fit valence/arousal from his own data rather than download a face valence/arousa
 - First real session (2026-10-30, 549 frames): happy and neutral 98% voted+clear; posed angry read as
   disgust 84%, fearful as happy 85%, sad as disgust 71%; fitted temperature ≈ 6 (strongly overconfident).
 
+### Body posture (2026-10-31)
+
+Chris asked whether skeletal posture indicates facial emotion. Answer: not the *facial* expression, but
+emotion in its own right; strongest for arousal and intense emotions, weak for valence, and not specific.
+Added as a third channel, evidence only:
+- `face_id.Faces.poses()` (MediaPipe Pose Landmarker lite, up to 4 bodies, ~15 ms/frame CPU),
+  `pose_for_face()` (nose inside the face box), `hand_on_face()` (wrist/index over the face box + 15%),
+  `POSE_POINTS` (13 points sent to the page). Tracker sends them with `p=1`; posed tests always record them.
+- `signals.js`: `postureOf` (head height and neck in shoulder widths, tilt, arms crossed), lean against the
+  last 30 s, body movement, breathing (shoulder rise/fall, 6–30/min, still body only), hand on face; 7 new
+  feeling-report features (35 in all). Body outline drawn on the video.
+- Option "Skip expression when a hand is on the face" (off until measured). Expression test gains a
+  "chin on your hand" step (`handAsked`); `expr_eval.py` section 5 measures the detector and its effect.
+- Checked on real photos (13/13 points, correct face matching, 45 ms per frame with everything on) and in
+  headless Edge; breathing and posture thresholds (`LEAN_ON`, `CROSS_FRAC`, `BREATH_*`) are first guesses.
+
+### Each person's normal (2026-10-31)
+
+Chris: the posture answers are obvious one by one; what matters is reading them in the context of the
+individual, and of interactions between identified people. Step 1 (done): per-person baselines.
+- `signals.js` `Baselines`: for each named person, a running mean and spread of 17 signals (`B_KEYS`:
+  head, neck, tilt, body/head motion, smile, jaw, blinks, gaze, pitch, pitch SD, loudness, speech rate,
+  voice arousal/valence, pulse, breathing), one sample a second, trusted after 120 samples (2 min), then
+  a slow running average (`B_RATE` 1/600, ~10 min). Kept per context: `alone` (only face in view) and
+  `company`, falling back to the overall normal until the context's own is trusted. Spread floors per
+  signal so near-constant signals don't produce huge z values.
+- `FaceSignals.snapshot()` gives the current values; `unusualEvidence()` shows |z| >= 2 ("unusual for
+  Chris (alone): head -2.3 SD"). Controlled by "Calibrate to each person"; stored in localStorage
+  `ft-baselines` (never in `data/`, which is published). "Forget what's learned" works for everyone or
+  one person (usual looks too). Feeling reports gain `withOthers`.
+- Step 2 (to discuss): interaction layer between identified people (turn-taking, attention, movement
+  synchrony, mimicry, approach), framed by Kenny's Social Relations Model (actor, partner, relationship).
+
 ## 10. Open items / ideas not yet done
 
-- Record more posed sessions (now with the talking steps) and feeling reports; then decide on
-  `TALK_JAW_SD`, the talking gate, the state model and any cue fusion from `tools/expr_eval.py`.
-- Check the voice model and pulse on real speech and a still face; neither has been validated live yet.
+- Record more posed sessions (now with the talking and "chin on hand" steps) and feeling reports; then
+  decide on `TALK_JAW_SD`, the talking and hand gates, the state model and any cue fusion from
+  `tools/expr_eval.py`.
+- Check the voice model, pulse, posture and breathing live (real speech, a still face, a seated body);
+  none has been validated on the webcam yet.
 - If continuing, re-measure thresholds after any
 model change (`python face_id.py reembed`, then `tools\eval_models.py` and `people`).

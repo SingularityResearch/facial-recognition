@@ -17,6 +17,18 @@
 //   voice      from the microphone, analysed here and never stored: loudness above the room's noise,
 //              pitch and its variability, speaking rate, plus the voice model's arousal/valence
 //              (tracker.py scores short clips with Wav2Small).
+//   body       from MediaPipe's body points (tracker.py): head height above the shoulders (lower =
+//              head down or slumped), neck (ear height above the shoulders; smaller = shoulders
+//              raised, as in a shrug or tension), shoulder tilt, leaning in or back (shoulder width
+//              against the last 30 s), body movement (arousal), hand on the face (it also hides the
+//              face from the expression model), arms crossed, and breathing rate from the slow rise
+//              and fall of the shoulders. For intense emotions the body is often more telling than
+//              the face (Aviezer et al. 2012); movement tracks arousal well, valence poorly.
+//
+// Each named person's normal: what counts as "head low" or "fast speech" differs a lot between people
+// (a soft-spoken person isn't sad, a habitual slouch isn't dejection), so Baselines learns every
+// signal's usual level and spread for each person, separately alone and in company, kept in this
+// browser only. Readings are then shown as departures from that person's normal ("head -2.1 SD").
 //
 // All of these are evidence: shown, never used to change the expression label. The one exception is
 // the page's "skip expression while talking" option (off by default). None of the thresholds below
@@ -38,13 +50,28 @@
   const V_RATE = 16000, V_FRAME = 320, V_KEEP_S = 10;   // voice: 20 ms frames at 16 kHz, 10 s kept
   const V_ON_DB = 9;                              // a frame this much louder than the room's noise counts as voice
   const V_PITCH = [75, 400], V_PITCH_R = 0.5;     // pitch range (Hz) and the correlation needed to call it voiced
+  const POSE_VIS = 0.5;                           // a body point counts as seen at this visibility (as face_id.POSE_VIS)
+  const LEAN_ON = 0.08;                           // shoulder width this much (log) above/below the last 30 s = leaning in/back
+  const CROSS_FRAC = 0.15;                        // a wrist this far (shoulder widths) past the body's midline counts as crossed
+  const BREATH_MS = 30000, BREATH_MIN_MS = 15000, BREATH_HZ = 5, BREATH_BPM = [6, 30], BREATH_MAX_MOTION = 0.1;
+  // Per-person baselines: one sample a second; trusted after 2 minutes of a person; after that a slow
+  // running average (about 10 minutes' memory). A reading B_Z spreads from the person's normal is shown.
+  const B_EVERY_MS = 1000, B_SETTLED = 120, B_RATE = 1 / 600, B_Z = 2, B_STORE = "ft-baselines";
+  // Signals with a per-person baseline, and the smallest spread that counts (so a signal that never
+  // varies doesn't make tiny changes look huge)
+  const B_KEYS = { head: 0.02, neck: 0.02, tilt: 1, bodyMotion: 0.02, motion: 0.02, smile: 0.03, jaw: 0.02,
+                   blinkRate: 2, gazeAway: 0.05, pitch: 5, pitchSd: 0.3, loudness: 1, speechRate: 0.3,
+                   voiceArousal: 0.03, voiceValence: 0.03, pulse: 3, breathing: 1 };
+  // Body points as sent by tracker.py (face_id.POSE_POINTS order)
+  const P = { nose: 0, earL: 1, earR: 2, shL: 3, shR: 4, elL: 5, elR: 6, wrL: 7, wrR: 8, ixL: 9, ixR: 10, hipL: 11, hipR: 12 };
 
   // Features of a feeling report, in a fixed order (tools/expr_eval.py fits valence/arousal on them).
   const LABELS = ["angry", "disgust", "fearful", "happy", "neutral", "sad", "surprised"];
   const FACE_CUES = ["smile", "cheek", "frown", "browDown", "browInnerUp", "eyeWide", "jaw"];
   const FEATURES = [...LABELS.map(l => "p_" + l), ...FACE_CUES,
     "motion", "approach", "talking", "blinkRate", "gazeAway", "smileAsym",
-    "voiceArousal", "voiceDominance", "voiceValence", "speaking", "loudness", "pitchSd", "speechRate", "pulse"];
+    "voiceArousal", "voiceDominance", "voiceValence", "speaking", "loudness", "pitchSd", "speechRate", "pulse",
+    "headHeight", "neck", "shoulderTilt", "bodyMotion", "handOnFace", "armsCrossed", "breathing"];
 
   const mean = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
   const sd = a => { const m = mean(a); return a.length > 1 ? Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / (a.length - 1)) : 0; };
@@ -52,8 +79,113 @@
   const since = (rows, now, ms) => rows.filter(r => r.t <= now && now - r.t <= ms);
 
   // ------------------------------------------------------------------ one tracked face
+  // Posture of one body (points in tracker.py's order): { sw shoulder width px, head, neck, tilt
+  // degrees, armsCrossed, mid [x, y] shoulder midpoint }, or null without both shoulders.
+  function postureOf(p) {
+    const seen = k => p[P[k]] && p[P[k]][2] >= POSE_VIS;
+    if (!seen("shL") || !seen("shR")) return null;
+    const L = p[P.shL], R = p[P.shR], sw = Math.hypot(R[0] - L[0], R[1] - L[1]);
+    if (!(sw > 10)) return null;
+    const mid = [(L[0] + R[0]) / 2, (L[1] + R[1]) / 2];
+    let tilt = Math.atan2(R[1] - L[1], R[0] - L[0]) * 180 / Math.PI;   // shoulder line against horizontal
+    if (tilt > 90) tilt -= 180;
+    if (tilt < -90) tilt += 180;
+    const ears = ["earL", "earR"].filter(seen).map(k => p[P[k]][1]);
+    // A wrist is crossed when it's well past the midline, on the other shoulder's side, below the shoulders.
+    const crossed = (w, other) => seen(w) && p[P[w]][1] > mid[1] &&
+      Math.sign(p[P[w]][0] - mid[0]) === Math.sign(p[P[other]][0] - mid[0]) && Math.abs(p[P[w]][0] - mid[0]) > CROSS_FRAC * sw;
+    return { sw, mid, tilt: Math.abs(tilt),
+             head: seen("nose") ? (mid[1] - p[P.nose][1]) / sw : null,
+             neck: ears.length ? (mid[1] - mean(ears)) / sw : null,
+             armsCrossed: crossed("wrL", "shR") && crossed("wrR", "shL") };
+  }
+
+  // Strongest periodic rate in an evenly sampled series (hz samples a second) between lo and hi per
+  // minute, by a Hann-windowed DFT in 0.5-per-minute steps. Returns { rate per minute, snr dB: power
+  // within ±band of the peak and its harmonic over the rest of the range }.
+  function spectralPeak(h, hz, lo, hi, band) {
+    const n = h.length, m = mean([...h]);
+    const power = perMin => {
+      const f = perMin / 60 / hz * 2 * Math.PI;
+      let c = 0, s = 0;
+      for (let i = 0; i < n; i++) { const v = (h[i] - m) * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1))); c += v * Math.cos(f * i); s += v * Math.sin(f * i); }
+      return c * c + s * s;
+    };
+    const spec = [];
+    for (let r = lo; r <= hi; r += 0.5) spec.push([r, power(r)]);
+    let peak = 0;
+    for (let i = 1; i < spec.length; i++) if (spec[i][1] > spec[peak][1]) peak = i;
+    const rate = spec[peak][0];
+    let sig = 0, rest = 0;
+    for (const [r, p] of spec) { if (Math.abs(r - rate) <= band || Math.abs(r - 2 * rate) <= band) sig += p; else rest += p; }
+    return { rate, snr: 10 * Math.log10((sig + 1e-12) / (rest + 1e-12)) };
+  }
+
+  // Resample rows [{ t, v }] evenly at hz; null if too short.
+  function resample(rows, hz, minMs) {
+    if (rows.length < 4 || rows[rows.length - 1].t - rows[0].t < minMs) return null;
+    const t0 = rows[0].t, n = Math.floor((rows[rows.length - 1].t - t0) / 1000 * hz), out = new Float64Array(n);
+    for (let k = 0, j = 0; k < n; k++) {
+      const t = t0 + k * 1000 / hz;
+      while (j < rows.length - 2 && rows[j + 1].t < t) j++;
+      const a = rows[j], b = rows[j + 1], u = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 0;
+      out[k] = a.v + (b.v - a.v) * u;
+    }
+    return out;
+  }
+
   class FaceSignals {
-    constructor() { this.pos = []; this.cues = []; this.rgb = []; this.exprs = []; this.labels = []; }
+    constructor() { this.pos = []; this.cues = []; this.rgb = []; this.exprs = []; this.labels = []; this.body = []; }
+
+    // Body points of this face (tracker.py's pose, or null) and whether a hand is on the face.
+    addPose(t, pts, hand) {
+      const q = pts ? postureOf(pts) : null;
+      if (!q && hand == null) return;
+      this.body.push({ t, q, hand, pts });
+      trim(this.body, t, Math.max(SUMMARY_MS, BREATH_MS));
+    }
+
+    // { head, neck, tilt, lean (log shoulder width against the last 30 s; > 0 leaning in),
+    //   armsCrossed, hand } from the latest body points, or null
+    posture(now) {
+      const rows = since(this.body, now, SUMMARY_MS), last = rows[rows.length - 1];
+      if (!last) return null;
+      const q = last.q, widths = rows.filter(r => r.q).map(r => r.q.sw);
+      return { head: q?.head ?? null, neck: q?.neck ?? null, tilt: q?.tilt ?? null,
+               lean: q && widths.length >= 5 ? Math.log(q.sw / mean(widths)) : null,
+               armsCrossed: q ? q.armsCrossed : null, hand: last.hand ?? null };
+    }
+
+    // Body movement: shoulders and seen wrists, shoulder widths per second over the last second.
+    bodyMotion(now) {
+      const rows = since(this.body, now, MOTION_MS).filter(r => r.q && r.pts);
+      if (rows.length < 2) return null;
+      const dt = (rows[rows.length - 1].t - rows[0].t) / 1000;
+      if (!(dt > 0)) return null;
+      let d = 0;
+      for (let i = 1; i < rows.length; i++) {
+        const a = rows[i - 1].pts, b = rows[i].pts, sw = (rows[i].q.sw + rows[i - 1].q.sw) / 2, moved = [];
+        for (const k of [P.shL, P.shR, P.wrL, P.wrR]) if (a[k][2] >= POSE_VIS && b[k][2] >= POSE_VIS) moved.push(Math.hypot(b[k][0] - a[k][0], b[k][1] - a[k][1]) / sw);
+        if (moved.length) d += mean(moved);
+      }
+      return d / dt;
+    }
+
+    // Breaths per minute from the shoulders' slow rise and fall over the last 30 s (still body only).
+    breathing(now) {
+      const m = this.bodyMotion(now);
+      if (m != null && m > BREATH_MAX_MOTION) return null;
+      const rows = since(this.body, now, BREATH_MS).filter(r => r.q).map(r => ({ t: r.t, v: r.q.mid[1] / r.q.sw }));
+      const h = resample(rows, BREATH_HZ, BREATH_MIN_MS);
+      if (!h) return null;
+      const n = h.length, xm = (n - 1) / 2, ym = mean([...h]);           // remove a straight-line drift first
+      let sxy = 0, sxx = 0;
+      for (let i = 0; i < n; i++) { sxy += (i - xm) * (h[i] - ym); sxx += (i - xm) ** 2; }
+      const slope = sxy / (sxx || 1);
+      for (let i = 0; i < n; i++) h[i] -= ym + slope * (i - xm);
+      const r = spectralPeak(h, BREATH_HZ, BREATH_BPM[0], BREATH_BPM[1], 2);
+      return { bpm: r.rate, snr: r.snr };
+    }
 
     addPosition(t, box) {
       this.pos.push({ t, cx: box[0] + box[2] / 2, cy: box[1] + box[3] / 2, w: box[2] });
@@ -132,6 +264,22 @@
       return pulseFrom(this.rgb);
     }
 
+    // The signals right now, for the per-person baselines (B_KEYS; null where not available).
+    snapshot(now, voice) {
+      const q = this.posture(now), m = this.motion(now), cues = since(this.cues, now, 1000);
+      const s = voice?.stats, avd = voice?.avd, p = this.pulse(now), br = this.breathing(now);
+      return {
+        head: q?.head ?? null, neck: q?.neck ?? null, tilt: q?.tilt ?? null,
+        bodyMotion: this.bodyMotion(now), motion: m ? m.speed : null,
+        smile: cues.length ? mean(cues.map(c => c.smile ?? 0)) : null,
+        jaw: cues.length ? mean(cues.map(c => c.jaw ?? 0)) : null,
+        blinkRate: this.blinkRate(now), gazeAway: this.gazeAway(now, 5000),
+        pitch: s?.pitch ?? null, pitchSd: s?.pitchSd ?? null, loudness: s?.loudness ?? null, speechRate: s?.rate ?? null,
+        voiceArousal: avd ? avd[0] : null, voiceValence: avd ? avd[2] : null,
+        pulse: p && p.snr > 0 ? p.bpm : null, breathing: br && br.snr > 0 ? br.bpm : null,
+      };
+    }
+
     // Numbers for a feeling report: averages over the last 30 s, named as in FEATURES.
     // voice: { stats, avd } from VoiceSignals / the voice model, or null.
     summary(now, voice) {
@@ -160,6 +308,22 @@
       f.pitchSd = s ? s.pitchSd : null; f.speechRate = s ? s.rate : null;
       const p = this.pulse(now);
       f.pulse = p && p.snr > 0 ? p.bpm : null;
+      const body = since(this.body, now, SUMMARY_MS), qs = body.filter(r => r.q).map(r => r.q);
+      f.headHeight = mean(qs.map(q => q.head).filter(v => v != null));
+      f.neck = mean(qs.map(q => q.neck).filter(v => v != null));
+      f.shoulderTilt = mean(qs.map(q => q.tilt));
+      const moves = [];
+      for (let t = now; t > now - SUMMARY_MS && body.length > 1; t -= MOTION_MS) {
+        const m = this.bodyMotion(t);
+        if (m != null) moves.push(m);
+        if (body[0].t > t) break;
+      }
+      f.bodyMotion = mean(moves);
+      const hands = body.filter(r => r.hand != null);
+      f.handOnFace = hands.length ? hands.filter(r => r.hand).length / hands.length : null;
+      f.armsCrossed = qs.length ? qs.filter(q => q.armsCrossed).length / qs.length : null;
+      const br = this.breathing(now);
+      f.breathing = br && br.snr > 0 ? br.bpm : null;
       for (const k of Object.keys(f)) if (f[k] != null) f[k] = Math.round(f[k] * 1000) / 1000;
       return f;
     }
@@ -230,6 +394,25 @@
       if (Math.abs(b - bpm) <= 6 || Math.abs(b - 2 * bpm) <= 6) sig += p; else rest += p;
     });
     return { bpm, snr: 10 * Math.log10((sig + 1e-12) / (rest + 1e-12)) };
+  }
+
+  // Body evidence line: "head .62 · neck .35 · tilt 4° · leaning in · body .12 · breathing 14/min (5 dB) · hand on face".
+  function bodyEvidence(fs, now) {
+    const q = fs.posture(now);
+    if (!q) return "";
+    const n2 = v => v.toFixed(2).replace(/^(-?)0/, "$1");
+    const parts = [];
+    if (q.head != null) parts.push(`head ${n2(q.head)}`);
+    if (q.neck != null) parts.push(`neck ${n2(q.neck)}`);
+    if (q.tilt != null) parts.push(`tilt ${Math.round(q.tilt)}°`);
+    if (q.lean != null && Math.abs(q.lean) >= LEAN_ON) parts.push(q.lean > 0 ? "leaning in" : "leaning back");
+    const m = fs.bodyMotion(now);
+    if (m != null) parts.push(`body ${n2(m)}`);
+    const b = fs.breathing(now);
+    if (b) parts.push(`breathing ${b.bpm}/min (${Math.round(b.snr)} dB${b.snr <= 0 ? ", weak" : ""})`);
+    if (q.hand) parts.push("hand on face");
+    if (q.armsCrossed) parts.push("arms crossed");
+    return parts.join(" · ");
   }
 
   // ------------------------------------------------------------------ voice (one microphone)
@@ -308,6 +491,76 @@
     currentAvd(now) { return this.avd && now - this.avdT < 5000 ? this.avd : null; }
   }
 
+  // ------------------------------------------------------------------ each person's normal
+  // { "<name>": { all: {key: {n, m, v}}, alone: {...}, company: {...} } } in localStorage (B_STORE).
+  // ctx: "alone" (the only face in view) or "company".
+  class Baselines {
+    constructor(store) {
+      this.store = store; this.saved = 0; this.last = {};
+      try { this.people = JSON.parse(store?.getItem(B_STORE) || "{}"); } catch { this.people = {}; }
+    }
+    // Learn one sample (at most one a second per person). Returns true when it learned.
+    learn(name, snap, ctx, now) {
+      if (!name || name === "Unknown" || now - (this.last[name] ?? -Infinity) < B_EVERY_MS) return false;
+      this.last[name] = now;
+      const person = this.people[name] || (this.people[name] = {});
+      for (const scope of ["all", ctx]) {
+        const b = person[scope] || (person[scope] = {});
+        for (const k of Object.keys(B_KEYS)) {
+          const x = snap[k];
+          if (x == null || !isFinite(x)) continue;
+          const s = b[k] || (b[k] = { n: 0, m: x, v: 0 });
+          const rate = Math.max(B_RATE, 1 / (s.n + 1)), d = x - s.m;   // plain average at first, then slow
+          s.m += rate * d; s.v = (1 - rate) * (s.v + rate * d * d); s.n++;
+        }
+      }
+      if (now - this.saved > 5000) this.save(now);
+      return true;
+    }
+    save(now = 0) { this.saved = now; try { this.store?.setItem(B_STORE, JSON.stringify(this.people)); } catch {} }
+    // The person's normal for one signal: the context's own once trusted, else their overall one.
+    normal(name, k, ctx) {
+      const p = this.people[name];
+      for (const scope of [ctx, "all"]) { const s = p?.[scope]?.[k]; if (s && s.n >= B_SETTLED) return { m: s.m, sd: Math.max(Math.sqrt(s.v), B_KEYS[k]), scope }; }
+      return null;
+    }
+    // How far each current signal is from the person's normal, in spreads: { key: z }.
+    z(name, snap, ctx) {
+      const out = {};
+      for (const k of Object.keys(B_KEYS)) {
+        const x = snap[k], b = x == null ? null : this.normal(name, k, ctx);
+        if (b) out[k] = (x - b.m) / b.sd;
+      }
+      return out;
+    }
+    progress(name) {                              // 0..1: how far the person's normal has been learned
+      const all = this.people[name]?.all;
+      if (!all) return 0;
+      const ns = Object.values(all).map(s => s.n);
+      return Math.min(1, Math.max(...ns) / B_SETTLED);
+    }
+    names() { return Object.keys(this.people).sort(); }
+    forget(name) {
+      if (name) { delete this.people[name]; delete this.last[name]; } else { this.people = {}; this.last = {}; }
+      try { if (name) this.save(); else this.store?.removeItem(B_STORE); } catch {}
+    }
+  }
+
+  // Evidence line of departures from a person's normal: "unusual for Chris (alone): head -2.3 SD, pitch +2.1 SD",
+  // "learning Chris's normal 40%", or "" when nothing stands out.
+  function unusualEvidence(baselines, name, snap, ctx) {
+    if (!baselines || !name || name === "Unknown") return "";
+    const z = baselines.z(name, snap, ctx), keys = Object.keys(z);
+    if (!keys.length) {
+      const p = baselines.progress(name);
+      return p < 1 ? `learning ${name}'s normal ${Math.round(p * 100)}%` : "";
+    }
+    const odd = keys.filter(k => Math.abs(z[k]) >= B_Z).sort((a, b) => Math.abs(z[b]) - Math.abs(z[a]));
+    const scope = keys.some(k => baselines.normal(name, k, ctx)?.scope === ctx) ? ` (${ctx})` : "";
+    return odd.length ? `unusual for ${name}${scope}: ` + odd.map(k => `${k} ${z[k] > 0 ? "+" : ""}${z[k].toFixed(1)} SD`).join(", ")
+                      : `usual for ${name}${scope}`;
+  }
+
   // Valence/arousal from a fit made by tools/expr_eval.py on your feeling reports (data/va_fit.json):
   // { features: [...], models: { "<name>" | "*": { mean, scale, v: { w, b }, a: { w, b } } } }.
   // Uses the person's own model, else the shared one ("*"). Missing features count as average.
@@ -352,9 +605,11 @@
     return parts.join(" · ");
   }
 
-  const api = { FaceSignals, VoiceSignals, skinRegions, pulseFrom, applyFit, evidence, FEATURES,
+  const api = { FaceSignals, VoiceSignals, Baselines, unusualEvidence, skinRegions, pulseFrom, applyFit, evidence, bodyEvidence,
+                postureOf, spectralPeak, FEATURES, B_KEYS,
                 S: { TALK_JAW_SD, TALK_MS, TALK_MIN, MOTION_MS, BLINK_ON, BLINK_MIN_MS, GAZE_AWAY, SMILE_ON, SUMMARY_MS,
-                     PULSE_MS, PULSE_MIN_MS, PULSE_HZ, PULSE_MAX_MOTION, V_RATE, V_FRAME, V_ON_DB } };
+                     PULSE_MS, PULSE_MIN_MS, PULSE_HZ, PULSE_MAX_MOTION, V_RATE, V_FRAME, V_ON_DB,
+                     B_EVERY_MS, B_SETTLED, B_RATE, B_Z } };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.Signals = api;
 })(typeof window !== "undefined" ? window : globalThis);

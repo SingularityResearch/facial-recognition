@@ -16,6 +16,9 @@ Models, in ./models:
   FER      facial expression (OpenCV Zoo, MobileFaceNet): 7 expressions, shown by the live tracker
   MediaPipe Face Landmarker (optional, pip mediapipe): 52 face-shape "blendshapes" (smile, brow
            raise, jaw open...), shown by the live tracker as evidence next to the expression
+  MediaPipe Pose Landmarker lite (optional): body points (head, shoulders, arms, hips) for posture
+  Wav2Small (optional, tools/get_wav2small.py): voice arousal/dominance/valence from the microphone.
+           CC BY-NC-SA 4.0, non-commercial use only.
 After switching recognition models, run:  python face_id.py reembed
 
 Examples
@@ -59,6 +62,12 @@ CUES = {
 # Eye directions for the "gaze" cue: (left eye, right eye) blendshapes that move together.
 GAZE = [("eyeLookOutLeft", "eyeLookInRight"), ("eyeLookInLeft", "eyeLookOutRight"),
         ("eyeLookUpLeft", "eyeLookUpRight"), ("eyeLookDownLeft", "eyeLookDownRight")]
+POSE_MODEL = MODELS / "pose_landmarker_lite.task"   # MediaPipe Pose Landmarker lite, 33 body points (optional)
+# Body points sent to the tracker page, in this order (MediaPipe numbering): nose, ears, shoulders,
+# elbows, wrists, index fingers, hips. Each as [x, y, visibility] in frame pixels.
+POSE_POINTS = {"nose": 0, "earL": 7, "earR": 8, "shoulderL": 11, "shoulderR": 12, "elbowL": 13, "elbowR": 14,
+               "wristL": 15, "wristR": 16, "indexL": 19, "indexR": 20, "hipL": 23, "hipR": 24}
+POSE_VIS = 0.5           # a body point counts as seen at this visibility
 VOICE_MODEL = MODELS / "wav2small.onnx"       # Wav2Small voice arousal/dominance/valence (optional; tools/get_wav2small.py)
 VOICE_RATE = 16000                            # samples per second it expects
 
@@ -198,9 +207,12 @@ class Faces:
         self.expression_model = EXPR_MODEL.name if self._xrun else None
         self._landmarker = None                          # MediaPipe, loaded on first use of cues()
         self.cues_available = CUE_MODEL.exists() and _has_module("mediapipe")
+        self._poser = None                               # MediaPipe pose, loaded on first use of poses()
+        self.pose_available = POSE_MODEL.exists() and _has_module("mediapipe")
         # Which processor runs each model, so a silent fall back to the CPU shows up in the startup log
         self.devices = {"detection": "CPU (OpenCV)", "recognition": self.device, "quality": qdev,
-                        "expression": xdev, "cues": "CPU (MediaPipe)" if self.cues_available else None}
+                        "expression": xdev, "cues": "CPU (MediaPipe)" if self.cues_available else None,
+                        "pose": "CPU (MediaPipe)" if self.pose_available else None}
 
     @staticmethod
     def _optional(path):
@@ -222,6 +234,8 @@ class Faces:
             steps["expression"] = lambda: self.expression(crop)
         if self.cues_available:
             steps["cues"] = lambda: self.cues(np.zeros((360, 640, 3), np.uint8), [270, 130, 100, 100])
+        if self.pose_available:
+            steps["pose"] = lambda: self.poses(np.zeros((360, 640, 3), np.uint8))
         ms = {}
         for name, step in steps.items():
             t0 = time.perf_counter()
@@ -288,6 +302,24 @@ class Faces:
         bs = self.blendshapes(bgr, box)
         return None if bs is None else face_cues(bs)
 
+    def poses(self, bgr):
+        """Body poses in a frame (up to 4 people): a list of 33x3 arrays of MediaPipe pose landmarks
+        as [x px, y px, visibility]. Empty when MediaPipe or its pose model isn't installed. About
+        10-20 ms on the CPU for the whole frame."""
+        if not self.pose_available:
+            return []
+        if self._poser is None:
+            from mediapipe.tasks.python import BaseOptions, vision
+            self._poser = vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path=str(POSE_MODEL)),
+                running_mode=vision.RunningMode.IMAGE, num_poses=4))
+        import mediapipe as mp
+        h, w = bgr.shape[:2]
+        rgb = np.ascontiguousarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+        found = self._poser.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
+        return [np.array([[p.x * w, p.y * h, p.visibility if p.visibility is not None else 0.0] for p in lm], np.float32)
+                for lm in found.pose_landmarks]
+
     def _detect_at(self, bgr, side):
         h, w = bgr.shape[:2]
         s = min(1.0, side / max(h, w))
@@ -351,6 +383,37 @@ def face_cues(blendshapes):
     out["smileAsym"] = round(abs(g("mouthSmileLeft") - g("mouthSmileRight")), 2)
     out["gaze"] = round(max((g(a) + g(b)) / 2 for a, b in GAZE), 2)
     return out
+
+
+def pose_for_face(poses, box):
+    """Index of the pose whose nose lies in the face box (x, y, w, h), nearest the box centre, or None."""
+    x, y, w, h = (float(v) for v in box[:4])
+    best, dist = None, None
+    for i, p in enumerate(poses):
+        nx, ny, vis = p[0]
+        if vis < POSE_VIS or not (x - 0.25 * w <= nx <= x + 1.25 * w and y - 0.25 * h <= ny <= y + 1.25 * h):
+            continue
+        d = np.hypot(nx - (x + w / 2), ny - (y + h / 2))
+        if dist is None or d < dist:
+            best, dist = i, d
+    return best
+
+
+def hand_on_face(pose, box):
+    """True when a seen wrist or index fingertip is over the face (box enlarged by 15% each side):
+    a hand on the chin, cheek or mouth. It hides part of the face from the expression model.
+    None when no hand point is seen."""
+    x, y, w, h = (float(v) for v in box[:4])
+    pts = [pose[i] for i in (15, 16, 19, 20) if pose[i][2] >= POSE_VIS]
+    if not pts:
+        return None
+    return any(x - 0.15 * w <= px <= x + 1.15 * w and y - 0.15 * h <= py <= y + 1.15 * h for px, py, _ in pts)
+
+
+def pose_points(pose):
+    """The POSE_POINTS of one pose, as [[x, y, visibility], ...] rounded for sending."""
+    return [[round(float(pose[i][0]), 1), round(float(pose[i][1]), 1), round(float(pose[i][2]), 2)]
+            for i in POSE_POINTS.values()]
 
 
 class Voice:
