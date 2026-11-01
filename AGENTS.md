@@ -4,11 +4,14 @@ Local face recognition for a USB webcam: learn specific people from a photo libr
 in a labeling tool, and show names + match confidence (+ optional expression) on faces live in the
 browser. Everything runs on this machine; no data leaves it.
 
-Full background, history, measured tuning values and gotchas: **see `PROJECT_CONTEXT.md`.**
-User-facing docs: `face-recognizer/README.md`.
+Full background, history, measured tuning values and gotchas: **see [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).**
+User-facing docs: [`face-recognizer/README.md`](face-recognizer/README.md).
+Why expression reading is layered (the science): [`docs/WHY_LAYERED_EXPRESSION.md`](docs/WHY_LAYERED_EXPRESSION.md).
+Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognition.md`](Real-Time%20Facial%20Emotion%20Recognition.md).
 
 ## Layout
 
+- `docs/` — background write-ups (`WHY_LAYERED_EXPRESSION.md`).
 - `face-tracker/index.html` — original standalone MediaPipe tracker; double-click to open.
 - `face-recognizer/` — the Python project. All programs share `face-recognizer/data/`:
   - `face_id.py` — core library + CLI (`scan`, `cluster`, `name`, `people`, `recognize`, `reembed`, `migrate`).

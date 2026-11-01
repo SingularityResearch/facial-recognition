@@ -3,6 +3,11 @@ Model: qwen/qwen3.8-27b
 Created: 10/28/2026, 10:04:57 PM
 Exported from: LM Studio 0.4.26+4
 
+> Note added 2026-10-31: this is an unedited chat export. The decisions taken from it are in
+> [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) ("Expression refactor"); the reasoning and research are in
+> [docs/WHY_LAYERED_EXPRESSION.md](docs/WHY_LAYERED_EXPRESSION.md); user docs are in
+> [face-recognizer/README.md](face-recognizer/README.md).
+
 ### User
 Describe the best approaches to identifying emotions in real time streams of live human faces
 

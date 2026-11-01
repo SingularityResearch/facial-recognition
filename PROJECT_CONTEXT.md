@@ -8,6 +8,13 @@ This file collects everything established across the Project's chats so a coding
 opening the repo in VS Code has the full background: what was built, why, where it lives, the measured
 tuning values, the owner's stated preferences, and the environment gotchas that cost time before.
 
+**Related docs:** [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md) (assistant conventions) ·
+[Face Recognizer README](face-recognizer/README.md) (user docs) ·
+[Face Tracker README](face-tracker/README.md) ·
+[Why expression reading is layered](docs/WHY_LAYERED_EXPRESSION.md) (the science) ·
+[Real-Time Facial Emotion Recognition](Real-Time%20Facial%20Emotion%20Recognition.md) (design review, see §
+"Expression refactor").
+
 ---
 
 ## 1. What this is
@@ -30,7 +37,10 @@ Nothing leaves the machine. No photos or face data are sent anywhere.
 
 ```
 X:\source\facial-recognition\
-├── CLAUDE.md, PROJECT_CONTEXT.md
+├── CLAUDE.md, AGENTS.md, PROJECT_CONTEXT.md
+├── Real-Time Facial Emotion Recognition.md   expression design review (LM Studio export)
+├── docs\
+│   └── WHY_LAYERED_EXPRESSION.md            why expression reading is layered, with references
 ├── face-tracker\                 original standalone HTML tracker (MediaPipe), double-click index.html
 │   └── index.html
 └── face-recognizer\              the Python project (everything below shares one data\ folder)

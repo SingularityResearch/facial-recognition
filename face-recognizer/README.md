@@ -103,6 +103,8 @@ What to expect: "happy", "surprised" and "neutral" are the reliable labels. "Fea
 
 Expression isn't stored anywhere; it's only shown live. The one exception is the **Expression test**, which you start yourself, to measure how well the reading works on your own face and webcam. The page asks you to make each of the 7 expressions for a few seconds, and for each readable frame it saves only numbers (the expression asked for, the model's scores, the face-shape cues, quality, head turn and face size; no pictures) to `data\expr_eval\`. `python tools\expr_eval.py` then shows, per expression, how often the model got it right frame by frame and after the vote, what it was mistaken for, and which cues separate the expressions on your face. That's the measurement needed before any expression setting is changed or the cues are allowed to affect the label. Posed faces are exaggerated, so treat the results as a best case. **Delete test sessions** (or deleting the folder) removes them.
 
+Why the reading is built in layers (quality gate, voting, usual look, evidence) and the research behind it: [Why expression reading is layered](../docs/WHY_LAYERED_EXPRESSION.md).
+
 Keep the black **Face Tracker** window open while you use it.
 
 ## Label people: label_tool.py (separate app)
@@ -173,3 +175,11 @@ Face prints from different models can't be mixed. After changing models, run `py
 Databases from before per-face labels are upgraded automatically the first time Face Labels starts (or with `python face_id.py migrate "<photo folder>"`). The old group files are moved to `data/backups/legacy-<date>/`.
 
 `data/backups/` is not tracked by git (see `.gitignore`).
+
+## More documentation
+
+- [Project context](../PROJECT_CONTEXT.md): background, history and measured tuning values
+- [Why expression reading is layered](../docs/WHY_LAYERED_EXPRESSION.md): the science behind the expression design
+- [Real-Time Facial Emotion Recognition](../Real-Time%20Facial%20Emotion%20Recognition.md): the expression design review
+- [Face Tracker](../face-tracker/README.md): the original standalone browser tracker
+- [CLAUDE.md](../CLAUDE.md) / [AGENTS.md](../AGENTS.md): conventions for coding assistants
