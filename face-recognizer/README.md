@@ -115,6 +115,14 @@ A face's expression is only one channel, and a weak one on its own (see [Why exp
 - **Webcam pulse** (off by default): heart rate from tiny skin-colour changes in the forehead and cheeks (the POS method of remote photoplethysmography). It needs a still face and steady light, and shows its signal-to-noise ratio; below 0 dB it's marked "weak". Treat it as experimental.
 - **Listen to voice** (off by default): the browser analyses your microphone live, never recording it. It shows how much of the time someone is speaking, loudness above the room's background noise, pitch and its variability (in semitones), and speaking rate (loudness peaks per second, about syllables). Every second that contains speech, the last 2 seconds of audio go to the tracker program on this computer, where the voice model scores arousal and valence ("voice A.62 V.48"). The audio is thrown away after scoring. The voice is attributed to whoever is talking, or to the only face in view.
 
+Microphone tips:
+- Use Chrome or Edge. The page records at 16 kHz, which these browsers support.
+- The first time, allow microphone access when the browser asks. If you blocked it, use the lock icon in the address bar.
+- A headset works best. Without one, sound from your speakers (a video, a call) can count as voice.
+- If the voice line never appears, check that the black Face Tracker window says "Voice model: wav2small.onnx". Without the model you still get voice activity, loudness, pitch and rate, but not "voice A.. V..". To install it, run `python tools\get_wav2small.py`.
+
+More on the voice measures, the model and its limits: [Voice](../README.md#voice) in the repository README.
+
 These signals are evidence only. They never change the expression label, with two exceptions that are off by default because they aren't measured yet:
 
 - **Skip expression while talking:** frames where the face is talking cast no expression vote ("no reading: talking"), the same way blurry frames don't.
@@ -207,6 +215,7 @@ Databases from before per-face labels are upgraded automatically the first time 
 
 ## More documentation
 
+- [Repository README](../README.md): goals, key decisions and research value
 - [Project context](../PROJECT_CONTEXT.md): background, history and measured tuning values
 - [Why expression reading is layered](../docs/WHY_LAYERED_EXPRESSION.md): the science behind the expression design
 - [Real-Time Facial Emotion Recognition](../Real-Time%20Facial%20Emotion%20Recognition.md): the expression design review

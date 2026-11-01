@@ -4,6 +4,7 @@ Local face recognition for a USB webcam: learn specific people from a photo libr
 in a labeling tool, and show names + match confidence (+ optional expression) on faces live in the
 browser. Everything runs on this machine; no data leaves it.
 
+Goals, key decisions and research value: [`README.md`](README.md).
 Full background, history, measured tuning values and gotchas: **see [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).**
 User-facing docs: [`face-recognizer/README.md`](face-recognizer/README.md).
 Why expression reading is layered (the science): [`docs/WHY_LAYERED_EXPRESSION.md`](docs/WHY_LAYERED_EXPRESSION.md).

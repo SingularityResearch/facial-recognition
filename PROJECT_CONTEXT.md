@@ -8,7 +8,7 @@ This file collects everything established across the Project's chats so a coding
 opening the repo in VS Code has the full background: what was built, why, where it lives, the measured
 tuning values, the owner's stated preferences, and the environment gotchas that cost time before.
 
-**Related docs:** [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md) (assistant conventions) ·
+**Related docs:** [README](README.md) (goals, decisions, research value) · [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md) (assistant conventions) ·
 [Face Recognizer README](face-recognizer/README.md) (user docs) ·
 [Face Tracker README](face-tracker/README.md) ·
 [Why expression reading is layered](docs/WHY_LAYERED_EXPRESSION.md) (the science) ·

@@ -3,6 +3,7 @@
 Why the live tracker reads expression the way it does, and the research behind each layer.
 
 **Related docs:**
+- [Repository README](../README.md): goals, key decisions and why the project is useful research material.
 - [Project context](../PROJECT_CONTEXT.md): background, history and the measured tuning values.
 - [Face Recognizer README](../face-recognizer/README.md): user docs, including the **Expression** section.
 - [Real-Time Facial Emotion Recognition](../Real-Time%20Facial%20Emotion%20Recognition.md): the design review that led to the 2026-10-30 expression refactor.
