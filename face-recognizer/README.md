@@ -211,7 +211,7 @@ Face prints from different models can't be mixed. After changing models, run `py
 
 Databases from before per-face labels are upgraded automatically the first time Face Labels starts (or with `python face_id.py migrate "<photo folder>"`). The old group files are moved to `data/backups/legacy-<date>/`.
 
-`data/backups/` is not tracked by git (see `.gitignore`).
+`data/backups/` is tracked in git with the rest of `data/`, so the published research data is complete.
 
 ## More documentation
 
