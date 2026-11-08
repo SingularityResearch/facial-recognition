@@ -198,6 +198,12 @@ Also:
 - **Checks**: named faces that look more like someone else, people with fewer than 5 clear faces, and the duplicate photos that were skipped.
 - **People**: click a person to see all their faces, least typical first, so mistakes are at the top. **Rename or merge** fixes a name or combines two people. **Photos…** lists every photo the person is named in, newest first. Type more names under **Together with** to find photos where they're all named. Click a photo to open it, or type a folder and **Copy photos** to copy them there, keeping their file dates. Photos already in that folder are skipped, and photos whose originals aren't on this computer are counted but can't be copied.
 - Double-click a face (or press Space) to see the whole photo with everyone in it boxed and named; ← → step through faces. Click a box to switch to that face.
+- **Layout:**
+  - The sidebar (the lists and **People**) slides away with the **☰** button or **Ctrl+.**, so the faces get the whole width. The page remembers whether it was open. On narrow windows it slides over the faces instead, and closes when you pick something.
+  - **Find a person** filters the people list; **Enter** opens the first match.
+  - **Size** (top bar) makes the face pictures bigger or smaller, which helps when judging blurry faces. It's remembered.
+  - Each list and person has its own address, so the browser's **Back** and **Forward** and reloading the page keep your place.
+  - The progress bar for webcam snapshots only shows while new ones are being added, and for a minute after.
 - **From photo tags**: faces named by the photo itself. Face tags saved inside the photo or in a `.xmp` file beside it (Windows Photo Gallery, Lightroom, Picasa, digiKam; the face boxes an iPhone saves carry no names) are matched to the face they sit on. Names without a box (Google Takeout `.json` files, IPTC "person in image") are used when only one face in the photo is still unnamed. The tags and camera dates are read in the background and saved in `data/photo_facts.json`; after that a photo is read again only if the file, a `.xmp`/`.json` beside it, or the faces found in it change. Nothing is named until you accept it.
 
 **Clues for a face nobody has named** (photo view, under the buttons). Clicking a name names the face; **Z** undoes it.

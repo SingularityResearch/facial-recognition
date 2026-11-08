@@ -42,9 +42,25 @@
   #progress .txt { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
   /* ---------- layout */
-  .shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 0; }
-  @media (max-width: 760px) { .shell { grid-template-columns: minmax(0, 1fr); } nav { display: none; } }
-  nav { border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 8px 24px; background: var(--panel); }
+  /* The sidebar (views and people) is a fly-out on the left: closed, the faces get the whole width.
+     On narrow windows it slides over the faces instead, below the top bar. */
+  .shell { display: grid; grid-template-columns: var(--nav, 248px) minmax(0, 1fr); min-height: 0; transition: grid-template-columns .2s ease; }
+  .shell.closed { --nav: 0px; }
+  nav { border-right: 1px solid var(--line); overflow-y: auto; overflow-x: hidden; padding: 12px 8px 24px; background: var(--panel); min-width: 0; }
+  .shell.closed nav { visibility: hidden; border: 0; transition: visibility 0s .2s; }
+  @media (max-width: 760px) {
+    .shell, .shell.closed { grid-template-columns: minmax(0, 1fr); }   /* the sidebar floats, so the faces take the only column */
+    main { grid-column: 1; }
+    nav { position: fixed; left: 0; top: var(--hdr, 54px); bottom: 0; width: min(300px, 86vw); z-index: 40; box-shadow: 12px 0 32px rgb(0 0 0 / .3);
+          transform: translateX(0); transition: transform .2s ease; }
+    .shell.closed nav { transform: translateX(-105%); box-shadow: none; visibility: hidden; transition: transform .2s ease, visibility 0s .2s; }
+  }
+  #navbtn { display: inline-grid; place-items: center; width: 34px; height: 32px; padding: 0; }
+  #navbtn i { width: 15px; height: 11px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; position: relative; }
+  #navbtn i::after { content: ""; position: absolute; left: 0; right: 0; top: 2.5px; border-top: 2px solid currentColor; }
+  #pfind { width: calc(100% - 20px); margin: 0 10px 6px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--bg); font-size: 13px; }
+  .size { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .size input { width: 96px; accent-color: var(--accent); }
   nav h2 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 16px 10px 6px; }
   nav h2:first-child { margin-top: 2px; }
   .nav { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; padding: 6px 10px; border-radius: 8px; cursor: pointer; text-align: left; }
@@ -183,15 +199,17 @@
 </head>
 <body>
 <header>
+  <button class="btn" id="navbtn" aria-controls="sidebar" aria-expanded="true" title="Show or hide the sidebar (Ctrl+.)"><i></i></button>
   <h1>Face Labels</h1>
   <div id="progress" aria-live="polite"><div class="bar"><i></i></div><span class="txt"></span><button class="btn small" id="stopimp">Stop</button></div>
   <div class="spacer"></div>
+  <label class="size" title="Size of the face pictures (remembered)">Size <input type="range" id="tilesz" min="64" max="176" step="8" value="88" aria-label="Face picture size"></label>
   <label class="toggle" title="Faces too blurry or small to learn from are hidden from the review lists"><input type="checkbox" id="low"> Show blurry faces</label>
   <button class="btn" id="undo" disabled title="Undo (Z)">Undo</button>
   <button class="btn primary" id="add">Add photos</button>
 </header>
-<div class="shell">
-  <nav aria-label="Views">
+<div class="shell" id="shell">
+  <nav aria-label="Views" id="sidebar">
     <h2>To review</h2>
     <button class="nav" data-v="suggested">Suggestions <span class="n" id="n-suggested"></span></button>
     <button class="nav" data-v="unknown">New faces <span class="n" id="n-unknown"></span></button>
@@ -199,6 +217,7 @@
     <button class="nav" data-v="auto">Named automatically <span class="n" id="n-auto"></span></button>
     <button class="nav" data-v="checks">Checks <span class="n" id="n-checks"></span></button>
     <h2>People</h2>
+    <input type="search" id="pfind" placeholder="Find a person" aria-label="Find a person" autocomplete="off">
     <div id="people"></div>
   </nav>
   <main id="main" tabindex="-1"></main>
@@ -308,6 +327,7 @@ async function loadSummary() {
       ${p.name !== IGN && p.usable < 5 ? `<span class="warn" title="Only ${p.usable} usable faces: add more photos of ${esc(p.name)} for reliable recognition">!</span>` : ""}
       <span class="n">${p.faces}</span></button>`).join("") || `<p class="lede" style="padding:0 10px">Nobody named yet.</p>`;
   ppl.querySelectorAll("[data-person]").forEach(b => b.onclick = () => go({ v: "person", name: b.dataset.person }));
+  findPeople();
   $("#undo").disabled = !SUM.canUndo;
   $("#undo").title = SUM.canUndo ? `Undo: ${SUM.undoText} (Z)` : "Nothing to undo";
   $("#folders").innerHTML = SUM.settings.folders.map(f => `<option value="${esc(f)}">`).join("");
@@ -324,7 +344,35 @@ function markNav() {
 }
 
 // ------------------------------------------------------------------ views
-function go(v) { view = v; clearSel(); render(true); }
+// Each view has its own address (#suggested, #person/Name...), so Back, Forward and reloading work
+const hashOf = v => "#" + (v.v === "person" ? "person/" + encodeURIComponent(v.name) : v.v);
+function viewOf(hash) {
+  const h = hash.replace(/^#/, "");
+  if (h.startsWith("person/")) return { v: "person", name: decodeURIComponent(h.slice(7)) };
+  return ["suggested", "unknown", "tagged", "auto", "checks"].includes(h) ? { v: h } : null;
+}
+function go(v) {
+  view = v; clearSel(); render(true);
+  if (location.hash !== hashOf(v)) history.pushState(null, "", hashOf(v));
+  if (narrowNav.matches) setNav(false);             // narrow: the sidebar covers the faces, so close it
+}
+addEventListener("popstate", () => { const v = viewOf(location.hash); if (v) { view = v; clearSel(); render(true); } });
+
+// Sidebar fly-out, people search, face size: remembered in this browser
+const store = { get: k => { try { return localStorage.getItem("fl-" + k); } catch { return null; } },
+                set: (k, v) => { try { localStorage.setItem("fl-" + k, v); } catch {} } };
+const narrowNav = matchMedia("(max-width: 760px)");
+function setNav(open, save = true) {
+  $("#shell").classList.toggle("closed", !open);
+  $("#sidebar").inert = !open;
+  $("#navbtn").setAttribute("aria-expanded", open);
+  if (save && !narrowNav.matches) store.set("nav", open ? "1" : "0");
+}
+function findPeople() {
+  const q = $("#pfind").value.trim().toLowerCase();
+  document.querySelectorAll("#people [data-person]").forEach(b => { b.hidden = !!q && !label(b.dataset.person).toLowerCase().includes(q); });
+}
+function setTile(px) { document.documentElement.style.setProperty("--tile", px + "px"); }
 
 async function render(top) {
   const main = $("#main");
@@ -740,6 +788,7 @@ $("#renform").onsubmit = async e => {
     await post("/api/rename", { old, new: nw });
     $("#renamer").classList.remove("on");
     view = { v: "person", name: nw };
+    history.replaceState(null, "", hashOf(view));      // the old name's address no longer exists
     done(names().includes(nw) ? `Merged ${old} into ${nw}` : `Renamed ${old} to ${nw}`);
   } catch (err) { toast(err.message, true); }
 };
@@ -931,7 +980,11 @@ async function pollImport() {
 }
 function showImport(st) {
   const p = $("#progress");
-  if (!st || (!st.running && !st.stage)) { p.classList.remove("on"); return; }
+  // A finished import stays up for a minute, and only if it added something or failed: the webcam
+  // snapshots are re-checked every 20 seconds and mostly find nothing new.
+  const ended = st && !st.running && st.started ? st.started + (st.elapsed || 0) : null;
+  const quiet = ended != null && !st.error && (!st.new || Date.now() / 1000 - ended > 60);
+  if (!st || (!st.running && !st.stage) || quiet) { p.classList.remove("on"); return; }
   if (st.running && !polling) pollImport();
   p.classList.add("on");
   const pct = st.total ? st.done / st.total * 100 : 0;
@@ -943,6 +996,7 @@ function showImport(st) {
     `${st.auto.toLocaleString()} named automatically`];
   if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
   if (st.errors) parts.push(`${st.errors} unreadable`);
+  if (/[\\/]webcam$/i.test(st.folder || "")) parts.unshift("webcam snapshots");
   let txt = st.running ? `${st.stage}: ${parts.join(", ")}${left != null && st.stage === "Reading photos" ? `, about ${left < 90 ? left + " s" : Math.round(left / 60) + " min"} left` : ""}`
     : st.error ? `Adding photos failed: ${st.error}` : `${st.stage === "Stopped" ? "Stopped" : "Finished"}: ${parts.join(", ")}.`;
   p.querySelector(".txt").textContent = txt;
@@ -985,11 +1039,25 @@ addEventListener("keydown", e => {
 document.querySelectorAll("nav [data-v]").forEach(b => b.onclick = () => go({ v: b.dataset.v }));
 $("#undo").onclick = undo;
 $("#low").onchange = e => { showLow = e.target.checked; render(); };
+$("#navbtn").onclick = () => setNav($("#shell").classList.contains("closed"));
+addEventListener("keydown", e => { if (e.ctrlKey && e.key === ".") { e.preventDefault(); $("#navbtn").click(); } });
+setNav(narrowNav.matches ? false : store.get("nav") !== "0", false);
+// Resizing across the narrow width: close it (it would cover the faces), or restore the remembered state
+narrowNav.addEventListener("change", e => setNav(e.matches ? false : store.get("nav") !== "0", false));
+new ResizeObserver(() => document.documentElement.style.setProperty("--hdr", $("header").offsetHeight + "px")).observe($("header"));
+$("#pfind").oninput = findPeople;
+$("#pfind").onkeydown = e => {                     // Enter opens the first person found; Esc clears the search
+  if (e.key === "Enter") { const b = [...document.querySelectorAll("#people [data-person]")].find(x => !x.hidden); if (b) b.click(); }
+  if (e.key === "Escape") { $("#pfind").value = ""; findPeople(); }
+};
+$("#tilesz").value = store.get("tile") || 88; setTile($("#tilesz").value);
+$("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.target.value); };
 
 (async () => {
   try {
     await loadSummary();
-    view = { v: SUM.suggested ? "suggested" : SUM.unknown ? "unknown" : "checks" };
+    view = viewOf(location.hash) || { v: SUM.suggested ? "suggested" : SUM.unknown ? "unknown" : "checks" };
+    history.replaceState(null, "", hashOf(view));
     await render(true);
   } catch (e) {
     $("#main").innerHTML = `<div class="empty"><b>Couldn't reach Face Labels</b>Start it with label.bat (or python label_tool.py) and reload this page.</div>`;
