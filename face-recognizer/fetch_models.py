@@ -14,6 +14,7 @@ tools/get_adaface.py) and the NPU copy of ArcFace (Ryzen AI only; it's in the re
 Licences: ArcFace (InsightFace) and Wav2Small (audEERING, CC BY-NC-SA 4.0) are non-commercial.
 """
 import hashlib
+import json
 import os
 import sys
 import time
@@ -24,8 +25,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else HERE   # as face_id.ROOT
 MODELS = ROOT / "models"
+REPO = "SingularityResearch/facial-recognition"
 TAG = "models-v1"
-BASE = f"https://github.com/SingularityResearch/facial-recognition/releases/download/{TAG}/"
+BASE = f"https://github.com/{REPO}/releases/download/{TAG}/"
+# The same files through GitHub's API: different servers, used when the download links fail (on
+# 2026-11-08 every release link answered 504 for a while, while the API served the files fine).
+API = f"https://api.github.com/repos/{REPO}/releases/tags/{TAG}"
+_api_urls = {}
 LFS_SIGN = b"version https://git-lfs"
 TRIES, WAIT = 4, 3                    # attempts per file; seconds before retry n is WAIT * n
 
@@ -59,6 +65,22 @@ def needed():
             if not (MODELS / name).exists() or is_placeholder(MODELS / name) or (MODELS / name).stat().st_size != size]
 
 
+def _source(name, attempt):
+    """(url, headers) for a download attempt: odd attempts use the release download link, even ones
+    GitHub's API for the same file (falling back to the link if the API listing can't be read)."""
+    hdr = {"User-Agent": "FaceRecognizer-model-fetch"}
+    if attempt % 2 == 0:
+        try:
+            if not _api_urls:
+                with urllib.request.urlopen(urllib.request.Request(API, headers=hdr), timeout=30) as r:
+                    _api_urls.update({a["name"]: a["url"] for a in json.loads(r.read()).get("assets", [])})
+            if name in _api_urls:
+                return _api_urls[name], {**hdr, "Accept": "application/octet-stream"}
+        except (OSError, ValueError):
+            pass
+    return BASE + name, hdr
+
+
 def fetch(progress=None):
     """Download every needed model. progress(done_bytes, total_bytes, file name) is called as it goes.
     Returns the names downloaded. Raises OSError (with the reason) when one can't be fetched."""
@@ -70,7 +92,8 @@ def fetch(progress=None):
         tmp = MODELS / (name + ".download")
         for attempt in range(1, TRIES + 1):
             h, got = hashlib.sha256(), 0
-            req = urllib.request.Request(BASE + name, headers={"User-Agent": "FaceRecognizer-model-fetch"})
+            url, hdr = _source(name, attempt)
+            req = urllib.request.Request(url, headers=hdr)
             try:
                 with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
                     while chunk := r.read(1 << 20):
