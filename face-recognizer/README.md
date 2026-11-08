@@ -86,8 +86,10 @@ Double-click **recognize.bat**. Your browser opens the Face Tracker:
 
 - **Camera**: pick your webcam from the list by name, then **Start camera**. **Open video** tracks a video file instead.
 - Each face gets a box, and the person's name and match percentage appear on their face. People you haven't named show as **Unknown**.
-- **Display**: mirror view, keypoints, motion trail, show or blur unknown faces, smoothing.
+- **Display**: mirror view, keypoints, face mesh, motion trail, show or blur unknown faces, smoothing.
+- **Face mesh (triangles)** (off by default; remembered): MediaPipe's 478 face points joined into 852 triangles over each face, in the person's colour. Each triangle is shaded by the angle it faces, from the points' depth: clear where it faces the camera, darker where the surface turns away, so the mesh follows the shape and turn of the head. It's drawing only and doesn't change any reading. While it's on, the picture shows the frame that was just analysed instead of the live video, so the mesh stays on the face as you move. The picture runs a few hundredths of a second behind and updates at the recognition rate, and the smoothing setting is skipped. It costs about 10 ms per face on the CPU (the same run that gives the face-shape cues) and needs MediaPipe and `models/face_landmarker.task`; the option is greyed out without them.
 - **Match strictness**: raise it if wrong names appear, lower it if known people show as Unknown.
+- **Collect faces for labeling** (off by default; remembered): while a face stays in view, the tracker saves a snapshot of the frame every 5 seconds, up to 12 per face per visit. It only saves a face after 3 checks in a row and only when the face is sharp enough to learn from (the same quality setting as photos). Known and Unknown faces are both saved. Each snapshot goes to `%APPDATA%\FaceLabels\webcam\` with a `.json` beside it saying who the tracker thought each face was and its match percentage. The labeling tool imports new snapshots by itself (see **Label people**). The snapshots stay outside the project, but once imported, their faces (prints, thumbnails, labels) are in `data/` and published with it, like faces from photos.
 - **Show expression** / **Calibrate to each person** / **Show expression evidence** / **Expression test**: see below.
 - **Listen to voice** / **Webcam pulse** / **Body posture** / **Skip expression while talking** / **Skip expression when a hand is on the face** / **Use state model** / **Feeling check**: see **Other signals** below.
 - Names you save in the labeling tool are picked up automatically.
@@ -168,6 +170,8 @@ Double-click **label.bat**, or run `python label_tool.py`. Your browser opens **
 - **Suggestions**: faces the model thinks it knows, per person, least certain first. Click the wrong ones (or drag a box across them), press **R** ("not this person"), then **Accept** the rest.
 - **New faces**: faces that look like nobody you've named, in groups of look-alikes. Name a group, or select some of its faces to name only those. **Ignore** strangers, artwork and tattoos so they aren't asked about again.
 
+**Webcam faces**: while it's open, the labeling tool checks `%APPDATA%\FaceLabels\webcam\` every 20 seconds and imports any new snapshots the tracker saved with **Collect faces for labeling**. It does this the same way as **Add photos**: faces it's sure of are named automatically, the rest appear in **Suggestions** or **New faces**, and near-identical snapshots are skipped. A webcam face nobody has named shows a **Live tracker** clue with who the tracker thought it was and its match percentage.
+
 Also:
 - **Named automatically**: check the automatic names, if you like, least certain first.
 - **Checks**: named faces that look more like someone else, people with fewer than 5 clear faces, and the duplicate photos that were skipped.
@@ -176,6 +180,7 @@ Also:
 - **From photo tags**: faces named by the photo itself. Face tags saved inside the photo or in a `.xmp` file beside it (Windows Photo Gallery, Lightroom, Picasa, digiKam; the face boxes an iPhone saves carry no names) are matched to the face they sit on. Names without a box (Google Takeout `.json` files, IPTC "person in image") are used when only one face in the photo is still unnamed. The tags and camera dates are read in the background and saved in `data/photo_facts.json`; after that a photo is read again only if the file, a `.xmp`/`.json` beside it, or the faces found in it change. Nothing is named until you accept it.
 
 **Clues for a face nobody has named** (photo view, under the buttons). Clicking a name names the face; **Z** undoes it.
+- **Live tracker** (webcam snapshots only): who the live tracker thought the face was when it saved it, and its match percentage, or that it didn't recognize the face.
 - **Closest people (weak guesses)**: the three people the face scores highest against, with the score, even far below the suggestion setting. A hint only: below 0.35 most of these are wrong.
 - **The photo's own tags**, when it has any.
 - **Same occasion**: who is named in photos taken within 12 hours of this one (camera date), or, for photos without a camera date (downloads, scans), the 6 photos either side of it in its folder. **⤢** opens that person's face in that photo.

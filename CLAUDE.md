@@ -23,6 +23,8 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `label_tool.py` + `label_ui.html` / `label.bat` — labeling web app on `http://127.0.0.1:8765`.
     Chris calls this "the recognizer".
   - `tracker.py` + `tracker_ui.html` / `recognize.bat` — live tracker on `http://127.0.0.1:8766`.
+    Its **Collect faces** option saves webcam snapshots + the tracker's verdict to `%APPDATA%\FaceLabels\webcam\`
+    (`face_id.WEBCAM`); `label_tool.py` imports them by itself and shows the verdict as a clue.
   - `expression.js` — expression voting, state model, confidence flags, evidence, per-person usual look (browser;
     served by `tracker.py`). Tests: `node --test tests` from `face-recognizer\`.
   - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,

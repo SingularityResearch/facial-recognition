@@ -164,6 +164,7 @@
       <div class="label">Display</div>
       <label class="toggle" for="optMirror">Mirror view <input type="checkbox" id="optMirror" checked></label>
       <label class="toggle" for="optPoints">Keypoints (eyes, nose, mouth) <input type="checkbox" id="optPoints" checked></label>
+      <label class="toggle" for="optMesh" title="MediaPipe's 478 face points joined into triangles, each shaded by the angle it faces">Face mesh (triangles) <input type="checkbox" id="optMesh"></label>
       <label class="toggle" for="optTrail">Motion trail <input type="checkbox" id="optTrail" checked></label>
       <label class="toggle" for="optUnknown">Show unknown faces <input type="checkbox" id="optUnknown" checked></label>
       <label class="toggle" for="optBlur">Blur unknown faces <input type="checkbox" id="optBlur"></label>
@@ -191,6 +192,8 @@
         <input type="range" id="optThresh" min="0.2" max="0.6" step="0.01" value="0.35" aria-label="Match strictness">
       </div>
       <p class="hint">Higher strictness means fewer wrong names but more "Unknown". 0.35 is the measured best for your photos with the ArcFace model.</p>
+      <label class="toggle" for="optCollect" title="Save snapshots of faces in view for the labeling tool">Collect faces for labeling <input type="checkbox" id="optCollect"></label>
+      <p class="hint" id="collectHint">While a face stays in view, a sharp snapshot is saved every few seconds (up to 12 per face) with who the tracker thinks it is and how sure. The labeling tool picks them up by itself: it names the ones it's sure of and asks you about the rest.</p>
     </div>
   </aside>
 </div>
@@ -205,6 +208,11 @@ const COLORS = ["#34d399", "#60a5fa", "#f472b6", "#fbbf24", "#a78bfa", "#2dd4bf"
 const UNKNOWN = getComputedStyle(document.documentElement).getPropertyValue("--unknown").trim() || "#e0574a";
 const SEND_MAX = 960;                      // frames are shrunk to this before being sent for recognition
 const grab = document.createElement("canvas"), gctx = grab.getContext("2d");
+// With the face mesh on, the page shows the frame that was analysed (not the live video) so the
+// mesh sits exactly on the face: the live video runs one round trip ahead of any result, and a
+// tight mesh makes that lag obvious. Two full-size canvases: one being sent, one on screen.
+const holds = [document.createElement("canvas"), document.createElement("canvas")];
+let shown = null;                          // the analysed frame on screen, or null to show the live video
 
 let stream = null, running = false, busy = false, tracks = [], people = [];
 let expressions = null;                    // label list from the recognizer, null when its expression model isn't installed
@@ -213,6 +221,9 @@ let test = null;                           // running expression test: { session
 let calibration = null, vaFit = null;      // fitted by tools/expr_eval.py (data/expr_calibration.json, data/va_fit.json)
 let voiceModel = false;                    // the recognizer has the voice model (models/wav2small.onnx)
 let poseOn = false;                        // the recognizer can send body points (MediaPipe pose model installed)
+let meshTris = null;                       // face-mesh triangles (landmark indices, three per triangle) when MediaPipe is installed
+let qEnroll = 0.3, captured = 0;           // "Collect faces": the quality a face needs to be learned from; snapshots saved
+const CAP_EVERY = 5000, CAP_MAX = 12, CAP_SEEN = 3;   // per face: ms between snapshots, most per visit, checks seen first
 let threshTouched = false;                 // the strictness slider was moved, so don't reset it to the model's default
 let checks = 0, fpsT = performance.now(), lastErr = 0;
 
@@ -227,6 +238,9 @@ async function loadPeople() {
     cuesOn = !!r.cues; showDevices(r.devices, r.warmup_ms);
     calibration = r.calibration || null; vaFit = r.vaFit || null; voiceModel = !!r.voice;
     poseOn = !!r.pose; $("optPose").disabled = $("optHandGate").disabled = !poseOn;
+    meshTris = r.meshTriangles || null; $("optMesh").disabled = !meshTris;
+    if (r.qEnroll != null) qEnroll = r.qEnroll;
+    if (r.captureDir) $("optCollect").parentElement.title = `Saves snapshots to ${r.captureDir} for the labeling tool`;
     $("testCount").textContent = [r.sessions ? `${r.sessions} tests` : "", r.reports ? `${r.reports} reports` : ""].filter(Boolean).join(" · ");
     if (!threshTouched && r.threshold) {         // start the slider at the active model's measured setting
       $("optThresh").value = r.threshold; $("threshVal").textContent = (+r.threshold).toFixed(2);
@@ -283,7 +297,7 @@ function stopCamera() {
   stream?.getTracks().forEach(t => t.stop());
   stream = null; video.srcObject = null; running = false;
   $("camBtn").textContent = "Start camera";
-  $("empty").hidden = false; tracks = []; ctx.clearRect(0, 0, canvas.width, canvas.height);
+  $("empty").hidden = false; tracks = []; shown = null; ctx.clearRect(0, 0, canvas.width, canvas.height);
   renderList(); renderPeople(); loadPeople();
 }
 
@@ -296,7 +310,7 @@ function openFile(file) {
 }
 
 function begin() {
-  $("empty").hidden = true; tracks = [];
+  $("empty").hidden = true; tracks = []; shown = null;
   setStatus("Tracking", "live");
   if (!running) { running = true; requestAnimationFrame(draw); sendLoop(); }
 }
@@ -307,13 +321,23 @@ async function sendLoop() {
     if (video.readyState < 2 || busy) { await new Promise(r => setTimeout(r, 30)); continue; }
     const vw = video.videoWidth, vh = video.videoHeight, s = Math.min(1, SEND_MAX / Math.max(vw, vh));
     grab.width = Math.round(vw * s); grab.height = Math.round(vh * s);
-    gctx.drawImage(video, 0, 0, grab.width, grab.height);
+    const sync = !!meshTris && $("optMesh").checked;
+    const hold = holds[0] === shown ? holds[1] : holds[0];
+    if (sync) {                            // keep the full-size frame to show with its result
+      if (hold.width !== vw || hold.height !== vh) { hold.width = vw; hold.height = vh; }
+      hold.getContext("2d").drawImage(video, 0, 0);
+      gctx.drawImage(hold, 0, 0, grab.width, grab.height);
+    } else {
+      shown = null;
+      gctx.drawImage(video, 0, 0, grab.width, grab.height);
+    }
     const blob = await new Promise(r => grab.toBlob(r, "image/jpeg", 0.85));
     busy = true;
     try {
       const want = new URLSearchParams({ t: $("optThresh").value });
       if (cuesOn && needCues()) want.set("c", "1");
       if (poseOn && ($("optPose").checked || $("optHandGate").checked)) want.set("p", "1");
+      if (meshTris && $("optMesh").checked) want.set("m", "1");
       if (test?.label) {
         want.set("rec", test.label); want.set("session", test.session);
         if (test.talk) want.set("talk", "1");
@@ -326,15 +350,36 @@ async function sendLoop() {
       const res = await r.json();
       if (!r.ok) throw new Error(res.error || r.status);
       updateTracks(res.faces.map(f => ({ ...f, box: f.box.map(v => v / s), kps: f.kps.map(([x, y]) => [x / s, y / s]),
-                                         pose: f.pose && f.pose.map(([x, y, v]) => [x / s, y / s, v]) })));
+                                         pose: f.pose && f.pose.map(([x, y, v]) => [x / s, y / s, v]),
+                                         mesh: f.mesh && Float32Array.from(f.mesh, v => v / s) })));
+      shown = sync && $("optMesh").checked ? hold : null;
+      if ($("optCollect").checked) collect(blob, s);
       checks++;
       if ($("status").classList.contains("err")) setStatus("Tracking", "live");
     } catch (e) {
+      shown = null;                        // back to the live video rather than a frozen frame
       if (performance.now() - lastErr > 2000) setStatus("Lost the recognizer. Is the tracker window still open?", "err");
       lastErr = performance.now();
       await new Promise(r => setTimeout(r, 500));
     } finally { busy = false; }
   }
+}
+
+// "Collect faces": save the frame just checked for the labeling tool when a face in it has been in view
+// for a few checks, is sharp enough to learn from, and hasn't been saved in the last few seconds.
+// Each saved face carries the tracker's verdict (voted name and match) in frame pixels of the JPEG.
+function collect(blob, s) {
+  const now = performance.now();
+  const due = tracks.filter(t => t.matched && t.votes.length >= CAP_SEEN && (t.quality ?? 0) >= qEnroll
+                                 && (t.caps || 0) < CAP_MAX && now - (t.capAt || -Infinity) >= CAP_EVERY);
+  if (!due.length) return;
+  for (const t of due) { t.capAt = now; t.caps = (t.caps || 0) + 1; }
+  const faces = due.map(t => ({ box: [t.tx, t.ty, t.tw, t.th].map(v => +(v * s).toFixed(1)), name: t.name, sim: +t.sim.toFixed(3) }));
+  fetch(`/api/capture?${new URLSearchParams({ faces: JSON.stringify(faces) })}`,
+        { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg", "X-Face-Tool": "1" } })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)))
+    .then(() => { captured += faces.length; $("collectHint").textContent = `${captured} face snapshot${captured === 1 ? "" : "s"} saved this session for the labeling tool.`; })
+    .catch(() => { $("collectHint").textContent = "Couldn't save a snapshot. Is the tracker window still open?"; });
 }
 
 // Match new detections to existing tracks by nearest centre; vote on names over recent checks.
@@ -356,6 +401,8 @@ function updateTracks(dets) {
     }
     used.add(best); best.matched = true; best.missed = 0;
     Object.assign(best, { tx: x, ty: y, tw: w, th: h, tcx: cx, tcy: cy, tkp: d.kps, score: d.score });
+    best.tmesh = d.mesh || null; best.quality = d.quality;
+    if (!best.tmesh || best.mesh?.length !== best.tmesh.length) best.mesh = best.tmesh && best.tmesh.slice();
     // Each frame votes with a weight from its face quality, so sharp frames outvote blurry ones
     const qw = d.quality == null ? 0.5 : Math.max(0.05, d.quality);
     best.votes.push([d.name, d.sim, qw]); if (best.votes.length > 7) best.votes.shift();
@@ -572,14 +619,18 @@ async function runTest() {
 function draw() {
   if (!running) return;
   if (video.videoWidth && canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
-  const a = 1 - parseFloat($("optSmooth").value) * 0.9;          // easing toward the latest detection
+  if (shown && !$("optMesh").checked) shown = null;
+  // Easing toward the latest detection; none while showing the analysed frame, whose results fit it exactly
+  const a = shown ? 1 : 1 - parseFloat($("optSmooth").value) * 0.9;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (shown) ctx.drawImage(shown, 0, 0, canvas.width, canvas.height);
   const lw = Math.max(2, canvas.width / 450), mirrored = $("optMirror").checked;
   if ($("optPulse").checked && video.videoWidth) samplePulse(performance.now());
   for (const t of tracks) {
     if (t.tx === undefined) continue;
     t.x += (t.tx - t.x) * a; t.y += (t.ty - t.y) * a; t.w += (t.tw - t.w) * a; t.h += (t.th - t.h) * a;
     t.kp = t.kp.map(([x, y], i) => [x + (t.tkp[i][0] - x) * a, y + (t.tkp[i][1] - y) * a]);
+    if (t.mesh && t.tmesh) for (let i = 0; i < t.mesh.length; i++) t.mesh[i] += (t.tmesh[i] - t.mesh[i]) * a;
     const unknown = t.name === "Unknown";
     if (unknown && !$("optUnknown").checked) continue;
     const col = colorFor(t.name);
@@ -587,7 +638,7 @@ function draw() {
     ctx.globalAlpha = t.missed ? 0.45 : 1;
     if (unknown && $("optBlur").checked) {
       ctx.save(); ctx.beginPath(); ctx.rect(t.x, t.y, t.w, t.h); ctx.clip();
-      ctx.filter = `blur(${Math.round(t.w / 9)}px)`; ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.filter = `blur(${Math.round(t.w / 9)}px)`; ctx.drawImage(shown || video, 0, 0, canvas.width, canvas.height);
       ctx.restore(); ctx.filter = "none";
     }
     if ($("optTrail").checked && t.trail.length > 1) {
@@ -602,6 +653,7 @@ function draw() {
       ctx.moveTo(x + dx * c, y); ctx.lineTo(x, y); ctx.lineTo(x, y + dy * c);
     });
     ctx.stroke();
+    if (t.mesh && meshTris && $("optMesh").checked && !t.missed) drawMesh(t.mesh, col, lw);
     if ($("optPoints").checked) {
       ctx.fillStyle = col;
       for (const [x, y] of t.kp) { ctx.beginPath(); ctx.arc(x, y, lw * 1.4, 0, Math.PI * 2); ctx.fill(); }
@@ -652,6 +704,33 @@ function draw() {
   requestAnimationFrame(draw);
 }
 
+// Face mesh: MediaPipe's points joined into triangles. Each triangle is shaded by the angle it
+// faces (its 3D normal, from the points' depth): facing the camera is clear, turned away is darker,
+// so the shading follows the shape and turn of the head. Then all the edges in the person's colour.
+function drawMesh(m, col, lw) {
+  ctx.save();
+  const base = ctx.globalAlpha;
+  for (let k = 0; k < meshTris.length; k += 3) {
+    const a = meshTris[k] * 3, b = meshTris[k + 1] * 3, c = meshTris[k + 2] * 3;
+    const ux = m[b] - m[a], uy = m[b + 1] - m[a + 1], uz = m[b + 2] - m[a + 2];
+    const vx = m[c] - m[a], vy = m[c + 1] - m[a + 1], vz = m[c + 2] - m[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz);
+    if (!len) continue;
+    const facing = Math.abs(nz) / len;                 // 1 = faces the camera, 0 = edge-on
+    ctx.globalAlpha = base * 0.45 * (1 - facing) ** 1.5;
+    ctx.fillStyle = "#08130f";
+    ctx.beginPath(); ctx.moveTo(m[a], m[a + 1]); ctx.lineTo(m[b], m[b + 1]); ctx.lineTo(m[c], m[c + 1]); ctx.closePath(); ctx.fill();
+  }
+  ctx.globalAlpha = base * 0.55; ctx.strokeStyle = col; ctx.lineWidth = Math.max(0.6, lw * 0.3);
+  ctx.beginPath();
+  for (let k = 0; k < meshTris.length; k += 3) {
+    const a = meshTris[k] * 3, b = meshTris[k + 1] * 3, c = meshTris[k + 2] * 3;
+    ctx.moveTo(m[a], m[a + 1]); ctx.lineTo(m[b], m[b + 1]); ctx.lineTo(m[c], m[c + 1]); ctx.closePath();
+  }
+  ctx.stroke(); ctx.restore();
+}
+
 // Body lines: shoulders, arms, torso (points in tracker.py's order; only those seen)
 const BONES = [[3, 4], [3, 5], [5, 7], [7, 9], [4, 6], [6, 8], [8, 10], [3, 11], [4, 12], [11, 12]];
 function drawBody(p, col, lw) {
@@ -689,6 +768,10 @@ $("fileBtn").onclick = () => $("fileInput").click();
 $("fileInput").onchange = e => openFile(e.target.files[0]);
 $("camSelect").onchange = async () => { if (stream) { stopCamera(); await startCamera(); } };
 $("optMirror").onchange = applyMirror;
+$("optMesh").checked = recall("mesh") === "1";                // remembered between visits
+$("optMesh").onchange = () => remember("mesh", $("optMesh").checked ? "1" : "0");
+$("optCollect").checked = recall("collect") === "1";
+$("optCollect").onchange = () => remember("collect", $("optCollect").checked ? "1" : "0");
 $("peopleCard").open = recall("people") === "1";             // collapsed unless you opened it last time
 $("peopleCard").ontoggle = () => remember("people", $("peopleCard").open ? "1" : "0");
 $("exprHint").dataset.on = $("exprHint").textContent;

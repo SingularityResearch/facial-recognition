@@ -207,6 +207,23 @@ def make_handler(db, importer):
     return Handler
 
 
+def watch_webcam(importer, every=20):
+    """Import the tracker's webcam snapshots (face_id.WEBCAM) by themselves: whenever new ones have
+    arrived and no other import is running. The import names the faces it's sure of; the rest wait in
+    Suggested and Unknown with the tracker's own verdict among the clues."""
+    import face_id as F
+    seen = 0.0
+    while True:
+        try:
+            newest = max((p.stat().st_mtime for p in F.WEBCAM.glob("*.jpg")), default=0.0)
+            if newest > seen and not importer.status.get("running"):
+                importer.start(F.WEBCAM)
+                seen = newest
+        except (OSError, ValueError):
+            pass                          # folder busy or another import started first: try next time
+        time.sleep(every)
+
+
 def already_running(port):
     """True if another copy of this tool is answering on the port."""
     import urllib.request
@@ -241,8 +258,10 @@ def main():
     import labels as L
     print("Loading faces ...")
     db = L.LabelDB()
-    srv.RequestHandlerClass = make_handler(db, L.Importer(db))
+    importer = L.Importer(db)
+    srv.RequestHandlerClass = make_handler(db, importer)
     db.facts.start()                       # camera dates and people tags, read in the background
+    threading.Thread(target=watch_webcam, args=(importer,), daemon=True).start()
     url = f"http://127.0.0.1:{port}/"
     print(f"Face Labels is open at {url}  ({db.n} faces, model {db.store.model})")
     print("Leave this window open while labeling. Close it (or press Ctrl+C) when done.")

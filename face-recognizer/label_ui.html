@@ -742,6 +742,10 @@ function clues(h) {
   if (!h) return "";
   const chip = (n, extra) => `<button class="chip" data-nm="${esc(n)}" title="Name this face ${esc(n)}">${avatar(n)}${esc(n)}${extra || ""}</button>`;
   let out = "";
+  const live = h.live;                     // webcam snapshot: what the live tracker said when it saved it
+  if (live) out += `<div class="clue"><h4>Live tracker (${esc(live.when)})</h4>${live.name !== "Unknown"
+    ? `<div class="chips">${chip(live.name, ` <small>${Math.round(live.sim * 100)}%</small>`)}</div>`
+    : `<div class="meta">Didn't recognize this face${live.sim > 0 ? ` (best match ${Math.round(live.sim * 100)}%)` : ""}.</div>`}</div>`;
   if (h.tag) out += `<div class="clue"><h4>The photo's own tags</h4><div class="chips">${chip(h.tag)}</div></div>`;
   else if (h.tags.length) out += `<div class="clue"><h4>The photo is tagged with</h4><div class="chips">${h.tags.map(n => chip(n)).join("")}</div></div>`;
   const web = h.web;

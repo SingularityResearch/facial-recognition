@@ -75,6 +75,9 @@ IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".heic", ".heif", ".gif",
 VIDEO_EXT = {".mov", ".mp4", ".m4v", ".avi", ".mkv"}
 
 MAX_SIDE = 1280          # photos are shrunk to this before detection (speed)
+# Webcam snapshots the tracker saves for labeling (its "Collect faces" option), with a .json beside each
+# saying who the tracker thought each face was. Outside the project; the labeling tool imports them.
+WEBCAM = Path(os.environ.get("APPDATA", Path.home())) / "FaceLabels" / "webcam"
 DET_SCORE = 0.85         # detector confidence needed to keep a face
 MIN_FACE = 40            # px, smaller faces are too blurry to recognise reliably
 Q_ENROLL = 0.30          # faces below this eDifFIQA quality are not used to learn a person
@@ -275,10 +278,17 @@ class Faces:
 
     def blendshapes(self, bgr, box):
         """MediaPipe's 52 blendshape scores (0..1, by name) for the face in `box` (x, y, w, h), or
-        None when MediaPipe or its model isn't installed or it finds no face there. The landmarker
-        gets a square region 1.6x the box, so the whole head is in view, resized to 256 px."""
+        None when MediaPipe or its model isn't installed or it finds no face there."""
+        return self.face_mesh(bgr, box)[0]
+
+    def face_mesh(self, bgr, box):
+        """(blendshapes, points) for the face in `box` (x, y, w, h): MediaPipe's 52 blendshape
+        scores (0..1, by name) and its 478 face landmarks as a 478x3 array of [x px, y px, depth px]
+        in frame pixels (depth: smaller is nearer the camera). (None, None) when MediaPipe or its
+        model isn't installed or it finds no face there. The landmarker gets a square region 1.6x
+        the box, so the whole head is in view, resized to 256 px. MESH_TRIANGLES joins the points."""
         if not self.cues_available:
-            return None
+            return None, None
         if self._landmarker is None:
             from mediapipe.tasks.python import BaseOptions, vision
             self._landmarker = vision.FaceLandmarker.create_from_options(vision.FaceLandmarkerOptions(
@@ -290,12 +300,14 @@ class Faces:
         x0, y0 = int(max(0, x + w / 2 - side / 2)), int(max(0, y + h / 2 - side / 2))
         region = bgr[y0:int(y + h / 2 + side / 2), x0:int(x + w / 2 + side / 2)]
         if region.size == 0:
-            return None
+            return None, None
         rgb = cv2.cvtColor(cv2.resize(region, (256, 256), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
         found = self._landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb)))
         if not found.face_blendshapes:
-            return None
-        return {c.category_name: float(c.score) for c in found.face_blendshapes[0]}
+            return None, None
+        rh, rw = region.shape[:2]
+        points = np.array([[x0 + p.x * rw, y0 + p.y * rh, p.z * rw] for p in found.face_landmarks[0]], np.float32)
+        return {c.category_name: float(c.score) for c in found.face_blendshapes[0]}, points
 
     def cues(self, bgr, box):
         """The face-shape CUES (smile, browDown, jaw...) for the face in `box`, or None."""
@@ -372,6 +384,18 @@ def expression_skip(row, quality):
     if head_turn(row) > MAX_TURN:
         return "turned"
     return None
+
+
+def mesh_triangles():
+    """MediaPipe's face-mesh tessellation as a flat list of landmark indices, three per triangle
+    (852 triangles over the 468 face points; the 10 iris points aren't in it), or None without
+    MediaPipe. For drawing the points Faces.face_mesh returns."""
+    try:
+        from mediapipe.tasks.python.vision import FaceLandmarksConnections
+    except ImportError:
+        return None
+    # The edges come in threes, a->b, b->c, c->a, one triangle each, so the starts list the corners
+    return [c.start for c in FaceLandmarksConnections.FACE_LANDMARKS_TESSELATION]
 
 
 def face_cues(blendshapes):
