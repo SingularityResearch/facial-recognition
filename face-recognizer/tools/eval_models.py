@@ -77,6 +77,8 @@ def main():
     print(f"{len(named)} labeled faces, {len(set(lab[named]))} people; providers {ort.get_available_providers()}")
 
     arc = embedder(session("arcface_w600k_r50.onnx"))
+    if not (MODELS / "adaface_ir101_webface12m.onnx").exists():   # not in the repo: evaluation only
+        sys.exit("AdaFace isn't installed. Make it first with: python tools/get_adaface.py (needs PyTorch)")
     ada_s = session("adaface_ir101_webface12m.onnx")
     ada_rgb, ada_bgr = embedder(ada_s), embedder(ada_s, bgr_order=True)
 

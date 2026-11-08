@@ -30,15 +30,23 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
     each person's normal for every signal (`Baselines`, alone and in company),
     feeling-report summaries, fitted valence/arousal (browser; served by `tracker.py`; tests in `tests/`).
+  - `app.py` / `build_app.bat` → `FaceRecognizer.exe` — one window (pywebview, WebView2) with Face tracking and
+    Labeling tabs; starts both servers in one process (`tracker.bind/attach`, `label_tool.attach`), each still on its
+    own port and page. PyInstaller one-file build; uses `models\` and `data\` beside the .exe (`face_id.ROOT`).
   - `websearch.py` — the labeling tool's **Web search**: Amazon Rekognition celebrity recognition + Google Cloud Vision web detection, combined into suggestions with a confidence level (on click only; US services, English results, each capped under $10/month; keys in `%APPDATA%\FaceLabels`, never in the repo).
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
-  - `models/` — YuNet (detect), ArcFace R50 (recognize; also shipped split as `.part0`–`.part8`, rejoined
-    by `_join_parts()`), SFace (fallback), eDifFIQA (quality), expression model, AdaFace (evaluated, unused),
+  - `fetch_models.py` — downloads missing models (or Git LFS placeholders) from the GitHub Release `models-v1`
+    with SHA-256 checks; run by `setup.bat` and by the .exe on first start. `face_id.check_downloaded()` stops
+    with "Model files weren't downloaded: install Git LFS and run git lfs pull" when it finds placeholders.
+  - `models/` (Git LFS) — YuNet (detect), ArcFace R50 (recognize), SFace (fallback), eDifFIQA (quality),
+    expression model, AdaFace (evaluated, unused; local only, made by `tools/get_adaface.py`, not in git),
     `npu/` (static ArcFace + VitisAI config/cache), `face_landmarker.task` (MediaPipe blendshape cues, optional),
     `wav2small.onnx` (voice arousal/dominance/valence, optional; made by `tools/get_wav2small.py`),
     `pose_landmarker_lite.task` (MediaPipe body posture, optional).
-  - `tools/` — `eval_models.py`, `hw_bench.py`, `expr_check.py`, `expr_eval.py`, `get_adaface.py`, `get_wav2small.py`, `import_bench.py`, `websearch_check.py`.
+  - `tools/` — `eval_models.py`, `hw_bench.py`, `expr_check.py`, `expr_eval.py`, `get_adaface.py`, `get_wav2small.py`, `import_bench.py`, `websearch_check.py`, `webcam_eval.py` (live naming on confirmed webcam snapshots; measured the
+    averaged-print rule the tracker uses via `/api/who`).
+  - `.github/workflows/checks.yml` — CI on every push/PR: `node --test tests` and pyflakes (no LFS).
 
 ## Running
 
@@ -46,6 +54,7 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
 face-recognizer\setup.bat        # once
 face-recognizer\recognize.bat    # live tracker  (port 8766)
 face-recognizer\label.bat        # labeling tool (port 8765)
+face-recognizer\build_app.bat    # builds FaceRecognizer.exe: both apps in one window, two tabs
 python face_id.py --help         # CLI pipeline (run from face-recognizer\)
 ```
 
@@ -66,10 +75,13 @@ Use the Python 3.12 the .bat files pick (`%LOCALAPPDATA%\Programs\Python\Python3
   labeling tool or `LabelDB`, not by hand-editing JSON. `cluster` group numbers are temporary.
 - After switching recognition model: `python face_id.py reembed`.
 - Name overlay belongs on the face near the top of the head (owner preference).
-- The labeling tool stays a separate program from the tracker (owner preference).
+- The labeling tool stays a separate program from the tracker (owner preference): separate code, server and page.
+  Since 2026-11-08 they can share one window as two tabs (`app.py`), but each still runs on its own.
 - Camera opening on Windows: try `CAP_DSHOW` → `CAP_MSMF` → `CAP_ANY`, retry `cap.read()` while the webcam warms up.
 - Face-shape cues are evidence only until fusion is measured with `tools/expr_eval.py` on posed sessions.
 - Expression is display-only and never stored (except opt-in posed test sessions and feeling reports in `data/expr_eval/`,
   numbers only); microphone audio is analysed live and never stored; per-person baselines and usual looks live in the
   browser's storage only (never `data/`, which is published); keep README wording honest ("looks", not "feels").
+- The presence log (who was in view, when) is opt-in, names and times only, in `%APPDATA%\FaceLabels\presence\`, never `data/`.
+- Webcam faces named automatically don't enter the recognition gallery until confirmed (`LabelDB.gallery`).
 - InsightFace ArcFace and audEERING Wav2Small weights are non-commercial; note this if the project is ever redistributed.

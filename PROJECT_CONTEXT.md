@@ -69,8 +69,8 @@ X:\source\facial-recognition\
     │   └── import_bench.py       photo-import timing
     ├── models\
     │   ├── face_detection_yunet_2023mar.onnx           YuNet detector (OpenCV Zoo)
-    │   ├── arcface_w600k_r50.onnx (+ .part0–.part8)    ArcFace recognizer (174 MB), split copy rejoined by _join_parts()
-    │   ├── face_recognition_sface_2021dec.onnx (+ .part0/.part1)   SFace, fallback recognizer (38.7 MB)
+    │   ├── arcface_w600k_r50.onnx                      ArcFace recognizer (174 MB)
+    │   ├── face_recognition_sface_2021dec.onnx         SFace, fallback recognizer (38.7 MB)
     │   ├── ediffiqa_tiny_jun2024.onnx                  eDifFIQA face quality (optional)
     │   ├── facial_expression_recognition_mobilefacenet_2022july.onnx   7-class expression model (optional)
     │   ├── adaface_ir101_webface12m.onnx, adaface_src\  AdaFace, evaluated and not used
@@ -86,6 +86,7 @@ X:\source\facial-recognition\
         ├── history.jsonl         every labeling change with its time (powers Undo)
         ├── backups\              labels-<time>.json from each labeling-tool start (last 20);
         │                         legacy-<time>\ = the old groups.json/names.json/scanned.json
+        │                         (local only since 2026-11-08: in .gitignore, untracked; tracked Oct 31-Nov 8)
         ├── people.npz            face prints of named people — what the tracker and `recognize` use
         ├── settings.json         photo folders that have been added
         ├── sheets\               contact sheets written by `cluster` (group_###.jpg, overview_*.jpg)
@@ -259,6 +260,13 @@ Measured on Chris's labeled faces:
 - **AdaFace IR-101** (WebFace12M, `tools/get_adaface.py`): 8.5 ms/face on GPU, but 95.5% vs ArcFace 99.4%
   on clean labeled faces, about the same on blurry; ArcFace+AdaFace combined 97.7%. Kept ArcFace
   (`tools/eval_models.py`, results in `data/model_eval.json`).
+- **Webcam faces, 2026-11-08** (`tools/webcam_eval.py`, `data/webcam_eval.json`): 75 confirmed webcam snapshots
+  (all Chris) against 950 photo faces of 93 people, at 0.35. Each snapshot became a simulated track of 7 spoiled
+  frames (blur, motion, low resolution, noise, JPEG, light); 3 seeds: one frame 82.9% correct; vote over 7 frame
+  names (old tracker rule) 93.3%; **average of the 7 face prints, quality-weighted, 98.2%**; plus mirror image
+  98.2% (no gain, not used). 0% wrong and 0% stranger named for all. Real runs of 3 unspoiled snapshots: 100%
+  both ways. The tracker now names by the average (`/api/who`). Not measured yet: head-turn weighting and
+  per-person settings (need turned-head test faces and webcam faces of more people).
 - Matching rule: a face is labeled with the known person whose 5 closest face prints are most similar,
   if similarity ≥ the threshold; otherwise "Unknown".
 
@@ -391,10 +399,17 @@ Webcam / OpenCV on this Windows machine:
 - Retry `cap.read()` up to ~10 times with short sleeps; some webcams return empty frames while starting.
 - Camera index 1 = the Pixel phone's camera via Phone Link, not the USB webcam. Pick cameras by name in the browser UI.
 
+- **One GPU run at a time per process** (`face_id.ACCEL_LOCK`). FaceRecognizer.exe hosts the tracker and the
+  labeling tool's webcam import in one process; with Collect faces on, both ran DirectML at once and the AMD
+  driver crashed the app (access violation in `amdxc64.dll`, Windows Application log event 1000, 2026-11-08).
+  Reproduced with two threads embedding at once (segfault, exit 139); with the lock: 8,192 runs, no crash, and
+  the app ran 4+ min while importing 32 snapshots during live tracking. Loading models at the same moment
+  (both programs start together) crashed onnxruntime too; loading is serialized by the same lock.
+
 Claude ↔ PC tooling (relevant if continuing with Claude's device tools):
-- `device_commit_files` fails above ~30 MB → large models are shipped as 20 MB `.partN` files
-  (ArcFace `.part0`–`.part8`, SFace `.part0`/`.part1`) and rejoined by `_join_parts()` in `face_id.py` on
-  first run.
+- `device_commit_files` fails above ~30 MB → large models were once shipped as 20 MB `.partN` files
+  rejoined by `_join_parts()`. Removed 2026-11-08: the models are in Git LFS, and `fetch_models.py`
+  downloads any that are missing from the GitHub Release `models-v1`.
 - `device_list_dir` truncates at 2,000 entries.
 - Claude's browser tools can't open `file://` URLs — hence both apps are tiny local HTTP servers.
 - Staging files in batches of ~50 lands under `/mnt/user-data/uploads/<lastfolder>/` with ~1 s lag per 50 MB.

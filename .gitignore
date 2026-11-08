@@ -8,3 +8,17 @@ __pycache__/
 *.tmp.npz
 *.joining
 
+
+# FaceRecognizer.exe build (build_app.bat)
+face-recognizer/build/
+face-recognizer/FaceRecognizer.exe
+
+# AdaFace: evaluation only, made locally by tools/get_adaface.py (not shipped)
+face-recognizer/models/adaface_ir101_webface12m.onnx
+face-recognizer/models/adaface_src/
+
+# fetch_models.py partial downloads
+*.download
+
+# labels.json copies from each labeling-tool start: local safety net only (git history has the rest)
+face-recognizer/data/backups/

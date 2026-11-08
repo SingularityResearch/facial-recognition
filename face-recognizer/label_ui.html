@@ -42,9 +42,25 @@
   #progress .txt { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
   /* ---------- layout */
-  .shell { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 0; }
-  @media (max-width: 760px) { .shell { grid-template-columns: minmax(0, 1fr); } nav { display: none; } }
-  nav { border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 8px 24px; background: var(--panel); }
+  /* The sidebar (views and people) is a fly-out on the left: closed, the faces get the whole width.
+     On narrow windows it slides over the faces instead, below the top bar. */
+  .shell { display: grid; grid-template-columns: var(--nav, 248px) minmax(0, 1fr); min-height: 0; transition: grid-template-columns .2s ease; }
+  .shell.closed { --nav: 0px; }
+  nav { border-right: 1px solid var(--line); overflow-y: auto; overflow-x: hidden; padding: 12px 8px 24px; background: var(--panel); min-width: 0; }
+  .shell.closed nav { visibility: hidden; border: 0; transition: visibility 0s .2s; }
+  @media (max-width: 760px) {
+    .shell, .shell.closed { grid-template-columns: minmax(0, 1fr); }   /* the sidebar floats, so the faces take the only column */
+    main { grid-column: 1; }
+    nav { position: fixed; left: 0; top: var(--hdr, 54px); bottom: 0; width: min(300px, 86vw); z-index: 40; box-shadow: 12px 0 32px rgb(0 0 0 / .3);
+          transform: translateX(0); transition: transform .2s ease; }
+    .shell.closed nav { transform: translateX(-105%); box-shadow: none; visibility: hidden; transition: transform .2s ease, visibility 0s .2s; }
+  }
+  #navbtn { display: inline-grid; place-items: center; width: 34px; height: 32px; padding: 0; }
+  #navbtn i { width: 15px; height: 11px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; position: relative; }
+  #navbtn i::after { content: ""; position: absolute; left: 0; right: 0; top: 2.5px; border-top: 2px solid currentColor; }
+  #pfind { width: calc(100% - 20px); margin: 0 10px 6px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--bg); font-size: 13px; }
+  .size { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .size input { width: 96px; accent-color: var(--accent); }
   nav h2 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 16px 10px 6px; }
   nav h2:first-child { margin-top: 2px; }
   .nav { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; padding: 6px 10px; border-radius: 8px; cursor: pointer; text-align: left; }
@@ -80,8 +96,16 @@
   .face img { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; }
   .face .sc { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--accent); }
   .face .sc.mid { background: var(--warn); }
-  .face .tag { position: absolute; left: 4px; top: 4px; font: 650 10px var(--sans); padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .62); color: #fff; }
+  .face .tags { position: absolute; left: 4px; top: 4px; right: 30px; display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none; }
+  .face .tag { font: 650 10px var(--sans); padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .62); color: #fff; }
   .face .tag.low { color: #fbbf24; }
+  .face .tag.cam { color: #7dd3fc; }
+  #psort { width: calc(100% - 20px); margin: 0 10px 8px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--bg); font-size: 13px; color: var(--fg); }
+  #pfew { font-weight: 400; color: var(--warn); margin-left: 4px; }
+  .keys-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; font-size: 13.5px; margin: 0; }
+  .keys-list .k { white-space: nowrap; text-align: right; }
+  .keys-list .d { margin: 0; color: var(--muted); }
+  .keys-list h4 { grid-column: 1 / -1; margin: 8px 0 0; font-size: 12px; font-weight: 650; color: var(--fg); text-transform: uppercase; letter-spacing: .04em; }
   .face .zoom { position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; border-radius: 6px; border: 0; background: rgb(0 0 0 / .55); color: #fff;
                 display: none; place-items: center; cursor: zoom-in; padding: 0; }
   .face:hover .zoom, .face:focus-visible .zoom { display: grid; }
@@ -124,7 +148,8 @@
   .modal { position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: none; place-items: start center; padding-top: 14vh; z-index: 60; }
   #namer { z-index: 70; }       /* naming from the web-search results opens over that dialog */
   .modal.on { display: grid; }
-  .picker { width: min(420px, calc(100vw - 32px)); background: var(--panel); border-radius: 14px; box-shadow: 0 18px 50px rgb(0 0 0 / .3); overflow: hidden; }
+  .picker { width: min(420px, calc(100vw - 32px)); background: var(--panel); border-radius: 14px; box-shadow: 0 18px 50px rgb(0 0 0 / .3); overflow: hidden;
+            max-height: calc(86vh - 16px); overflow-y: auto; }        /* tall dialogs scroll inside short windows */
   .picker .ttl { padding: 12px 16px 0; color: var(--muted); font-size: 13px; }
   .picker input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 10px 16px 12px; font-size: 18px; outline: none; }
   .picker ul { list-style: none; margin: 0; padding: 6px; max-height: 320px; overflow-y: auto; }
@@ -183,22 +208,31 @@
 </head>
 <body>
 <header>
+  <button class="btn" id="navbtn" aria-controls="sidebar" aria-expanded="true" title="Show or hide the sidebar (Ctrl+.)"><i></i></button>
   <h1>Face Labels</h1>
   <div id="progress" aria-live="polite"><div class="bar"><i></i></div><span class="txt"></span><button class="btn small" id="stopimp">Stop</button></div>
   <div class="spacer"></div>
+  <label class="size" title="Size of the face pictures (remembered)">Size <input type="range" id="tilesz" min="64" max="176" step="8" value="88" aria-label="Face picture size"></label>
   <label class="toggle" title="Faces too blurry or small to learn from are hidden from the review lists"><input type="checkbox" id="low"> Show blurry faces</label>
   <button class="btn" id="undo" disabled title="Undo (Z)">Undo</button>
+  <button class="btn" id="keysbtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
   <button class="btn primary" id="add">Add photos</button>
 </header>
-<div class="shell">
-  <nav aria-label="Views">
+<div class="shell" id="shell">
+  <nav aria-label="Views" id="sidebar">
     <h2>To review</h2>
     <button class="nav" data-v="suggested">Suggestions <span class="n" id="n-suggested"></span></button>
     <button class="nav" data-v="unknown">New faces <span class="n" id="n-unknown"></span></button>
     <button class="nav" data-v="tagged">From photo tags <span class="n" id="n-tagged"></span></button>
     <button class="nav" data-v="auto">Named automatically <span class="n" id="n-auto"></span></button>
     <button class="nav" data-v="checks">Checks <span class="n" id="n-checks"></span></button>
-    <h2>People</h2>
+    <h2>People<span id="pfew"></span></h2>
+    <input type="search" id="pfind" placeholder="Find a person" aria-label="Find a person" autocomplete="off">
+    <select id="psort" aria-label="Order of the people list">
+      <option value="name">A–Z</option>
+      <option value="faces">Most faces first</option>
+      <option value="few">Needs more faces first</option>
+    </select>
     <div id="people"></div>
   </nav>
   <main id="main" tabindex="-1"></main>
@@ -235,6 +269,46 @@
   </form>
 </div></div>
 
+<div class="modal" id="keys"><div class="picker" role="dialog" aria-label="Keyboard shortcuts" style="width:min(520px, calc(100vw - 32px))">
+  <div class="form">
+    <b>Keyboard shortcuts</b>
+    <div class="keys-list">
+      <h4>Selecting faces</h4>
+      <span class="k">Click</span><span class="d">select a face, or unselect it</span>
+      <span class="k"><kbd>Shift</kbd>+click</span><span class="d">select every face between the last one clicked and this one</span>
+      <span class="k">Drag</span><span class="d">draw a box across faces to select them</span>
+      <span class="k"><kbd>Esc</kbd></span><span class="d">clear the selection</span>
+      <h4>Selected faces</h4>
+      <span class="k"><kbd>N</kbd></span><span class="d">name them (type a name, <kbd>↑</kbd> <kbd>↓</kbd> to pick, <kbd>Enter</kbd>)</span>
+      <span class="k"><kbd>A</kbd></span><span class="d">accept the suggested name (Suggestions, From photo tags)</span>
+      <span class="k"><kbd>R</kbd></span><span class="d">not this person</span>
+      <span class="k"><kbd>X</kbd></span><span class="d">ignore (strangers, artwork, tattoos)</span>
+      <span class="k"><kbd>Space</kbd></span><span class="d">open the whole photo (the selected face, or the one under the mouse)</span>
+      <h4>Photo view</h4>
+      <span class="k"><kbd>←</kbd> <kbd>→</kbd></span><span class="d">previous / next face</span>
+      <span class="k"><kbd>N</kbd> <kbd>R</kbd> <kbd>X</kbd></span><span class="d">name, not this person, ignore</span>
+      <span class="k"><kbd>Esc</kbd></span><span class="d">close</span>
+      <h4>Anywhere</h4>
+      <span class="k"><kbd>Z</kbd></span><span class="d">undo the last change</span>
+      <span class="k"><kbd>Ctrl</kbd>+<kbd>.</kbd></span><span class="d">show or hide the sidebar</span>
+      <span class="k"><kbd>?</kbd></span><span class="d">this list</span>
+    </div>
+    <div class="acts"><button type="button" class="btn primary" id="keysclose">Close</button></div>
+  </div>
+</div></div>
+
+<div class="modal" id="photosdlg"><div class="picker" role="dialog" aria-label="Photos of a person">
+  <form class="form" id="phform">
+    <b id="phtitle">Photos</b>
+    <input type="text" id="phalso" list="peoplelist" autocomplete="off" placeholder="Together with… (more names, separated by commas)" aria-label="Together with">
+    <p id="phcount"></p>
+    <div id="phgrid" style="display:flex;flex-wrap:wrap;gap:4px;max-height:236px;overflow:auto"></div>
+    <input type="text" id="phfolder" autocomplete="off" placeholder="Copy them to this folder, e.g. E:\Pictures\Export" aria-label="Folder to copy the photos to">
+    <p id="pherr" style="color:var(--bad)"></p>
+    <div class="acts"><button type="button" class="btn" id="phclose">Close</button><button class="btn primary">Copy photos</button></div>
+  </form>
+</div></div>
+
 <div class="modal" id="websearch"><div class="picker" role="dialog" aria-label="Web search">
   <div class="form">
     <b>Web search</b>
@@ -265,7 +339,7 @@ const IGN = "#ignore";
 const label = n => n === IGN ? "Ignored" : n;
 const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
 
-let SUM = null, FIDS = [], view = { v: "suggested" }, showLow = false;
+let SUM = null, FIDS = [], view = { v: "suggested" }, showLow = false, WEBCAM = new Set();
 let sel = new Set(), order = [], secOf = new Map(), anchor = null;
 const PAGE = 160;     // faces shown per section before "show more"
 
@@ -290,12 +364,22 @@ async function loadSummary() {
   const set = (id, n, hot) => { const e = $("#n-" + id); e.textContent = n ? n.toLocaleString() : ""; e.classList.toggle("hot", !!hot && n > 0); };
   set("suggested", SUM.suggested, true); set("unknown", SUM.unknown, true); set("auto", SUM.auto); set("checks", SUM.checks);
   set("tagged", SUM.tagged, true);
+  WEBCAM = new Set(SUM.webcam || []);
+  const few = SUM.settings.few || 5, needs = p => p.name !== IGN && p.usable < few;
+  const nFew = SUM.people.filter(needs).length;
+  $("#pfew").textContent = nFew ? `· ${nFew} need more faces` : "";
+  // People list order (remembered): A-Z, most faces first, or the ones needing more faces first
+  const sortBy = $("#psort").value, list = [...SUM.people];
+  if (sortBy === "faces") list.sort((a, b) => b.faces - a.faces);
+  else if (sortBy === "few") list.sort((a, b) => (needs(b) - needs(a)) || (a.usable - b.usable) || a.name.localeCompare(b.name));
+  list.sort((a, b) => (a.name === IGN) - (b.name === IGN));       // Ignored stays last
   const ppl = $("#people");
-  ppl.innerHTML = SUM.people.map(p => `<button class="nav" data-person="${esc(p.name)}">
+  ppl.innerHTML = list.map(p => `<button class="nav" data-person="${esc(p.name)}">
       <img src="${thumb(p.cover)}" alt="">${esc(label(p.name))}
       ${p.name !== IGN && p.usable < 5 ? `<span class="warn" title="Only ${p.usable} usable faces: add more photos of ${esc(p.name)} for reliable recognition">!</span>` : ""}
       <span class="n">${p.faces}</span></button>`).join("") || `<p class="lede" style="padding:0 10px">Nobody named yet.</p>`;
   ppl.querySelectorAll("[data-person]").forEach(b => b.onclick = () => go({ v: "person", name: b.dataset.person }));
+  findPeople();
   $("#undo").disabled = !SUM.canUndo;
   $("#undo").title = SUM.canUndo ? `Undo: ${SUM.undoText} (Z)` : "Nothing to undo";
   $("#folders").innerHTML = SUM.settings.folders.map(f => `<option value="${esc(f)}">`).join("");
@@ -312,7 +396,35 @@ function markNav() {
 }
 
 // ------------------------------------------------------------------ views
-function go(v) { view = v; clearSel(); render(true); }
+// Each view has its own address (#suggested, #person/Name...), so Back, Forward and reloading work
+const hashOf = v => "#" + (v.v === "person" ? "person/" + encodeURIComponent(v.name) : v.v);
+function viewOf(hash) {
+  const h = hash.replace(/^#/, "");
+  if (h.startsWith("person/")) return { v: "person", name: decodeURIComponent(h.slice(7)) };
+  return ["suggested", "unknown", "tagged", "auto", "checks"].includes(h) ? { v: h } : null;
+}
+function go(v) {
+  view = v; clearSel(); render(true);
+  if (location.hash !== hashOf(v)) history.pushState(null, "", hashOf(v));
+  if (narrowNav.matches) setNav(false);             // narrow: the sidebar covers the faces, so close it
+}
+addEventListener("popstate", () => { const v = viewOf(location.hash); if (v) { view = v; clearSel(); render(true); } });
+
+// Sidebar fly-out, people search, face size: remembered in this browser
+const store = { get: k => { try { return localStorage.getItem("fl-" + k); } catch { return null; } },
+                set: (k, v) => { try { localStorage.setItem("fl-" + k, v); } catch {} } };
+const narrowNav = matchMedia("(max-width: 760px)");
+function setNav(open, save = true) {
+  $("#shell").classList.toggle("closed", !open);
+  $("#sidebar").inert = !open;
+  $("#navbtn").setAttribute("aria-expanded", open);
+  if (save && !narrowNav.matches) store.set("nav", open ? "1" : "0");
+}
+function findPeople() {
+  const q = $("#pfind").value.trim().toLowerCase();
+  document.querySelectorAll("#people [data-person]").forEach(b => { b.hidden = !!q && !label(b.dataset.person).toLowerCase().includes(q); });
+}
+function setTile(px) { document.documentElement.style.setProperty("--tile", px + "px"); }
 
 async function render(top) {
   const main = $("#main");
@@ -363,10 +475,14 @@ function tile(f, o) {
     const pct = Math.max(6, Math.min(100, (s - 0.25) / 0.5 * 100));
     bar = `<i class="sc ${s < SUM.settings.auto ? "mid" : ""}" style="width:${pct}%"></i>`;
   }
-  const tags = [o.auto !== false && f.by === "auto" ? `<span class="tag">auto</span>` : "", lo ? `<span class="tag low">blurry</span>` : ""].join("");
-  const tip = (s != null ? `score ${s.toFixed(2)}` : "") + (lo ? (s != null ? ", " : "") + "too blurry to learn from" : "");
+  const cam = WEBCAM.has(f.i);
+  const tags = [o.auto !== false && f.by === "auto" ? `<span class="tag">auto</span>` : "", cam ? `<span class="tag cam">webcam</span>` : "",
+                lo ? `<span class="tag low">blurry</span>` : ""].join("");
+  const tip = [s != null ? `score ${s.toFixed(2)}` : "", lo ? "too blurry to learn from" : "",
+               cam ? (f.by === "auto" ? "webcam snapshot, named automatically: it teaches the recognizer once you confirm it" : "webcam snapshot") : ""]
+    .filter(Boolean).join(", ");
   return `<button class="face ${sel.has(f.i) ? "sel" : ""}" data-i="${f.i}" title="${tip}" aria-pressed="${sel.has(f.i)}">
-    <img loading="lazy" src="${thumb(f.i)}" alt="">${bar}${tags}<span class="zoom" aria-hidden="true">⤢</span></button>`;
+    <img loading="lazy" src="${thumb(f.i)}" alt="">${bar}${tags ? `<span class="tags">${tags}</span>` : ""}<span class="zoom" aria-hidden="true">⤢</span></button>`;
 }
 const F3 = a => ({ i: a[0], s: a[1], q: a[2], by: a[3] });
 
@@ -479,7 +595,7 @@ function viewPerson(d) {
     : `${p ? plural(p.usable, "clear face") + " used for recognition" : ""}${autoN ? `, ${autoN} named automatically` : ""}. Faces that look least like ${esc(n)} come first, so mistakes surface at the top.`;
   return `<div class="head">${n !== IGN ? avatar(n).replace("<img", '<img style="width:44px;height:44px;border-radius:50%;object-fit:cover"') : ""}<h2>${esc(label(n))}</h2>
       <span style="color:var(--muted)">${plural(d.faces.length, "face")}</span>
-      ${n !== IGN ? `<button class="btn small" id="rename">Rename or merge</button>` : ""}</div><p class="lede">${lede}</p>
+      ${n !== IGN ? `<button class="btn small" id="rename">Rename or merge</button><button class="btn small" id="photosbtn">Photos…</button>` : ""}</div><p class="lede">${lede}</p>
     <section class="sec" data-sec="${esc(n)}">${grid(d.faces.map(F3), n)}</section>`;
 }
 
@@ -500,6 +616,7 @@ function wire(root) {
   });
   const rg = root.querySelector("#regroup"); if (rg) rg.onclick = () => { view.regroup = true; render(); };
   const rn = root.querySelector("#rename"); if (rn) rn.onclick = () => openRename(view.name);
+  const pb = root.querySelector("#photosbtn"); if (pb) pb.onclick = () => openPhotos(view.name);
 }
 function wireTiles(root) {
   root.querySelectorAll(".face").forEach(b => {
@@ -673,6 +790,45 @@ $("#nameinput").onkeydown = e => {
 $("#namer").onclick = e => { if (e.target.id === "namer") closePicker(null); };
 
 // ------------------------------------------------------------------ rename
+// Photos of a person, or of several people together; copy them to a folder (labels.py photos_with / export)
+let phNames = [];
+function phWanted(first) {
+  return [first, ...$("#phalso").value.split(",").map(s => s.trim()).filter(Boolean)];
+}
+async function phRefresh() {
+  const names = phNames, q = names.map(n => "with=" + encodeURIComponent(n)).join("&");
+  $("#phtitle").textContent = names.length > 1 ? `Photos with ${names.join(" and ")} together` : `Photos with ${names[0]}`;
+  try {
+    const d = await get(`/api/photos?${q}`);
+    const here = d.photos.filter(p => p.exists).length;
+    $("#phcount").textContent = d.photos.length
+      ? `${plural(d.photos.length, "photo")}${here < d.photos.length ? `, ${here} of them on this computer` : ""}. Click one to open it.`
+      : "No photos with all of them named.";
+    $("#phgrid").innerHTML = d.photos.slice(0, 120).map(p =>
+      `<img src="${thumb(p.i)}" data-ph="${p.i}" alt="" title="${esc(p.date)} · ${esc(p.people.join(", "))}" style="width:56px;height:56px;border-radius:6px;cursor:pointer;opacity:${p.exists ? 1 : .4}">`).join("")
+      + (d.photos.length > 120 ? `<span class="meta">and ${d.photos.length - 120} more</span>` : "");
+    $("#phgrid").querySelectorAll("[data-ph]").forEach(img => img.onclick = () => { $("#photosdlg").classList.remove("on"); openPhoto(+img.dataset.ph); });
+  } catch (e) { $("#phcount").textContent = String(e.message || e); }
+}
+function openPhotos(n) {
+  $("#phalso").value = ""; $("#pherr").textContent = ""; phNames = [n];
+  $("#photosdlg").classList.add("on");
+  phRefresh();
+  $("#phalso").onchange = () => { phNames = phWanted(n); phRefresh(); };
+}
+$("#phclose").onclick = () => $("#photosdlg").classList.remove("on");
+$("#phform").onsubmit = async e => {
+  e.preventDefault();
+  const folder = $("#phfolder").value.trim();
+  if (!folder) return ($("#pherr").textContent = "Type the folder to copy the photos to.");
+  $("#pherr").textContent = "Copying…";
+  try {
+    const r = await post("/api/export", { names: phNames, folder });
+    $("#pherr").textContent = "";
+    toast(`Copied ${plural(r.copied, "photo")} to ${folder}${r.skipped ? ` (${r.skipped} already there)` : ""}${r.missing ? `; ${r.missing} not on this computer` : ""}`);
+  } catch (err) { $("#pherr").textContent = String(err.message || err); }
+};
+
 function openRename(n) {
   $("#rentitle").textContent = `Rename ${n}`;
   $("#renname").value = n;
@@ -688,6 +844,7 @@ $("#renform").onsubmit = async e => {
     await post("/api/rename", { old, new: nw });
     $("#renamer").classList.remove("on");
     view = { v: "person", name: nw };
+    history.replaceState(null, "", hashOf(view));      // the old name's address no longer exists
     done(names().includes(nw) ? `Merged ${old} into ${nw}` : `Renamed ${old} to ${nw}`);
   } catch (err) { toast(err.message, true); }
 };
@@ -879,7 +1036,11 @@ async function pollImport() {
 }
 function showImport(st) {
   const p = $("#progress");
-  if (!st || (!st.running && !st.stage)) { p.classList.remove("on"); return; }
+  // A finished import stays up for a minute, and only if it added something or failed: the webcam
+  // snapshots are re-checked every 20 seconds and mostly find nothing new.
+  const ended = st && !st.running && st.started ? st.started + (st.elapsed || 0) : null;
+  const quiet = ended != null && !st.error && (!st.new || Date.now() / 1000 - ended > 60);
+  if (!st || (!st.running && !st.stage) || quiet) { p.classList.remove("on"); return; }
   if (st.running && !polling) pollImport();
   p.classList.add("on");
   const pct = st.total ? st.done / st.total * 100 : 0;
@@ -891,6 +1052,7 @@ function showImport(st) {
     `${st.auto.toLocaleString()} named automatically`];
   if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
   if (st.errors) parts.push(`${st.errors} unreadable`);
+  if (/[\\/]webcam$/i.test(st.folder || "")) parts.unshift("webcam snapshots");
   let txt = st.running ? `${st.stage}: ${parts.join(", ")}${left != null && st.stage === "Reading photos" ? `, about ${left < 90 ? left + " s" : Math.round(left / 60) + " min"} left` : ""}`
     : st.error ? `Adding photos failed: ${st.error}` : `${st.stage === "Stopped" ? "Stopped" : "Finished"}: ${parts.join(", ")}.`;
   p.querySelector(".txt").textContent = txt;
@@ -912,7 +1074,7 @@ $("#toast .undo").onclick = () => { $("#toast").classList.remove("on"); undo(); 
 
 // ------------------------------------------------------------------ keys + start
 addEventListener("keydown", e => {
-  if (e.target.matches("input, textarea") || e.ctrlKey && e.key !== "z" || e.altKey || e.metaKey) return;
+  if (e.target.matches("input, textarea, select") || e.ctrlKey && e.key !== "z" || e.altKey || e.metaKey) return;
   const k = e.key.toLowerCase();
   if ($("#websearch").classList.contains("on")) { if (k === "escape") $("#websearch").classList.remove("on"); return; }
   if ($("#viewer").classList.contains("on")) {
@@ -924,6 +1086,7 @@ addEventListener("keydown", e => {
     return e.preventDefault();
   }
   if (document.querySelector(".modal.on")) { if (k === "escape") document.querySelectorAll(".modal.on").forEach(m => m.classList.remove("on")); return; }
+  if (e.key === "?") { e.preventDefault(); return $("#keys").classList.add("on"); }
   if (k === "z") { e.preventDefault(); return undo(); }
   if (k === "escape") return clearSel();
   if (k === " " && sel.size === 1) { e.preventDefault(); return openPhoto([...sel][0]); }
@@ -933,11 +1096,30 @@ addEventListener("keydown", e => {
 document.querySelectorAll("nav [data-v]").forEach(b => b.onclick = () => go({ v: b.dataset.v }));
 $("#undo").onclick = undo;
 $("#low").onchange = e => { showLow = e.target.checked; render(); };
+$("#navbtn").onclick = () => setNav($("#shell").classList.contains("closed"));
+addEventListener("keydown", e => { if (e.ctrlKey && e.key === ".") { e.preventDefault(); $("#navbtn").click(); } });
+setNav(narrowNav.matches ? false : store.get("nav") !== "0", false);
+// Resizing across the narrow width: close it (it would cover the faces), or restore the remembered state
+narrowNav.addEventListener("change", e => setNav(e.matches ? false : store.get("nav") !== "0", false));
+new ResizeObserver(() => document.documentElement.style.setProperty("--hdr", $("header").offsetHeight + "px")).observe($("header"));
+$("#pfind").oninput = findPeople;
+$("#pfind").onkeydown = e => {                     // Enter opens the first person found; Esc clears the search
+  if (e.key === "Enter") { const b = [...document.querySelectorAll("#people [data-person]")].find(x => !x.hidden); if (b) b.click(); }
+  if (e.key === "Escape") { $("#pfind").value = ""; findPeople(); }
+};
+$("#keysbtn").onclick = () => $("#keys").classList.add("on");
+$("#keysclose").onclick = () => $("#keys").classList.remove("on");
+$("#keys").onclick = e => { if (e.target.id === "keys") $("#keys").classList.remove("on"); };   // click outside closes
+$("#psort").value = store.get("psort") || "name";
+$("#psort").onchange = () => { store.set("psort", $("#psort").value); loadSummary(); };
+$("#tilesz").value = store.get("tile") || 88; setTile($("#tilesz").value);
+$("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.target.value); };
 
 (async () => {
   try {
     await loadSummary();
-    view = { v: SUM.suggested ? "suggested" : SUM.unknown ? "unknown" : "checks" };
+    view = viewOf(location.hash) || { v: SUM.suggested ? "suggested" : SUM.unknown ? "unknown" : "checks" };
+    history.replaceState(null, "", hashOf(view));
     await render(true);
   } catch (e) {
     $("#main").innerHTML = `<div class="empty"><b>Couldn't reach Face Labels</b>Start it with label.bat (or python label_tool.py) and reload this page.</div>`;

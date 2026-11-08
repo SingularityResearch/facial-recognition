@@ -42,8 +42,11 @@ import cv2
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-MODELS = HERE / "models"
-DATA = HERE / "data"
+# models/ and data/ sit beside the code, or beside FaceRecognizer.exe when built (app.py): the .exe
+# carries only the code and pages, and shares this folder's models and data with the .bat launchers
+ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else HERE
+MODELS = ROOT / "models"
+DATA = ROOT / "data"
 DET_MODEL = MODELS / "face_detection_yunet_2023mar.onnx"
 QUAL_MODEL = MODELS / "ediffiqa_tiny_jun2024.onnx"            # eDifFIQA face-quality model (optional)
 EXPR_MODEL = MODELS / "facial_expression_recognition_mobilefacenet_2022july.onnx"   # expression model (optional)
@@ -96,16 +99,28 @@ REC_MODELS = {
 }
 
 
-def _join_parts(path):
-    """Large models ship split into .part0, .part1 ... files; rejoin them once."""
-    parts = sorted(path.parent.glob(path.name + ".part*"), key=lambda p: int(p.suffix[5:]))
-    if not path.exists() and parts:
-        tmp = path.with_suffix(".joining")
-        with open(tmp, "wb") as out:
-            for p in parts:
-                out.write(p.read_bytes())
-        os.replace(tmp, path)
-    return path.exists()
+LFS_MESSAGE = "Model files weren't downloaded: install Git LFS and run git lfs pull"
+
+
+class NotDownloaded(SystemExit):
+    """Files this needs are Git LFS placeholders (the project was copied without Git LFS)."""
+
+
+def check_downloaded():
+    """Stop with LFS_MESSAGE when a model or data file this program reads is a Git LFS placeholder:
+    a small text file left where the real file should be when the project was copied without Git LFS.
+    (Reading one would fail later with an error that doesn't say why.)"""
+    from fetch_models import is_placeholder
+    files = [DET_MODEL, QUAL_MODEL, EXPR_MODEL, CUE_MODEL, POSE_MODEL, VOICE_MODEL,
+             *(MODELS / cfg["file"] for cfg in REC_MODELS.values()),
+             DATA / "faces.npz", DATA / "people.npz", DATA / "photos.json"]
+    missing = [p for p in files if is_placeholder(p)]
+    if missing:
+        models = any(p.parent == MODELS for p in missing)
+        raise NotDownloaded(
+            f"{LFS_MESSAGE}\n  Placeholders instead of: {', '.join(p.name for p in missing[:6])}"
+            f"{' ...' if len(missing) > 6 else ''}"
+            + ("\n  (For the models alone you can also run: python fetch_models.py)" if models else ""))
 
 
 def active_model():
@@ -116,11 +131,12 @@ def active_model():
             sys.exit(f"Unknown FACE_MODEL {forced}; choose from {', '.join(REC_MODELS)}")
         return forced
     for name, cfg in REC_MODELS.items():
-        if _join_parts(MODELS / cfg["file"]):
+        if (MODELS / cfg["file"]).exists():
             return name
-    sys.exit("No face recognition model found in the models folder.")
+    raise NotDownloaded(f"No face recognition model found in {MODELS}. Run: python fetch_models.py")
 
 
+check_downloaded()
 REC_NAME = active_model()
 REC = REC_MODELS[REC_NAME]
 MATCH = REC["match"]
@@ -141,8 +157,17 @@ ARC_TEMPLATE = np.array([[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.73
 DEVICE = os.environ.get("FACE_DEVICE", "auto").lower()
 
 
+# One model run at a time on the GPU/NPU in this process. FaceRecognizer.exe runs the tracker and the
+# labeling tool's photo/webcam import in one process; two threads running DirectML at once crashed the
+# AMD driver (access violation in amdxc64.dll, 2026-11-08), and loading a model while another thread
+# loaded or ran one crashed onnxruntime itself at start-up. Both are serialized here. A run takes
+# ~3 ms, so waiting costs little.
+ACCEL_LOCK = threading.Lock()
+
+
 def _ort_runner(path, npu_static=None):
-    """Return (run, device_name) for an ONNX model on the chosen device, or None to use OpenCV."""
+    """Return (run, device_name) for an ONNX model on the chosen device, or None to use OpenCV.
+    Runs are serialized process-wide with ACCEL_LOCK."""
     if DEVICE == "cpu":
         return None
     try:
@@ -158,15 +183,24 @@ def _ort_runner(path, npu_static=None):
         if npu_static.exists() and cfg.exists():
             opts = {"config_file": str(cfg), "cache_dir": str(npu_dir / "cache"), "cache_key": npu_static.stem,
                     "enable_cache_file_io_in_mem": 0}
-            sess = ort.InferenceSession(str(npu_static), so, providers=["VitisAIExecutionProvider"],
-                                        provider_options=[opts])
-            name = sess.get_inputs()[0].name
-            return (lambda x: sess.run(None, {name: x})[0]), "NPU (Ryzen AI)"
+            with ACCEL_LOCK:                     # loading too: the app's two programs start at the same moment
+                sess = ort.InferenceSession(str(npu_static), so, providers=["VitisAIExecutionProvider"],
+                                            provider_options=[opts])
+            return _locked(sess), "NPU (Ryzen AI)"
     if DEVICE in ("auto", "gpu") and "DmlExecutionProvider" in avail:
-        sess = ort.InferenceSession(str(path), so, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
-        name = sess.get_inputs()[0].name
-        return (lambda x: sess.run(None, {name: x})[0]), "GPU (DirectML)"
+        with ACCEL_LOCK:                         # loading a model while another runs crashed onnxruntime too
+            sess = ort.InferenceSession(str(path), so, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+        return _locked(sess), "GPU (DirectML)"
     return None
+
+
+def _locked(sess):
+    name = sess.get_inputs()[0].name
+
+    def run(x):
+        with ACCEL_LOCK:
+            return sess.run(None, {name: x})[0]
+    return run
 
 
 def _cv_runner(path):

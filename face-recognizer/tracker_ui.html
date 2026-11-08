@@ -19,26 +19,44 @@
             --line: #2a3431; --accent: #34d399; --warn: #fb923c; --unknown: #ff7b6e; color-scheme: dark; }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; }
-  body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px;
-          grid-template-columns: minmax(0, 1fr) 320px; align-items: start; }
-  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
-  header { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); overflow: hidden; }
+  /* Full window: header on top, the video filling the rest. The controls are a fly-out panel on the
+     right: open, it takes its column and the video shrinks beside it (on narrow windows it slides over
+     the video instead); closed, the video gets the whole width. */
+  .wrap { height: 100vh; padding: 12px 16px 16px; display: grid; column-gap: 0; row-gap: 12px;
+          grid-template-columns: minmax(0, 1fr) var(--side, 356px); grid-template-rows: auto minmax(0, 1fr);
+          transition: grid-template-columns .22s ease; }
+  .wrap.closed { --side: 0px; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #sideBtn { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; }
+  #sideBtn .bars { display: inline-block; width: 14px; height: 10px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; position: relative; }
+  #sideBtn .bars::after { content: ""; position: absolute; left: 0; right: 0; top: 2px; border-top: 2px solid currentColor; }
   h1 { margin: 0; font: 600 22px var(--mono); letter-spacing: -.01em; }
   .status { font: 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
   .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
   .status.live .dot { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
   .status.err { color: var(--warn); } .status.err .dot { background: var(--warn); }
 
-  .stage { position: relative; background: #000; border-radius: 6px; overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; }
+  .stage { position: relative; background: #000; border-radius: 6px; overflow: hidden; min-height: 0; height: 100%; }
   .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   .stage.mirror video, .stage.mirror canvas { transform: scaleX(-1); }
   .empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 12px; color: #c9d4d0; padding: 24px; }
   .empty p { margin: 0; max-width: 44ch; }
   [hidden] { display: none !important; }
 
-  aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  aside { min-width: 0; height: 100%; overflow: hidden; }
+  aside .side-in { width: 340px; margin-left: 16px; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+                   display: flex; flex-direction: column; gap: 16px; padding-right: 4px; transition: opacity .18s; }
+  .wrap.closed aside .side-in { opacity: 0; visibility: hidden; transition: opacity .18s, visibility 0s .22s; }
+  @media (max-width: 900px) {          /* narrow: the panel slides over the video */
+    .wrap { --side: 0px; }
+    aside { position: fixed; top: 60px; right: 0; bottom: 0; width: min(372px, 92vw);   /* below the header's button */ z-index: 10; overflow: visible;
+            background: var(--bg); box-shadow: -12px 0 32px #0006; padding: 12px 12px 12px 0;
+            transform: translateX(0); transition: transform .22s ease; }
+    aside .side-in { width: auto; margin-left: 12px; }
+    .wrap.closed aside { transform: translateX(105%); box-shadow: none; }
+  }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   .label { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -49,6 +67,9 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #06231a; }
   button:disabled { opacity: .5; cursor: default; }
   button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=text] { font: 13px var(--sans); padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); width: 100%; box-sizing: border-box; }
+  .toast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; background: var(--panel); color: var(--fg);
+           border: 1px solid var(--accent); border-radius: 8px; padding: 10px 16px; font-size: 14px; box-shadow: 0 6px 24px #0008; }
   select { font: 13px var(--sans); padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); width: 100%; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; }
   .toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -81,10 +102,11 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" id="wrap">
   <header>
     <h1>Face Tracker</h1>
     <div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting to recognizer…</span></div>
+    <button id="sideBtn" aria-controls="side" aria-expanded="true" title="Show or hide the controls (Ctrl+.)"><span class="bars"></span><span id="sideBtnText">Hide controls</span></button>
   </header>
 
   <div class="stage mirror" id="stage">
@@ -95,7 +117,7 @@
     </div>
   </div>
 
-  <aside>
+  <aside id="side" aria-label="Controls"><div class="side-in">
     <div class="card">
       <div class="label">Source</div>
       <div class="row">
@@ -121,6 +143,20 @@
     <details class="card" id="peopleCard">
       <summary class="label">Known people <span id="peopleCount" class="num"></span></summary>
       <div class="people" id="people"><span class="chip">Loading…</span></div>
+    </details>
+
+    <details class="card" id="alertCard">
+      <summary class="label">Alerts and presence log</summary>
+      <label for="alertWho" class="label">Alert me when they arrive</label>
+      <input type="text" id="alertWho" list="peopleList" placeholder="Names, separated by commas" autocomplete="off">
+      <datalist id="peopleList"></datalist>
+      <label class="toggle" for="optAlertUnknown">Alert when an unknown face stays 30 seconds <input type="checkbox" id="optAlertUnknown"></label>
+      <label class="toggle" for="optAlertSound">Play a sound with alerts <input type="checkbox" id="optAlertSound" checked></label>
+      <p class="hint">"Arrive" means first seen after at least 10 minutes out of view. Alerts show on the video and, if you allow it, as Windows notifications.</p>
+      <label class="toggle" for="optPresence">Keep a presence log <input type="checkbox" id="optPresence"></label>
+      <p class="hint" id="presenceHint">Off by default. When on, it notes who was in view and when (names and times only, no pictures), in <code>%APPDATA%\FaceLabels\presence\</code> on this computer, not in the published data.</p>
+      <div class="row"><button class="small" id="presenceShow">Show today</button></div>
+      <ul class="faces" id="presenceList" hidden></ul>
     </details>
 
     <div class="card feel" id="feelCard" hidden>
@@ -195,7 +231,7 @@
       <label class="toggle" for="optCollect" title="Save snapshots of faces in view for the labeling tool">Collect faces for labeling <input type="checkbox" id="optCollect"></label>
       <p class="hint" id="collectHint">While a face stays in view, a sharp snapshot is saved every few seconds (up to 12 per face) with who the tracker thinks it is and how sure. The labeling tool picks them up by itself: it names the ones it's sure of and asks you about the rest.</p>
     </div>
-  </aside>
+  </div></aside>
 </div>
 
 <script src="/expression.js"></script>
@@ -252,7 +288,75 @@ async function loadPeople() {
   } catch { setStatus("Recognizer isn't running. Start it with recognize.bat", "err"); return false; }
 }
 
+// ---------------------------------------------------------------- alerts and presence log
+// A visit is one person's time in view: it starts when they're named (from the averaged prints, after
+// 3 checks, so a passing misread doesn't count) and ends when they've been out of view for VISIT_GAP.
+// Finished visits go to the opt-in presence log. Arrivals of the chosen people raise an alert.
+const VISIT_GAP = 60_000, ARRIVE_GAP = 600_000, UNKNOWN_ALERT = 30_000;
+const visitsOpen = {}, lastLeft = {};       // name -> {start, last} (Date.now ms); name -> when they last left
+function alertNames() { return new Set($("alertWho").value.split(",").map(s => s.trim().toLowerCase()).filter(Boolean)); }
+function alertMe(text) {
+  let el = $("toast");
+  if (!el) { el = document.createElement("div"); el.id = "toast"; el.className = "toast"; el.setAttribute("role", "alert"); $("stage").appendChild(el); }
+  el.textContent = text; el.hidden = false;
+  clearTimeout(alertMe.timer); alertMe.timer = setTimeout(() => { el.hidden = true; }, 8000);
+  if ($("optAlertSound").checked) beep();
+  try { if (window.Notification && Notification.permission === "granted") new Notification("Face tracker", { body: text, silent: true }); } catch {}
+}
+function beep() {
+  try {
+    const ac = beep.ac ||= new AudioContext(), t = ac.currentTime;
+    for (const [f, at] of [[880, 0], [1320, 0.16]]) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = f; g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(0.25, t + at + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.14);
+      o.connect(g).connect(ac.destination); o.start(t + at); o.stop(t + at + 0.15);
+    }
+  } catch {}
+}
+function trackPresence() {
+  const now = Date.now(), want = alertNames();
+  for (const t of tracks) {
+    if (t.missed || !t.byAverage) continue;
+    if (t.name === "Unknown") {
+      t.seenSince ||= now;
+      if ($("optAlertUnknown").checked && !t.unknownAlerted && now - t.seenSince >= UNKNOWN_ALERT) {
+        t.unknownAlerted = true; alertMe("An unknown face has been in view for 30 seconds");
+      }
+      continue;
+    }
+    if ((t.prints?.length || 0) < 3) continue;
+    const v = visitsOpen[t.name];
+    if (v) { v.last = now; continue; }
+    visitsOpen[t.name] = { start: now, last: now };
+    const away = now - (lastLeft[t.name] ?? -Infinity);
+    if (want.has(t.name.toLowerCase()) && away >= ARRIVE_GAP) alertMe(`${t.name} arrived · ${new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
+  }
+  for (const [name, v] of Object.entries(visitsOpen)) if (now - v.last > VISIT_GAP) closeVisit(name);
+}
+function closeVisit(name, keepalive = false) {
+  const v = visitsOpen[name];
+  delete visitsOpen[name]; lastLeft[name] = v.last;
+  if (!$("optPresence").checked) return;
+  fetch("/api/presence", { method: "POST", keepalive, body: JSON.stringify({ name, start: v.start, end: v.last }),
+                           headers: { "Content-Type": "application/json", "X-Face-Tool": "1" } }).catch(() => {});
+}
+async function showPresence() {
+  const list = $("presenceList");
+  try {
+    const r = await (await fetch("/api/presence")).json();
+    const hm = ms => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const rows = [...r.visits, ...Object.entries(visitsOpen).map(([name, v]) => ({ name, start: v.start, end: v.last, now: true }))];
+    list.innerHTML = rows.length
+      ? rows.map(v => `<li><span>${esc(v.name)}</span><span class="num">${hm(v.start)}–${v.now ? "now" : hm(v.end)}</span></li>`).join("")
+      : `<li class="none">${$("optPresence").checked ? "Nobody logged yet today" : "The presence log is off"}</li>`;
+  } catch { list.innerHTML = '<li class="none">Couldn\'t read the log</li>'; }
+  list.hidden = false;
+}
+
 function renderPeople() {
+  const opts = people.map(p => `<option value="${esc(p)}">`).join("");
+  if ($("peopleList").innerHTML !== opts) $("peopleList").innerHTML = opts;   // only when the people change
   const here = new Set(tracks.filter(t => t.missed === 0).map(t => t.name));
   $("peopleCount").textContent = people.length ? `${here.size ? here.size + " of " : ""}${people.length}` : "";
   $("people").innerHTML = people.length
@@ -275,8 +379,15 @@ async function startCamera() {
   if (stream) { stopCamera(); return; }
   try {
     const id = $("camSelect").value;
-    stream = await navigator.mediaDevices.getUserMedia({ video: {
+    const ask = id => navigator.mediaDevices.getUserMedia({ video: {
       width: { ideal: 1280 }, height: { ideal: 720 }, ...(id ? { deviceId: { exact: id } } : {}) } });
+    try { stream = await ask(id); }
+    catch (e) {
+      // A remembered camera ID only fits the browser that saved it (the app window and each browser
+      // get their own IDs), and cameras get unplugged: fall back to the default camera.
+      if (!id || !["OverconstrainedError", "NotFoundError"].includes(e.name)) throw e;
+      $("camSelect").value = ""; stream = await ask("");
+    }
     video.srcObject = stream; video.removeAttribute("src");
     $("optMirror").checked = true; applyMirror();
     await video.play();
@@ -297,6 +408,7 @@ function stopCamera() {
   stream?.getTracks().forEach(t => t.stop());
   stream = null; video.srcObject = null; running = false;
   $("camBtn").textContent = "Start camera";
+  for (const name of Object.keys(visitsOpen)) closeVisit(name);   // the camera's off: they're out of view
   $("empty").hidden = false; tracks = []; shown = null; ctx.clearRect(0, 0, canvas.width, canvas.height);
   renderList(); renderPeople(); loadPeople();
 }
@@ -353,6 +465,8 @@ async function sendLoop() {
                                          pose: f.pose && f.pose.map(([x, y, v]) => [x / s, y / s, v]),
                                          mesh: f.mesh && Float32Array.from(f.mesh, v => v / s) })));
       shown = sync && $("optMesh").checked ? hold : null;
+      await identify(want.get("t"));
+      trackPresence();
       if ($("optCollect").checked) collect(blob, s);
       checks++;
       if ($("status").classList.contains("err")) setStatus("Tracking", "live");
@@ -382,6 +496,37 @@ function collect(blob, s) {
     .catch(() => { $("collectHint").textContent = "Couldn't save a snapshot. Is the tracker window still open?"; });
 }
 
+// Name each face from the average of its last 7 face prints, weighted by face quality, instead of
+// the vote over 7 per-frame names that updateTracks keeps as a fallback. Measured with
+// tools/webcam_eval.py on webcam faces: 98% named correctly against 93% for the vote, no stranger
+// named either way. One small request for all faces in view.
+function printOf(b64) {
+  const s = atob(b64), u = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+  return new Float32Array(u.buffer);
+}
+function b64Of(f32) {
+  const u = new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength);
+  let s = "";
+  for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode(...u.subarray(i, i + 8192));
+  return btoa(s);
+}
+async function identify(threshold) {
+  const live = tracks.filter(t => t.matched && t.prints?.length);
+  if (!live.length) return;
+  const prints = live.map(t => {
+    const m = new Float32Array(t.prints[0][0].length);
+    for (const [p, w] of t.prints) for (let i = 0; i < m.length; i++) m[i] += p[i] * w;
+    return b64Of(m);
+  });
+  try {
+    const r = await fetch("/api/who", { method: "POST", body: JSON.stringify({ t: +threshold, prints }),
+                                        headers: { "Content-Type": "application/json", "X-Face-Tool": "1" } });
+    if (!r.ok) throw new Error(r.status);
+    (await r.json()).who.forEach(([name, sim], k) => Object.assign(live[k], { name, sim, byAverage: true }));
+  } catch { for (const t of live) t.byAverage = false; }     // fall back to the vote
+}
+
 // Match new detections to existing tracks by nearest centre; vote on names over recent checks.
 function updateTracks(dets) {
   const used = new Set();
@@ -402,16 +547,22 @@ function updateTracks(dets) {
     used.add(best); best.matched = true; best.missed = 0;
     Object.assign(best, { tx: x, ty: y, tw: w, th: h, tcx: cx, tcy: cy, tkp: d.kps, score: d.score });
     best.tmesh = d.mesh || null; best.quality = d.quality;
+    if (d.emb) {                                  // recent face prints, for naming by their average (identify)
+      (best.prints ||= []).push([printOf(d.emb), d.quality == null ? 0.5 : Math.max(0.05, d.quality)]);
+      if (best.prints.length > 7) best.prints.shift();
+    }
     if (!best.tmesh || best.mesh?.length !== best.tmesh.length) best.mesh = best.tmesh && best.tmesh.slice();
     // Each frame votes with a weight from its face quality, so sharp frames outvote blurry ones
     const qw = d.quality == null ? 0.5 : Math.max(0.05, d.quality);
     best.votes.push([d.name, d.sim, qw]); if (best.votes.length > 7) best.votes.shift();
     const tally = {};
     for (const [n, s, w] of best.votes) tally[n] = (tally[n] || 0) + w * (1 + s);   // quality-weighted; similarity breaks ties
-    best.name = Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0];
-    const mine = best.votes.filter(v => v[0] === best.name);
-    const wsum = mine.reduce((a, v) => a + v[2], 0);
-    best.sim = mine.reduce((a, v) => a + v[1] * v[2], 0) / wsum;
+    if (!best.byAverage) {                        // identify() names it from the averaged prints once it can
+      best.name = Object.entries(tally).sort((a, b) => b[1] - a[1])[0][0];
+      const mine = best.votes.filter(v => v[0] === best.name);
+      const wsum = mine.reduce((a, v) => a + v[2], 0);
+      best.sim = mine.reduce((a, v) => a + v[1] * v[2], 0) / wsum;
+    }
     // Other signals (signals.js): motion, face-shape cues over time, expression shares for reports
     const now = performance.now();
     best.fs.addPosition(now, d.box); best.fs.addCues(now, d.cues); best.fs.addExpr(now, d.expr);
@@ -525,22 +676,39 @@ async function scoreVoice() {
   } catch {} finally { voiceBusy = false; }
 }
 
-// Pulse: mean skin colour of each face's forehead and cheeks, every animation frame.
+// Pulse: mean skin colour of each face's forehead and cheeks, 30 times a second (the rate the pulse
+// is worked out at; sampling every animation frame cost a lot on fast displays). Each sample copies
+// one small picture per face, the area around its three skin regions, off the video and averages
+// the regions from it: copying video pixels back from the GPU is the costly step, so it's done once.
 const skin = document.createElement("canvas"), sctx = skin.getContext("2d", { willReadFrequently: true });
-skin.width = skin.height = 8;
+const SKIN_EVERY = 1000 / 30, SKIN_PX = 48;   // ms between samples; size of the copied picture's longer side
+let skinAt = -Infinity;
 function samplePulse(now) {
+  if (now - skinAt < SKIN_EVERY) return;
+  skinAt = now;
+  const vw = video.videoWidth, vh = video.videoHeight;
   for (const t of tracks) {
     if (t.missed) continue;
     const regions = Signals.skinRegions(t.kp);
     if (!regions.length) continue;
+    const x0 = Math.max(0, Math.min(...regions.map(r => r.x))), y0 = Math.max(0, Math.min(...regions.map(r => r.y)));
+    const x1 = Math.min(vw, Math.max(...regions.map(r => r.x + r.w))), y1 = Math.min(vh, Math.max(...regions.map(r => r.y + r.h)));
+    if (x1 - x0 < 2 || y1 - y0 < 2) continue;
+    const k = SKIN_PX / Math.max(x1 - x0, y1 - y0), w = Math.max(1, Math.round((x1 - x0) * k)), h = Math.max(1, Math.round((y1 - y0) * k));
+    if (skin.width !== w || skin.height !== h) { skin.width = w; skin.height = h; }
+    sctx.drawImage(video, x0, y0, x1 - x0, y1 - y0, 0, 0, w, h);
+    const px = sctx.getImageData(0, 0, w, h).data;
     const sum = [0, 0, 0];
+    let n = 0;
     for (const r of regions) {
-      sctx.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, 8, 8);
-      const px = sctx.getImageData(0, 0, 8, 8).data;
-      for (let i = 0; i < px.length; i += 4) { sum[0] += px[i]; sum[1] += px[i + 1]; sum[2] += px[i + 2]; }
+      const ax = Math.max(0, Math.floor((r.x - x0) * k)), bx = Math.min(w, Math.ceil((r.x + r.w - x0) * k));
+      const ay = Math.max(0, Math.floor((r.y - y0) * k)), by = Math.min(h, Math.ceil((r.y + r.h - y0) * k));
+      for (let y = ay; y < by; y++) for (let x = ax; x < bx; x++) {
+        const i = (y * w + x) * 4;
+        sum[0] += px[i]; sum[1] += px[i + 1]; sum[2] += px[i + 2]; n++;
+      }
     }
-    const n = regions.length * 64;
-    t.fs.addColor(now, sum.map(v => v / n));
+    if (n) t.fs.addColor(now, sum.map(v => v / n));
   }
 }
 
@@ -768,8 +936,37 @@ $("fileBtn").onclick = () => $("fileInput").click();
 $("fileInput").onchange = e => openFile(e.target.files[0]);
 $("camSelect").onchange = async () => { if (stream) { stopCamera(); await startCamera(); } };
 $("optMirror").onchange = applyMirror;
+// Controls panel: a fly-out on the right; closed, the video takes the whole window. Remembered;
+// narrow windows start with it closed, as it covers the video there.
+function setSide(open, save = true) {
+  $("wrap").classList.toggle("closed", !open);
+  $("side").inert = !open;                                    // hidden controls can't take keyboard focus
+  $("sideBtn").setAttribute("aria-expanded", open);
+  $("sideBtnText").textContent = open ? "Hide controls" : "Controls";
+  if (save) remember("side", open ? "1" : "0");
+}
+const narrow = matchMedia("(max-width: 900px)");
+setSide(narrow.matches ? false : recall("side") !== "0", false);
+$("sideBtn").onclick = () => setSide($("wrap").classList.contains("closed"));
+addEventListener("keydown", e => {
+  if (e.ctrlKey && e.key === ".") { e.preventDefault(); $("sideBtn").click(); }
+  else if (e.key === "Escape" && narrow.matches && !$("wrap").classList.contains("closed")) setSide(false);
+});
 $("optMesh").checked = recall("mesh") === "1";                // remembered between visits
 $("optMesh").onchange = () => remember("mesh", $("optMesh").checked ? "1" : "0");
+// Alerts and presence log: remembered between visits
+$("alertWho").value = recall("alertWho") || "";
+$("alertWho").onchange = () => {
+  remember("alertWho", $("alertWho").value);
+  try { if ($("alertWho").value.trim() && window.Notification && Notification.permission === "default") Notification.requestPermission(); } catch {}
+};
+for (const [id, key] of [["optAlertUnknown", "alertUnknown"], ["optAlertSound", "alertSound"], ["optPresence", "presence"]]) {
+  const v = recall(key);
+  if (v !== null) $(id).checked = v === "1";
+  $(id).addEventListener("change", () => remember(key, $(id).checked ? "1" : "0"));
+}
+$("presenceShow").onclick = showPresence;
+addEventListener("pagehide", () => { for (const name of Object.keys(visitsOpen)) closeVisit(name, true); });   // log visits still open
 $("optCollect").checked = recall("collect") === "1";
 $("optCollect").onchange = () => remember("collect", $("optCollect").checked ? "1" : "0");
 $("peopleCard").open = recall("people") === "1";             // collapsed unless you opened it last time

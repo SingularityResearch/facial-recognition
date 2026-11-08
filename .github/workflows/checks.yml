@@ -1,0 +1,33 @@
+# Runs the browser-code tests and the Python checker on every push and pull request.
+# Light on purpose: no Git LFS download (models and data aren't needed), no model runs.
+name: checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: face-recognizer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Tests (expression.js, signals.js)
+        run: node --test tests/*.test.js
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python checker (pyflakes)
+        run: |
+          pip install pyflakes
+          python -m pyflakes *.py tools/*.py
