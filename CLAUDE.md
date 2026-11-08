@@ -44,7 +44,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     `npu/` (static ArcFace + VitisAI config/cache), `face_landmarker.task` (MediaPipe blendshape cues, optional),
     `wav2small.onnx` (voice arousal/dominance/valence, optional; made by `tools/get_wav2small.py`),
     `pose_landmarker_lite.task` (MediaPipe body posture, optional).
-  - `tools/` — `eval_models.py`, `hw_bench.py`, `expr_check.py`, `expr_eval.py`, `get_adaface.py`, `get_wav2small.py`, `import_bench.py`, `websearch_check.py`.
+  - `tools/` — `eval_models.py`, `hw_bench.py`, `expr_check.py`, `expr_eval.py`, `get_adaface.py`, `get_wav2small.py`, `import_bench.py`, `websearch_check.py`, `webcam_eval.py` (live naming on confirmed webcam snapshots; measured the
+    averaged-print rule the tracker uses via `/api/who`).
+  - `.github/workflows/checks.yml` — CI on every push/PR: `node --test tests` and pyflakes (no LFS).
 
 ## Running
 
@@ -80,4 +82,6 @@ Use the Python 3.12 the .bat files pick (`%LOCALAPPDATA%\Programs\Python\Python3
 - Expression is display-only and never stored (except opt-in posed test sessions and feeling reports in `data/expr_eval/`,
   numbers only); microphone audio is analysed live and never stored; per-person baselines and usual looks live in the
   browser's storage only (never `data/`, which is published); keep README wording honest ("looks", not "feels").
+- The presence log (who was in view, when) is opt-in, names and times only, in `%APPDATA%\FaceLabels\presence\`, never `data/`.
+- Webcam faces named automatically don't enter the recognition gallery until confirmed (`LabelDB.gallery`).
 - InsightFace ArcFace and audEERING Wav2Small weights are non-commercial; note this if the project is ever redistributed.

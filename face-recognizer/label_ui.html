@@ -235,6 +235,18 @@
   </form>
 </div></div>
 
+<div class="modal" id="photosdlg"><div class="picker" role="dialog" aria-label="Photos of a person">
+  <form class="form" id="phform">
+    <b id="phtitle">Photos</b>
+    <input type="text" id="phalso" list="peoplelist" autocomplete="off" placeholder="Together with… (more names, separated by commas)" aria-label="Together with">
+    <p id="phcount"></p>
+    <div id="phgrid" style="display:flex;flex-wrap:wrap;gap:4px;max-height:236px;overflow:auto"></div>
+    <input type="text" id="phfolder" autocomplete="off" placeholder="Copy them to this folder, e.g. E:\Pictures\Export" aria-label="Folder to copy the photos to">
+    <p id="pherr" style="color:var(--bad)"></p>
+    <div class="acts"><button type="button" class="btn" id="phclose">Close</button><button class="btn primary">Copy photos</button></div>
+  </form>
+</div></div>
+
 <div class="modal" id="websearch"><div class="picker" role="dialog" aria-label="Web search">
   <div class="form">
     <b>Web search</b>
@@ -479,7 +491,7 @@ function viewPerson(d) {
     : `${p ? plural(p.usable, "clear face") + " used for recognition" : ""}${autoN ? `, ${autoN} named automatically` : ""}. Faces that look least like ${esc(n)} come first, so mistakes surface at the top.`;
   return `<div class="head">${n !== IGN ? avatar(n).replace("<img", '<img style="width:44px;height:44px;border-radius:50%;object-fit:cover"') : ""}<h2>${esc(label(n))}</h2>
       <span style="color:var(--muted)">${plural(d.faces.length, "face")}</span>
-      ${n !== IGN ? `<button class="btn small" id="rename">Rename or merge</button>` : ""}</div><p class="lede">${lede}</p>
+      ${n !== IGN ? `<button class="btn small" id="rename">Rename or merge</button><button class="btn small" id="photosbtn">Photos…</button>` : ""}</div><p class="lede">${lede}</p>
     <section class="sec" data-sec="${esc(n)}">${grid(d.faces.map(F3), n)}</section>`;
 }
 
@@ -500,6 +512,7 @@ function wire(root) {
   });
   const rg = root.querySelector("#regroup"); if (rg) rg.onclick = () => { view.regroup = true; render(); };
   const rn = root.querySelector("#rename"); if (rn) rn.onclick = () => openRename(view.name);
+  const pb = root.querySelector("#photosbtn"); if (pb) pb.onclick = () => openPhotos(view.name);
 }
 function wireTiles(root) {
   root.querySelectorAll(".face").forEach(b => {
@@ -673,6 +686,45 @@ $("#nameinput").onkeydown = e => {
 $("#namer").onclick = e => { if (e.target.id === "namer") closePicker(null); };
 
 // ------------------------------------------------------------------ rename
+// Photos of a person, or of several people together; copy them to a folder (labels.py photos_with / export)
+let phNames = [];
+function phWanted(first) {
+  return [first, ...$("#phalso").value.split(",").map(s => s.trim()).filter(Boolean)];
+}
+async function phRefresh() {
+  const names = phNames, q = names.map(n => "with=" + encodeURIComponent(n)).join("&");
+  $("#phtitle").textContent = names.length > 1 ? `Photos with ${names.join(" and ")} together` : `Photos with ${names[0]}`;
+  try {
+    const d = await get(`/api/photos?${q}`);
+    const here = d.photos.filter(p => p.exists).length;
+    $("#phcount").textContent = d.photos.length
+      ? `${plural(d.photos.length, "photo")}${here < d.photos.length ? `, ${here} of them on this computer` : ""}. Click one to open it.`
+      : "No photos with all of them named.";
+    $("#phgrid").innerHTML = d.photos.slice(0, 120).map(p =>
+      `<img src="${thumb(p.i)}" data-ph="${p.i}" alt="" title="${esc(p.date)} · ${esc(p.people.join(", "))}" style="width:56px;height:56px;border-radius:6px;cursor:pointer;opacity:${p.exists ? 1 : .4}">`).join("")
+      + (d.photos.length > 120 ? `<span class="meta">and ${d.photos.length - 120} more</span>` : "");
+    $("#phgrid").querySelectorAll("[data-ph]").forEach(img => img.onclick = () => { $("#photosdlg").classList.remove("on"); openPhoto(+img.dataset.ph); });
+  } catch (e) { $("#phcount").textContent = String(e.message || e); }
+}
+function openPhotos(n) {
+  $("#phalso").value = ""; $("#pherr").textContent = ""; phNames = [n];
+  $("#photosdlg").classList.add("on");
+  phRefresh();
+  $("#phalso").onchange = () => { phNames = phWanted(n); phRefresh(); };
+}
+$("#phclose").onclick = () => $("#photosdlg").classList.remove("on");
+$("#phform").onsubmit = async e => {
+  e.preventDefault();
+  const folder = $("#phfolder").value.trim();
+  if (!folder) return ($("#pherr").textContent = "Type the folder to copy the photos to.");
+  $("#pherr").textContent = "Copying…";
+  try {
+    const r = await post("/api/export", { names: phNames, folder });
+    $("#pherr").textContent = "";
+    toast(`Copied ${plural(r.copied, "photo")} to ${folder}${r.skipped ? ` (${r.skipped} already there)` : ""}${r.missing ? `; ${r.missing} not on this computer` : ""}`);
+  } catch (err) { $("#pherr").textContent = String(err.message || err); }
+};
+
 function openRename(n) {
   $("#rentitle").textContent = `Rename ${n}`;
   $("#renname").value = n;

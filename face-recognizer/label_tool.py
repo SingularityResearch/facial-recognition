@@ -145,6 +145,9 @@ def make_handler(db, importer):
                                           "hints": dict(db.hints(i), web=web_saved.get(db.store.fid[i]))})
                     if path == "/api/websearch/key":
                         return self.send({"set": bool(websearch.key()), "services": websearch.services()})
+                    if path == "/api/photos":                # photos with all of these people: ?with=A&with=B
+                        names = parse_qs(u.query).get("with", [])
+                        return self.send({"photos": db.photos_with(names)})
                     if path == "/api/tagged":
                         return self.send({"groups": db.tagged(low)})
             except (ValueError, IndexError) as e:
@@ -176,6 +179,17 @@ def make_handler(db, importer):
                 if path == "/api/import/stop":
                     importer.stop.set()
                     return self.send({"ok": True})
+                if path == "/api/export":                  # copy the photos with these people into a folder
+                    names = body.get("names")
+                    if not (isinstance(names, list) and names and all(isinstance(n, str) for n in names)):
+                        raise ValueError("names must be a list of names")
+                    with db.lock:
+                        rows = db.photos_with(names)
+                    try:
+                        n = db.export(rows, body.get("folder", ""))
+                    except OSError as e:
+                        raise ValueError(f"Couldn't copy into that folder: {e}")
+                    return self.send({"ok": True, **n})
                 if path == "/api/autoname":
                     return self.send({"ok": True, "named": db.autoname()})
                 if path == "/api/websearch/key":        # optional Cloud Vision key, kept outside the project

@@ -1,0 +1,39 @@
+{
+ "faces": 75,
+ "people": [
+  "Chris"
+ ],
+ "frames": 7,
+ "threshold": 0.35,
+ "simulated": {
+  "frame": {
+   "correct": 80.0,
+   "unknown": 20.0,
+   "wrong": 0.0,
+   "stranger named": 0.0
+  },
+  "vote": {
+   "correct": 89.3,
+   "unknown": 10.7,
+   "wrong": 0.0,
+   "stranger named": 0.0
+  },
+  "average": {
+   "correct": 98.7,
+   "unknown": 1.3,
+   "wrong": 0.0,
+   "stranger named": 0.0
+  },
+  "avg+flip": {
+   "correct": 98.7,
+   "unknown": 1.3,
+   "wrong": 0.0,
+   "stranger named": 0.0
+  }
+ },
+ "real3": {
+  "vote": 100.0,
+  "average": 100.0,
+  "tracks": 64
+ }
+}

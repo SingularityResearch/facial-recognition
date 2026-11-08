@@ -528,14 +528,71 @@ class LabelDB:
         return self._cache["bp"]
 
     # ----- scoring
+    def photos_with(self, names):
+        """Photos in which every one of `names` is named, newest first:
+        [{i: a face of the first name there (for its picture), path, exists, date, people: [names]}]."""
+        want = [n for n in dict.fromkeys(names) if n]
+        if not want:
+            return []
+        out = []
+        for h, faces in self.by_photo().items():
+            here = {self.name(i): i for i in faces if self.name(i) and self.name(i) != IGNORE}
+            if all(n in here for n in want):
+                meta = self.store.photos.get(h, {})
+                p = meta.get("path") or ""
+                with self.facts.lock:                 # camera date if already read; else the file's date
+                    t = (self.facts.facts.get(h) or {}).get("t") or meta.get("mtime") or 0
+                out.append({"i": here[want[0]], "path": p, "exists": bool(p) and Path(p).exists(), "t": t,
+                            "date": time.strftime("%Y-%m-%d", time.localtime(t)) if t else "", "people": sorted(here)})
+        return sorted(out, key=lambda r: r["t"], reverse=True)
+
+    @staticmethod
+    def export(rows, folder):
+        """Copy the photos in rows (from photos_with) into folder, keeping their file dates. Needs no
+        lock, so the labeling page stays responsive while it copies. Files already there with the same
+        name and size are skipped; other name clashes get " (2)" etc.
+        Returns {copied, skipped, missing} (missing: the original photo isn't on this computer)."""
+        dest = Path(str(folder).strip().strip('"'))
+        if not dest.is_absolute():
+            raise ValueError("Give the full path of the folder, e.g. E:\\Pictures\\Export")
+        dest.mkdir(parents=True, exist_ok=True)
+        counts = {"copied": 0, "skipped": 0, "missing": 0}
+        for r in rows:
+            src = Path(r["path"]) if r["exists"] else None
+            if src is None:
+                counts["missing"] += 1
+                continue
+            to, k = dest / src.name, 2
+            while to.exists():
+                if to.stat().st_size == src.stat().st_size:
+                    break
+                to, k = dest / f"{src.stem} ({k}){src.suffix}", k + 1
+            if to.exists():
+                counts["skipped"] += 1
+                continue
+            shutil.copy2(src, to)
+            counts["copied"] += 1
+        return counts
+
+    def webcam(self, i):
+        """True if face i is from a webcam snapshot the live tracker saved (F.WEBCAM)."""
+        if self._cache.get("cam_n") != self.n:
+            self._cache["cam"] = {h for h, p in self.store.photos.items()
+                                  if p.get("path") and Path(p["path"]).parent == F.WEBCAM}
+            self._cache["cam_n"] = self.n
+        return self.store.photo[i] in self._cache["cam"]
+
     def gallery(self):
-        """{name: [face indices]} of named, usable faces: what each person is recognized from."""
+        """{name: [face indices]} of named, usable faces: what each person is recognized from.
+        Webcam faces named automatically wait for your confirmation first: many snapshots of one visit
+        come in at once, so one wrong automatic name would otherwise teach the recognizer the wrong
+        face and name the next snapshots wrongly too."""
         if "gal" not in self._cache:
             idx_of = {f: i for i, f in enumerate(self.store.fid)}
             gal = {}
             for fid, r in self.labels.items():
                 i = idx_of.get(fid)
-                if i is not None and r.get("n") and self.usable(i):
+                if i is not None and r.get("n") and self.usable(i) and not (r.get("by") == "auto" and self.webcam(i)):
                     gal.setdefault(r["n"], []).append(i)
             self._cache["gal"] = {k: sorted(v) for k, v in gal.items()}
         return self._cache["gal"]

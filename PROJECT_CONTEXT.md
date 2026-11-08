@@ -260,6 +260,13 @@ Measured on Chris's labeled faces:
 - **AdaFace IR-101** (WebFace12M, `tools/get_adaface.py`): 8.5 ms/face on GPU, but 95.5% vs ArcFace 99.4%
   on clean labeled faces, about the same on blurry; ArcFace+AdaFace combined 97.7%. Kept ArcFace
   (`tools/eval_models.py`, results in `data/model_eval.json`).
+- **Webcam faces, 2026-11-08** (`tools/webcam_eval.py`, `data/webcam_eval.json`): 75 confirmed webcam snapshots
+  (all Chris) against 950 photo faces of 93 people, at 0.35. Each snapshot became a simulated track of 7 spoiled
+  frames (blur, motion, low resolution, noise, JPEG, light); 3 seeds: one frame 82.9% correct; vote over 7 frame
+  names (old tracker rule) 93.3%; **average of the 7 face prints, quality-weighted, 98.2%**; plus mirror image
+  98.2% (no gain, not used). 0% wrong and 0% stranger named for all. Real runs of 3 unspoiled snapshots: 100%
+  both ways. The tracker now names by the average (`/api/who`). Not measured yet: head-turn weighting and
+  per-person settings (need turned-head test faces and webcam faces of more people).
 - Matching rule: a face is labeled with the known person whose 5 closest face prints are most similar,
   if similarity ≥ the threshold; otherwise "Unknown".
 

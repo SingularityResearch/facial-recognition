@@ -16,6 +16,7 @@ Run:  python tracker.py        (or double-click recognize.bat)
 Opens http://127.0.0.1:8766/ in your browser. Close this window to stop.
 """
 import argparse
+import base64
 import http.server
 import json
 import re
@@ -64,6 +65,38 @@ def save_capture(jpeg, faces):
     return stem
 
 
+PRESENCE = F.WEBCAM.parent / "presence"            # opt-in presence log: private, outside the published data/
+
+
+def log_visit(v):
+    """Append one visit {name, start, end} (epoch ms) to PRESENCE/<day it started>.jsonl."""
+    if not isinstance(v, dict):
+        raise ValueError("expected a visit")
+    name = str(v.get("name", ""))[:100]
+    start, end = int(v["start"]), int(v["end"])
+    if not name or name == "Unknown" or not 0 < start <= end or end - start > 7 * 86400_000:
+        raise ValueError("bad visit")
+    PRESENCE.mkdir(parents=True, exist_ok=True)
+    day = time.strftime("%Y-%m-%d", time.localtime(start / 1000))
+    with open(PRESENCE / f"{day}.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"name": name, "start": start, "end": end}) + "\n")
+
+
+def visits(day):
+    """The visits logged for day (YYYY-MM-DD), earliest first."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        raise ValueError("day must be YYYY-MM-DD")
+    path = PRESENCE / f"{day}.jsonl"
+    rows = []
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                pass
+    return sorted(rows, key=lambda r: r.get("start", 0))
+
+
 def _read_json(path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -103,6 +136,21 @@ class Engine:
             self._reload()
             return self.ident.names if self.ident else []
 
+    def who(self, prints, threshold):
+        """[name, similarity] for each face print: the page sends each face's recent prints averaged
+        (weighted by face quality). Measured with tools/webcam_eval.py on webcam faces: 98% named
+        correctly against 93% for voting on each frame's name, with no stranger named either way."""
+        with self.lock:
+            self._reload()
+            ident = self.ident
+        out = []
+        for p in prints:
+            e = np.asarray(p, np.float32)
+            e = e / (np.linalg.norm(e) + 1e-9)
+            name, sim = ident.who(e, threshold) if ident else ("Unknown", 0.0)
+            out.append([name, round(float(sim), 3)])
+        return out
+
     def recognize(self, jpeg, threshold, cues=False, pose=False, mesh=False, record=None):
         """Faces in one webcam frame. cues=True adds the face-shape cues (about 10 ms a face on the
         CPU, so only when the page shows or uses them). mesh=True adds each face's 478 face-mesh
@@ -136,6 +184,8 @@ class Engine:
                 "score": round(float(row[14]), 3),
                 "name": name,
                 "sim": round(float(sim), 3),
+                # the face print (float32, base64): the page averages a face's recent prints and asks /api/who
+                "emb": base64.b64encode(np.asarray(emb, "<f4").tobytes()).decode("ascii"),
                 "quality": None if np.isnan(quality) else round(float(quality), 3),
                 "turn": round(float(F.head_turn(row)), 2),
                 "light": round(float(crop.mean()) / 255, 2),   # face brightness, for per-condition accuracy
@@ -278,6 +328,12 @@ def make_handler(engine):
                 return self.send(PAGE.read_bytes(), "text/html; charset=utf-8")   # re-read so edits show on refresh
             if path in SCRIPTS:
                 return self.send(SCRIPTS[path].read_bytes(), "text/javascript; charset=utf-8")
+            if path == "/api/presence":
+                try:
+                    day = dict(parse_qsl(self.path.partition("?")[2])).get("day") or time.strftime("%Y-%m-%d")
+                    return self.send_json({"day": day, "visits": visits(day)})
+                except ValueError as e:
+                    return self.send_json({"error": str(e)}, 400)
             if path == "/api/people":
                 devices = {**engine.faces.devices, "voice": engine.voice.device}
                 return self.send_json({"people": engine.people(), "threshold": F.MATCH,
@@ -320,6 +376,16 @@ def make_handler(engine):
                     avd = engine.voice.avd(samples)
                     return self.send_json({"avd": None if avd is None else [round(v, 3) for v in avd],
                                            "ms": round((time.perf_counter() - t0) * 1000, 1)})
+                if path == "/api/presence":              # opt-in presence log: one finished visit
+                    log_visit(json.loads(self.body(10_000)))
+                    return self.send_json({"saved": True})
+                if path == "/api/who":                   # averaged face prints -> names (see Engine.who)
+                    body = json.loads(self.body(200_000))
+                    prints = [np.frombuffer(base64.b64decode(p), "<f4") for p in body.get("prints", [])][:20]
+                    if any(len(p) != F.REC["dim"] for p in prints):
+                        raise ValueError(f"each print must have {F.REC['dim']} numbers")
+                    threshold = min(0.9, max(0.1, float(body.get("t", F.MATCH))))
+                    return self.send_json({"who": engine.who(prints, threshold)})
                 if path == "/api/capture":               # "Collect faces": frame for the labeling tool
                     faces = json.loads(dict(parse_qsl(query)).get("faces", "[]"))
                     return self.send_json({"saved": save_capture(self.body(20_000_000), faces)})

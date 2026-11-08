@@ -37,6 +37,7 @@ Double-click **setup.bat**. It installs Python 3.12 if needed (with winget), ins
 - **Build it** with **build_app.bat** (needs setup.bat first). It installs PyInstaller and pywebview, then writes `FaceRecognizer.exe` (about 210 MB) next to the .bat files.
 - **Keep it in this folder.** The .exe carries only the code and pages. It uses the `models\` and `data\` folders beside it, so it shares labels with the .bat launchers and git. Rebuild it after changing any `.py`, `.html` or `.js` file.
 - **The window** is Edge WebView2, which is part of Windows 11. The camera and microphone are allowed for the app's own pages without a prompt. The window remembers each page's options and the per-person baselines in `%APPDATA%\FaceLabels\webview\`, separately from your browser's. Messages and errors go to `%APPDATA%\FaceLabels\app.log`.
+- **Check for updates** (top right of the window) asks GitHub for the latest release, only when you click it, and offers to open its download page if it's newer.
 - **If the camera is "busy" or missing**, another app has it, often the tracker still open in a browser tab, which starts the camera by itself. Close that tab (or the other app) and press **Start camera** again.
 
 ## Step by step
@@ -100,13 +101,17 @@ python face_id.py recognize "D:\some\photos" --out tagged   # tag photos, save a
 Double-click **recognize.bat**. Your browser opens the Face Tracker:
 
 - **Camera**: pick your webcam from the list by name, then **Start camera**. **Open video** tracks a video file instead.
-- Each face gets a box, and the person's name and match percentage appear on their face. People you haven't named show as **Unknown**.
+- Each face gets a box, and the person's name and match percentage appear on their face. People you haven't named show as **Unknown**. The name comes from the face's last 7 checks together: their face prints are averaged, sharper frames counting more, and the average is matched once. On real webcam faces made blurry, noisy or small the way live frames are, this named 98% correctly, against 93% for the earlier way (each check names someone, and the names are voted on), with no stranger named either way (`tools/webcam_eval.py`).
 - **Display**: mirror view, keypoints, face mesh, motion trail, show or blur unknown faces, smoothing.
 - **Face mesh (triangles)** (off by default; remembered): MediaPipe's 478 face points joined into 852 triangles over each face, in the person's colour. Each triangle is shaded by the angle it faces, from the points' depth: clear where it faces the camera, darker where the surface turns away, so the mesh follows the shape and turn of the head. It's drawing only and doesn't change any reading. While it's on, the picture shows the frame that was just analysed instead of the live video, so the mesh stays on the face as you move. The picture runs a few hundredths of a second behind and updates at the recognition rate, and the smoothing setting is skipped. It costs about 10 ms per face on the CPU (the same run that gives the face-shape cues) and needs MediaPipe and `models/face_landmarker.task`; the option is greyed out without them.
 - **Match strictness**: raise it if wrong names appear, lower it if known people show as Unknown.
 - **Collect faces for labeling** (off by default; remembered): while a face stays in view, the tracker saves a snapshot of the frame every 5 seconds, up to 12 per face per visit. It only saves a face after 3 checks in a row and only when the face is sharp enough to learn from (the same quality setting as photos). Known and Unknown faces are both saved. Each snapshot goes to `%APPDATA%\FaceLabels\webcam\` with a `.json` beside it saying who the tracker thought each face was and its match percentage. The labeling tool imports new snapshots by itself (see **Label people**). The snapshots stay outside the project, but once imported, their faces (prints, thumbnails, labels) are in `data/` and published with it, like faces from photos.
 - **Show expression** / **Calibrate to each person** / **Show expression evidence** / **Expression test**: see below.
 - **Listen to voice** / **Webcam pulse** / **Body posture** / **Skip expression while talking** / **Skip expression when a hand is on the face** / **Use state model** / **Feeling check**: see **Other signals** below.
+- **Alerts and presence log** (closed panel; everything off until you set it, all remembered):
+  - **Alert me when they arrive**: type names, separated by commas. When one of them is recognized after at least 10 minutes out of view, a message appears on the video, with a short sound (**Play a sound with alerts**) and a Windows notification if you allow it.
+  - **Alert when an unknown face stays 30 seconds**.
+  - **Keep a presence log**: notes each visit, meaning who was in view, from when to when, once they've been out of view for a minute. Only names and times are kept, no pictures. A visit counts once a person has been named over 3 checks, so a passing misread isn't logged. The log is kept in `%APPDATA%\FaceLabels\presence\` (one file per day), on this computer only and never in the published `data\`. **Show today** lists today's visits, including people in view now.
 - Names you save in the labeling tool are picked up automatically.
 
 ### Expression
@@ -185,12 +190,12 @@ Double-click **label.bat**, or run `python label_tool.py`. Your browser opens **
 - **Suggestions**: faces the model thinks it knows, per person, least certain first. Click the wrong ones (or drag a box across them), press **R** ("not this person"), then **Accept** the rest.
 - **New faces**: faces that look like nobody you've named, in groups of look-alikes. Name a group, or select some of its faces to name only those. **Ignore** strangers, artwork and tattoos so they aren't asked about again.
 
-**Webcam faces**: while it's open, the labeling tool checks `%APPDATA%\FaceLabels\webcam\` every 20 seconds and imports any new snapshots the tracker saved with **Collect faces for labeling**. It does this the same way as **Add photos**: faces it's sure of are named automatically, the rest appear in **Suggestions** or **New faces**, and near-identical snapshots are skipped. A webcam face nobody has named shows a **Live tracker** clue with who the tracker thought it was and its match percentage.
+**Webcam faces**: while it's open, the labeling tool checks `%APPDATA%\FaceLabels\webcam\` every 20 seconds and imports any new snapshots the tracker saved with **Collect faces for labeling**. It does this the same way as **Add photos**: faces it's sure of are named automatically, the rest appear in **Suggestions** or **New faces**, and near-identical snapshots are skipped. A webcam face nobody has named shows a **Live tracker** clue with who the tracker thought it was and its match percentage. **Webcam faces named automatically don't teach the recognizer until you confirm them** (in **Named automatically**). Many snapshots of one visit arrive at once, so one wrong automatic name would otherwise make the next snapshots of that person look like the wrong person too.
 
 Also:
 - **Named automatically**: check the automatic names, if you like, least certain first.
 - **Checks**: named faces that look more like someone else, people with fewer than 5 clear faces, and the duplicate photos that were skipped.
-- **People**: click a person to see all their faces, least typical first, so mistakes are at the top. **Rename or merge** fixes a name or combines two people.
+- **People**: click a person to see all their faces, least typical first, so mistakes are at the top. **Rename or merge** fixes a name or combines two people. **Photos…** lists every photo the person is named in, newest first. Type more names under **Together with** to find photos where they're all named. Click a photo to open it, or type a folder and **Copy photos** to copy them there, keeping their file dates. Photos already in that folder are skipped, and photos whose originals aren't on this computer are counted but can't be copied.
 - Double-click a face (or press Space) to see the whole photo with everyone in it boxed and named; ← → step through faces. Click a box to switch to that face.
 - **From photo tags**: faces named by the photo itself. Face tags saved inside the photo or in a `.xmp` file beside it (Windows Photo Gallery, Lightroom, Picasa, digiKam; the face boxes an iPhone saves carry no names) are matched to the face they sit on. Names without a box (Google Takeout `.json` files, IPTC "person in image") are used when only one face in the photo is still unnamed. The tags and camera dates are read in the background and saved in `data/photo_facts.json`; after that a photo is read again only if the file, a `.xmp`/`.json` beside it, or the faces found in it change. Nothing is named until you accept it.
 
@@ -261,6 +266,7 @@ Face prints from different models can't be mixed. After changing models, run `py
 
 - **Wrong names:** raise the match setting (the tracker's Match strictness slider, or `--threshold 0.4`).
 - **Known people shown as Unknown:** lower it to about 0.3, or label more photos of them.
+- **Measuring on your webcam:** `python tools/webcam_eval.py` scores the live tracker on your confirmed webcam snapshots: correct, Unknown, wrong person, and stranger named (that person left out of the known people). It also compares ways of combining frames. Results go to `data/webcam_eval.json` (numbers only). It needs webcam faces collected with **Collect faces for labeling** and confirmed in the labeling tool. The more people they cover, the more the stranger figure means (on 2026-11-08 they were all of Chris).
 - **New-face groups mixing two people, or one person split across groups:** select faces within a group to name just those; the grouping distance is `cluster` in `REC_MODELS` in `face_id.py` (0.70 with ArcFace).
 
 ## Files

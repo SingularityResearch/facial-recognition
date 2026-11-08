@@ -12,6 +12,7 @@ Needs pywebview (pip install pywebview); the window is Edge WebView2, part of Wi
 import http.server
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -21,6 +22,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 TITLE = "Face Recognizer"
+VERSION = "1.1"                                    # this build; GitHub release tags are "v" + VERSION
+REPO = "SingularityResearch/facial-recognition"
 HOME = Path(os.environ.get("APPDATA", Path.home())) / "FaceLabels"   # private: outside the published project
 
 SHELL = """<!doctype html><html><head><meta charset="utf-8"><title>Face Recognizer</title><style>
@@ -33,6 +36,8 @@ nav button { font: inherit; color: #9fb2ab; background: none; border: 1px solid 
 nav button:hover { color: #dfe8e4; }
 nav button[aria-selected="true"] { color: #dfe8e4; background: #0d1512; border-color: #24342e; margin-bottom: -1px; }
 nav small { margin-left: 8px; color: #6f827b; }
+nav .ver { margin-left: auto; align-self: center; padding-bottom: 6px; color: #6f827b; font-size: 12px; }
+nav .ver button { font: inherit; color: #9fb2ab; background: none; border: 0; padding: 0 0 0 8px; cursor: pointer; text-decoration: underline; }
 main { flex: 1; position: relative; }
 iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; visibility: hidden; }
 iframe.on { visibility: visible; }
@@ -42,6 +47,7 @@ iframe.on { visibility: visible; }
 <nav role="tablist">
   <button role="tab" id="tab-track" aria-selected="true" onclick="show('track')">Face tracking<small id="st-track">starting…</small></button>
   <button role="tab" id="tab-label" aria-selected="false" onclick="show('label')">Labeling<small id="st-label">starting…</small></button>
+  <span class="ver"><span id="ver">vVERSION</span><button id="upd" onclick="checkUpdate()" title="Asks GitHub for the latest release (only when you click)">Check for updates</button></span>
 </nav>
 <main>
   <div class="wait" id="wait">Loading the face models…</div>
@@ -87,7 +93,17 @@ poll();
 addEventListener("keydown", e => {               // Ctrl+1 / Ctrl+2 switch tabs
   if (e.ctrlKey && (e.key === "1" || e.key === "2")) { show(e.key === "1" ? "track" : "label"); e.preventDefault(); }
 });
-</script></body></html>"""
+async function checkUpdate() {
+  const b = document.getElementById("upd");
+  b.textContent = "Checking…";
+  try {
+    const r = await (await fetch("/update", { cache: "no-store" })).json();
+    if (r.error) b.textContent = "Couldn't check";
+    else if (r.newer) { b.textContent = `${r.latest} is available: open the download page`; b.onclick = () => fetch("/open-release"); }
+    else b.textContent = "Up to date";
+  } catch { b.textContent = "Couldn't check"; }
+}
+</script></body></html>""".replace("VERSION", VERSION)
 
 
 def answering(url, app):
@@ -130,6 +146,21 @@ def bind(port):
 STATUS = {"track": {}, "label": {}}         # {"url": ...} once serving, {"error": ...} if it failed
 
 
+def latest_release():
+    """{latest, newer} from GitHub's latest release of this project, or {error}. Only when asked
+    (the window's "Check for updates"): the app contacts nothing on its own except the first-start
+    model download."""
+    try:
+        req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases/latest",
+                                     headers={"Accept": "application/vnd.github+json", "User-Agent": "FaceRecognizer"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            tag = json.loads(r.read()).get("tag_name", "")
+        num = lambda v: tuple(int(x) for x in re.findall(r"\d+", v)[:3])
+        return {"latest": tag, "newer": num(tag) > num(VERSION)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def shell_server():
     """The two-tab page itself, on 127.0.0.1 (an http://127.0.0.1 page counts as secure, which the
     camera needs; so must the page around the tracker's frame). Serves only "/" and "/status"."""
@@ -139,11 +170,19 @@ def shell_server():
 
         def do_GET(self):
             path = self.path.split("?", 1)[0]
-            if self.headers.get("Host", "").split(":")[0] not in ("127.0.0.1", "localhost") or path not in ("/", "/status"):
+            if self.headers.get("Host", "").split(":")[0] not in ("127.0.0.1", "localhost") or path not in (
+                    "/", "/status", "/update", "/open-release"):
                 self.send_response(404)
                 self.end_headers()
                 return
-            body = (SHELL if path == "/" else json.dumps(STATUS)).encode()
+            if path == "/open-release":                 # in the normal browser, not inside this window
+                import webbrowser
+                webbrowser.open(f"https://github.com/{REPO}/releases/latest")
+                body = b"{}"
+            elif path == "/update":
+                body = json.dumps(latest_release()).encode()
+            else:
+                body = (SHELL if path == "/" else json.dumps(STATUS)).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8" if path == "/" else "application/json")
             self.send_header("Content-Length", str(len(body)))
