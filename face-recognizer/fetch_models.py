@@ -16,6 +16,8 @@ Licences: ArcFace (InsightFace) and Wav2Small (audEERING, CC BY-NC-SA 4.0) are n
 import hashlib
 import os
 import sys
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -25,6 +27,7 @@ MODELS = ROOT / "models"
 TAG = "models-v1"
 BASE = f"https://github.com/SingularityResearch/facial-recognition/releases/download/{TAG}/"
 LFS_SIGN = b"version https://git-lfs"
+TRIES, WAIT = 4, 3                    # attempts per file; seconds before retry n is WAIT * n
 
 # file: (size in bytes, sha256). Change TAG and these together when a model changes.
 FILES = {
@@ -65,22 +68,30 @@ def fetch(progress=None):
     for name in todo:
         size, sha = FILES[name]
         tmp = MODELS / (name + ".download")
-        h = hashlib.sha256()
-        req = urllib.request.Request(BASE + name, headers={"User-Agent": "FaceRecognizer-model-fetch"})
-        try:
-            with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
-                while chunk := r.read(1 << 20):
-                    out.write(chunk)
-                    h.update(chunk)
-                    done += len(chunk)
-                    if progress:
-                        progress(done, total, name)
-            if h.hexdigest() != sha:
-                raise OSError(f"{name} downloaded, but it isn't the expected file (checksum differs)")
-            os.replace(tmp, MODELS / name)
-        except Exception as e:
-            tmp.unlink(missing_ok=True)
-            raise OSError(f"Couldn't download {name} from {BASE}: {e}") from e
+        for attempt in range(1, TRIES + 1):
+            h, got = hashlib.sha256(), 0
+            req = urllib.request.Request(BASE + name, headers={"User-Agent": "FaceRecognizer-model-fetch"})
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
+                    while chunk := r.read(1 << 20):
+                        out.write(chunk)
+                        h.update(chunk)
+                        got += len(chunk)
+                        if progress:
+                            progress(done + got, total, name)
+                if h.hexdigest() != sha:
+                    raise OSError(f"{name} downloaded, but it isn't the expected file (checksum differs)")
+                os.replace(tmp, MODELS / name)
+                done += got
+                break
+            except Exception as e:
+                tmp.unlink(missing_ok=True)
+                # GitHub's download servers sometimes answer 5xx or drop a large download midway: try
+                # again after a pause. A 4xx (e.g. 404: the release is gone) won't fix itself.
+                lasting = isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500
+                if lasting or attempt == TRIES:
+                    raise OSError(f"Couldn't download {name} from {BASE}: {e}") from e
+                time.sleep(WAIT * attempt)
     return todo
 
 
