@@ -873,7 +873,8 @@ class LabelDB:
                 "checks": len(chk["mislabeled"]) + len(chk["few"]), "people": people,
                 "tagged": sum(len(g["faces"]) for g in self.tagged()), "facts": self.facts.status,
                 "canUndo": bool(self.undo_stack), "undoText": self.undo_stack[-1]["text"] if self.undo_stack else "",
-                "settings": {"match": MATCH, "auto": AUTO, "margin": MARGIN, "qEnroll": F.Q_ENROLL,
+                "webcam": [i for i in range(self.n) if self.webcam(i)],   # faces from the tracker's snapshots
+                "settings": {"match": MATCH, "auto": AUTO, "margin": MARGIN, "qEnroll": F.Q_ENROLL, "few": FEW,
                              "model": self.store.model, "folders": settings()["folders"]}}
 
     # ----- changes

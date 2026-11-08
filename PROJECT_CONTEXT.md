@@ -403,7 +403,8 @@ Webcam / OpenCV on this Windows machine:
   labeling tool's webcam import in one process; with Collect faces on, both ran DirectML at once and the AMD
   driver crashed the app (access violation in `amdxc64.dll`, Windows Application log event 1000, 2026-11-08).
   Reproduced with two threads embedding at once (segfault, exit 139); with the lock: 8,192 runs, no crash, and
-  the app ran 4+ min while importing 32 snapshots during live tracking.
+  the app ran 4+ min while importing 32 snapshots during live tracking. Loading models at the same moment
+  (both programs start together) crashed onnxruntime too; loading is serialized by the same lock.
 
 Claude ↔ PC tooling (relevant if continuing with Claude's device tools):
 - `device_commit_files` fails above ~30 MB → large models were once shipped as 20 MB `.partN` files

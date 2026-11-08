@@ -159,7 +159,9 @@ DEVICE = os.environ.get("FACE_DEVICE", "auto").lower()
 
 # One model run at a time on the GPU/NPU in this process. FaceRecognizer.exe runs the tracker and the
 # labeling tool's photo/webcam import in one process; two threads running DirectML at once crashed the
-# AMD driver (access violation in amdxc64.dll, 2026-11-08). A run takes ~3 ms, so waiting costs little.
+# AMD driver (access violation in amdxc64.dll, 2026-11-08), and loading a model while another thread
+# loaded or ran one crashed onnxruntime itself at start-up. Both are serialized here. A run takes
+# ~3 ms, so waiting costs little.
 ACCEL_LOCK = threading.Lock()
 
 
@@ -181,11 +183,13 @@ def _ort_runner(path, npu_static=None):
         if npu_static.exists() and cfg.exists():
             opts = {"config_file": str(cfg), "cache_dir": str(npu_dir / "cache"), "cache_key": npu_static.stem,
                     "enable_cache_file_io_in_mem": 0}
-            sess = ort.InferenceSession(str(npu_static), so, providers=["VitisAIExecutionProvider"],
-                                        provider_options=[opts])
+            with ACCEL_LOCK:                     # loading too: the app's two programs start at the same moment
+                sess = ort.InferenceSession(str(npu_static), so, providers=["VitisAIExecutionProvider"],
+                                            provider_options=[opts])
             return _locked(sess), "NPU (Ryzen AI)"
     if DEVICE in ("auto", "gpu") and "DmlExecutionProvider" in avail:
-        sess = ort.InferenceSession(str(path), so, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+        with ACCEL_LOCK:                         # loading a model while another runs crashed onnxruntime too
+            sess = ort.InferenceSession(str(path), so, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
         return _locked(sess), "GPU (DirectML)"
     return None
 

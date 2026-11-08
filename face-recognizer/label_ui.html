@@ -96,8 +96,16 @@
   .face img { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; }
   .face .sc { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--accent); }
   .face .sc.mid { background: var(--warn); }
-  .face .tag { position: absolute; left: 4px; top: 4px; font: 650 10px var(--sans); padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .62); color: #fff; }
+  .face .tags { position: absolute; left: 4px; top: 4px; right: 30px; display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none; }
+  .face .tag { font: 650 10px var(--sans); padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .62); color: #fff; }
   .face .tag.low { color: #fbbf24; }
+  .face .tag.cam { color: #7dd3fc; }
+  #psort { width: calc(100% - 20px); margin: 0 10px 8px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--bg); font-size: 13px; color: var(--fg); }
+  #pfew { font-weight: 400; color: var(--warn); margin-left: 4px; }
+  .keys-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; font-size: 13.5px; margin: 0; }
+  .keys-list .k { white-space: nowrap; text-align: right; }
+  .keys-list .d { margin: 0; color: var(--muted); }
+  .keys-list h4 { grid-column: 1 / -1; margin: 8px 0 0; font-size: 12px; font-weight: 650; color: var(--fg); text-transform: uppercase; letter-spacing: .04em; }
   .face .zoom { position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; border-radius: 6px; border: 0; background: rgb(0 0 0 / .55); color: #fff;
                 display: none; place-items: center; cursor: zoom-in; padding: 0; }
   .face:hover .zoom, .face:focus-visible .zoom { display: grid; }
@@ -140,7 +148,8 @@
   .modal { position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: none; place-items: start center; padding-top: 14vh; z-index: 60; }
   #namer { z-index: 70; }       /* naming from the web-search results opens over that dialog */
   .modal.on { display: grid; }
-  .picker { width: min(420px, calc(100vw - 32px)); background: var(--panel); border-radius: 14px; box-shadow: 0 18px 50px rgb(0 0 0 / .3); overflow: hidden; }
+  .picker { width: min(420px, calc(100vw - 32px)); background: var(--panel); border-radius: 14px; box-shadow: 0 18px 50px rgb(0 0 0 / .3); overflow: hidden;
+            max-height: calc(86vh - 16px); overflow-y: auto; }        /* tall dialogs scroll inside short windows */
   .picker .ttl { padding: 12px 16px 0; color: var(--muted); font-size: 13px; }
   .picker input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 10px 16px 12px; font-size: 18px; outline: none; }
   .picker ul { list-style: none; margin: 0; padding: 6px; max-height: 320px; overflow-y: auto; }
@@ -206,6 +215,7 @@
   <label class="size" title="Size of the face pictures (remembered)">Size <input type="range" id="tilesz" min="64" max="176" step="8" value="88" aria-label="Face picture size"></label>
   <label class="toggle" title="Faces too blurry or small to learn from are hidden from the review lists"><input type="checkbox" id="low"> Show blurry faces</label>
   <button class="btn" id="undo" disabled title="Undo (Z)">Undo</button>
+  <button class="btn" id="keysbtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
   <button class="btn primary" id="add">Add photos</button>
 </header>
 <div class="shell" id="shell">
@@ -216,8 +226,13 @@
     <button class="nav" data-v="tagged">From photo tags <span class="n" id="n-tagged"></span></button>
     <button class="nav" data-v="auto">Named automatically <span class="n" id="n-auto"></span></button>
     <button class="nav" data-v="checks">Checks <span class="n" id="n-checks"></span></button>
-    <h2>People</h2>
+    <h2>People<span id="pfew"></span></h2>
     <input type="search" id="pfind" placeholder="Find a person" aria-label="Find a person" autocomplete="off">
+    <select id="psort" aria-label="Order of the people list">
+      <option value="name">A–Z</option>
+      <option value="faces">Most faces first</option>
+      <option value="few">Needs more faces first</option>
+    </select>
     <div id="people"></div>
   </nav>
   <main id="main" tabindex="-1"></main>
@@ -252,6 +267,34 @@
     <datalist id="peoplelist"></datalist>
     <div class="acts"><button type="button" class="btn" id="rencancel">Cancel</button><button class="btn primary">Rename</button></div>
   </form>
+</div></div>
+
+<div class="modal" id="keys"><div class="picker" role="dialog" aria-label="Keyboard shortcuts" style="width:min(520px, calc(100vw - 32px))">
+  <div class="form">
+    <b>Keyboard shortcuts</b>
+    <div class="keys-list">
+      <h4>Selecting faces</h4>
+      <span class="k">Click</span><span class="d">select a face, or unselect it</span>
+      <span class="k"><kbd>Shift</kbd>+click</span><span class="d">select every face between the last one clicked and this one</span>
+      <span class="k">Drag</span><span class="d">draw a box across faces to select them</span>
+      <span class="k"><kbd>Esc</kbd></span><span class="d">clear the selection</span>
+      <h4>Selected faces</h4>
+      <span class="k"><kbd>N</kbd></span><span class="d">name them (type a name, <kbd>↑</kbd> <kbd>↓</kbd> to pick, <kbd>Enter</kbd>)</span>
+      <span class="k"><kbd>A</kbd></span><span class="d">accept the suggested name (Suggestions, From photo tags)</span>
+      <span class="k"><kbd>R</kbd></span><span class="d">not this person</span>
+      <span class="k"><kbd>X</kbd></span><span class="d">ignore (strangers, artwork, tattoos)</span>
+      <span class="k"><kbd>Space</kbd></span><span class="d">open the whole photo (the selected face, or the one under the mouse)</span>
+      <h4>Photo view</h4>
+      <span class="k"><kbd>←</kbd> <kbd>→</kbd></span><span class="d">previous / next face</span>
+      <span class="k"><kbd>N</kbd> <kbd>R</kbd> <kbd>X</kbd></span><span class="d">name, not this person, ignore</span>
+      <span class="k"><kbd>Esc</kbd></span><span class="d">close</span>
+      <h4>Anywhere</h4>
+      <span class="k"><kbd>Z</kbd></span><span class="d">undo the last change</span>
+      <span class="k"><kbd>Ctrl</kbd>+<kbd>.</kbd></span><span class="d">show or hide the sidebar</span>
+      <span class="k"><kbd>?</kbd></span><span class="d">this list</span>
+    </div>
+    <div class="acts"><button type="button" class="btn primary" id="keysclose">Close</button></div>
+  </div>
 </div></div>
 
 <div class="modal" id="photosdlg"><div class="picker" role="dialog" aria-label="Photos of a person">
@@ -296,7 +339,7 @@ const IGN = "#ignore";
 const label = n => n === IGN ? "Ignored" : n;
 const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
 
-let SUM = null, FIDS = [], view = { v: "suggested" }, showLow = false;
+let SUM = null, FIDS = [], view = { v: "suggested" }, showLow = false, WEBCAM = new Set();
 let sel = new Set(), order = [], secOf = new Map(), anchor = null;
 const PAGE = 160;     // faces shown per section before "show more"
 
@@ -321,8 +364,17 @@ async function loadSummary() {
   const set = (id, n, hot) => { const e = $("#n-" + id); e.textContent = n ? n.toLocaleString() : ""; e.classList.toggle("hot", !!hot && n > 0); };
   set("suggested", SUM.suggested, true); set("unknown", SUM.unknown, true); set("auto", SUM.auto); set("checks", SUM.checks);
   set("tagged", SUM.tagged, true);
+  WEBCAM = new Set(SUM.webcam || []);
+  const few = SUM.settings.few || 5, needs = p => p.name !== IGN && p.usable < few;
+  const nFew = SUM.people.filter(needs).length;
+  $("#pfew").textContent = nFew ? `· ${nFew} need more faces` : "";
+  // People list order (remembered): A-Z, most faces first, or the ones needing more faces first
+  const sortBy = $("#psort").value, list = [...SUM.people];
+  if (sortBy === "faces") list.sort((a, b) => b.faces - a.faces);
+  else if (sortBy === "few") list.sort((a, b) => (needs(b) - needs(a)) || (a.usable - b.usable) || a.name.localeCompare(b.name));
+  list.sort((a, b) => (a.name === IGN) - (b.name === IGN));       // Ignored stays last
   const ppl = $("#people");
-  ppl.innerHTML = SUM.people.map(p => `<button class="nav" data-person="${esc(p.name)}">
+  ppl.innerHTML = list.map(p => `<button class="nav" data-person="${esc(p.name)}">
       <img src="${thumb(p.cover)}" alt="">${esc(label(p.name))}
       ${p.name !== IGN && p.usable < 5 ? `<span class="warn" title="Only ${p.usable} usable faces: add more photos of ${esc(p.name)} for reliable recognition">!</span>` : ""}
       <span class="n">${p.faces}</span></button>`).join("") || `<p class="lede" style="padding:0 10px">Nobody named yet.</p>`;
@@ -423,10 +475,14 @@ function tile(f, o) {
     const pct = Math.max(6, Math.min(100, (s - 0.25) / 0.5 * 100));
     bar = `<i class="sc ${s < SUM.settings.auto ? "mid" : ""}" style="width:${pct}%"></i>`;
   }
-  const tags = [o.auto !== false && f.by === "auto" ? `<span class="tag">auto</span>` : "", lo ? `<span class="tag low">blurry</span>` : ""].join("");
-  const tip = (s != null ? `score ${s.toFixed(2)}` : "") + (lo ? (s != null ? ", " : "") + "too blurry to learn from" : "");
+  const cam = WEBCAM.has(f.i);
+  const tags = [o.auto !== false && f.by === "auto" ? `<span class="tag">auto</span>` : "", cam ? `<span class="tag cam">webcam</span>` : "",
+                lo ? `<span class="tag low">blurry</span>` : ""].join("");
+  const tip = [s != null ? `score ${s.toFixed(2)}` : "", lo ? "too blurry to learn from" : "",
+               cam ? (f.by === "auto" ? "webcam snapshot, named automatically: it teaches the recognizer once you confirm it" : "webcam snapshot") : ""]
+    .filter(Boolean).join(", ");
   return `<button class="face ${sel.has(f.i) ? "sel" : ""}" data-i="${f.i}" title="${tip}" aria-pressed="${sel.has(f.i)}">
-    <img loading="lazy" src="${thumb(f.i)}" alt="">${bar}${tags}<span class="zoom" aria-hidden="true">⤢</span></button>`;
+    <img loading="lazy" src="${thumb(f.i)}" alt="">${bar}${tags ? `<span class="tags">${tags}</span>` : ""}<span class="zoom" aria-hidden="true">⤢</span></button>`;
 }
 const F3 = a => ({ i: a[0], s: a[1], q: a[2], by: a[3] });
 
@@ -1018,7 +1074,7 @@ $("#toast .undo").onclick = () => { $("#toast").classList.remove("on"); undo(); 
 
 // ------------------------------------------------------------------ keys + start
 addEventListener("keydown", e => {
-  if (e.target.matches("input, textarea") || e.ctrlKey && e.key !== "z" || e.altKey || e.metaKey) return;
+  if (e.target.matches("input, textarea, select") || e.ctrlKey && e.key !== "z" || e.altKey || e.metaKey) return;
   const k = e.key.toLowerCase();
   if ($("#websearch").classList.contains("on")) { if (k === "escape") $("#websearch").classList.remove("on"); return; }
   if ($("#viewer").classList.contains("on")) {
@@ -1030,6 +1086,7 @@ addEventListener("keydown", e => {
     return e.preventDefault();
   }
   if (document.querySelector(".modal.on")) { if (k === "escape") document.querySelectorAll(".modal.on").forEach(m => m.classList.remove("on")); return; }
+  if (e.key === "?") { e.preventDefault(); return $("#keys").classList.add("on"); }
   if (k === "z") { e.preventDefault(); return undo(); }
   if (k === "escape") return clearSel();
   if (k === " " && sel.size === 1) { e.preventDefault(); return openPhoto([...sel][0]); }
@@ -1050,6 +1107,11 @@ $("#pfind").onkeydown = e => {                     // Enter opens the first pers
   if (e.key === "Enter") { const b = [...document.querySelectorAll("#people [data-person]")].find(x => !x.hidden); if (b) b.click(); }
   if (e.key === "Escape") { $("#pfind").value = ""; findPeople(); }
 };
+$("#keysbtn").onclick = () => $("#keys").classList.add("on");
+$("#keysclose").onclick = () => $("#keys").classList.remove("on");
+$("#keys").onclick = e => { if (e.target.id === "keys") $("#keys").classList.remove("on"); };   // click outside closes
+$("#psort").value = store.get("psort") || "name";
+$("#psort").onchange = () => { store.set("psort", $("#psort").value); loadSummary(); };
 $("#tilesz").value = store.get("tile") || 88; setTile($("#tilesz").value);
 $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.target.value); };
 

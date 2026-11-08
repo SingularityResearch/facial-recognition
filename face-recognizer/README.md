@@ -202,6 +202,9 @@ Also:
   - The sidebar (the lists and **People**) slides away with the **☰** button or **Ctrl+.**, so the faces get the whole width. The page remembers whether it was open. On narrow windows it slides over the faces instead, and closes when you pick something.
   - **Find a person** filters the people list; **Enter** opens the first match.
   - **Size** (top bar) makes the face pictures bigger or smaller, which helps when judging blurry faces. It's remembered.
+  - **People order** (under **Find a person**): A–Z, **Most faces first**, or **Needs more faces first**. The last puts first the people with fewer than 5 clear faces, too few to be recognized reliably, with the fewest at the top. The **People** heading says how many need more. It's remembered.
+  - **webcam** on a face picture marks a snapshot from the live tracker. Hover over it to see whether it was named automatically and still needs your confirmation before it teaches the recognizer.
+  - **?** (top bar, or the **?** key) lists every keyboard shortcut.
   - Each list and person has its own address, so the browser's **Back** and **Forward** and reloading the page keep your place.
   - The progress bar for webcam snapshots only shows while new ones are being added, and for a minute after.
 - **From photo tags**: faces named by the photo itself. Face tags saved inside the photo or in a `.xmp` file beside it (Windows Photo Gallery, Lightroom, Picasa, digiKam; the face boxes an iPhone saves carry no names) are matched to the face they sit on. Names without a box (Google Takeout `.json` files, IPTC "person in image") are used when only one face in the photo is still unnamed. The tags and camera dates are read in the background and saved in `data/photo_facts.json`; after that a photo is read again only if the file, a `.xmp`/`.json` beside it, or the faces found in it change. Nothing is named until you accept it.
