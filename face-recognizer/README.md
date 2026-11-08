@@ -100,6 +100,7 @@ python face_id.py recognize "D:\some\photos" --out tagged   # tag photos, save a
 
 Double-click **recognize.bat**. Your browser opens the Face Tracker:
 
+- **Layout**: the video fills the window. The controls are a panel on the right. **Hide controls** (top right, or **Ctrl+.**) slides it away and the video grows to the full width, and **Controls** brings it back. The page remembers which you chose. On narrow windows the panel slides over the video instead and starts closed; **Esc** closes it.
 - **Camera**: pick your webcam from the list by name, then **Start camera**. **Open video** tracks a video file instead.
 - Each face gets a box, and the person's name and match percentage appear on their face. People you haven't named show as **Unknown**. The name comes from the face's last 7 checks together: their face prints are averaged, sharper frames counting more, and the average is matched once. On real webcam faces made blurry, noisy or small the way live frames are, this named 98% correctly, against 93% for the earlier way (each check names someone, and the names are voted on), with no stranger named either way (`tools/webcam_eval.py`).
 - **Display**: mirror view, keypoints, face mesh, motion trail, show or blur unknown faces, smoothing.

@@ -19,26 +19,44 @@
             --line: #2a3431; --accent: #34d399; --warn: #fb923c; --unknown: #ff7b6e; color-scheme: dark; }
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; }
-  body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 24px 16px; display: grid; gap: 20px;
-          grid-template-columns: minmax(0, 1fr) 320px; align-items: start; }
-  @media (max-width: 900px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
-  header { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); overflow: hidden; }
+  /* Full window: header on top, the video filling the rest. The controls are a fly-out panel on the
+     right: open, it takes its column and the video shrinks beside it (on narrow windows it slides over
+     the video instead); closed, the video gets the whole width. */
+  .wrap { height: 100vh; padding: 12px 16px 16px; display: grid; column-gap: 0; row-gap: 12px;
+          grid-template-columns: minmax(0, 1fr) var(--side, 356px); grid-template-rows: auto minmax(0, 1fr);
+          transition: grid-template-columns .22s ease; }
+  .wrap.closed { --side: 0px; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #sideBtn { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; }
+  #sideBtn .bars { display: inline-block; width: 14px; height: 10px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; position: relative; }
+  #sideBtn .bars::after { content: ""; position: absolute; left: 0; right: 0; top: 2px; border-top: 2px solid currentColor; }
   h1 { margin: 0; font: 600 22px var(--mono); letter-spacing: -.01em; }
   .status { font: 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
   .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
   .status.live .dot { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
   .status.err { color: var(--warn); } .status.err .dot { background: var(--warn); }
 
-  .stage { position: relative; background: #000; border-radius: 6px; overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; }
+  .stage { position: relative; background: #000; border-radius: 6px; overflow: hidden; min-height: 0; height: 100%; }
   .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   .stage.mirror video, .stage.mirror canvas { transform: scaleX(-1); }
   .empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 12px; color: #c9d4d0; padding: 24px; }
   .empty p { margin: 0; max-width: 44ch; }
   [hidden] { display: none !important; }
 
-  aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  aside { min-width: 0; height: 100%; overflow: hidden; }
+  aside .side-in { width: 340px; margin-left: 16px; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+                   display: flex; flex-direction: column; gap: 16px; padding-right: 4px; transition: opacity .18s; }
+  .wrap.closed aside .side-in { opacity: 0; visibility: hidden; transition: opacity .18s, visibility 0s .22s; }
+  @media (max-width: 900px) {          /* narrow: the panel slides over the video */
+    .wrap { --side: 0px; }
+    aside { position: fixed; top: 60px; right: 0; bottom: 0; width: min(372px, 92vw);   /* below the header's button */ z-index: 10; overflow: visible;
+            background: var(--bg); box-shadow: -12px 0 32px #0006; padding: 12px 12px 12px 0;
+            transform: translateX(0); transition: transform .22s ease; }
+    aside .side-in { width: auto; margin-left: 12px; }
+    .wrap.closed aside { transform: translateX(105%); box-shadow: none; }
+  }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   .label { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -84,10 +102,11 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" id="wrap">
   <header>
     <h1>Face Tracker</h1>
     <div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting to recognizer…</span></div>
+    <button id="sideBtn" aria-controls="side" aria-expanded="true" title="Show or hide the controls (Ctrl+.)"><span class="bars"></span><span id="sideBtnText">Hide controls</span></button>
   </header>
 
   <div class="stage mirror" id="stage">
@@ -98,7 +117,7 @@
     </div>
   </div>
 
-  <aside>
+  <aside id="side" aria-label="Controls"><div class="side-in">
     <div class="card">
       <div class="label">Source</div>
       <div class="row">
@@ -212,7 +231,7 @@
       <label class="toggle" for="optCollect" title="Save snapshots of faces in view for the labeling tool">Collect faces for labeling <input type="checkbox" id="optCollect"></label>
       <p class="hint" id="collectHint">While a face stays in view, a sharp snapshot is saved every few seconds (up to 12 per face) with who the tracker thinks it is and how sure. The labeling tool picks them up by itself: it names the ones it's sure of and asks you about the rest.</p>
     </div>
-  </aside>
+  </div></aside>
 </div>
 
 <script src="/expression.js"></script>
@@ -917,6 +936,22 @@ $("fileBtn").onclick = () => $("fileInput").click();
 $("fileInput").onchange = e => openFile(e.target.files[0]);
 $("camSelect").onchange = async () => { if (stream) { stopCamera(); await startCamera(); } };
 $("optMirror").onchange = applyMirror;
+// Controls panel: a fly-out on the right; closed, the video takes the whole window. Remembered;
+// narrow windows start with it closed, as it covers the video there.
+function setSide(open, save = true) {
+  $("wrap").classList.toggle("closed", !open);
+  $("side").inert = !open;                                    // hidden controls can't take keyboard focus
+  $("sideBtn").setAttribute("aria-expanded", open);
+  $("sideBtnText").textContent = open ? "Hide controls" : "Controls";
+  if (save) remember("side", open ? "1" : "0");
+}
+const narrow = matchMedia("(max-width: 900px)");
+setSide(narrow.matches ? false : recall("side") !== "0", false);
+$("sideBtn").onclick = () => setSide($("wrap").classList.contains("closed"));
+addEventListener("keydown", e => {
+  if (e.ctrlKey && e.key === ".") { e.preventDefault(); $("sideBtn").click(); }
+  else if (e.key === "Escape" && narrow.matches && !$("wrap").classList.contains("closed")) setSide(false);
+});
 $("optMesh").checked = recall("mesh") === "1";                // remembered between visits
 $("optMesh").onchange = () => remember("mesh", $("optMesh").checked ? "1" : "0");
 // Alerts and presence log: remembered between visits
