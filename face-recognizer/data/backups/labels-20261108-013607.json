@@ -1304,9 +1304,8 @@
   "by": "me"
  },
  "faa9a446d40f2cc9-567-184": {
-  "not": [
-   "Rodney"
-  ]
+  "n": "Rodney",
+  "by": "me"
  },
  "d0fe13650b7c4e22-658-719x": {
   "n": "Rodney",
@@ -2062,14 +2061,13 @@
   "by": "me"
  },
  "00de82c9eecc9d43-292-632": {
-  "n": "#ignore",
-  "by": "auto",
-  "s": 0.457
+  "n": "Beaux",
+  "by": "me"
  },
  "233010b68e4fd156-143-93": {
-  "n": "#ignore",
-  "by": "auto",
-  "s": 0.664
+  "n": "Beaux",
+  "by": "me",
+  "ok": true
  },
  "2e2fbba2a5c0e5ef-184-366": {
   "n": "Emiliann",
@@ -3030,11 +3028,13 @@
  },
  "e3e4def67ecba4f3-295-185": {
   "n": "Joey",
-  "by": "me"
+  "by": "me",
+  "ok": true
  },
  "de177cb5966f3b76-339-586": {
   "n": "Joey",
-  "by": "me"
+  "by": "me",
+  "ok": true
  },
  "e30f26258369e47f-489-170": {
   "n": "Shane",
@@ -3167,8 +3167,7 @@
  },
  "ea36c1fe5cd12c1e-167-591": {
   "n": "Mom",
-  "by": "auto",
-  "s": 0.554
+  "by": "me"
  },
  "3af7b55730c1e6af-758-543": {
   "n": "Rodney",
@@ -3676,7 +3675,8 @@
  },
  "44ace88ed1699864-446-595": {
   "n": "Jacob G",
-  "by": "me"
+  "by": "me",
+  "ok": true
  },
  "ee7468ea3816fa87-287-660": {
   "n": "Murr",
@@ -3733,5 +3733,1469 @@
  "f1699a8a873eb64f-787-794": {
   "n": "Joel",
   "by": "me"
+ },
+ "c19386d45d1433fb-111-465": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "2f1362bbccdf5311-117-436": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "c99a8a397c2502b3-303-109": {
+  "n": "Chrititan",
+  "by": "me"
+ },
+ "e9d70e8732b3528f-300-114": {
+  "n": "Chrititan",
+  "by": "me"
+ },
+ "cbe93d0a38e9b04d-518-496": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "7c6fcb8afb57c2c0-475-497": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "16c567ad6552d9b7-452-515": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "71a04b60dce18e79-475-325": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "b10132b4530b6c57-490-623": {
+  "n": "Shemp",
+  "by": "me"
+ },
+ "88962378a703d461-392-147": {
+  "n": "Jesus A",
+  "by": "me"
+ },
+ "6e93be3e925d4cd3-344-385": {
+  "n": "Jesus A",
+  "by": "me"
+ },
+ "b59daf8981322047-268-338": {
+  "n": "Jesus A",
+  "by": "me"
+ },
+ "3d73d68917926a69-580-357": {
+  "n": "Jesus A",
+  "by": "me"
+ },
+ "4d2686ce5bbe168e-644-116": {
+  "n": "Spock",
+  "by": "me"
+ },
+ "2fedd85018b946cd-791-223": {
+  "n": "Gretchen M",
+  "by": "me"
+ },
+ "388b4200ea32ee51-522-283": {
+  "n": "Gretchen M",
+  "by": "me"
+ },
+ "6a0176a79dc852f6-773-381": {
+  "n": "Gretchen M",
+  "by": "me"
+ },
+ "c430677b5bfb56df-677-596": {
+  "n": "Abraham Lincoln",
+  "by": "me"
+ },
+ "cafd3e0354714b4a-504-438": {
+  "n": "Abraham Lincoln",
+  "by": "me"
+ },
+ "eb1df2a96229b183-315-797": {
+  "n": "Abraham Lincoln",
+  "by": "me"
+ },
+ "cf6d13b9317640f1-395-251": {
+  "n": "Maria",
+  "by": "me"
+ },
+ "cf6d13b9317640f1-148-352": {
+  "n": "Maria",
+  "by": "me"
+ },
+ "527ddd112783a162-571-272": {
+  "n": "Jeff G",
+  "by": "me"
+ },
+ "4cf337a214942280-430-372": {
+  "n": "Billy Joel",
+  "by": "me"
+ },
+ "9c4fdae378df139d-237-320": {
+  "n": "Alfred E. Neuman",
+  "by": "me"
+ },
+ "ba60ee4ce7d21d69-106-470": {
+  "n": "Zack",
+  "by": "me"
+ },
+ "af2a78ae8d551ede-589-588": {
+  "n": "Zack",
+  "by": "me"
+ },
+ "b62da93598174670-1081-427": {
+  "n": "Tom Cruise",
+  "by": "me"
+ },
+ "f6084424b6f8b721-580-426": {
+  "n": "John Gibson",
+  "by": "me"
+ },
+ "778dadc77a70acc9-974-218": {
+  "n": "Chris Cornell",
+  "by": "me"
+ },
+ "778dadc77a70acc9-284-263": {
+  "n": "Tom Morrello",
+  "by": "me"
+ },
+ "6daaadefc9ba84c8-504-502": {
+  "n": "Chad G",
+  "by": "me"
+ },
+ "e30f26258369e47f-1073-510": {
+  "n": "Jeff C",
+  "by": "me"
+ },
+ "e30f26258369e47f-811-569": {
+  "n": "Johnson Tran",
+  "by": "me"
+ },
+ "aa9b19b86ef02a1f-218-139": {
+  "n": "Jon Sorrenson",
+  "by": "me"
+ },
+ "aa9b19b86ef02a1f-99-169": {
+  "n": "Jega R",
+  "by": "me"
+ },
+ "6b3be32680010643-428-529": {
+  "n": "Shiva",
+  "by": "me",
+  "ok": true
+ },
+ "af2a78ae8d551ede-478-186": {
+  "n": "Jon Sorrenson",
+  "by": "me"
+ },
+ "ba60ee4ce7d21d69-150-237": {
+  "n": "Jon Sorrenson",
+  "by": "me"
+ },
+ "ba60ee4ce7d21d69-910-658": {
+  "n": "Johnson Tran",
+  "by": "me"
+ },
+ "af2a78ae8d551ede-1029-226": {
+  "n": "Johnson Tran",
+  "by": "me"
+ },
+ "ba60ee4ce7d21d69-906-422": {
+  "n": "Jeff C",
+  "by": "me"
+ },
+ "107594a715118b62-481-335": {
+  "n": "Jega R",
+  "by": "me"
+ },
+ "36bae926bedb1e45-137-503": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "63a9ab551d534ac2-439-334": {
+  "n": "Tim",
+  "by": "me"
+ },
+ "5480246c008cf703-1182-341": {
+  "n": "Jacob G",
+  "by": "me",
+  "ok": true
+ },
+ "7a6b02299f1f1214-516-353": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "ca4f1acbb928835e-306-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "b94073a049bee1f9-307-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "d29963936745c17b-307-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "e5a9749056d0b1d5-306-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "a4da6f1619d9227a-305-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "d9d260a52e6a8778-308-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "d3320463e7256c78-307-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "b56269628536fe6d-307-422": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "941de2ecba4c9201-307-423": {
+  "n": "Shiva",
+  "by": "me"
+ },
+ "30a25c196e204b79-622-512": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "12209b7fd6072114-723-374": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "4baf7019d410d40a-767-552": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "50b262c2d61a7285-813-495": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "ed6ecbaf35459ff3-689-440": {
+  "n": "Santiago",
+  "by": "me"
+ },
+ "de36788c9da91c0c-464-313": {
+  "n": "Sophia Loren",
+  "by": "me"
+ },
+ "5669efb7d0ab8ee8-343-318": {
+  "n": "Sabastian",
+  "by": "me"
+ },
+ "4b8eb4e8e09ce3f4-412-167": {
+  "n": "Sophia Loren",
+  "by": "me"
+ },
+ "4cc159e23a8455dc-461-255": {
+  "n": "Gretchen",
+  "by": "me",
+  "ok": true
+ },
+ "4cc159e23a8455dc-653-264": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "4cc159e23a8455dc-236-265": {
+  "n": "Gretchen",
+  "by": "me",
+  "ok": true
+ },
+ "f2d91f84519b429e-269-713": {
+  "n": "Bernie Sanders",
+  "by": "me"
+ },
+ "e47ce21f6e89e523-500-92": {
+  "n": "Lynda Carter",
+  "by": "me"
+ },
+ "91aab322bedac1c7-684-271": {
+  "n": "Josh Homme",
+  "by": "me"
+ },
+ "de717cedf2f8a89a-606-357": {
+  "n": "Hyper Realistic Popeye",
+  "by": "me"
+ },
+ "0c17d866a8d0c75e-221-356": {
+  "n": "Jaclyn Smith",
+  "by": "me"
+ },
+ "e99d7cdc635e2f20-821-309": {
+  "n": "Josh Homme",
+  "by": "me"
+ },
+ "e1689d8af5f113f7-308-649": {
+  "n": "Jaclyn Smith",
+  "by": "me"
+ },
+ "f5e0a57ba000eb14-419-696": {
+  "n": "Rosamund Pike",
+  "by": "me"
+ },
+ "e5be1641c9209a96-591-310": {
+  "n": "Javier Bardem",
+  "by": "me"
+ },
+ "a42317819cd58945-672-438": {
+  "n": "Daniel Day-Lewis",
+  "by": "me"
+ },
+ "eb145b9506e4c40e-680-523": {
+  "n": "David Spade",
+  "by": "me"
+ },
+ "ebe7c59cbcf97714-664-209": {
+  "n": "Rosamund Pike",
+  "by": "me"
+ },
+ "1f9d52ba62db1c04-729-555": {
+  "n": "Daniel Day-Lewis",
+  "by": "me"
+ },
+ "3ff66dcc4877cbaa-669-440": {
+  "n": "Javier Bardem",
+  "by": "me"
+ },
+ "a877577bec776dd4-1006-177": {
+  "n": "Miley Cyrus",
+  "by": "me"
+ },
+ "91aab322bedac1c7-886-233": {
+  "n": "Michael Shuman",
+  "by": "me"
+ },
+ "e99d7cdc635e2f20-1058-272": {
+  "n": "Michael Shuman",
+  "by": "me"
+ },
+ "071196066f3f25d9-505-199": {
+  "n": "Will N",
+  "by": "me"
+ },
+ "ae9bd09cd48b5851-209-538": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "a7abcac19e39838f-500-439": {
+  "n": "Greg Main",
+  "by": "me"
+ },
+ "38e51f4a27ae2b17-608-223": {
+  "n": "Tim",
+  "by": "me"
+ },
+ "9205a51927f1bb57-492-708": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "f61b0e61b4916167-524-724": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "80cffcb7a22d1fc6-484-648": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "88825ef636ecc50d-484-642": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-558-910": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-465-983": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-468-902": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-649-831": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-738-930": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-658-651": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-638-1093": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-661-740": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-758-749": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-677-464": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-474-724": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-390-802": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-484-545": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-395-725": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-550-1079": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-380-1058": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-562-821": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-762-562": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-304-799": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-300-883": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-405-546": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-731-1018": {
+  "n": "#ignore",
+  "by": "me"
+ },
+ "88825ef636ecc50d-650-921": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-730-1099": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-762-652": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-568-644": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-750-839": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-389-636": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-547-996": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-770-462": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-458-1070": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-385-975": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-634-1003": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-464-812": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-313-627": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-307-457": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-305-539": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-499-462": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "88825ef636ecc50d-672-554": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "16d4dad287306690-412-742": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-600-663": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-684-952": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-598-570": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-405-914": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-488-839": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-420-474": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-506-569": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-324-907": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-331-652": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-795-673": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-507-661": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-707-376": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-698-669": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-592-754": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-508-381": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-674-854": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-700-474": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-499-752": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-700-578": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-799-574": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-579-844": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-322-737": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-575-937": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-769-962": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-504-473": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-404-656": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-682-764": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-796-475": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-408-565": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-787-773": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-318-995": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-397-1000": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-321-825": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-779-873": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-420-381": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-401-829": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "16d4dad287306690-487-937": {
+  "n": "Emiliann",
+  "by": "me"
+ },
+ "9c4e293777e434d7-450-715": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-692-484": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-234-587": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-326-710": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-563-602": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-216-700": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-830-744": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-693-742": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-688-610": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-549-723": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-223-817": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-829-614": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-857-480": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "9c4e293777e434d7-323-595": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "954dcdc8daf34339-636-229": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "954dcdc8daf34339-715-808": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "954dcdc8daf34339-1198-743": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "954dcdc8daf34339-948-766": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-406-644": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-404-466": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-315-555": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-584-929": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-581-828": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-681-931": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-582-210": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-774-933": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-313-643": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-310-822": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-507-205": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-410-213": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-314-735": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-589-648": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-586-556": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-489-822": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-672-648": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-488-924": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-772-738": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-774-646": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-676-829": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-490-382": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-493-642": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-673-740": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-393-824": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-671-206": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-766-204": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-578-378": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-399-733": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-494-555": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-772-556": {
+  "n": "#ignore",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-322-379": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-303-918": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-584-733": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-582-466": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-395-923": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-773-843": {
+  "n": "#ignore",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-767-377": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-316-215": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-409-292": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-312-470": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-775-463": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-675-553": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-491-469": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-403-559": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-489-736": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-669-466": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-579-292": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "bb5b62446f18f2a7-323-296": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "4c6a688958387f4e-378-567": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "4c6a688958387f4e-152-544": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "45638e934d20ad45-441-466": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "93011c519b77f065-198-693": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "93011c519b77f065-644-518": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "cffd6ce5589474b9-381-458": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "dd5ffc04c0b4d1a9-367-432": {
+  "n": "Dex",
+  "by": "me"
+ },
+ "dd5ffc04c0b4d1a9-206-402": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "c1adde8efca5c804-479-456": {
+  "n": "Gretchen",
+  "by": "me"
+ },
+ "30fb9c39c12729d8-326-554": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "d65f5fb2e267929f-584-248": {
+  "n": "Spock",
+  "by": "me"
+ },
+ "5bdc0b732855edf9-510-219": {
+  "n": "Greg Main",
+  "by": "me"
+ },
+ "e73a77c39fcc0f66-81-133": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "e73a77c39fcc0f66-643-114": {
+  "n": "MikeE",
+  "by": "me"
+ },
+ "421c3f9458095307-440-273": {
+  "n": "Javier Bardem",
+  "by": "me"
+ },
+ "a7abcac19e39838f-76-540": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "0ebd13740128239e-812-127": {
+  "n": "Jimi Hendrix",
+  "by": "me"
+ },
+ "2503d35ad5db96ab-469-660": {
+  "n": "Pablo Picasso",
+  "by": "me"
+ },
+ "9300b92a1e6a131c-673-539": {
+  "n": "Al Pacino",
+  "by": "me"
+ },
+ "05f1feffc6edcc15-126-555": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "ac0c0298aafc458a-978-348": {
+  "n": "Maynard James Keenan",
+  "by": "me"
+ },
+ "9e19f15814ce1167-260-172": {
+  "n": "Jimi Hendrix",
+  "by": "me"
+ },
+ "1cb541dafcc11b45-1073-250": {
+  "n": "Maynard James Keenan",
+  "by": "me"
+ },
+ "1d1d8227cd7f5fff-595-332": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "9c4e293777e434d7-449-597": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "8e9aedebfd1f01f8-504-275": {
+  "n": "Nina Simone",
+  "by": "me"
+ },
+ "c1f89b2a003ec546-613-640": {
+  "n": "Mick Jagger",
+  "by": "me"
+ },
+ "3335fe5169d0aafe-294-351": {
+  "n": "Nina Simone",
+  "by": "me"
+ },
+ "7649cdded21aa20d-330-172": {
+  "n": "Scarlett Johansson",
+  "by": "me"
+ },
+ "e73a77c39fcc0f66-438-124": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "0ad92956dfd0f104-488-194": {
+  "n": "#ignore",
+  "by": "me"
+ },
+ "581c4da43cd72460-423-342": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "ed6e104b79f7e773-421-327": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "024650e82724afc9-429-330": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "cb9d695215cdae4c-441-335": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "613ebde1671263bb-428-334": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "e0e5b03ae605f8cd-442-333": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "74d8e6c6a7fa7914-433-328": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.848
+ },
+ "0a2462c03a658e30-436-329": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.804
+ },
+ "cfb8476f931d2596-441-334": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.505
+ },
+ "13d61856c7629ee6-397-340": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.612
+ },
+ "2fa63cdecc922551-382-323": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.786
+ },
+ "25eb4ea55dc9fecb-394-329": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.821
+ },
+ "57a967a703d8659c-389-339": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.707
+ },
+ "8634c1fb9f756080-387-340": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.789
+ },
+ "9b3dd0ab621a1148-401-334": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.828
+ },
+ "681ea7ac6428267c-408-346": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.837
+ },
+ "37cc733af3573489-408-343": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.879
+ },
+ "226eec1c89ea6d88-423-342": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.862
+ },
+ "2ae930234448cdaf-433-342": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.822
+ },
+ "9e68c1c6dd1abb4c-430-337": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.891
+ },
+ "e418c66bf0b6498b-438-343": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.865
+ },
+ "2353edb4a4c274eb-437-340": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.815
+ },
+ "5f322da3738be06a-450-334": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "ae9bd09cd48b5851-518-430": {
+  "n": "Troy P",
+  "by": "me"
+ },
+ "acd605bb058f7883-408-410": {
+  "n": "Lil Debbie",
+  "by": "me"
+ },
+ "8a2f3fd0d8b9f63f-691-448": {
+  "n": "Leigh Erin",
+  "by": "me"
+ },
+ "b5c1b2bf96769a99-632-455": {
+  "n": "Leigh Erin",
+  "by": "me"
+ },
+ "26258f0062221319-640-468": {
+  "n": "Leigh Erin",
+  "by": "me"
+ },
+ "4845dbab2eda17ca-772-458": {
+  "n": "Leigh Erin",
+  "by": "me"
+ },
+ "e11111dcf319fcdd-421-345": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.7
+ },
+ "4ac1cd2a939b1b02-431-336": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.647
+ },
+ "be837a48116a3fc0-428-343": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.813
+ },
+ "a252732a7700e2f2-420-330": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.783
+ },
+ "e87da1b325472fb0-444-334": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.785
+ },
+ "f4b508cf2468cc25-452-372": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.704
+ },
+ "d4657b59d8edb3b8-435-341": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.883
+ },
+ "e7ab0e643fee1880-428-341": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.796
+ },
+ "fe0e854aefe69ed0-445-339": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.8
+ },
+ "e5822f1dc31ca681-439-350": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.804
+ },
+ "e8fefd0a2467ee03-432-336": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.878
+ },
+ "c4d7f8d64be86f7f-427-336": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.877
+ },
+ "9815b84f1ff04cb9-437-332": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.83
+ },
+ "3c41c13f52b9c901-406-349": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.841
+ },
+ "1eb5d421e2bbf110-426-332": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.89
+ },
+ "4d5e3124a99b54b1-455-377": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.746
+ },
+ "b8c31fcf306d76e1-434-337": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.915
+ },
+ "d18967c68e0d288e-416-345": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.886
+ },
+ "f1059df587ef5a5d-411-348": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.882
+ },
+ "40f07f3c56264c6e-421-347": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.893
+ },
+ "7ae87dd64f3f2038-426-343": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.905
+ },
+ "2df8bd80ef28b456-406-342": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.845
+ },
+ "59ef5f247a2465e6-404-347": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.887
+ },
+ "5075d705be16a386-406-344": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.878
+ },
+ "2f32ead223721df5-425-347": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.894
+ },
+ "d8e675ec7013bfaa-420-349": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.874
+ },
+ "f513501142581aef-424-346": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.897
+ },
+ "dc3c59edce7f8691-417-343": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.869
+ },
+ "9677bd806298a045-427-350": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.905
+ },
+ "5a5b3f8e71b6467c-425-347": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.899
+ },
+ "ec8d89ec5f192391-562-351": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.634
+ },
+ "e2e1d4531e7a9c8c-490-358": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.716
+ },
+ "29370c7d39fe851b-484-356": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.769
+ },
+ "e6847ffe3e901ebf-493-376": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.7
+ },
+ "99bfb09da6066697-483-320": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.752
+ },
+ "e24cd868cbcdea4d-494-369": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.741
+ },
+ "d2ce956fcb792516-492-362": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.817
+ },
+ "2ae1742e52cf102f-493-365": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.79
+ },
+ "4869194cb0b4b26c-484-356": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.795
+ },
+ "cf341c1b7b0a53c7-466-355": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.846
+ },
+ "69acc549c9b1ec9d-708-145": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.567
+ },
+ "592c60d649fb69d8-753-148": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.643
+ },
+ "1c9116299deb628e-514-305": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.637
+ },
+ "084cf2aeb60420de-603-351": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.723
+ },
+ "d03e3b8b301cb6be-558-348": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.709
+ },
+ "49e45d78def77d7f-573-350": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.774
+ },
+ "58f9008c5d625570-514-382": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.752
+ },
+ "08439b7529d726fa-532-342": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.805
+ },
+ "db4b31def153b537-531-331": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.783
+ },
+ "3968dd2102858916-488-323": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.796
+ },
+ "64b08791666cb831-485-338": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.624
+ },
+ "590a5af3ef4834c6-500-341": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.523
  }
 }
