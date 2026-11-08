@@ -34,11 +34,58 @@ Double-click **setup.bat**. It installs Python 3.12 if needed (with winget), ins
 
 **FaceRecognizer.exe** opens the face tracker and the labeling tool in one window, with a **Face tracking** tab and a **Labeling** tab at the top (**Ctrl+1** / **Ctrl+2** also switch). Inside, the two are still separate programs on their usual ports (8766 and 8765) with the same pages as `recognize.bat` and `label.bat`. The tracker keeps running while you're on the Labeling tab, so **Collect faces for labeling** goes on collecting. If either is already open from its .bat, the window uses that copy instead of starting a second one. Both tabs are ready about 10 seconds after starting; closing the window stops everything.
 
-- **Build it** with **build_app.bat** (needs setup.bat first). It installs PyInstaller and pywebview, then writes `FaceRecognizer.exe` (about 210 MB) next to the .bat files.
+- **Build it** with **build_app.bat**; see **Building FaceRecognizer.exe** below for the full steps. Or download a ready-made one from GitHub **Releases**.
 - **Keep it in this folder.** The .exe carries only the code and pages. It uses the `models\` and `data\` folders beside it, so it shares labels with the .bat launchers and git. Rebuild it after changing any `.py`, `.html` or `.js` file.
 - **The window** is Edge WebView2, which is part of Windows 11. The camera and microphone are allowed for the app's own pages without a prompt. The window remembers each page's options and the per-person baselines in `%APPDATA%\FaceLabels\webview\`, separately from your browser's. Messages and errors go to `%APPDATA%\FaceLabels\app.log`.
 - **Check for updates** (top right of the window) asks GitHub for the latest release, only when you click it, and offers to open its download page if it's newer.
 - **If the camera is "busy" or missing**, another app has it, often the tracker still open in a browser tab, which starts the camera by itself. Close that tab (or the other app) and press **Start camera** again.
+
+### Building FaceRecognizer.exe
+
+You need Windows 10 or 11 (64-bit), an internet connection for the first build, and about 2 GB of free disk space.
+
+1. **Get the code with its files.** Install [Git](https://git-scm.com) and [Git LFS](https://git-lfs.com), then in a terminal:
+   ```
+   git lfs install
+   git clone https://github.com/SingularityResearch/facial-recognition.git
+   cd facial-recognition\face-recognizer
+   ```
+   Without Git LFS the models and `data\` arrive as small placeholder files, and the programs stop with *"Model files weren't downloaded: install Git LFS and run git lfs pull"*.
+2. **Run `setup.bat` once.** It installs Python 3.12 (with winget) and the libraries in `requirements.txt`, downloads any missing face models (`fetch_models.py`), and checks that they load. All the .bat files use that Python 3.12 (`%LOCALAPPDATA%\Programs\Python\Python312\python.exe`).
+3. **Close FaceRecognizer.exe if it's running.** Windows locks a running .exe, so the new one can't be copied over it.
+4. **Double-click `build_app.bat`.** It:
+   1. installs PyInstaller and pywebview into that Python;
+   2. builds a single windowed .exe from `app.py` with PyInstaller. It packs in the four page files (`tracker_ui.html`, `label_ui.html`, `expression.js`, `signals.js`) and MediaPipe's and ONNX Runtime's own files. It leaves out PyTorch, TensorFlow, pandas and IPython, which nothing in the app uses; with PyTorch the .exe was 646 MB.
+   3. copies the result to `face-recognizer\FaceRecognizer.exe` (about 210 MB).
+
+   It takes 2–6 minutes. Its work files go in `face-recognizer\build\`. Git ignores that folder and the .exe, and you can delete the folder any time.
+5. **Try it.** Double-click `FaceRecognizer.exe`. Both tabs should be ready in about 10 seconds. If a tab says it couldn't start, the reason and the details are in `%APPDATA%\FaceLabels\app.log`.
+
+**Rebuild after any change** to a `.py`, `.html` or `.js` file: the .exe carries its own copy of the code and pages. The models and `data\` aren't inside it, so new labels and models need no rebuild.
+
+**Run the window without building:** `python app.py` from `face-recognizer\`, using the Python 3.12 above (it needs pywebview, which build_app.bat installs). This gives the same window and tabs, straight from the source files.
+
+**Making a release** (for GitHub Releases):
+1. Raise `VERSION` in `app.py` (for example `"1.2"`) and build.
+2. Make a folder with `FaceRecognizer.exe`, a copy of `data\` (leave out `data\backups\` and `data\settings.json`, which holds your own folder paths), and a short `README.txt`.
+3. Zip it as `FaceRecognizer-win64.zip` and attach it to a release tagged `v1.2`.
+
+Leave out the models: the .exe downloads them on first start from the release `models-v1` (`fetch_models.py`), so that release must stay, and the repository must stay public. If a model changes, publish a new models release (for example `models-v2`) and update `TAG` and the file list in `fetch_models.py`. The .exe isn't code-signed, so Windows SmartScreen may warn the first time it runs (**More info → Run anyway**).
+
+### Running it as a plain web app (no .exe)
+
+The tracker and the labeling tool are ordinary local web apps; the .exe only puts them in one window. To use them in your browser instead (Edge or Chrome):
+
+| | Start | Open |
+|---|---|---|
+| Face tracker | double-click `recognize.bat`, or `python tracker.py` | http://127.0.0.1:8766 |
+| Labeling tool | double-click `label.bat`, or `python label_tool.py` | http://127.0.0.1:8765 |
+
+- Each .bat opens its page in your browser. Leave its console window open while you use it, and close the window to stop it. Run both at once to have both pages; they're separate programs.
+- Options: `--port 9000` uses another port, and `--no-browser` doesn't open the page (for example to bookmark it, or to start it from a script).
+- The browser asks once for the camera and microphone. It remembers each page's options and per-person baselines itself, separately from the .exe window's.
+- Both servers listen only on this computer (`127.0.0.1`). Other devices on your network can't reach them, and pages from other websites can't use them.
+- If FaceRecognizer.exe starts while one is already running from its .bat, the window uses that copy instead of starting a second one.
 
 ## Step by step
 
