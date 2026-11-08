@@ -275,8 +275,15 @@ async function startCamera() {
   if (stream) { stopCamera(); return; }
   try {
     const id = $("camSelect").value;
-    stream = await navigator.mediaDevices.getUserMedia({ video: {
+    const ask = id => navigator.mediaDevices.getUserMedia({ video: {
       width: { ideal: 1280 }, height: { ideal: 720 }, ...(id ? { deviceId: { exact: id } } : {}) } });
+    try { stream = await ask(id); }
+    catch (e) {
+      // A remembered camera ID only fits the browser that saved it (the app window and each browser
+      // get their own IDs), and cameras get unplugged: fall back to the default camera.
+      if (!id || !["OverconstrainedError", "NotFoundError"].includes(e.name)) throw e;
+      $("camSelect").value = ""; stream = await ask("");
+    }
     video.srcObject = stream; video.removeAttribute("src");
     $("optMirror").checked = true; applyMirror();
     await video.play();
@@ -525,22 +532,39 @@ async function scoreVoice() {
   } catch {} finally { voiceBusy = false; }
 }
 
-// Pulse: mean skin colour of each face's forehead and cheeks, every animation frame.
+// Pulse: mean skin colour of each face's forehead and cheeks, 30 times a second (the rate the pulse
+// is worked out at; sampling every animation frame cost a lot on fast displays). Each sample copies
+// one small picture per face, the area around its three skin regions, off the video and averages
+// the regions from it: copying video pixels back from the GPU is the costly step, so it's done once.
 const skin = document.createElement("canvas"), sctx = skin.getContext("2d", { willReadFrequently: true });
-skin.width = skin.height = 8;
+const SKIN_EVERY = 1000 / 30, SKIN_PX = 48;   // ms between samples; size of the copied picture's longer side
+let skinAt = -Infinity;
 function samplePulse(now) {
+  if (now - skinAt < SKIN_EVERY) return;
+  skinAt = now;
+  const vw = video.videoWidth, vh = video.videoHeight;
   for (const t of tracks) {
     if (t.missed) continue;
     const regions = Signals.skinRegions(t.kp);
     if (!regions.length) continue;
+    const x0 = Math.max(0, Math.min(...regions.map(r => r.x))), y0 = Math.max(0, Math.min(...regions.map(r => r.y)));
+    const x1 = Math.min(vw, Math.max(...regions.map(r => r.x + r.w))), y1 = Math.min(vh, Math.max(...regions.map(r => r.y + r.h)));
+    if (x1 - x0 < 2 || y1 - y0 < 2) continue;
+    const k = SKIN_PX / Math.max(x1 - x0, y1 - y0), w = Math.max(1, Math.round((x1 - x0) * k)), h = Math.max(1, Math.round((y1 - y0) * k));
+    if (skin.width !== w || skin.height !== h) { skin.width = w; skin.height = h; }
+    sctx.drawImage(video, x0, y0, x1 - x0, y1 - y0, 0, 0, w, h);
+    const px = sctx.getImageData(0, 0, w, h).data;
     const sum = [0, 0, 0];
+    let n = 0;
     for (const r of regions) {
-      sctx.drawImage(video, r.x, r.y, r.w, r.h, 0, 0, 8, 8);
-      const px = sctx.getImageData(0, 0, 8, 8).data;
-      for (let i = 0; i < px.length; i += 4) { sum[0] += px[i]; sum[1] += px[i + 1]; sum[2] += px[i + 2]; }
+      const ax = Math.max(0, Math.floor((r.x - x0) * k)), bx = Math.min(w, Math.ceil((r.x + r.w - x0) * k));
+      const ay = Math.max(0, Math.floor((r.y - y0) * k)), by = Math.min(h, Math.ceil((r.y + r.h - y0) * k));
+      for (let y = ay; y < by; y++) for (let x = ax; x < bx; x++) {
+        const i = (y * w + x) * 4;
+        sum[0] += px[i]; sum[1] += px[i + 1]; sum[2] += px[i + 2]; n++;
+      }
     }
-    const n = regions.length * 64;
-    t.fs.addColor(now, sum.map(v => v / n));
+    if (n) t.fs.addColor(now, sum.map(v => v / n));
   }
 }
 

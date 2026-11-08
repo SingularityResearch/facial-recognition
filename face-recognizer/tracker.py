@@ -347,26 +347,39 @@ def make_handler(engine):
     return Handler
 
 
+def bind(port):
+    """The tracker's web server socket on 127.0.0.1:port, not serving yet: attach() loads the models.
+    OSError when the port is taken, usually by a tracker that's already running."""
+    if sys.platform == "win32":
+        # Windows lets a second program bind a port that's already in use when SO_REUSEADDR is set
+        # (Python's HTTP server sets it), and the old program keeps getting the connections. Without
+        # it the bind fails as it should, and the "already running" branch is taken.
+        http.server.ThreadingHTTPServer.allow_reuse_address = False
+    return http.server.ThreadingHTTPServer(("127.0.0.1", port), http.server.BaseHTTPRequestHandler)
+
+
+def attach(srv):
+    """Load the models and let srv answer the tracker page. Returns the Engine."""
+    engine = Engine()
+    srv.RequestHandlerClass = make_handler(engine)
+    return engine
+
+
 def main():
     ap = argparse.ArgumentParser(description="Live face tracker with name recognition.")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("--no-browser", action="store_true")
     a = ap.parse_args()
 
-    engine = Engine()
-    if sys.platform == "win32":
-        # Windows lets a second program bind a port that's already in use when SO_REUSEADDR is set
-        # (Python's HTTP server sets it), and the old program keeps getting the connections. Without
-        # it the bind fails as it should, and the "already running" branch below is taken.
-        http.server.ThreadingHTTPServer.allow_reuse_address = False
     try:
-        srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(engine))
+        srv = bind(a.port)
     except OSError:
         url = f"http://127.0.0.1:{a.port}/"
         print(f"The tracker already seems to be running at {url}. Opening it.")
         if not a.no_browser:
             webbrowser.open(url)
         return
+    engine = attach(srv)
     url = f"http://127.0.0.1:{a.port}/"
     print(f"Recognition model: {F.REC_NAME} on {engine.faces.device}")
     print(f"Expression model: {engine.faces.expression_model or 'not installed (optional: models/' + F.EXPR_MODEL.name + ')'}")

@@ -224,6 +224,18 @@ def watch_webcam(importer, every=20):
         time.sleep(every)
 
 
+def attach(srv):
+    """Load the faces and let srv (an HTTP server on 127.0.0.1) answer the labeling page; starts the
+    background readers (photo dates and tags, webcam snapshots). Returns the LabelDB."""
+    import labels as L
+    db = L.LabelDB()
+    importer = L.Importer(db)
+    srv.RequestHandlerClass = make_handler(db, importer)
+    db.facts.start()                       # camera dates and people tags, read in the background
+    threading.Thread(target=watch_webcam, args=(importer,), daemon=True).start()
+    return db
+
+
 def already_running(port):
     """True if another copy of this tool is answering on the port."""
     import urllib.request
@@ -255,13 +267,8 @@ def main():
     if srv is None:
         sys.exit(f"Couldn't open a port between {a.port} and {a.port + 9}. Try: python label_tool.py --port 9000")
 
-    import labels as L
     print("Loading faces ...")
-    db = L.LabelDB()
-    importer = L.Importer(db)
-    srv.RequestHandlerClass = make_handler(db, importer)
-    db.facts.start()                       # camera dates and people tags, read in the background
-    threading.Thread(target=watch_webcam, args=(importer,), daemon=True).start()
+    db = attach(srv)
     url = f"http://127.0.0.1:{port}/"
     print(f"Face Labels is open at {url}  ({db.n} faces, model {db.store.model})")
     print("Leave this window open while labeling. Close it (or press Ctrl+C) when done.")

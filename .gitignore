@@ -8,3 +8,7 @@ __pycache__/
 *.tmp.npz
 *.joining
 
+
+# FaceRecognizer.exe build (build_app.bat)
+face-recognizer/build/
+face-recognizer/FaceRecognizer.exe

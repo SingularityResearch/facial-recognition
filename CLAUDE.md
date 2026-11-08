@@ -30,6 +30,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
     each person's normal for every signal (`Baselines`, alone and in company),
     feeling-report summaries, fitted valence/arousal (browser; served by `tracker.py`; tests in `tests/`).
+  - `app.py` / `build_app.bat` → `FaceRecognizer.exe` — one window (pywebview, WebView2) with Face tracking and
+    Labeling tabs; starts both servers in one process (`tracker.bind/attach`, `label_tool.attach`), each still on its
+    own port and page. PyInstaller one-file build; uses `models\` and `data\` beside the .exe (`face_id.ROOT`).
   - `websearch.py` — the labeling tool's **Web search**: Amazon Rekognition celebrity recognition + Google Cloud Vision web detection, combined into suggestions with a confidence level (on click only; US services, English results, each capped under $10/month; keys in `%APPDATA%\FaceLabels`, never in the repo).
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
@@ -46,6 +49,7 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
 face-recognizer\setup.bat        # once
 face-recognizer\recognize.bat    # live tracker  (port 8766)
 face-recognizer\label.bat        # labeling tool (port 8765)
+face-recognizer\build_app.bat    # builds FaceRecognizer.exe: both apps in one window, two tabs
 python face_id.py --help         # CLI pipeline (run from face-recognizer\)
 ```
 
@@ -66,7 +70,8 @@ Use the Python 3.12 the .bat files pick (`%LOCALAPPDATA%\Programs\Python\Python3
   labeling tool or `LabelDB`, not by hand-editing JSON. `cluster` group numbers are temporary.
 - After switching recognition model: `python face_id.py reembed`.
 - Name overlay belongs on the face near the top of the head (owner preference).
-- The labeling tool stays a separate program from the tracker (owner preference).
+- The labeling tool stays a separate program from the tracker (owner preference): separate code, server and page.
+  Since 2026-11-08 they can share one window as two tabs (`app.py`), but each still runs on its own.
 - Camera opening on Windows: try `CAP_DSHOW` → `CAP_MSMF` → `CAP_ANY`, retry `cap.read()` while the webcam warms up.
 - Face-shape cues are evidence only until fusion is measured with `tools/expr_eval.py` on posed sessions.
 - Expression is display-only and never stored (except opt-in posed test sessions and feeling reports in `data/expr_eval/`,

@@ -24,6 +24,15 @@ Everything runs locally. No photos leave your computer, with one exception you s
 
 Double-click **setup.bat**. It installs Python 3.12 if needed (with winget), installs the libraries in `requirements.txt`, and checks that the face models load. The .bat files all use that Python 3.12 (`%LOCALAPPDATA%\Programs\Python\Python312\python.exe`); to run the `.py` files yourself, use the same one, because a different Python on your PATH may not have OpenCV and ONNX Runtime installed.
 
+## One window: FaceRecognizer.exe
+
+**FaceRecognizer.exe** opens the face tracker and the labeling tool in one window, with a **Face tracking** tab and a **Labeling** tab at the top (**Ctrl+1** / **Ctrl+2** also switch). Inside, the two are still separate programs on their usual ports (8766 and 8765) with the same pages as `recognize.bat` and `label.bat`. The tracker keeps running while you're on the Labeling tab, so **Collect faces for labeling** goes on collecting. If either is already open from its .bat, the window uses that copy instead of starting a second one. Both tabs are ready about 10 seconds after starting; closing the window stops everything.
+
+- **Build it** with **build_app.bat** (needs setup.bat first). It installs PyInstaller and pywebview, then writes `FaceRecognizer.exe` (about 210 MB) next to the .bat files.
+- **Keep it in this folder.** The .exe carries only the code and pages. It uses the `models\` and `data\` folders beside it, so it shares labels with the .bat launchers and git. Rebuild it after changing any `.py`, `.html` or `.js` file.
+- **The window** is Edge WebView2, which is part of Windows 11. The camera and microphone are allowed for the app's own pages without a prompt. The window remembers each page's options and the per-person baselines in `%APPDATA%\FaceLabels\webview\`, separately from your browser's. Messages and errors go to `%APPDATA%\FaceLabels\app.log`.
+- **If the camera is "busy" or missing**, another app has it, often the tracker still open in a browser tab, which starts the camera by itself. Close that tab (or the other app) and press **Start camera** again.
+
 ## Step by step
 
 ### 1. Add new photos

@@ -42,8 +42,11 @@ import cv2
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-MODELS = HERE / "models"
-DATA = HERE / "data"
+# models/ and data/ sit beside the code, or beside FaceRecognizer.exe when built (app.py): the .exe
+# carries only the code and pages, and shares this folder's models and data with the .bat launchers
+ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else HERE
+MODELS = ROOT / "models"
+DATA = ROOT / "data"
 DET_MODEL = MODELS / "face_detection_yunet_2023mar.onnx"
 QUAL_MODEL = MODELS / "ediffiqa_tiny_jun2024.onnx"            # eDifFIQA face-quality model (optional)
 EXPR_MODEL = MODELS / "facial_expression_recognition_mobilefacenet_2022july.onnx"   # expression model (optional)

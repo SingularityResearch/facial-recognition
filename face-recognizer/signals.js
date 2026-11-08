@@ -47,6 +47,7 @@
   const SMILE_ON = 0.3;
   const SUMMARY_MS = 30000;                       // a feeling report summarizes this much before the question
   const PULSE_MS = 10000, PULSE_MIN_MS = 6000, PULSE_HZ = 30, PULSE_BPM = [42, 180], PULSE_MAX_MOTION = 0.15;
+  const PULSE_REUSE_MS = 1000;                   // a pulse estimate is reused for this long (speed only)
   const V_RATE = 16000, V_FRAME = 320, V_KEEP_S = 10;   // voice: 20 ms frames at 16 kHz, 10 s kept
   const V_ON_DB = 9;                              // a frame this much louder than the room's noise counts as voice
   const V_PITCH = [75, 400], V_PITCH_R = 0.5;     // pitch range (Hz) and the correlation needed to call it voiced
@@ -261,7 +262,13 @@
     pulse(now) {
       const m = this.motion(now);
       if (m && m.speed > PULSE_MAX_MOTION) return null;
-      return pulseFrom(this.rgb);
+      // The estimate takes ~2 ms and is asked for several times a frame (evidence, baselines,
+      // reports), but it covers the last 10 s, so working it out once a second is plenty
+      const c = this._pulse;
+      if (c && now >= c.t && now - c.t < PULSE_REUSE_MS && c.n <= this.rgb.length) return c.p;
+      const p = pulseFrom(this.rgb);
+      this._pulse = { t: now, n: this.rgb.length, p };
+      return p;
     }
 
     // The signals right now, for the per-person baselines (B_KEYS; null where not available).
