@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: "22"
       - name: Tests (expression.js, signals.js)
-        run: node --test tests
+        run: node --test tests/*.test.js
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
