@@ -399,6 +399,12 @@ Webcam / OpenCV on this Windows machine:
 - Retry `cap.read()` up to ~10 times with short sleeps; some webcams return empty frames while starting.
 - Camera index 1 = the Pixel phone's camera via Phone Link, not the USB webcam. Pick cameras by name in the browser UI.
 
+- **One GPU run at a time per process** (`face_id.ACCEL_LOCK`). FaceRecognizer.exe hosts the tracker and the
+  labeling tool's webcam import in one process; with Collect faces on, both ran DirectML at once and the AMD
+  driver crashed the app (access violation in `amdxc64.dll`, Windows Application log event 1000, 2026-11-08).
+  Reproduced with two threads embedding at once (segfault, exit 139); with the lock: 8,192 runs, no crash, and
+  the app ran 4+ min while importing 32 snapshots during live tracking.
+
 Claude ↔ PC tooling (relevant if continuing with Claude's device tools):
 - `device_commit_files` fails above ~30 MB → large models were once shipped as 20 MB `.partN` files
   rejoined by `_join_parts()`. Removed 2026-11-08: the models are in Git LFS, and `fetch_models.py`

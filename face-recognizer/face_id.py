@@ -157,8 +157,15 @@ ARC_TEMPLATE = np.array([[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.73
 DEVICE = os.environ.get("FACE_DEVICE", "auto").lower()
 
 
+# One model run at a time on the GPU/NPU in this process. FaceRecognizer.exe runs the tracker and the
+# labeling tool's photo/webcam import in one process; two threads running DirectML at once crashed the
+# AMD driver (access violation in amdxc64.dll, 2026-11-08). A run takes ~3 ms, so waiting costs little.
+ACCEL_LOCK = threading.Lock()
+
+
 def _ort_runner(path, npu_static=None):
-    """Return (run, device_name) for an ONNX model on the chosen device, or None to use OpenCV."""
+    """Return (run, device_name) for an ONNX model on the chosen device, or None to use OpenCV.
+    Runs are serialized process-wide with ACCEL_LOCK."""
     if DEVICE == "cpu":
         return None
     try:
@@ -176,13 +183,20 @@ def _ort_runner(path, npu_static=None):
                     "enable_cache_file_io_in_mem": 0}
             sess = ort.InferenceSession(str(npu_static), so, providers=["VitisAIExecutionProvider"],
                                         provider_options=[opts])
-            name = sess.get_inputs()[0].name
-            return (lambda x: sess.run(None, {name: x})[0]), "NPU (Ryzen AI)"
+            return _locked(sess), "NPU (Ryzen AI)"
     if DEVICE in ("auto", "gpu") and "DmlExecutionProvider" in avail:
         sess = ort.InferenceSession(str(path), so, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
-        name = sess.get_inputs()[0].name
-        return (lambda x: sess.run(None, {name: x})[0]), "GPU (DirectML)"
+        return _locked(sess), "GPU (DirectML)"
     return None
+
+
+def _locked(sess):
+    name = sess.get_inputs()[0].name
+
+    def run(x):
+        with ACCEL_LOCK:
+            return sess.run(None, {name: x})[0]
+    return run
 
 
 def _cv_runner(path):
