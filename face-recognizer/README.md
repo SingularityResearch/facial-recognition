@@ -99,6 +99,13 @@ The tracker and the labeling tool are ordinary local web apps; the .exe only put
 
 Adding the same folder again is safe: photos already read are skipped, even if they've been renamed or moved, and so are re-saved or resized copies of them. Faces that clearly match someone you've already named are named automatically.
 
+Videos (.mov, .mp4, .m4v, .avi, .mkv) in the folder are read too. About one frame a second is looked at, at most 300 frames per video, so a long video is sampled across its whole length. The same person is followed from frame to frame, and only their 3 clearest faces, at least 3 seconds apart, are kept. A long clip of one person adds a few faces, not hundreds. Video faces have a **video** tag, and the photo view shows the frame each one was found in and its time in the video. Skipped:
+
+- the short clip of an iPhone Live Photo (same name as the photo beside it), because the photo is already read;
+- a video with the same name and size as one already read, so an online-only copy (for example in iCloud Photos) isn't downloaded just to find it's the same.
+
+Other online-only photos and videos are downloaded by Windows as they're read.
+
 From the command line, the same thing is: `python face_id.py scan "E:\Users\Chris\Pictures\New"`.
 
 ### 2. Label the faces
@@ -122,7 +129,7 @@ Normal labeling needs no recompute: every change rebuilds `data/people.npz` (wha
 | You switched recognition model (`FACE_MODEL`, or the ArcFace file was added or removed), or a program says "made with ..., run reembed" | `python face_id.py reembed` |
 | The tracker doesn't know someone it should, or `people.npz` is missing or out of date | `python face_id.py reembed` (it also rebuilds `people.npz`) |
 | You restored `labels.json` from `data\backups\` | Copy the backup over `data\labels.json`, then run `python face_id.py reembed` |
-| Photos moved to a new drive or folder | Add the new folder with **Add photos**. Photos are matched by content, so they're re-linked and nothing is read twice. |
+| Photos moved to a new drive or folder (the photo view says "The original photo isn't on this computer any more") | Usually nothing: each time Face Labels starts, it looks for missing photos in the same folder on other drive letters, then by name and size in your photo folders, and updates their paths and the folder list (the console says "Found N of M photos that had moved"). If they're somewhere else, add the new folder with **Add photos**. Photos are matched by content, so they're re-linked and nothing is read twice. |
 
 `reembed` takes about a minute. It recomputes every face print from the saved face crops, with no photo rescan, and keeps all your labels. Check the result with `python face_id.py people`.
 
@@ -233,7 +240,7 @@ Keep the black **Face Tracker** window open while you use it.
 
 Double-click **label.bat**, or run `python label_tool.py`. Your browser opens **Face Labels**. Every change is saved at once, and **Undo** (or Z) takes back the last one.
 
-**Add photos** reads a folder (subfolders too) in the background, using the GPU. It skips photos it has already read, even renamed or moved ones, and copies of photos (re-saved or resized) whose faces match. When a new face clearly matches someone you've named, it's named automatically. The rest wait for you in two lists:
+**Add photos** reads a folder (subfolders too, photos and videos) in the background, using the GPU. It skips photos it has already read, even renamed or moved ones, and copies of photos (re-saved or resized) whose faces match. When a new face clearly matches someone you've named, it's named automatically. The rest wait for you in two lists:
 
 - **Suggestions**: faces the model thinks it knows, per person, least certain first. Click the wrong ones (or drag a box across them), press **R** ("not this person"), then **Accept** the rest.
 - **New faces**: faces that look like nobody you've named, in groups of look-alikes. Name a group, or select some of its faces to name only those. **Ignore** strangers, artwork and tattoos so they aren't asked about again.

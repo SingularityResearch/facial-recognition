@@ -19,7 +19,10 @@ each start of the labeling page (data/backups/, last 20 kept).
 """
 import hashlib
 import json
+import os
 import shutil
+import string
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -46,11 +49,50 @@ POP = np.array([bin(i).count("1") for i in range(256)], np.uint8)
 # --------------------------------------------------------------------------- photo fingerprints
 def file_hash(path):
     """SHA-1 of the file's bytes: the same photo copied or renamed gets the same key."""
-    h = hashlib.sha1()
+    h, n = hashlib.sha1(), 0
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
+            n += len(chunk)
+    if n != os.stat(path).st_size:            # e.g. an online-only cloud file that wasn't all downloaded
+        raise OSError(f"read only {n:,} of {os.stat(path).st_size:,} bytes of {Path(path).name}")
     return h.hexdigest()
+
+
+CLOUD = 0x400000 | 0x1000                     # Windows file attributes: data still in the cloud (online-only)
+
+
+def online_only(path):
+    try:
+        return bool(os.stat(path).st_file_attributes & CLOUD)
+    except (OSError, AttributeError):         # AttributeError: not Windows
+        return False
+
+
+def make_local(path):
+    """Download an online-only file (iCloud Photos, OneDrive) all the way. Read straight through, such
+    a file can come back cut short (seen with iCloud: 190 KB of a 442 KB video, then end of file), so it's
+    pinned ("Always keep on this device") and waited for, allowing at least 0.5 MB/s (iCloud for Windows
+    managed about 1 video a minute on 2026-11-08).
+    Returns True if this pinned it (unpin() it when done), False if it was already here.
+    Raises OSError if it didn't arrive in time."""
+    if not online_only(path):
+        return False
+    subprocess.run(["attrib", "+P", "-U", str(path)], capture_output=True,
+                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    end = time.time() + 300 + os.stat(path).st_size / 5e5
+    while online_only(path):
+        if time.time() > end:
+            raise OSError(f"{Path(path).name} didn't finish downloading from the cloud")
+        time.sleep(1)
+    return True
+
+
+def unpin(paths):
+    """Undo make_local's pin: the files stay here, and the cloud app may free their space again later."""
+    for p in paths:
+        subprocess.run(["attrib", "-P", str(p)], capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def fingerprint(bgr):
@@ -186,6 +228,109 @@ def register_faceless(store, scanned_names, by_name):
             path=str(p), size=st.st_size, mtime=int(st.st_mtime), fp=None, faces=0, name=name)
         n += 1
     return n
+
+
+# --------------------------------------------------------------------------- photos that moved
+def _drives():
+    return [f"{c}:\\" for c in string.ascii_uppercase if os.path.exists(f"{c}:\\")]
+
+
+def _same_file(p, rec):
+    """p could be the photo rec describes: it exists and has the recorded size (when one was recorded)."""
+    try:
+        st = p.stat()
+    except OSError:
+        return None
+    return st if p.is_file() and (not rec.get("size") or st.st_size == rec["size"]) else None
+
+
+def _moved_root(old, new):
+    """(old folder, new folder) that the move swapped: the paths with their shared ending removed."""
+    o, n = list(Path(old).parts), list(Path(new).parts)
+    while len(o) > 1 and len(n) > 1 and o[-1].lower() == n[-1].lower():
+        o.pop()
+        n.pop()
+    return str(Path(*o)), str(Path(*n))
+
+
+def relocate(store, folders, lock=None, log=print):
+    """Find photos whose recorded path is gone (a drive letter changed, a library was moved) and point
+    them at where they are now: first the same folder on another drive, then a file with the same name
+    and size in the remembered photo folders. The remembered folders follow the move too.
+    Returns {"missing", "found", "folders": {old: new}}. Photos not found keep their old path."""
+    lock = lock or threading.RLock()
+    with lock:
+        missing = {h: dict(p) for h, p in store.photos.items() if p.get("path")}
+    gone_dirs = {d for d in {str(Path(p["path"]).parent) for p in missing.values()} if not Path(d).is_dir()}
+    missing = {h: p for h, p in missing.items()
+               if str(Path(p["path"]).parent) in gone_dirs or not Path(p["path"]).exists()}
+    out = {"missing": len(missing), "found": 0, "folders": {}}
+    if not missing:
+        return out
+    found = {}                                     # hash -> (new path, stat)
+
+    # 1. the same folder on another drive letter
+    drives = _drives()
+    by_dir = {}
+    for h, p in missing.items():
+        by_dir.setdefault(Path(p["path"]).parent, []).append(h)
+    for d, hs in by_dir.items():
+        tail = d.relative_to(d.anchor)
+        for drv in drives:
+            cand = Path(drv) / tail
+            if cand == d or not cand.is_dir():
+                continue
+            for h in hs:
+                if h not in found and (st := _same_file(cand / Path(missing[h]["path"]).name, missing[h])):
+                    found[h] = (cand / Path(missing[h]["path"]).name, st)
+
+    # 2. by name and size anywhere in the remembered photo folders
+    left = [h for h in missing if h not in found]
+    if left:
+        index = {}
+        for folder in folders:
+            if Path(folder).is_dir():
+                log(f"Looking for {len(left)} moved photos in {folder} ...")
+                for p in F.list_media(folder, F.IMAGE_EXT):
+                    index.setdefault(p.name.lower(), []).append(p)
+        for h in left:
+            for p in index.get(Path(missing[h]["path"]).name.lower(), []):
+                if st := _same_file(p, missing[h]):
+                    found[h] = (p, st)
+                    break
+
+    if not found:
+        return out
+    roots = {}
+    with lock:
+        for h, (p, st) in found.items():
+            rec = store.photos.get(h)
+            if rec is None:
+                continue
+            old, rec["path"], rec["mtime"] = rec["path"], str(p), int(st.st_mtime)
+            o, n = _moved_root(old, p)
+            roots[o] = n
+        F.save_json("photos.json", store.photos)
+    out["found"] = len(found)
+
+    # the remembered folders follow the move (the longest matching old folder wins)
+    s = settings()
+    new_folders = []
+    for f in s["folders"]:
+        if not Path(f).exists():
+            for o in sorted(roots, key=len, reverse=True):
+                if f.lower() == o.lower() or f.lower().startswith(o.lower().rstrip("\\/") + os.sep):
+                    nf = roots[o] + f[len(o):]
+                    if Path(nf).is_dir():
+                        out["folders"][f] = nf
+                        f = nf
+                    break
+        if f not in new_folders:
+            new_folders.append(f)
+    if new_folders != s["folders"]:
+        s["folders"] = new_folders
+        F.save_json("settings.json", s)
+    return out
 
 
 # --------------------------------------------------------------------------- what a photo says about itself
@@ -352,7 +497,7 @@ class PhotoFacts:
         """Read every photo with faces (or just these), in the background."""
         with self.db.lock:
             todo = [h for h in (hashes if hashes is not None else self.db.by_photo())
-                    if self.db.store.photos.get(h, {}).get("path")]
+                    if self.db.store.photos.get(h, {}).get("path") and not self.db.store.photos[h].get("video")]
         if self.thread and self.thread.is_alive():
             if hashes is None:
                 return
@@ -581,6 +726,12 @@ class LabelDB:
                                   if p.get("path") and Path(p["path"]).parent == F.WEBCAM}
             self._cache["cam_n"] = self.n
         return self.store.photo[i] in self._cache["cam"]
+
+    def video_at(self, i):
+        """Seconds into its video where face i was found, or None for a face from a photo."""
+        p = self.store.photos.get(self.store.photo[i], {})
+        k = p.get("at", {}).get(self.store.fid[i]) if p.get("video") else None
+        return None if k is None else round(k / (p.get("fps") or 30.0), 1)
 
     def gallery(self):
         """{name: [face indices]} of named, usable faces: what each person is recognized from.
@@ -874,6 +1025,7 @@ class LabelDB:
                 "tagged": sum(len(g["faces"]) for g in self.tagged()), "facts": self.facts.status,
                 "canUndo": bool(self.undo_stack), "undoText": self.undo_stack[-1]["text"] if self.undo_stack else "",
                 "webcam": [i for i in range(self.n) if self.webcam(i)],   # faces from the tracker's snapshots
+                "video": [i for i in range(self.n) if self.store.photos.get(self.store.photo[i], {}).get("video")],
                 "settings": {"match": MATCH, "auto": AUTO, "margin": MARGIN, "qEnroll": F.Q_ENROLL, "few": FEW,
                              "model": self.store.model, "folders": settings()["folders"]}}
 
@@ -1046,6 +1198,13 @@ class LabelDB:
 
 
 # --------------------------------------------------------------------------- import
+VIDEO = object()                 # load() result for a video: its faces are found frame by frame
+
+
+def is_video(path):
+    return Path(path).suffix.lower() in F.VIDEO_EXT
+
+
 class Importer:
     """Reads a photo folder in the background: skips photos already read and duplicates, finds the
     faces on the GPU, and names the ones the model is sure about. Progress is in self.status."""
@@ -1073,15 +1232,23 @@ class Importer:
                                 new=0, known=0, duplicates=0, faces=0, auto=0, errors=0, started=time.time(), error=None)
         pending = []                              # new faces not yet saved and auto-named
         added = []                                # new photos with faces: their dates and people tags are read after
+        pinned = []                               # online-only files this downloaded (unpinned at the end)
         try:
             if self.faces is None:
                 self.faces = F.Faces()
             st["device"] = self.faces.device
             st["stage"] = "Listing photos"
-            files = F.list_media(folder, F.IMAGE_EXT)
-            st["total"] = len(files)
+            files = F.list_media(folder, F.IMAGE_EXT | F.VIDEO_EXT)
+            # A Live Photo's short clip sits beside its photo under the same name: the photo is enough.
+            stills = {(f.parent, f.stem.lower()) for f in files if f.suffix.lower() in F.IMAGE_EXT}
+            files = [f for f in files if not (is_video(f) and (f.parent, f.stem.lower()) in stills)]
+            st["total"], st["videos"] = len(files), sum(1 for f in files if is_video(f))
             with db.lock:
                 by_path = {p["path"]: p for p in store.photos.values() if p.get("path")}
+                # videos already read, by name and size: a copy isn't read again (an online-only copy,
+                # e.g. in iCloud Photos, would otherwise be downloaded just to find it's the same)
+                seen_videos = {(Path(p["path"]).name.lower(), p.get("size")) for p in store.photos.values()
+                               if p.get("video") and p.get("path")}
             todo = []
             for f in files:
                 p = by_path.get(str(f))
@@ -1090,7 +1257,8 @@ class Importer:
                 except OSError:
                     st["errors"] += 1
                     continue
-                if p and p.get("size") == s.st_size and p.get("mtime") == int(s.st_mtime):
+                if (p and p.get("size") == s.st_size and p.get("mtime") == int(s.st_mtime)) or \
+                        (is_video(f) and (f.name.lower(), s.st_size) in seen_videos):
                     st["known"] += 1
                     st["done"] += 1
                 else:
@@ -1099,10 +1267,14 @@ class Importer:
             st["stage"] = "Reading photos"
 
             def load(f):
+                if make_local(f):
+                    pinned.append(f)
                 s = f.stat()
                 h = file_hash(f)
                 if h in store.photos:
                     return f, s, h, None
+                if is_video(f):
+                    return f, s, h, VIDEO               # read on this thread, frame by frame, below
                 return f, s, h, F.load_image(f)
 
             with ThreadPoolExecutor(4) as ex:
@@ -1128,6 +1300,29 @@ class Importer:
                                 st["known"] += 1
                             else:
                                 st["duplicates"] += 1
+                    elif img is VIDEO:
+                        st["stage"] = f"Reading video {f.name}"
+                        try:
+                            fps, found = F.video_faces(self.faces, f, self.stop)
+                        except Exception:
+                            fps, found = None, None
+                        st["stage"] = "Reading photos"
+                        if self.stop.is_set():
+                            break                         # half-read: read again next time
+                        if found is None:
+                            st["errors"] += 1
+                        else:
+                            with db.lock:
+                                at = {}
+                                for k, row, emb, crop, q in found:
+                                    j = store.add(h, f.name, row, emb, crop, q, frame=k)
+                                    pending.append(j)
+                                    at[store.fid[j]] = int(k)
+                                store.photos[h] = dict(meta, fp=None, faces=len(found), name=f.name,
+                                                       video=True, fps=round(float(fps), 3), at=at)
+                                db.changed()
+                            st["new"] += 1
+                            st["faces"] += len(found)
                     elif img is None:
                         st["errors"] += 1
                     else:
@@ -1165,6 +1360,7 @@ class Importer:
             except Exception:
                 pass
         finally:
+            unpin(pinned)
             with db.lock:
                 db.groups = None                  # regroup unknown faces with the new ones
                 db.changed()

@@ -38,16 +38,24 @@ def make_handler(db, importer):
     web_saved = F.load_json(WEB_SAVED, {})   # face ID -> its last complete Web search answer
     web_lock = threading.Lock()
 
-    def photo_jpeg(h):
-        if h in photo_cache:
-            photo_cache.move_to_end(h)
-            return photo_cache[h]
-        p = db.store.photos.get(h, {}).get("path")
-        img = F.load_image(p) if p and Path(p).exists() else None   # same scale as the stored face boxes
+    def photo_jpeg(i):
+        """The whole photo face i was found in (for a video: the frame it was found in), as JPEG."""
+        h = db.store.photo[i]
+        rec = db.store.photos.get(h, {})
+        frame = rec.get("at", {}).get(db.store.fid[i]) if rec.get("video") else None
+        key = h if frame is None else (h, frame)
+        if key in photo_cache:
+            photo_cache.move_to_end(key)
+            return photo_cache[key]
+        p = rec.get("path")
+        if not (p and Path(p).exists()):
+            return None
+        # same scale as the stored face boxes
+        img = F.load_image(p) if frame is None else F.video_frame(p, frame)
         if img is None:
             return None
         jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
-        photo_cache[h] = jpg
+        photo_cache[key] = jpg
         while len(photo_cache) > 12:
             photo_cache.popitem(last=False)
         return jpg
@@ -55,7 +63,7 @@ def make_handler(db, importer):
     def search_picture(i, face):
         """JPEG to search the web with: the whole photo, or the face with hair, chin and some background
         around it (enlarged to at least 400 px, as search sites find small pictures poorly)."""
-        jpg = photo_jpeg(db.store.photo[i])
+        jpg = photo_jpeg(i)
         if jpg is None:
             return bytes(db.store.thumbs[i])     # original photo gone: the stored face is all there is
         if not face:
@@ -108,7 +116,7 @@ def make_handler(db, importer):
                     return self.send({"error": "no such face"}, code=404)
                 if path.startswith("/photo/"):
                     i = int(path[7:].split(".")[0])
-                    jpg = photo_jpeg(db.store.photo[i]) if 0 <= i < db.n else None
+                    jpg = photo_jpeg(i) if 0 <= i < db.n else None
                     if jpg is None:
                         return self.send({"error": "photo not found"}, code=404)
                     return self.send(jpg, "image/jpeg", cache=True)
@@ -139,7 +147,9 @@ def make_handler(db, importer):
                         others = [{"i": j, "box": [round(float(v)) for v in db.store.box[j][:4]], "name": db.name(j),
                                    "q": db.q(j)} for j in db.by_photo().get(h, [])]
                         path_ = p.get("path")
+                        others = [f for f in others if db.video_at(f["i"]) == db.video_at(i)]   # same video frame
                         return self.send({"i": i, "path": path_ or p.get("name") or db.store.file[i],
+                                          "video": db.video_at(i),
                                           "exists": bool(path_ and Path(path_).exists()),
                                           "date": L.photo_date(path_) if path_ else "", "faces": others,
                                           "hints": dict(db.hints(i), web=web_saved.get(db.store.fid[i]))})
@@ -245,7 +255,19 @@ def attach(srv):
     db = L.LabelDB()
     importer = L.Importer(db)
     srv.RequestHandlerClass = make_handler(db, importer)
-    db.facts.start()                       # camera dates and people tags, read in the background
+    def find_then_read():
+        try:                               # photos that moved (e.g. a drive letter changed): find them first
+            r = L.relocate(db.store, L.settings()["folders"], db.lock)
+            if r["found"]:
+                db.version += 1
+                moved = "".join(f"\n  {o} -> {n}" for o, n in r["folders"].items())
+                print(f"Found {r['found']} of {r['missing']} photos that had moved.{moved}")
+            elif r["missing"]:
+                print(f"{r['missing']} photos aren't where they were and weren't found in your photo folders.")
+        except Exception as e:             # never stop the tool over this
+            print(f"Couldn't look for moved photos: {e}")
+        db.facts.start()                   # camera dates and people tags, read in the background
+    threading.Thread(target=find_then_read, daemon=True).start()
     threading.Thread(target=watch_webcam, args=(importer,), daemon=True).start()
     return db
 

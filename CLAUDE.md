@@ -17,7 +17,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
 - `face-tracker/index.html` — original standalone MediaPipe tracker; double-click to open.
 - `face-recognizer/` — the Python project. All programs share `face-recognizer/data/`:
   - `face_id.py` — core library + CLI (`scan`, `cluster`, `name`, `people`, `recognize`, `reembed`, `migrate`).
-  - `labels.py` — labeling engine: per-face labels (`LabelDB`), background photo `Importer`,
+  - `labels.py` — labeling engine: per-face labels (`LabelDB`), background photo/video `Importer`
+    (videos: `face_id.video_faces`, ~1 frame/s, each person followed and their 3 clearest faces kept; frame numbers in
+    `photos.json` `at`), `relocate` (finds photos that moved, e.g. a changed drive letter, at start),
     auto-naming, duplicate-photo detection, undo history, `PhotoFacts` (camera dates + people tags, saved in `data/photo_facts.json`)
     and clues for unnamed faces (`hints`: closest people, photo tags, same occasion).
   - `label_tool.py` + `label_ui.html` / `label.bat` — labeling web app on `http://127.0.0.1:8765`.

@@ -100,6 +100,7 @@
   .face .tag { font: 650 10px var(--sans); padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .62); color: #fff; }
   .face .tag.low { color: #fbbf24; }
   .face .tag.cam { color: #7dd3fc; }
+  .face .tag.vid { color: #fcd34d; }
   #psort { width: calc(100% - 20px); margin: 0 10px 8px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--bg); font-size: 13px; color: var(--fg); }
   #pfew { font-weight: 400; color: var(--warn); margin-left: 4px; }
   .keys-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; font-size: 13.5px; margin: 0; }
@@ -251,7 +252,7 @@
 <div class="modal" id="importer"><div class="picker" role="dialog" aria-label="Add photos">
   <form class="form" id="impform">
     <b>Add photos</b>
-    <p>Type or paste the folder that holds the new photos (subfolders are included). Photos already added, and copies of them, are skipped. Faces the model is sure about are named for you.</p>
+    <p>Type or paste the folder that holds the new photos and videos (subfolders are included). Photos and videos already added, and copies of them, are skipped, and so are Live Photo clips. In a video, about one frame a second is looked at and each person's few clearest faces are kept. Faces the model is sure about are named for you.</p>
     <input type="text" id="impfolder" list="folders" placeholder="E:\Users\Chris\Pictures\New" aria-label="Photo folder">
     <datalist id="folders"></datalist>
     <p id="imperr" style="color:var(--bad)"></p>
@@ -339,7 +340,7 @@ const IGN = "#ignore";
 const label = n => n === IGN ? "Ignored" : n;
 const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
 
-let SUM = null, FIDS = [], view = { v: "suggested" }, showLow = false, WEBCAM = new Set();
+let SUM = null, FIDS = [], view = { v: "suggested" }, showLow = false, WEBCAM = new Set(), VIDEO = new Set();
 let sel = new Set(), order = [], secOf = new Map(), anchor = null;
 const PAGE = 160;     // faces shown per section before "show more"
 
@@ -365,6 +366,7 @@ async function loadSummary() {
   set("suggested", SUM.suggested, true); set("unknown", SUM.unknown, true); set("auto", SUM.auto); set("checks", SUM.checks);
   set("tagged", SUM.tagged, true);
   WEBCAM = new Set(SUM.webcam || []);
+  VIDEO = new Set(SUM.video || []);
   const few = SUM.settings.few || 5, needs = p => p.name !== IGN && p.usable < few;
   const nFew = SUM.people.filter(needs).length;
   $("#pfew").textContent = nFew ? `· ${nFew} need more faces` : "";
@@ -475,11 +477,13 @@ function tile(f, o) {
     const pct = Math.max(6, Math.min(100, (s - 0.25) / 0.5 * 100));
     bar = `<i class="sc ${s < SUM.settings.auto ? "mid" : ""}" style="width:${pct}%"></i>`;
   }
-  const cam = WEBCAM.has(f.i);
+  const cam = WEBCAM.has(f.i), vid = VIDEO.has(f.i);
   const tags = [o.auto !== false && f.by === "auto" ? `<span class="tag">auto</span>` : "", cam ? `<span class="tag cam">webcam</span>` : "",
+                vid ? `<span class="tag vid">video</span>` : "",
                 lo ? `<span class="tag low">blurry</span>` : ""].join("");
   const tip = [s != null ? `score ${s.toFixed(2)}` : "", lo ? "too blurry to learn from" : "",
-               cam ? (f.by === "auto" ? "webcam snapshot, named automatically: it teaches the recognizer once you confirm it" : "webcam snapshot") : ""]
+               cam ? (f.by === "auto" ? "webcam snapshot, named automatically: it teaches the recognizer once you confirm it" : "webcam snapshot") : "",
+               vid ? "from a video" : ""]
     .filter(Boolean).join(", ");
   return `<button class="face ${sel.has(f.i) ? "sel" : ""}" data-i="${f.i}" title="${tip}" aria-pressed="${sel.has(f.i)}">
     <img loading="lazy" src="${thumb(f.i)}" alt="">${bar}${tags ? `<span class="tags">${tags}</span>` : ""}<span class="zoom" aria-hidden="true">⤢</span></button>`;
@@ -850,6 +854,7 @@ $("#renform").onsubmit = async e => {
 };
 
 // ------------------------------------------------------------------ photo viewer
+const clock = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 let vIndex = null, vInfo = null;
 async function openPhoto(i) {
   vIndex = i;
@@ -860,7 +865,7 @@ async function openPhoto(i) {
   const nm = me?.name;
   $("#vwrap").innerHTML = info?.exists
     ? `<img id="vimg" src="/photo/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}" alt="Photo">`
-    : `<div class="nofile"><img src="${thumb(i)}" alt="" style="width:224px;height:224px;border-radius:12px"><p>The original photo isn't on this computer any more,<br>so only the face is shown.</p></div>`;
+    : `<div class="nofile"><img src="${thumb(i)}" alt="" style="width:224px;height:224px;border-radius:12px"><p>The original ${info?.video != null ? "video" : "photo"} isn't on this computer any more,<br>so only the face is shown.</p></div>`;
   const img = $("#vimg");
   if (img) img.onload = () => {
     const s = img.clientWidth / img.naturalWidth;
@@ -878,11 +883,11 @@ async function openPhoto(i) {
   vInfo = info;
   $("#vside").innerHTML = `
     <div><div class="who">${nm ? esc(label(nm)) : "Not named yet"}</div>
-      <div class="meta">${info?.date ? esc(info.date) + "<br>" : ""}${esc(info?.path || "")}</div></div>
+      <div class="meta">${info?.video != null ? `From a video, at ${clock(info.video)}<br>` : ""}${info?.date ? esc(info.date) + "<br>" : ""}${esc(info?.path || "")}</div></div>
     <div class="acts"><button class="btn primary" data-v="n">Name… <kbd>N</kbd></button>
       ${nm && nm !== IGN ? `<button class="btn" data-v="r">Not ${esc(nm)} <kbd>R</kbd></button>` : ""}
       ${nm !== IGN ? `<button class="btn" data-v="x">Ignore <kbd>X</kbd></button>` : ""}</div>
-    ${others.length ? `<div class="meta">Also in this photo: ${others.map(f => esc(f.name ? label(f.name) : "someone not named yet")).join(", ")}. Click a box to switch to that face.</div>` : ""}
+    ${others.length ? `<div class="meta">Also in this ${info?.video != null ? "frame" : "photo"}: ${others.map(f => esc(f.name ? label(f.name) : "someone not named yet")).join(", ")}. Click a box to switch to that face.</div>` : ""}
     ${nm ? "" : clues(info?.hints)}
     <div class="acts"><button class="btn" id="wsopen" title="Sends this face to Amazon and this photo to Google, and suggests who it is">Web search</button></div>
     <div class="keys"><kbd>←</kbd> <kbd>→</kbd> previous / next face<br><kbd>Esc</kbd> close</div>`;
@@ -1048,12 +1053,12 @@ function showImport(st) {
   const el = (Date.now() / 1000 - st.started);
   const rate = st.done - st.known > 0 ? (st.done - st.known) / el : 0;
   const left = rate > 0 ? Math.round((st.total - st.done) / rate) : null;
-  const parts = [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} photos`, plural(st.faces, "face") + " found",
+  const parts = [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.videos ? "photos and videos" : "photos"}`, plural(st.faces, "face") + " found",
     `${st.auto.toLocaleString()} named automatically`];
   if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
   if (st.errors) parts.push(`${st.errors} unreadable`);
   if (/[\\/]webcam$/i.test(st.folder || "")) parts.unshift("webcam snapshots");
-  let txt = st.running ? `${st.stage}: ${parts.join(", ")}${left != null && st.stage === "Reading photos" ? `, about ${left < 90 ? left + " s" : Math.round(left / 60) + " min"} left` : ""}`
+  let txt = st.running ? `${st.stage}: ${parts.join(", ")}${left != null && /^Reading/.test(st.stage) ? `, about ${left < 90 ? left + " s" : Math.round(left / 60) + " min"} left` : ""}`
     : st.error ? `Adding photos failed: ${st.error}` : `${st.stage === "Stopped" ? "Stopped" : "Finished"}: ${parts.join(", ")}.`;
   p.querySelector(".txt").textContent = txt;
   p.querySelector(".txt").title = txt;

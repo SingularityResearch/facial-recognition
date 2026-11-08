@@ -543,6 +543,100 @@ def load_image(path):
         return None
 
 
+# --------------------------------------------------------------------------- videos
+VIDEO_EVERY = 1.0        # seconds between the video frames looked at
+VIDEO_FRAMES = 300       # most frames looked at in one video (a long video's are spread over all of it)
+VIDEO_KEEP = 3           # faces kept per person per video: the clearest ones ...
+VIDEO_GAP = 3.0          # ... at least this many seconds apart
+
+
+def _fit(frame):
+    """Shrink a video frame to MAX_SIDE, as photos are (face boxes are stored at this scale)."""
+    h, w = frame.shape[:2]
+    s = MAX_SIDE / max(h, w)
+    return cv2.resize(frame, (round(w * s), round(h * s)), interpolation=cv2.INTER_AREA) if s < 1 else frame
+
+
+def video_frames(path, stop=None):
+    """Yield (frame number, frames per second, BGR frame shrunk to MAX_SIDE) about every VIDEO_EVERY
+    seconds, at most VIDEO_FRAMES of them. Raises OSError if the video can't be opened."""
+    cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
+        raise OSError(f"can't open video {Path(path).name}")
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = fps if 0 < fps < 1000 else 30.0
+        n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        step = max(1, round(fps * VIDEO_EVERY), n // VIDEO_FRAMES)
+        k = 0
+        while not (stop and stop.is_set()):
+            if k % step == 0:
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    break
+                yield k, fps, _fit(frame)
+            elif not cap.grab():               # skipped frames are decoded but not converted: fast
+                break
+            k += 1
+    finally:
+        cap.release()
+
+
+def video_frame(path, k):
+    """Frame number k of a video, shrunk to MAX_SIDE like video_frames' (None if it can't be read)."""
+    cap = cv2.VideoCapture(str(path))
+    try:
+        if not cap.isOpened():
+            return None
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(k))
+        ok, frame = cap.read()
+        return _fit(frame) if ok and frame is not None else None
+    finally:
+        cap.release()
+
+
+def video_faces(faces, path, stop=None):
+    """The faces in a video worth keeping. Frames are looked at about once a second; the same person's
+    faces across the video are grouped and only that person's VIDEO_KEEP clearest faces, VIDEO_GAP
+    seconds apart, are kept, so a long clip of one person adds a few faces, not hundreds.
+    Same person: a face where theirs was in the frame looked at just before (head turned down or
+    away, the face print alone often doesn't match), else face prints at least MATCH alike (the
+    recognizer's own setting). Returns (fps, [(frame number, row, emb, crop, q)])."""
+    people, fps, prev = [], 30.0, None           # [their face prints, [(k, row, emb, crop, q)]]
+    for k, fps, frame in video_frames(path, stop):
+        taken = set()                             # one face per person per frame
+        for row, emb, crop, q in faces.detect(frame):
+            best, best_s = None, 0.3              # 1. followed: same place as in the previous frame
+            for n, p in enumerate(people):
+                last_k, last_row = p[1][-1][0], p[1][-1][1]
+                if n not in taken and last_k == prev and (s := _iou(row, last_row)) >= best_s:
+                    best, best_s = n, s
+            if best is None:                      # 2. recognized: alike any face of theirs seen so far
+                best_s = MATCH
+                for n, p in enumerate(people):
+                    if n not in taken and (s := float((p[0] @ emb).max())) >= best_s:
+                        best, best_s = n, s
+            if best is None:
+                people.append([emb[None], []])
+                best = len(people) - 1
+            else:
+                people[best][0] = np.vstack([people[best][0], emb])
+            taken.add(best)
+            people[best][1].append((k, row, emb, crop, q))
+        prev = k
+    out = []
+    for _, seen in people:
+        seen.sort(key=lambda r: -(r[4] if r[4] == r[4] else 0.0))      # clearest first (nan: unknown)
+        kept = []
+        for r in seen:
+            if all(abs(r[0] - o[0]) >= VIDEO_GAP * fps for o in kept):
+                kept.append(r)
+                if len(kept) == VIDEO_KEEP:
+                    break
+        out += sorted(kept, key=lambda r: r[0])
+    return fps, out
+
+
 def list_media(folder, exts):
     folder = Path(folder)
     if folder.is_file():
@@ -551,9 +645,11 @@ def list_media(folder, exts):
 
 
 # --------------------------------------------------------------------------- store
-def face_key(photo, row):
-    """Permanent ID of a face: its photo's content fingerprint + where the face's centre is."""
-    return f"{photo[:16]}-{round(float(row[0]) + float(row[2]) / 2)}-{round(float(row[1]) + float(row[3]) / 2)}"
+def face_key(photo, row, frame=None):
+    """Permanent ID of a face: its photo's content fingerprint + where the face's centre is
+    (+ the frame number, for a face from a video)."""
+    key = f"{photo[:16]}-{round(float(row[0]) + float(row[2]) / 2)}-{round(float(row[1]) + float(row[3]) / 2)}"
+    return key if frame is None else f"{key}-f{int(frame)}"
 
 
 class Store:
@@ -589,9 +685,9 @@ class Store:
     def needs_ids(self):
         return bool(self.emb) and not self.fid
 
-    def claim_fid(self, photo, row):
-        """Record the permanent ID of a new face in `photo` and return it."""
-        fid = face_key(photo, row)
+    def claim_fid(self, photo, row, frame=None):
+        """Record the permanent ID of a new face in `photo` (or in a video's frame) and return it."""
+        fid = face_key(photo, row, frame)
         while fid in self._fids:                 # practically never: two faces centred on the same pixel
             fid += "x"
         self._fids.add(fid)
@@ -599,9 +695,9 @@ class Store:
         self.photo.append(photo)
         return fid
 
-    def add(self, photo, file, row, emb, crop, quality=float("nan")):
-        """Append one face; returns its index."""
-        self.claim_fid(photo, row)
+    def add(self, photo, file, row, emb, crop, quality=float("nan"), frame=None):
+        """Append one face (frame: its frame number, for a face from a video); returns its index."""
+        self.claim_fid(photo, row, frame)
         self.quality.append(quality)
         self.emb.append(emb)
         self.file.append(file)
