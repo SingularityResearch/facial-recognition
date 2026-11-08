@@ -24,7 +24,7 @@ Everything runs locally. No photos leave your computer, with one exception you s
 
 - **Just to run it:** download `FaceRecognizer-win64.zip` from the project's GitHub **Releases**, unzip it anywhere, and double-click **FaceRecognizer.exe**. No Python needed. On first start it downloads the face models (about 196 MB) into the `models\` folder beside it. After that it works offline.
 - **The code:** install [Git LFS](https://git-lfs.com) first, then `git clone` the repo. The face models and `data\` files are stored with Git LFS. Without it you get small placeholder files instead, and the programs stop with *"Model files weren't downloaded: install Git LFS and run git lfs pull"*. Run `git lfs install` and `git lfs pull` to fix that. `python fetch_models.py` (which setup.bat also runs) downloads just the models.
-- **Download ZIP** on GitHub includes the Git LFS files only when the repository's *Include Git LFS objects in archives* setting is on.
+- **Download ZIP** on GitHub includes the models and `data\` files: the repository's *Include Git LFS objects in archives* setting is on (since 2026-11-08). Unzip it and run `setup.bat` as above.
 
 ## Setup (once)
 
