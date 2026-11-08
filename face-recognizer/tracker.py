@@ -38,6 +38,30 @@ SCRIPTS = {"/expression.js": HERE / "expression.js", "/signals.js": HERE / "sign
 PEOPLE = F.DATA / "people.npz"
 CALIBRATION = F.DATA / "expr_calibration.json"   # written by tools/expr_eval.py
 VA_FIT = F.DATA / "va_fit.json"                   # written by tools/expr_eval.py from your feeling reports
+MESH_TRIANGLES = F.mesh_triangles()                # face-mesh triangles for the page's "Face mesh" option
+
+
+def save_capture(jpeg, faces):
+    """Save a webcam frame for the labeling tool: <time>.jpg in F.WEBCAM plus <time>.json with the
+    tracker's verdict for each face it was saved for ([{box: [x, y, w, h], name, sim}], frame pixels)."""
+    img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("not a JPEG image")
+    if not (isinstance(faces, list) and 0 < len(faces) <= 20):
+        raise ValueError("expected 1-20 faces")
+    clean = []
+    for f in faces:
+        box = f.get("box") if isinstance(f, dict) else None
+        if not (isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box)):
+            raise ValueError("each face needs a box [x, y, w, h]")
+        clean.append({"box": [round(float(v), 1) for v in box], "name": str(f.get("name", "Unknown"))[:100],
+                      "sim": round(min(1.0, max(-1.0, float(f.get("sim", 0)))), 3)})
+    F.WEBCAM.mkdir(parents=True, exist_ok=True)
+    stem = time.strftime("webcam-%Y%m%d-%H%M%S-") + f"{int(time.time() * 1000) % 1000:03d}"
+    (F.WEBCAM / f"{stem}.json").write_text(json.dumps({"when": time.strftime("%Y-%m-%d %H:%M:%S"), "faces": clean}),
+                                           encoding="utf-8")
+    (F.WEBCAM / f"{stem}.jpg").write_bytes(jpeg)     # last, so the labeling tool never sees a jpg without its json
+    return stem
 
 
 def _read_json(path):
@@ -79,9 +103,10 @@ class Engine:
             self._reload()
             return self.ident.names if self.ident else []
 
-    def recognize(self, jpeg, threshold, cues=False, pose=False, record=None):
+    def recognize(self, jpeg, threshold, cues=False, pose=False, mesh=False, record=None):
         """Faces in one webcam frame. cues=True adds the face-shape cues (about 10 ms a face on the
-        CPU, so only when the page shows or uses them). pose=True adds each face's body points and
+        CPU, so only when the page shows or uses them). mesh=True adds each face's 478 face-mesh
+        points (same landmarker run as the cues; for drawing only). pose=True adds each face's body points and
         whether a hand is on the face (10-20 ms a frame). record=(session, posed label, extra) also
         appends the largest readable face's numbers to a posed-expression session file (see Recorder)."""
         img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
@@ -96,12 +121,14 @@ class Engine:
             skips = [F.expression_skip(row, quality) for row, _, _, quality in found]
             exprs = [self.faces.expression(crop) if skip is None else None
                      for (_, _, crop, _), skip in zip(found, skips)]
-            shapes = [self.faces.blendshapes(img, row) if (cues or record) and skip is None else None
+            # One landmarker run gives both: blendshapes from readable faces only, the mesh from any face
+            meshes = [self.faces.face_mesh(img, row) if mesh or ((cues or record) and skip is None) else (None, None)
                       for (row, _, _, _), skip in zip(found, skips)]
+            shapes = [bs if skip is None else None for (bs, _), skip in zip(meshes, skips)]
             poses = self.faces.poses(img) if (pose or record) and found else []
         bodies = [F.pose_for_face(poses, row) for row, _, _, _ in found]
         out = []
-        for (row, emb, crop, quality), skip, expr, bs, bi in zip(found, skips, exprs, shapes, bodies):
+        for (row, emb, crop, quality), skip, expr, bs, (_, pts), bi in zip(found, skips, exprs, shapes, meshes, bodies):
             name, sim = ident.who(emb, threshold) if ident else ("Unknown", 0.0)
             out.append({
                 "box": [round(float(v), 1) for v in row[:4]],
@@ -115,6 +142,8 @@ class Engine:
                 "expr": None if expr is None else [round(float(v), 3) for v in expr],   # EXPRESSIONS order
                 "xskip": skip if self.faces.expression_model else None,   # why there's no reading
                 "cues": F.face_cues(bs) if bs and cues else None,
+                # flat [x, y, depth, x, y, depth, ...] in frame pixels; triangles from /api/people "meshTriangles"
+                "mesh": np.round(pts, 1).ravel().tolist() if mesh and pts is not None else None,
                 "pose": F.pose_points(poses[bi]) if bi is not None else None,   # F.POSE_POINTS order
                 "hand": F.hand_on_face(poses[bi], row) if bi is not None else None,
             })
@@ -256,6 +285,8 @@ def make_handler(engine):
                                        "devices": devices, "warmup_ms": engine.warmup_ms,
                                        "expressions": F.EXPRESSIONS if engine.faces.expression_model else None,
                                        "cues": engine.faces.cues_available, "voice": bool(engine.voice.model),
+                                       "meshTriangles": MESH_TRIANGLES if engine.faces.cues_available else None,
+                                       "qEnroll": F.Q_ENROLL, "captureDir": str(F.WEBCAM),
                                        "pose": engine.faces.pose_available, "posePoints": list(F.POSE_POINTS),
                                        "calibration": _read_json(CALIBRATION), "vaFit": _read_json(VA_FIT),
                                        "sessions": len(engine.recorder.sessions()),
@@ -289,6 +320,9 @@ def make_handler(engine):
                     avd = engine.voice.avd(samples)
                     return self.send_json({"avd": None if avd is None else [round(v, 3) for v in avd],
                                            "ms": round((time.perf_counter() - t0) * 1000, 1)})
+                if path == "/api/capture":               # "Collect faces": frame for the labeling tool
+                    faces = json.loads(dict(parse_qsl(query)).get("faces", "[]"))
+                    return self.send_json({"saved": save_capture(self.body(20_000_000), faces)})
                 if path != "/api/recognize":
                     return self.send(b"not found", "text/plain", 404)
                 jpeg = self.body(20_000_000)
@@ -305,7 +339,8 @@ def make_handler(engine):
                         extra["vad"] = params["vad"] == "1"
                     record = (params["session"], params["rec"], extra)
                 return self.send_json(engine.recognize(jpeg, threshold, cues=params.get("c") == "1",
-                                                       pose=params.get("p") == "1", record=record))
+                                                       pose=params.get("p") == "1", mesh=params.get("m") == "1",
+                                                       record=record))
             except (ValueError, TypeError) as e:
                 return self.send_json({"error": str(e)}, 400)
 

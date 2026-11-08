@@ -1304,9 +1304,8 @@
   "by": "me"
  },
  "faa9a446d40f2cc9-567-184": {
-  "not": [
-   "Rodney"
-  ]
+  "n": "Rodney",
+  "by": "me"
  },
  "d0fe13650b7c4e22-658-719x": {
   "n": "Rodney",
@@ -4081,833 +4080,667 @@
  },
  "ae9bd09cd48b5851-209-538": {
   "n": "Chris",
-  "by": "auto",
-  "s": 0.592
+  "by": "me"
  },
  "a7abcac19e39838f-500-439": {
   "n": "Greg Main",
-  "by": "auto",
-  "s": 0.947
+  "by": "me"
  },
  "38e51f4a27ae2b17-608-223": {
   "n": "Tim",
-  "by": "auto",
-  "s": 0.464
+  "by": "me"
  },
  "9205a51927f1bb57-492-708": {
   "n": "Chris",
-  "by": "auto",
-  "s": 0.693
+  "by": "me"
  },
  "f61b0e61b4916167-524-724": {
   "n": "Chris",
-  "by": "auto",
-  "s": 0.673
+  "by": "me"
  },
  "80cffcb7a22d1fc6-484-648": {
   "n": "Chris",
-  "by": "auto",
-  "s": 0.659
+  "by": "me"
  },
  "88825ef636ecc50d-484-642": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.626
+  "by": "me"
  },
  "88825ef636ecc50d-558-910": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.665
+  "by": "me"
  },
  "88825ef636ecc50d-465-983": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.677
+  "by": "me"
  },
  "88825ef636ecc50d-468-902": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.665
+  "by": "me"
  },
  "88825ef636ecc50d-649-831": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.728
+  "by": "me"
  },
  "88825ef636ecc50d-738-930": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.59
+  "by": "me"
  },
  "88825ef636ecc50d-658-651": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.635
+  "by": "me"
  },
  "88825ef636ecc50d-638-1093": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.652
+  "by": "me"
  },
  "88825ef636ecc50d-661-740": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.745
+  "by": "me"
  },
  "88825ef636ecc50d-758-749": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.667
+  "by": "me"
  },
  "88825ef636ecc50d-677-464": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.579
+  "by": "me"
  },
  "88825ef636ecc50d-474-724": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.681
+  "by": "me"
  },
  "88825ef636ecc50d-390-802": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.675
+  "by": "me"
  },
  "88825ef636ecc50d-484-545": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.618
+  "by": "me"
  },
  "88825ef636ecc50d-395-725": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.642
+  "by": "me"
  },
  "88825ef636ecc50d-550-1079": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.712
+  "by": "me"
  },
  "88825ef636ecc50d-380-1058": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.63
+  "by": "me"
  },
  "88825ef636ecc50d-562-821": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.652
+  "by": "me"
  },
  "88825ef636ecc50d-762-562": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.608
+  "by": "me"
  },
  "88825ef636ecc50d-304-799": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.691
+  "by": "me"
  },
  "88825ef636ecc50d-300-883": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.517
+  "by": "me"
  },
  "88825ef636ecc50d-405-546": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.504
+  "by": "me"
  },
  "88825ef636ecc50d-731-1018": {
-  "n": "Sariah",
-  "by": "auto",
-  "s": 0.68
+  "n": "#ignore",
+  "by": "me"
  },
  "88825ef636ecc50d-650-921": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.681
+  "by": "me"
  },
  "88825ef636ecc50d-730-1099": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.719
+  "by": "me"
  },
  "88825ef636ecc50d-762-652": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.622
+  "by": "me"
  },
  "88825ef636ecc50d-568-644": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.615
+  "by": "me"
  },
  "88825ef636ecc50d-750-839": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.701
+  "by": "me"
  },
  "88825ef636ecc50d-389-636": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.556
+  "by": "me"
  },
  "88825ef636ecc50d-547-996": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.706
+  "by": "me"
  },
  "88825ef636ecc50d-770-462": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.503
+  "by": "me"
  },
  "88825ef636ecc50d-458-1070": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.65
+  "by": "me"
  },
  "88825ef636ecc50d-385-975": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.604
+  "by": "me"
  },
  "88825ef636ecc50d-634-1003": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.654
+  "by": "me"
  },
  "88825ef636ecc50d-464-812": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.624
+  "by": "me"
  },
  "88825ef636ecc50d-313-627": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.663
+  "by": "me"
  },
  "88825ef636ecc50d-307-457": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.52
+  "by": "me"
  },
  "88825ef636ecc50d-305-539": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.519
+  "by": "me"
  },
  "88825ef636ecc50d-499-462": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.499
+  "by": "me"
  },
  "88825ef636ecc50d-672-554": {
   "n": "Sariah",
-  "by": "auto",
-  "s": 0.644
+  "by": "me"
  },
  "16d4dad287306690-412-742": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.715
+  "by": "me"
  },
  "16d4dad287306690-600-663": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.752
+  "by": "me"
  },
  "16d4dad287306690-684-952": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.731
+  "by": "me"
  },
  "16d4dad287306690-598-570": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.727
+  "by": "me"
  },
  "16d4dad287306690-405-914": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.76
+  "by": "me"
  },
  "16d4dad287306690-488-839": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.8
+  "by": "me"
  },
  "16d4dad287306690-420-474": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.621
+  "by": "me"
  },
  "16d4dad287306690-506-569": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.666
+  "by": "me"
  },
  "16d4dad287306690-324-907": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.785
+  "by": "me"
  },
  "16d4dad287306690-331-652": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.696
+  "by": "me"
  },
  "16d4dad287306690-795-673": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.772
+  "by": "me"
  },
  "16d4dad287306690-507-661": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.641
+  "by": "me"
  },
  "16d4dad287306690-707-376": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.545
+  "by": "me"
  },
  "16d4dad287306690-698-669": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.732
+  "by": "me"
  },
  "16d4dad287306690-592-754": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.77
+  "by": "me"
  },
  "16d4dad287306690-508-381": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.493
+  "by": "me"
  },
  "16d4dad287306690-674-854": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.788
+  "by": "me"
  },
  "16d4dad287306690-700-474": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.678
+  "by": "me"
  },
  "16d4dad287306690-499-752": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.742
+  "by": "me"
  },
  "16d4dad287306690-700-578": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.727
+  "by": "me"
  },
  "16d4dad287306690-799-574": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.7
+  "by": "me"
  },
  "16d4dad287306690-579-844": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.797
+  "by": "me"
  },
  "16d4dad287306690-322-737": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.766
+  "by": "me"
  },
  "16d4dad287306690-575-937": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.781
+  "by": "me"
  },
  "16d4dad287306690-769-962": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.795
+  "by": "me"
  },
  "16d4dad287306690-504-473": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.672
+  "by": "me"
  },
  "16d4dad287306690-404-656": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.721
+  "by": "me"
  },
  "16d4dad287306690-682-764": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.779
+  "by": "me"
  },
  "16d4dad287306690-796-475": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.661
+  "by": "me"
  },
  "16d4dad287306690-408-565": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.603
+  "by": "me"
  },
  "16d4dad287306690-787-773": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.75
+  "by": "me"
  },
  "16d4dad287306690-318-995": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.731
+  "by": "me"
  },
  "16d4dad287306690-397-1000": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.759
+  "by": "me"
  },
  "16d4dad287306690-321-825": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.789
+  "by": "me"
  },
  "16d4dad287306690-779-873": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.692
+  "by": "me"
  },
  "16d4dad287306690-420-381": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.457
+  "by": "me"
  },
  "16d4dad287306690-401-829": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.801
+  "by": "me"
  },
  "16d4dad287306690-487-937": {
   "n": "Emiliann",
-  "by": "auto",
-  "s": 0.636
+  "by": "me"
  },
  "9c4e293777e434d7-450-715": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.573
+  "by": "me"
  },
  "9c4e293777e434d7-692-484": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.504
+  "by": "me"
  },
  "9c4e293777e434d7-234-587": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.571
+  "by": "me"
  },
  "9c4e293777e434d7-326-710": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.612
+  "by": "me"
  },
  "9c4e293777e434d7-563-602": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.5
+  "by": "me"
  },
  "9c4e293777e434d7-216-700": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.585
+  "by": "me"
  },
  "9c4e293777e434d7-830-744": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.746
+  "by": "me"
  },
  "9c4e293777e434d7-693-742": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.619
+  "by": "me"
  },
  "9c4e293777e434d7-688-610": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.579
+  "by": "me"
  },
  "9c4e293777e434d7-549-723": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.585
+  "by": "me"
  },
  "9c4e293777e434d7-223-817": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.753
+  "by": "me"
  },
  "9c4e293777e434d7-829-614": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.58
+  "by": "me"
  },
  "9c4e293777e434d7-857-480": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.552
+  "by": "me"
  },
  "9c4e293777e434d7-323-595": {
   "n": "Rodney",
-  "by": "auto",
-  "s": 0.514
+  "by": "me"
  },
  "954dcdc8daf34339-636-229": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.506
+  "by": "me"
  },
  "954dcdc8daf34339-715-808": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.514
+  "by": "me"
  },
  "954dcdc8daf34339-1198-743": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.532
+  "by": "me"
  },
  "954dcdc8daf34339-948-766": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.473
+  "by": "me"
  },
  "bb5b62446f18f2a7-406-644": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.677
+  "by": "me"
  },
  "bb5b62446f18f2a7-404-466": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.639
+  "by": "me"
  },
  "bb5b62446f18f2a7-315-555": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.67
+  "by": "me"
  },
  "bb5b62446f18f2a7-584-929": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.835
+  "by": "me"
  },
  "bb5b62446f18f2a7-581-828": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.729
+  "by": "me"
  },
  "bb5b62446f18f2a7-681-931": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.834
+  "by": "me"
  },
  "bb5b62446f18f2a7-582-210": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.629
+  "by": "me"
  },
  "bb5b62446f18f2a7-774-933": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.874
+  "by": "me"
  },
  "bb5b62446f18f2a7-313-643": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.758
+  "by": "me"
  },
  "bb5b62446f18f2a7-310-822": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.823
+  "by": "me"
  },
  "bb5b62446f18f2a7-507-205": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.568
+  "by": "me"
  },
  "bb5b62446f18f2a7-410-213": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.626
+  "by": "me"
  },
  "bb5b62446f18f2a7-314-735": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.703
+  "by": "me"
  },
  "bb5b62446f18f2a7-589-648": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.628
+  "by": "me"
  },
  "bb5b62446f18f2a7-586-556": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.681
+  "by": "me"
  },
  "bb5b62446f18f2a7-489-822": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.723
+  "by": "me"
  },
  "bb5b62446f18f2a7-672-648": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.728
+  "by": "me"
  },
  "bb5b62446f18f2a7-488-924": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.79
+  "by": "me"
  },
  "bb5b62446f18f2a7-772-738": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.729
+  "by": "me"
  },
  "bb5b62446f18f2a7-774-646": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.719
+  "by": "me"
  },
  "bb5b62446f18f2a7-676-829": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.754
+  "by": "me"
  },
  "bb5b62446f18f2a7-490-382": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.669
+  "by": "me"
  },
  "bb5b62446f18f2a7-493-642": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.704
+  "by": "me"
  },
  "bb5b62446f18f2a7-673-740": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.762
+  "by": "me"
  },
  "bb5b62446f18f2a7-393-824": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.741
+  "by": "me"
  },
  "bb5b62446f18f2a7-671-206": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.675
+  "by": "me"
  },
  "bb5b62446f18f2a7-766-204": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.627
+  "by": "me"
  },
  "bb5b62446f18f2a7-578-378": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.712
+  "by": "me"
  },
  "bb5b62446f18f2a7-399-733": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.739
+  "by": "me"
  },
  "bb5b62446f18f2a7-494-555": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.595
+  "by": "me"
  },
  "bb5b62446f18f2a7-772-556": {
-  "n": "Gretchen",
-  "by": "auto",
-  "s": 0.731
+  "n": "#ignore",
+  "by": "me"
  },
  "bb5b62446f18f2a7-322-379": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.555
+  "by": "me"
  },
  "bb5b62446f18f2a7-303-918": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.762
+  "by": "me"
  },
  "bb5b62446f18f2a7-584-733": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.751
+  "by": "me"
  },
  "bb5b62446f18f2a7-582-466": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.689
+  "by": "me"
  },
  "bb5b62446f18f2a7-395-923": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.698
+  "by": "me"
  },
  "bb5b62446f18f2a7-773-843": {
-  "n": "Gretchen",
-  "by": "auto",
-  "s": 0.667
+  "n": "#ignore",
+  "by": "me"
  },
  "bb5b62446f18f2a7-767-377": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.663
+  "by": "me"
  },
  "bb5b62446f18f2a7-316-215": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.615
+  "by": "me"
  },
  "bb5b62446f18f2a7-409-292": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.634
+  "by": "me"
  },
  "bb5b62446f18f2a7-312-470": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.628
+  "by": "me"
  },
  "bb5b62446f18f2a7-775-463": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.664
+  "by": "me"
  },
  "bb5b62446f18f2a7-675-553": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.555
+  "by": "me"
  },
  "bb5b62446f18f2a7-491-469": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.551
+  "by": "me"
  },
  "bb5b62446f18f2a7-403-559": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.641
+  "by": "me"
  },
  "bb5b62446f18f2a7-489-736": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.661
+  "by": "me"
  },
  "bb5b62446f18f2a7-669-466": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.487
+  "by": "me"
  },
  "bb5b62446f18f2a7-579-292": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.595
+  "by": "me"
  },
  "bb5b62446f18f2a7-323-296": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.596
+  "by": "me"
  },
  "4c6a688958387f4e-378-567": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.711
+  "by": "me"
  },
  "4c6a688958387f4e-152-544": {
   "n": "Chris",
-  "by": "auto",
-  "s": 0.673
+  "by": "me"
  },
  "45638e934d20ad45-441-466": {
   "n": "Chris",
-  "by": "auto",
-  "s": 0.827
+  "by": "me"
  },
  "93011c519b77f065-198-693": {
   "n": "Chris",
-  "by": "auto",
-  "s": 0.718
+  "by": "me"
  },
  "93011c519b77f065-644-518": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.65
+  "by": "me"
  },
  "cffd6ce5589474b9-381-458": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.688
+  "by": "me"
  },
  "dd5ffc04c0b4d1a9-367-432": {
   "n": "Dex",
-  "by": "auto",
-  "s": 0.689
+  "by": "me"
  },
  "dd5ffc04c0b4d1a9-206-402": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.667
+  "by": "me"
  },
  "c1adde8efca5c804-479-456": {
   "n": "Gretchen",
-  "by": "auto",
-  "s": 0.749
+  "by": "me"
  },
  "30fb9c39c12729d8-326-554": {
   "n": "Chris",
-  "by": "auto",
-  "s": 0.57
+  "by": "me"
  },
  "d65f5fb2e267929f-584-248": {
   "n": "Spock",
-  "by": "auto",
-  "s": 0.518
+  "by": "me"
  },
  "5bdc0b732855edf9-510-219": {
   "n": "Greg Main",
-  "by": "auto",
-  "s": 0.897
+  "by": "me"
  },
  "e73a77c39fcc0f66-81-133": {
   "n": "Chris",
-  "by": "auto",
-  "s": 0.628
+  "by": "me"
  },
  "e73a77c39fcc0f66-643-114": {
   "n": "MikeE",
-  "by": "auto",
-  "s": 0.552
+  "by": "me"
  },
  "421c3f9458095307-440-273": {
   "n": "Javier Bardem",
-  "by": "auto",
-  "s": 0.755
+  "by": "me"
  },
  "a7abcac19e39838f-76-540": {
   "n": "Chris",
@@ -4924,5 +4757,210 @@
  "9300b92a1e6a131c-673-539": {
   "n": "Al Pacino",
   "by": "me"
+ },
+ "05f1feffc6edcc15-126-555": {
+  "n": "Sariah",
+  "by": "me"
+ },
+ "ac0c0298aafc458a-978-348": {
+  "n": "Maynard James Keenan",
+  "by": "me"
+ },
+ "9e19f15814ce1167-260-172": {
+  "n": "Jimi Hendrix",
+  "by": "me"
+ },
+ "1cb541dafcc11b45-1073-250": {
+  "n": "Maynard James Keenan",
+  "by": "me"
+ },
+ "1d1d8227cd7f5fff-595-332": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "9c4e293777e434d7-449-597": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "8e9aedebfd1f01f8-504-275": {
+  "n": "Nina Simone",
+  "by": "me"
+ },
+ "c1f89b2a003ec546-613-640": {
+  "n": "Mick Jagger",
+  "by": "me"
+ },
+ "3335fe5169d0aafe-294-351": {
+  "n": "Nina Simone",
+  "by": "me"
+ },
+ "7649cdded21aa20d-330-172": {
+  "n": "Scarlett Johansson",
+  "by": "me"
+ },
+ "e73a77c39fcc0f66-438-124": {
+  "n": "Rodney",
+  "by": "me"
+ },
+ "0ad92956dfd0f104-488-194": {
+  "n": "#ignore",
+  "by": "me"
+ },
+ "581c4da43cd72460-423-342": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "ed6e104b79f7e773-421-327": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "024650e82724afc9-429-330": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "cb9d695215cdae4c-441-335": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "613ebde1671263bb-428-334": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "e0e5b03ae605f8cd-442-333": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "74d8e6c6a7fa7914-433-328": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.848
+ },
+ "0a2462c03a658e30-436-329": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.804
+ },
+ "cfb8476f931d2596-441-334": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.505
+ },
+ "13d61856c7629ee6-397-340": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.612
+ },
+ "2fa63cdecc922551-382-323": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.786
+ },
+ "25eb4ea55dc9fecb-394-329": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.821
+ },
+ "57a967a703d8659c-389-339": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.707
+ },
+ "8634c1fb9f756080-387-340": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.789
+ },
+ "9b3dd0ab621a1148-401-334": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.828
+ },
+ "681ea7ac6428267c-408-346": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.837
+ },
+ "37cc733af3573489-408-343": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.879
+ },
+ "226eec1c89ea6d88-423-342": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.862
+ },
+ "2ae930234448cdaf-433-342": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.822
+ },
+ "9e68c1c6dd1abb4c-430-337": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.891
+ },
+ "e418c66bf0b6498b-438-343": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.865
+ },
+ "2353edb4a4c274eb-437-340": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.815
+ },
+ "5f322da3738be06a-450-334": {
+  "n": "Chris",
+  "by": "me"
+ },
+ "ae9bd09cd48b5851-518-430": {
+  "n": "Troy P",
+  "by": "me"
+ },
+ "acd605bb058f7883-408-410": {
+  "n": "Lil Debbie",
+  "by": "me"
+ },
+ "8a2f3fd0d8b9f63f-691-448": {
+  "n": "Leigh Erin",
+  "by": "me"
+ },
+ "b5c1b2bf96769a99-632-455": {
+  "n": "Leigh Erin",
+  "by": "me"
+ },
+ "26258f0062221319-640-468": {
+  "n": "Leigh Erin",
+  "by": "me"
+ },
+ "4845dbab2eda17ca-772-458": {
+  "n": "Leigh Erin",
+  "by": "me"
+ },
+ "e11111dcf319fcdd-421-345": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.7
+ },
+ "4ac1cd2a939b1b02-431-336": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.647
+ },
+ "be837a48116a3fc0-428-343": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.813
+ },
+ "a252732a7700e2f2-420-330": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.783
+ },
+ "e87da1b325472fb0-444-334": {
+  "n": "Chris",
+  "by": "auto",
+  "s": 0.785
  }
 }

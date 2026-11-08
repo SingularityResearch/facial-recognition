@@ -375,5 +375,507 @@
     "exactPages": 0
    }
   }
+ },
+ "5ee5090f4c7055b7-955-267": {
+  "when": "2026-11-01 13:34",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "senior citizen"
+    ],
+    "names": [
+     "Arthur F. Engoron",
+     "Law",
+     "Judge",
+     "Law clerk",
+     "Trial",
+     "senior",
+     "citizenM",
+     "Clerk"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "ac0c0298aafc458a-978-348": {
+  "when": "2026-11-01 13:34",
+  "suggestions": [
+   {
+    "name": "Maynard James Keenan",
+    "level": "high",
+    "confidence": 99.5,
+    "why": [
+     "Amazon recognizes Maynard James Keenan (99.5% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q311621",
+     "https://www.imdb.com/name/nm0444665"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Maynard James Keenan",
+     "confidence": 99.5,
+     "links": [
+      "https://www.wikidata.org/wiki/Q311621",
+      "https://www.imdb.com/name/nm0444665"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "room"
+    ],
+    "names": [
+     "TV",
+     "Television",
+     "Y3W",
+     "Room"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "66d02cb287aa39ec-540-492": {
+  "when": "2026-11-01 13:34",
+  "suggestions": [
+   {
+    "name": "Doc Holliday",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Doc Holliday (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q44987"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Doc Holliday",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q44987"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "human"
+    ],
+    "names": [
+     "Human",
+     "Hominini",
+     "Primate",
+     "Southern ape",
+     "Science",
+     "Human body",
+     "Bipedalism",
+     "Species"
+    ],
+    "pages": [
+     {
+      "title": "HUMAN Extended version VOL.1 - YouTube",
+      "url": "https://www.youtube.com/watch?v=vdb4XGVTHkE",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "HUMAN The movie (Director's cut version) - YouTube",
+      "url": "https://www.youtube.com/watch?v=fC5qucSk18w",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Every Human Species Explained - YouTube",
+      "url": "https://www.youtube.com/shorts/xuH0cYsWSJg",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Human - YouTube",
+      "url": "https://www.youtube.com/watch?v=cO2mpgfJ-ME",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Video: Human & Humane | Definition, Examples & Difference",
+      "url": "https://study.com/learn/lesson/video/humane-vs-human-overview-examples-origins-functions.html",
+      "domain": "study.com",
+      "match": "partial"
+     },
+     {
+      "title": "Human (2023) - Stream Free | Tubi",
+      "url": "https://tubitv.com/movies/100006139/human",
+      "domain": "tubitv.com",
+      "match": "partial"
+     },
+     {
+      "title": "How We Became Human: 518 Ma to 1 Ma Evolution Timeline",
+      "url": "https://www.facebook.com/VGraphs/videos/how-we-became-human/1340041008105164/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Human Official Trailer - IMDb",
+      "url": "https://www.imdb.com/video/embed/vi2753610521/",
+      "domain": "www.imdb.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "8e9aedebfd1f01f8-504-275": {
+  "when": "2026-11-03 23:58",
+  "suggestions": [
+   {
+    "name": "Nina Simone",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Nina Simone (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q174957",
+     "https://www.imdb.com/name/nm0800510"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Nina Simone",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q174957",
+      "https://www.imdb.com/name/nm0800510"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "television set"
+    ],
+    "names": [
+     "TV",
+     "LCD television",
+     "Television",
+     "Liquid-crystal display",
+     "LED-backlit LCD",
+     "Plasma TV",
+     "Smart TV",
+     "Cable television"
+    ],
+    "pages": [
+     {
+      "title": "How to Set Up a TV By Yourself - YouTube",
+      "url": "https://www.youtube.com/watch?v=2HaxR6UC4o4",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "5 Best Television Set 2026: Match the Screen to Your Room",
+      "url": "https://www.youtube.com/watch?v=PzWsCGjIM6g",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "TV Buying Guide | Consumer Reports - YouTube",
+      "url": "https://www.youtube.com/watch?v=ih0ZVEQz9xA",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "",
+      "url": "https://www.homedepot.com/b/Electronics-TV-Home-Theater/N-5yc1vZc64jZ12ky?NCNI-5",
+      "domain": "www.homedepot.com",
+      "match": "partial"
+     },
+     {
+      "title": "",
+      "url": "https://www.homedepot.com/b/Electronics-TV-Home-Theater/N-5yc1vZc64jZ12l0?NCNI-5",
+      "domain": "www.homedepot.com",
+      "match": "partial"
+     },
+     {
+      "title": "",
+      "url": "https://www.homedepot.com/b/Electronics-TV-Home-Theater/N-5yc1vZc64jZ12kz?NCNI-5",
+      "domain": "www.homedepot.com",
+      "match": "partial"
+     },
+     {
+      "title": "",
+      "url": "https://www.homedepot.com/b/Electronics-TV-Home-Theater/N-5yc1vZc64jZ12kx?NCNI-5",
+      "domain": "www.homedepot.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "c1f89b2a003ec546-613-640": {
+  "when": "2026-11-03 23:58",
+  "suggestions": [
+   {
+    "name": "Mick Jagger",
+    "level": "high",
+    "confidence": 99.9,
+    "why": [
+     "Amazon recognizes Mick Jagger (99.9% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q128121",
+     "https://www.imdb.com/name/nm0001396"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Mick Jagger",
+     "confidence": 99.9,
+     "links": [
+      "https://www.wikidata.org/wiki/Q128121",
+      "https://www.imdb.com/name/nm0001396"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "monochrome"
+    ],
+    "names": [
+     "Monochrome",
+     "Image",
+     "Hairstyle",
+     "Color",
+     "Photograph",
+     "Photography",
+     "Black and white",
+     "Spotify"
+    ],
+    "pages": [
+     {
+      "title": "Monochrome is a \"Cheat Code\" in Photography (if used right)",
+      "url": "https://www.youtube.com/watch?v=A1WNtveutuo&vl=en",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Seed Gallery Did you know \"monochrome\" simply means \"one color ...",
+      "url": "https://www.facebook.com/seedgalleryny/videos/what-is-monochrome-in-art-seed-gallerydid-you-know-monochrome-simply-means-one-c/1294051938393897/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "One color to rule them all. #monochromemoood #monochrome ...",
+      "url": "https://www.youtube.com/shorts/uQuoaSyRvTE",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Are you confusing Black and White with Monochrome? There's a ...",
+      "url": "https://www.facebook.com/toehold.in/posts/are-you-confusing-black-and-white-with-monochrome-theres-a-crucial-differencedon/1384588956564834/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Are you confusing Black and White with Monochrome? There's a ...",
+      "url": "https://www.facebook.com/toehold.in/videos/monochrome-vs-bw/3324159561070282/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "it's just black and white! Monochrome refers to a palette that uses ...",
+      "url": "https://www.instagram.com/reel/Dc1kK8DOIcS/?hl=en",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "Monochrome - song and lyrics by The Synthwave Brothers | Spotify",
+      "url": "https://open.spotify.com/track/22JRsU9IyWMvHCOu93WPeC",
+      "domain": "open.spotify.com",
+      "match": "partial"
+     },
+     {
+      "title": "Monochrome - Prime Video",
+      "url": "https://www.primevideo.com/detail/0H8EN8BXVCYJSYRPGC57SJTZH1?tr=mp",
+      "domain": "www.primevideo.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "5e63f92cc98ee795-1119-248": {
+  "when": "2026-11-04 00:01",
+  "suggestions": [
+   {
+    "name": "Tenzin Gyatso",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Tenzin Gyatso (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q17293",
+     "https://www.imdb.com/name/nm0482730"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Tenzin Gyatso",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q17293",
+      "https://www.imdb.com/name/nm0482730"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "screenshot"
+    ],
+    "names": [
+     "Screenshot",
+     "Meter",
+     "Text messaging"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "7649cdded21aa20d-330-172": {
+  "when": "2026-11-04 00:05",
+  "suggestions": [
+   {
+    "name": "Scarlett Johansson",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Scarlett Johansson (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q34436",
+     "https://www.imdb.com/name/nm0424060"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Scarlett Johansson",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q34436",
+      "https://www.imdb.com/name/nm0424060"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "girl"
+    ],
+    "names": [
+     "Model M keyboard",
+     "Blond"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "acd605bb058f7883-408-410": {
+  "when": "2026-11-08 00:56",
+  "suggestions": [
+   {
+    "name": "Lil Debbie",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Lil Debbie (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q12635510"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Lil Debbie",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q12635510"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "girl"
+    ],
+    "names": [
+     "TikTok",
+     "1302"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
  }
 }

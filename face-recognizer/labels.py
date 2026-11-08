@@ -748,7 +748,24 @@ class LabelDB:
             closest = [{"name": names[j], "s": round(float(P[0, j]), 3)} for j in np.argsort(-P[0])
                        if names[j] != IGNORE and P[0, j] > 0][:CLOSEST]
         f = self.facts.get(h)
-        return {"closest": closest, "tag": self.tag_names(h, f).get(i), "tags": f["tags"], "occasion": self.occasion(h)}
+        return {"closest": closest, "tag": self.tag_names(h, f).get(i), "tags": f["tags"], "occasion": self.occasion(h),
+                "live": self.live_verdict(i)}
+
+    def live_verdict(self, i):
+        """For a webcam snapshot the tracker saved: who the tracker thought face i was, how sure it was
+        and when ({name, sim, when}), from the .json saved beside the photo; None for other photos."""
+        p = self.store.photos.get(self.store.photo[i], {}).get("path")
+        if not p or Path(p).parent != F.WEBCAM:
+            return None
+        try:
+            saved = json.loads(Path(p).with_suffix(".json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        box = [float(v) for v in self.store.box[i][:4]]
+        best = max(saved.get("faces", []), key=lambda f: _iou(f["box"], box), default=None)
+        if not best or _iou(best["box"], box) < 0.3:
+            return None
+        return {"name": best["name"], "sim": best["sim"], "when": saved.get("when", "")}
 
     def checks(self):
         """Possible mistakes and gaps:
