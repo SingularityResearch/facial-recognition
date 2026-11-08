@@ -86,6 +86,7 @@ X:\source\facial-recognition\
         ├── history.jsonl         every labeling change with its time (powers Undo)
         ├── backups\              labels-<time>.json from each labeling-tool start (last 20);
         │                         legacy-<time>\ = the old groups.json/names.json/scanned.json
+        │                         (local only since 2026-11-08: in .gitignore, untracked; tracked Oct 31-Nov 8)
         ├── people.npz            face prints of named people — what the tracker and `recognize` use
         ├── settings.json         photo folders that have been added
         ├── sheets\               contact sheets written by `cluster` (group_###.jpg, overview_*.jpg)
