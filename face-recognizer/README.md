@@ -20,9 +20,15 @@ Recognizes specific people (by name) on a webcam or in photos and videos, traine
 
 Everything runs locally. No photos leave your computer, with one exception you start yourself: **Web search** in the photo view (see below) sends that face to Amazon and that photo to Google to suggest who it is.
 
+## Getting it
+
+- **Just to run it:** download `FaceRecognizer-win64.zip` from the project's GitHub **Releases**, unzip it anywhere, and double-click **FaceRecognizer.exe**. No Python needed. On first start it downloads the face models (about 196 MB) into the `models\` folder beside it. After that it works offline.
+- **The code:** install [Git LFS](https://git-lfs.com) first, then `git clone` the repo. The face models and `data\` files are stored with Git LFS. Without it you get small placeholder files instead, and the programs stop with *"Model files weren't downloaded: install Git LFS and run git lfs pull"*. Run `git lfs install` and `git lfs pull` to fix that. `python fetch_models.py` (which setup.bat also runs) downloads just the models.
+- **Download ZIP** on GitHub includes the Git LFS files only when the repository's *Include Git LFS objects in archives* setting is on.
+
 ## Setup (once)
 
-Double-click **setup.bat**. It installs Python 3.12 if needed (with winget), installs the libraries in `requirements.txt`, and checks that the face models load. The .bat files all use that Python 3.12 (`%LOCALAPPDATA%\Programs\Python\Python312\python.exe`); to run the `.py` files yourself, use the same one, because a different Python on your PATH may not have OpenCV and ONNX Runtime installed.
+Double-click **setup.bat**. It installs Python 3.12 if needed (with winget), installs the libraries in `requirements.txt`, downloads any face models that are missing (`fetch_models.py`), and checks that they load. The .bat files all use that Python 3.12 (`%LOCALAPPDATA%\Programs\Python\Python312\python.exe`); to run the `.py` files yourself, use the same one, because a different Python on your PATH may not have OpenCV and ONNX Runtime installed.
 
 ## One window: FaceRecognizer.exe
 

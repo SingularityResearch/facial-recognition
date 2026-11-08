@@ -75,7 +75,12 @@ async function poll() {                          // each program's URL once it's
   show(current);
   const w = document.getElementById("wait");
   if (errors[current]) { w.className = "wait err"; w.textContent = errors[current]; }
-  else w.className = "wait";
+  else {
+    w.className = "wait";
+    w.textContent = st.fetch   // first start of a downloaded copy: the models come from the project's GitHub Release
+      ? `Downloading the face models (first start only): ${Math.round(st.fetch.done / 1e6)} of ${Math.round(st.fetch.total / 1e6)} MB`
+      : "Loading the face models…";
+  }
   if (!["track", "label"].every(k => document.getElementById("f-" + k).src || errors[k])) setTimeout(poll, 400);
 }
 poll();
@@ -178,20 +183,52 @@ def allow_camera(window):
 
 
 def run_programs():
-    import label_tool
-    import tracker
-    jobs = [("track", "Face tracker", tracker, 8766, "tracker"),
-            ("label", "Face Labels", label_tool, 8765, "face-labels")]
+    def fail(key, name, e):
+        traceback.print_exc()
+        why = str(e) if isinstance(e, SystemExit) else f"{type(e).__name__}: {e}"   # SystemExit: our own message
+        STATUS[key] = {"error": f"{name} couldn't start.\n\n{why}\n\nDetails are in {HOME / 'app.log'}"}
+
+    def get_models():
+        """First start of a downloaded FaceRecognizer.exe: fetch the models (fetch_models.py)."""
+        import fetch_models
+        if not fetch_models.needed():
+            return True
+        print(f"Downloading models into {fetch_models.MODELS}: {', '.join(fetch_models.needed())}")
+
+        def show(done, total, _):
+            STATUS["fetch"] = {"done": done, "total": total}
+        try:
+            fetch_models.fetch(show)
+            STATUS.pop("fetch", None)
+            return True
+        except OSError as e:
+            for key, name in (("track", "Face tracker"), ("label", "Face Labels")):
+                fail(key, name, OSError(f"The face models couldn't be downloaded: {e}\n"
+                                        f"Check the internet connection and start the app again."))
+            return False
 
     def one(key, name, module, port, app):
         try:
             STATUS[key] = {"url": start(name, module, port, app)}
-        except Exception as e:
-            traceback.print_exc()
-            STATUS[key] = {"error": f"{name} couldn't start: {type(e).__name__}: {e}\n\nDetails are in {HOME / 'app.log'}"}
+        except BaseException as e:               # incl. SystemExit (e.g. face_id.NotDownloaded) from loading
+            fail(key, name, e)
 
-    for job in jobs:                                # both load at once: tracker models and the label database
-        threading.Thread(target=one, args=job, daemon=True).start()
+    def go():
+        if not get_models():
+            return
+        try:
+            import label_tool
+            import tracker                          # imports face_id, which checks the model and data files
+        except BaseException as e:
+            for key, name in (("track", "Face tracker"), ("label", "Face Labels")):
+                fail(key, name, e)
+            return
+        jobs = [("track", "Face tracker", tracker, 8766, "tracker"),
+                ("label", "Face Labels", label_tool, 8765, "face-labels")]
+        for job in jobs:                            # both load at once: tracker models and the label database
+            threading.Thread(target=one, args=job, daemon=True).start()
+
+    threading.Thread(target=go, daemon=True).start()
 
 
 def main():

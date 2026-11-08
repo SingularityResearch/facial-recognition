@@ -12,3 +12,10 @@ __pycache__/
 # FaceRecognizer.exe build (build_app.bat)
 face-recognizer/build/
 face-recognizer/FaceRecognizer.exe
+
+# AdaFace: evaluation only, made locally by tools/get_adaface.py (not shipped)
+face-recognizer/models/adaface_ir101_webface12m.onnx
+face-recognizer/models/adaface_src/
+
+# fetch_models.py partial downloads
+*.download

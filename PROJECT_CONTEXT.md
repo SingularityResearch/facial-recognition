@@ -69,8 +69,8 @@ X:\source\facial-recognition\
     │   └── import_bench.py       photo-import timing
     ├── models\
     │   ├── face_detection_yunet_2023mar.onnx           YuNet detector (OpenCV Zoo)
-    │   ├── arcface_w600k_r50.onnx (+ .part0–.part8)    ArcFace recognizer (174 MB), split copy rejoined by _join_parts()
-    │   ├── face_recognition_sface_2021dec.onnx (+ .part0/.part1)   SFace, fallback recognizer (38.7 MB)
+    │   ├── arcface_w600k_r50.onnx                      ArcFace recognizer (174 MB)
+    │   ├── face_recognition_sface_2021dec.onnx         SFace, fallback recognizer (38.7 MB)
     │   ├── ediffiqa_tiny_jun2024.onnx                  eDifFIQA face quality (optional)
     │   ├── facial_expression_recognition_mobilefacenet_2022july.onnx   7-class expression model (optional)
     │   ├── adaface_ir101_webface12m.onnx, adaface_src\  AdaFace, evaluated and not used
@@ -392,9 +392,9 @@ Webcam / OpenCV on this Windows machine:
 - Camera index 1 = the Pixel phone's camera via Phone Link, not the USB webcam. Pick cameras by name in the browser UI.
 
 Claude ↔ PC tooling (relevant if continuing with Claude's device tools):
-- `device_commit_files` fails above ~30 MB → large models are shipped as 20 MB `.partN` files
-  (ArcFace `.part0`–`.part8`, SFace `.part0`/`.part1`) and rejoined by `_join_parts()` in `face_id.py` on
-  first run.
+- `device_commit_files` fails above ~30 MB → large models were once shipped as 20 MB `.partN` files
+  rejoined by `_join_parts()`. Removed 2026-11-08: the models are in Git LFS, and `fetch_models.py`
+  downloads any that are missing from the GitHub Release `models-v1`.
 - `device_list_dir` truncates at 2,000 entries.
 - Claude's browser tools can't open `file://` URLs — hence both apps are tiny local HTTP servers.
 - Staging files in batches of ~50 lands under `/mnt/user-data/uploads/<lastfolder>/` with ~1 s lag per 50 MB.

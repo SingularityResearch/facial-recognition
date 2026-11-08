@@ -36,8 +36,11 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `websearch.py` — the labeling tool's **Web search**: Amazon Rekognition celebrity recognition + Google Cloud Vision web detection, combined into suggestions with a confidence level (on click only; US services, English results, each capped under $10/month; keys in `%APPDATA%\FaceLabels`, never in the repo).
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
-  - `models/` — YuNet (detect), ArcFace R50 (recognize; also shipped split as `.part0`–`.part8`, rejoined
-    by `_join_parts()`), SFace (fallback), eDifFIQA (quality), expression model, AdaFace (evaluated, unused),
+  - `fetch_models.py` — downloads missing models (or Git LFS placeholders) from the GitHub Release `models-v1`
+    with SHA-256 checks; run by `setup.bat` and by the .exe on first start. `face_id.check_downloaded()` stops
+    with "Model files weren't downloaded: install Git LFS and run git lfs pull" when it finds placeholders.
+  - `models/` (Git LFS) — YuNet (detect), ArcFace R50 (recognize), SFace (fallback), eDifFIQA (quality),
+    expression model, AdaFace (evaluated, unused; local only, made by `tools/get_adaface.py`, not in git),
     `npu/` (static ArcFace + VitisAI config/cache), `face_landmarker.task` (MediaPipe blendshape cues, optional),
     `wav2small.onnx` (voice arousal/dominance/valence, optional; made by `tools/get_wav2small.py`),
     `pose_landmarker_lite.task` (MediaPipe body posture, optional).

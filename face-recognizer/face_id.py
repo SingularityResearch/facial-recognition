@@ -99,16 +99,28 @@ REC_MODELS = {
 }
 
 
-def _join_parts(path):
-    """Large models ship split into .part0, .part1 ... files; rejoin them once."""
-    parts = sorted(path.parent.glob(path.name + ".part*"), key=lambda p: int(p.suffix[5:]))
-    if not path.exists() and parts:
-        tmp = path.with_suffix(".joining")
-        with open(tmp, "wb") as out:
-            for p in parts:
-                out.write(p.read_bytes())
-        os.replace(tmp, path)
-    return path.exists()
+LFS_MESSAGE = "Model files weren't downloaded: install Git LFS and run git lfs pull"
+
+
+class NotDownloaded(SystemExit):
+    """Files this needs are Git LFS placeholders (the project was copied without Git LFS)."""
+
+
+def check_downloaded():
+    """Stop with LFS_MESSAGE when a model or data file this program reads is a Git LFS placeholder:
+    a small text file left where the real file should be when the project was copied without Git LFS.
+    (Reading one would fail later with an error that doesn't say why.)"""
+    from fetch_models import is_placeholder
+    files = [DET_MODEL, QUAL_MODEL, EXPR_MODEL, CUE_MODEL, POSE_MODEL, VOICE_MODEL,
+             *(MODELS / cfg["file"] for cfg in REC_MODELS.values()),
+             DATA / "faces.npz", DATA / "people.npz", DATA / "photos.json"]
+    missing = [p for p in files if is_placeholder(p)]
+    if missing:
+        models = any(p.parent == MODELS for p in missing)
+        raise NotDownloaded(
+            f"{LFS_MESSAGE}\n  Placeholders instead of: {', '.join(p.name for p in missing[:6])}"
+            f"{' ...' if len(missing) > 6 else ''}"
+            + ("\n  (For the models alone you can also run: python fetch_models.py)" if models else ""))
 
 
 def active_model():
@@ -119,11 +131,12 @@ def active_model():
             sys.exit(f"Unknown FACE_MODEL {forced}; choose from {', '.join(REC_MODELS)}")
         return forced
     for name, cfg in REC_MODELS.items():
-        if _join_parts(MODELS / cfg["file"]):
+        if (MODELS / cfg["file"]).exists():
             return name
-    sys.exit("No face recognition model found in the models folder.")
+    raise NotDownloaded(f"No face recognition model found in {MODELS}. Run: python fetch_models.py")
 
 
+check_downloaded()
 REC_NAME = active_model()
 REC = REC_MODELS[REC_NAME]
 MATCH = REC["match"]
