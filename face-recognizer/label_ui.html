@@ -39,7 +39,7 @@
   #progress.on { display: flex; }
   #progress .bar { flex: 0 0 140px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
   #progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
-  #progress .txt { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #progress .txt { color: var(--muted); font-size: 13px; min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
   /* ---------- layout */
   /* The sidebar (views and people) is a fly-out on the left: closed, the faces get the whole width.
@@ -1060,12 +1060,14 @@ function showImport(st) {
   if (st.known) parts.push(`${st.known.toLocaleString()} already added`);
   if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
   if (st.errors) parts.push(`${st.errors} unreadable`);
-  parts.unshift(cam ? "webcam snapshots" : st.folder || "");
-  let txt = st.running && !st.total ? `${st.stage}: ${st.folder || ""}`
+  // the folder's own name (the whole path is in the tooltip): the counts are what matter at a glance
+  const where = cam ? "webcam snapshots" : (st.folder || "").split(/[\\/]/).filter(Boolean).pop() || "";
+  parts.unshift(where);
+  let txt = st.running && !st.total ? `${st.stage}: ${where}`
     : st.running ? `${st.stage}: ${parts.join(", ")}${left != null && /^Reading/.test(st.stage) ? `, about ${left < 90 ? left + " s" : Math.round(left / 60) + " min"} left` : ""}`
     : st.error ? `Adding photos failed: ${st.error}` : `${st.stage === "Stopped" ? "Stopped" : "Finished"}: ${parts.join(", ")}.`;
   p.querySelector(".txt").textContent = txt;
-  p.querySelector(".txt").title = txt;
+  p.querySelector(".txt").title = st.folder && !cam ? `${txt}\n${st.folder}` : txt;
   $("#stopimp").style.display = st.running ? "" : "none";
 }
 // An import started anywhere else (the webcam check, another window) shows up here too.
