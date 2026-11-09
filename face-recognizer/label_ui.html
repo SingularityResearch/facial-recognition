@@ -179,6 +179,9 @@
   .box.maybe { border: 2px dashed rgb(250 204 21 / .85); }
   .box.maybe:hover { border-style: solid; }
   .box.maybe span { background: rgb(250 204 21 / .9); color: #111; }
+  #vwrap.drawing, #vwrap.drawing .box { cursor: crosshair; }
+  #vwrap.drawing .box { pointer-events: none; }
+  .box.drawn { border: 2px solid #38bdf8; pointer-events: none; }
   .vtoggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
   .stage .nofile { color: #d8ddda; text-align: center; }
   .side { background: var(--panel); padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
@@ -896,8 +899,8 @@ async function openPhoto(i) {
       const b = document.createElement("div");
       b.className = "box" + (f.i === i ? " me" : "") + (f.maybe != null && !f.name ? " maybe" : "");
       Object.assign(b.style, { left: f.box[0] * s + "px", top: f.box[1] * s + "px", width: f.box[2] * s + "px", height: f.box[3] * s + "px" });
-      b.innerHTML = `<span>${esc(f.name ? label(f.name) : f.maybe != null ? `Face? ${Math.round(f.maybe * 100)}%` : "?")}</span>`;
-      b.title = f.name ? label(f.name) : f.maybe != null ? `Possible face (the detector is ${Math.round(f.maybe * 100)}% sure), not named yet` : "Not named yet";
+      b.innerHTML = `<span>${esc(f.name ? label(f.name) : f.maybe === 0 ? "Drawn" : f.maybe != null ? `Face? ${Math.round(f.maybe * 100)}%` : "?")}</span>`;
+      b.title = f.name ? label(f.name) : f.maybe === 0 ? "Drawn by hand, not named yet" : f.maybe != null ? `Possible face (the detector is ${Math.round(f.maybe * 100)}% sure), not named yet` : "Not named yet";
       b.onclick = () => openPhoto(f.i);
       $("#vwrap").appendChild(b);
     }
@@ -914,13 +917,15 @@ async function openPhoto(i) {
     ${others.length ? `<div class="meta">Also in this ${info?.video != null ? "frame" : "photo"}: ${others.map(f => esc(f.name ? label(f.name) : "someone not named yet")).join(", ")}. Click a box to switch to that face.</div>` : ""}
     ${nm ? "" : clues(info?.hints)}
     ${info?.exists ? `<label class="vtoggle" title="Dashed boxes: things the detector thinks may be faces (blurry, turned or partly hidden) that weren't kept when the photo was added. Nothing is saved until you click one."><input type="checkbox" id="possible" ${store.get("possible") !== "0" ? "checked" : ""}> Show possible faces <span id="possn"></span></label>` : ""}
-    <div class="acts">${info?.exists ? `<button class="btn" id="morefaces" style="display:none" title="Adds every dashed box to this ${info?.video != null ? "frame" : "photo"}, ready to name (Ignore any that aren't faces)">Add all possible faces</button>` : ""}
+    <div class="acts">${info?.exists && info?.video == null ? `<button class="btn" id="drawface" title="Drag a box around a face the detector missed (hidden, turned away, tiny), then name it">Draw a face <kbd>B</kbd></button>` : ""}
+      ${info?.exists ? `<button class="btn" id="morefaces" style="display:none" title="Adds every dashed box to this ${info?.video != null ? "frame" : "photo"}, ready to name (Ignore any that aren't faces)">Add all possible faces</button>` : ""}
       <button class="btn" id="wsopen" title="Sends this face to Amazon and this photo to Google, and suggests who it is">Web search</button></div>
     <div class="keys"><kbd>←</kbd> <kbd>→</kbd> previous / next face<br><kbd>Esc</kbd> close</div>`;
   $("#vside").querySelectorAll("[data-v]").forEach(b => b.onclick = () => viewerKey(b.dataset.v));
   $("#vside").querySelectorAll("[data-nm]").forEach(b => b.onclick = async () => { await act("name", [i], b.dataset.nm); openPhoto(i); });
   $("#vside").querySelectorAll("[data-see]").forEach(b => b.onclick = () => openPhoto(+b.dataset.see));
   $("#wsopen").onclick = () => { $("#websearch").classList.add("on"); webSearch(false); };
+  if ($("#drawface")) $("#drawface").onclick = () => drawMode(true);
   const more = $("#morefaces");
   if (more) more.onclick = () => addPossible(i, null);
   const pos = $("#possible");
@@ -952,6 +957,43 @@ async function showPossible(i, s) {
     b.onclick = () => addPossible(i, f.box);
     $("#vwrap").appendChild(b);
   }
+}
+// Draw a face: drag a box on the photo; on release it's added as a face (labels.py Importer.add_drawn)
+// and opens, ready to name. B starts it, Esc cancels.
+function drawMode(on) {
+  const wrap = $("#vwrap"), img = $("#vimg"), btn = $("#drawface");
+  if (!img || !btn) return;
+  wrap.classList.toggle("drawing", on);
+  btn.classList.toggle("primary", on);
+  btn.innerHTML = on ? "Drag around the face… <kbd>Esc</kbd>" : "Draw a face <kbd>B</kbd>";
+  wrap.onpointerdown = !on ? null : e => {
+    e.preventDefault();
+    const r = img.getBoundingClientRect(), s = img.clientWidth / img.naturalWidth;
+    const x0 = Math.min(Math.max(e.clientX - r.left, 0), r.width), y0 = Math.min(Math.max(e.clientY - r.top, 0), r.height);
+    const b = document.createElement("div");
+    b.className = "box drawn";
+    wrap.appendChild(b);
+    let box = null;
+    const move = ev => {
+      const x1 = Math.min(Math.max(ev.clientX - r.left, 0), r.width), y1 = Math.min(Math.max(ev.clientY - r.top, 0), r.height);
+      box = [Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)];
+      Object.assign(b.style, { left: box[0] + "px", top: box[1] + "px", width: box[2] + "px", height: box[3] + "px" });
+    };
+    const up = async () => {
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up);
+      drewAt = Date.now();
+      drawMode(false);
+      if (!box || box[2] < 8 || box[3] < 8) { b.remove(); return; }
+      const i = vIndex;
+      try {
+        const res = await post("/api/drawface", { i, box: box.map(v => Math.round(v / s * 10) / 10) });
+        await loadSummary();
+        toast("Face added: name it now (N), or later under Possible faces");
+        if (vIndex === i) openPhoto(res.i);
+      } catch (err) { b.remove(); toast(err.message, true); }
+    };
+    addEventListener("pointermove", move); addEventListener("pointerup", up);
+  };
 }
 async function addPossible(i, box) {
   try {
@@ -1076,7 +1118,8 @@ async function viewerKey(k) {
 }
 $("#vprev").onclick = () => stepPhoto(-1);
 $("#vnext").onclick = () => stepPhoto(1);
-$("#viewer").onclick = e => { if (e.target.classList.contains("stage")) closePhoto(); };
+let drewAt = 0;                                  // a drag that ends off the photo mustn't close it
+$("#viewer").onclick = e => { if (e.target.classList.contains("stage") && Date.now() - drewAt > 400) closePhoto(); };
 
 // ------------------------------------------------------------------ import
 $("#add").onclick = () => { $("#imperr").textContent = ""; $("#importer").classList.add("on"); $("#impfolder").focus(); };
@@ -1154,7 +1197,9 @@ addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if ($("#websearch").classList.contains("on")) { if (k === "escape") $("#websearch").classList.remove("on"); return; }
   if ($("#viewer").classList.contains("on")) {
-    if (k === "escape") closePhoto();
+    if (k === "escape" && $("#vwrap").classList.contains("drawing")) drawMode(false);
+    else if (k === "escape") closePhoto();
+    else if (k === "b") drawMode(!$("#vwrap").classList.contains("drawing"));
     else if (k === "arrowleft") stepPhoto(-1);
     else if (k === "arrowright") stepPhoto(1);
     else if (["n", "x", "r"].includes(k)) viewerKey(k);

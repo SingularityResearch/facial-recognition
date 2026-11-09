@@ -1349,6 +1349,77 @@ class Importer:
                 self.db.store.save()
         return new
 
+    def add_drawn(self, i, box):
+        """Add a face you drew by hand ([x, y, w, h] in the photo's pixels, as the photo view shows it) to the
+        photo (or video frame) of face i, for faces the detector misses even with the low cut-off (one mostly
+        hidden behind someone scored 0.14, like junk). Its eyes, nose and mouth (needed to line the face up for
+        recognition) come from the detector looking just inside the box with almost no cut-off; failing that,
+        from where they sit in an average face. Kept as a possible face (score 0: drawn). Returns its index."""
+        db, store = self.db, self.db.store
+        x, y, w, h = (float(v) for v in box)
+        if w < 16 or h < 16:
+            raise ValueError("Draw a bigger box around the face.")
+        with db.lock:
+            ph = store.photo[i]
+            rec = store.photos.get(ph, {})
+            path = rec.get("path")
+            frame = rec.get("at", {}).get(store.fid[i]) if rec.get("video") else None
+            have = [store.box[j] for j in db.by_photo().get(ph, [])
+                    if not rec.get("video") or rec.get("at", {}).get(store.fid[j]) == frame]
+        def covered(b):                           # share of the drawn box inside face b
+            ix = max(0.0, min(x + w, b[0] + b[2]) - max(x, b[0]))
+            iy = max(0.0, min(y + h, b[1] + b[3]) - max(y, b[1]))
+            return ix * iy / (w * h)
+        if any(covered(b) > 0.6 for b in have):
+            raise ValueError("There's already a face there.")
+        if not (path and Path(path).exists()):
+            raise ValueError("The original photo isn't on this computer any more.")
+        img = F.load_image(path) if frame is None else F.video_frame(path, frame)
+        if img is None:
+            raise ValueError("Couldn't read the photo.")
+        H, W = img.shape[:2]
+        x, y = max(0.0, x), max(0.0, y)
+        w, h = min(w, W - x), min(h, H - y)
+        row = self._points_in(img, x, y, w, h)
+        if row is None:                           # an average face's points, scaled to the box
+            side = max(w, h)
+            cx, cy = x + w / 2, y + h / 2
+            pts = (F.ARC_TEMPLATE / 112.0 - 0.5) * side + [cx, cy]
+            row = np.array([x, y, w, h, *pts.ravel(), 0.0], np.float32)
+        else:
+            row = np.array([x, y, w, h, *row[4:14], 0.0], np.float32)   # your box, the detector's points
+        rows = [row]
+        new = self._add_possible(ph, rec, img, rows, frame)
+        with db.lock:
+            store.save()
+        return new[0]
+
+    def _points_in(self, img, x, y, w, h):
+        """The detector's best face inside the box (looked at enlarged, cut-off 0.02), or None."""
+        pad = 0.4 * max(w, h)
+        x0, y0 = int(max(0, x - pad)), int(max(0, y - pad))
+        x1, y1 = int(min(img.shape[1], x + w + pad)), int(min(img.shape[0], y + h + pad))
+        region = img[y0:y1, x0:x1]
+        if region.size == 0:
+            return None
+        z = 320.0 / max(region.shape[:2])
+        region = cv2.resize(region, None, fx=z, fy=z, interpolation=cv2.INTER_CUBIC if z > 1 else cv2.INTER_AREA)
+        with self._more_lock:
+            det = cv2.FaceDetectorYN.create(str(F.DET_MODEL), "", (region.shape[1], region.shape[0]), 0.02, 0.3, 50)
+            _, found = det.detect(region)
+        if found is None:
+            return None
+        best, best_iou = None, 0.3
+        for r in found:
+            r = r.copy()
+            r[:14] /= z
+            r[[0, 4, 6, 8, 10, 12]] += x0         # x and the 5 points' x (2 and 3 are width and height)
+            r[[1, 5, 7, 9, 11, 13]] += y0
+            k = F._iou(r, [x, y, w, h])
+            if k > best_iou:
+                best, best_iou = r, k
+        return best
+
     def scan_possible(self):
         """Look for possible faces in every photo added before possible faces were kept, in the background
         (progress in self.status, like an import). Skips videos, and online-only cloud files (they'd be

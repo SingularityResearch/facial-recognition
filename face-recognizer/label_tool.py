@@ -193,6 +193,9 @@ def make_handler(db, importer):
                 if path == "/api/import":
                     importer.start(body.get("folder", ""))
                     return self.send({"ok": True})
+                if path == "/api/drawface":               # a face drawn by hand in the photo view
+                    j = importer.add_drawn(int(body.get("i", -1)), body.get("box") or [])
+                    return self.send({"ok": True, "i": j})
                 if path == "/api/possible/scan":            # look for possible faces in photos added before
                     importer.scan_possible()
                     return self.send({"ok": True})
