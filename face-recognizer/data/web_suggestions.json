@@ -3102,5 +3102,94 @@
     "exactPages": 0
    }
   }
+ },
+ "63aa800161a76511-581-528": {
+  "when": "2026-11-08 22:17",
+  "suggestions": [
+   {
+    "name": "Benjamin Franklin",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Benjamin Franklin (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q34969",
+     "https://www.imdb.com/name/nm10669235"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Benjamin Franklin",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q34969",
+      "https://www.imdb.com/name/nm10669235"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "cash"
+    ],
+    "names": [
+     "Cash",
+     "Banknote"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "30da1b39762a5800-150-146": {
+  "when": "2026-11-08 22:18",
+  "suggestions": [
+   {
+    "name": "Miley Cyrus",
+    "level": "high",
+    "confidence": 96.3,
+    "why": [
+     "Amazon recognizes Miley Cyrus (96.3% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q4235"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Miley Cyrus",
+     "confidence": 96.3,
+     "links": [
+      "https://www.wikidata.org/wiki/Q4235"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "screenshot"
+    ],
+    "names": [
+     "Screenshot",
+     "Meter",
+     "Text messaging"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
  }
 }
