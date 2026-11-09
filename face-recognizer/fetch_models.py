@@ -12,7 +12,9 @@ byte-identical), else, or when that fails or the file there has changed, from th
 "models-v1":
 - YuNet, eDifFIQA, the expression model: OpenCV Zoo on Hugging Face (pinned revisions).
 - Face and pose landmarker: Google's MediaPipe model storage (version 1, not "latest").
-- ArcFace R50: only "models-v1". InsightFace publishes it inside buffalo_l.zip (289 MB for this 174 MB file).
+- ArcFace R50: InsightFace's release v0.7, inside buffalo_l.zip (289 MB, 5 models). Only this file's 160 MB
+  of compressed bytes are fetched (HTTP range requests: the zip's table of contents, then the one file),
+  and unpacked as they arrive.
 - Wav2Small: only "models-v1". audEERING publishes the weights; the ONNX file is made by tools/get_wav2small.py.
 
 Run:  python fetch_models.py           (FaceRecognizer.exe does this by itself on first start)
@@ -22,12 +24,16 @@ tools/get_adaface.py) and the NPU copy of ArcFace (Ryzen AI only; it's in the re
 Licences: ArcFace (InsightFace) and Wav2Small (audEERING, CC BY-NC-SA 4.0) are non-commercial.
 """
 import hashlib
+import io
 import json
 import os
+import struct
 import sys
 import time
 import urllib.error
 import urllib.request
+import zipfile
+import zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -55,6 +61,9 @@ ORIGIN = {
                   "facial_expression_recognition_mobilefacenet_2022july.onnx"),
     "face_landmarker.task": MP.format("face_landmarker", "face_landmarker", "face_landmarker.task"),
     "pose_landmarker_lite.task": MP.format("pose_landmarker", "pose_landmarker_lite", "pose_landmarker_lite.task"),
+    # (zip, file in it): only that file's bytes are downloaded
+    "arcface_w600k_r50.onnx":
+        ("https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip", "w600k_r50.onnx"),
 }
 
 # file: (size in bytes, sha256). Change TAG and these together when a model changes.
@@ -87,6 +96,66 @@ def needed():
             if not (MODELS / name).exists() or is_placeholder(MODELS / name) or (MODELS / name).stat().st_size != size]
 
 
+class _RemoteFile(io.RawIOBase):
+    """A file on a web server, read with HTTP range requests (so zipfile can read a zip's table of contents
+    without downloading the zip)."""
+
+    def __init__(self, url, hdr):
+        self.url, self.hdr, self.pos = url, hdr, 0
+        with urllib.request.urlopen(urllib.request.Request(url, headers=hdr, method="HEAD"), timeout=60) as r:
+            self.size = int(r.headers["Content-Length"])
+
+    def readable(self):
+        return True
+
+    def seekable(self):
+        return True
+
+    def tell(self):
+        return self.pos
+
+    def seek(self, off, whence=0):
+        self.pos = off if whence == 0 else self.pos + off if whence == 1 else self.size + off
+        return self.pos
+
+    def get(self, start, end, timeout=60):
+        """Response for bytes start..end-1; raises OSError if the server doesn't send just that part."""
+        req = urllib.request.Request(self.url, headers={**self.hdr, "Range": f"bytes={start}-{end - 1}"})
+        r = urllib.request.urlopen(req, timeout=timeout)
+        if r.status != 206:
+            r.close()
+            raise OSError(f"{self.url} doesn't serve parts of the file")
+        return r
+
+    def readinto(self, b):
+        if self.pos >= self.size:
+            return 0
+        with self.get(self.pos, min(self.size, self.pos + len(b))) as r:
+            d = r.read()
+        b[:len(d)] = d
+        self.pos += len(d)
+        return len(d)
+
+
+def _zip_member(url, member, hdr):
+    """Open one file inside a zip on a web server: (response, unpack) where unpack(chunk) gives the file's
+    bytes. Reads the zip's table of contents and that file's header, then streams just its compressed bytes."""
+    rf = _RemoteFile(url, hdr)
+    info = zipfile.ZipFile(io.BufferedReader(rf, 1 << 16)).getinfo(member)
+    if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+        raise OSError(f"{member} in {url} is packed in a way this can't unpack")
+    rf.seek(info.header_offset)
+    head = rf.read(30)
+    if head[:4] != b"PK\x03\x04":
+        raise OSError(f"{url} isn't the expected zip")
+    n, extra = struct.unpack("<HH", head[26:30])
+    start = info.header_offset + 30 + n + extra
+    r = rf.get(start, start + info.compress_size)
+    if info.compress_type == zipfile.ZIP_STORED:
+        return r, lambda chunk: chunk
+    return r, zlib.decompressobj(-15).decompress
+
+
 def _source(name, attempt):
     """(url, headers) for a download attempt at models-v1: odd attempts use the release download link,
     even ones GitHub's API for the same file (falling back to the link if the API listing can't be read)."""
@@ -117,10 +186,15 @@ def fetch(progress=None):
         for attempt in range(0 if name in ORIGIN else 1, TRIES + 1):
             h, got = hashlib.sha256(), 0
             url, hdr = (ORIGIN[name], hdr0) if attempt == 0 else _source(name, attempt)
-            req = urllib.request.Request(url, headers=hdr)
             try:
-                with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
+                if isinstance(url, tuple):                  # a file inside a zip
+                    r, unpack = _zip_member(*url, hdr)
+                else:
+                    r, unpack = urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=60), None
+                with r, open(tmp, "wb") as out:
                     while chunk := r.read(1 << 20):
+                        if unpack:
+                            chunk = unpack(chunk)
                         out.write(chunk)
                         h.update(chunk)
                         got += len(chunk)

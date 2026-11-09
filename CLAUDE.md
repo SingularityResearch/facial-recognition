@@ -46,8 +46,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     into `models/florence2/` (not in git, not in `fetch_models.py`).
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
-  - `fetch_models.py` — downloads missing models (or Git LFS placeholders): five from their publishers (OpenCV Zoo on Hugging
-    Face, pinned; MediaPipe storage v1), ArcFace + Wav2Small (and any fallback) from the GitHub Release `models-v1`,
+  - `fetch_models.py` — downloads missing models (or Git LFS placeholders): six from their publishers (OpenCV Zoo on Hugging
+    Face, pinned; MediaPipe storage v1; ArcFace's bytes only, by range requests, from InsightFace's `buffalo_l.zip`),
+    Wav2Small (and any fallback) from the GitHub Release `models-v1`,
     with SHA-256 checks; run by `setup.bat` and by the .exe on first start. `face_id.check_downloaded()` stops
     with "Model files weren't downloaded: install Git LFS and run git lfs pull" when it finds placeholders.
   - `models/` (Git LFS) — YuNet (detect), ArcFace R50 (recognize), SFace (fallback), eDifFIQA (quality),
