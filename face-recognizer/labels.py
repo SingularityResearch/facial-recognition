@@ -62,6 +62,7 @@ def file_hash(path):
 CLOUD = 0x400000 | 0x1000                     # Windows file attributes: data still in the cloud (online-only)
 
 
+SAME = 0.95        # face prints this alike are the same picture again (LabelDB.stacks)
 FACE_SHOW = 0.25   # share of possible faces drawn as dashed boxes: the most face-like (LabelDB.face_cut)
 
 
@@ -671,7 +672,8 @@ class LabelDB:
     def changed(self):
         self.version += 1
         # kept: face prints, and the faceness model (retrained when faces are added, not on every label)
-        self._cache = {k: v for k, v in self._cache.items() if k in ("E", "E_n", "fm", "fm_n", "fs", "fc", "fc_n")}
+        self._cache = {k: v for k, v in self._cache.items()
+                       if k in ("E", "E_n", "fm", "fm_n", "fs", "fc", "fc_n", "st", "st_n")}
 
     def by_photo(self):
         if self._cache.get("bp_n") != self.n:
@@ -941,6 +943,40 @@ class LabelDB:
         out = [[i, self.q(i), self.maybe(i), round(self.face_score(i), 3), self.shown(i)]
                for i, nm, s, _ in self.triage() if self.maybe(i) is not None and not (nm and s >= MATCH)]
         return sorted(out, key=lambda f: -f[3])
+
+    def stacks(self):
+        """{face: first face of its stack} for faces that are the same picture as another face: face prints at
+        least SAME alike (screenshots of one avatar, burst shots, re-saved copies). The labeling page shows a
+        stack as one tile. Measured: 31 copies of one avatar in different screenshots were 0.96 alike (median);
+        different photos of one real person 0.44 (median), 0.74 at the 99th percentile, 0.2% at 0.9 or more.
+        Recomputed when faces are added."""
+        if self._cache.get("st_n") != self.n:
+            self._cache["st_n"] = self.n
+            E = self.E()
+            parent = list(range(self.n))
+
+            def root(a):
+                while parent[a] != a:
+                    parent[a] = parent[parent[a]]
+                    a = parent[a]
+                return a
+            for a in range(0, self.n, 2048):
+                M = E[a:a + 2048] @ E.T
+                for r, j in zip(*np.nonzero(M >= SAME)):
+                    i = a + int(r)
+                    if i < j:
+                        ri, rj = root(i), root(int(j))
+                        if ri != rj:
+                            parent[max(ri, rj)] = min(ri, rj)
+            out = {}
+            for i in range(self.n):
+                r = root(i)
+                if r != i:
+                    out[i] = r
+            for r in set(out.values()):
+                out[r] = r
+            self._cache["st"] = out
+        return self._cache["st"]
 
     def possible_left(self):
         """Photos not yet looked at with the low cut-off (Importer.scan_possible)."""

@@ -176,6 +176,7 @@
   .box.me { border-color: var(--accent); border-width: 3px; box-shadow: 0 0 0 2000px rgb(0 0 0 / .18); }
   .box span { position: absolute; left: -2px; bottom: 100%; margin-bottom: 3px; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: rgb(0 0 0 / .7); color: #fff; }
   .box.me span { background: var(--accent); color: var(--accent-ink); }
+  .face .stackn { position: absolute; right: 4px; top: 4px; font: 700 11px var(--sans); padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .72); color: #fff; }
   .box.maybe { border: 2px dashed rgb(250 204 21 / .85); }
   .box.maybe:hover { border-style: solid; }
   .box.maybe span { background: rgb(250 204 21 / .9); color: #111; }
@@ -350,6 +351,7 @@ const IGN = "#ignore";
 const label = n => n === IGN ? "Ignored" : n;
 const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
 
+let STACKOF = {}, STACKN = -1, STACK = new Map();   // same picture again: face -> first face of its stack; tile -> its faces
 let SUM = null, FIDS = [], view = { v: "suggested" }, showLow = false, WEBCAM = new Set(), VIDEO = new Set();
 let sel = new Set(), order = [], secOf = new Map(), anchor = null;
 const PAGE = 160;     // faces shown per section before "show more"
@@ -372,6 +374,7 @@ const thumb = i => `/thumb/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}`;
 async function loadSummary() {
   SUM = await get("/api/summary");
   if (SUM.faces !== FIDS.length) FIDS = (await get("/api/fids")).fids;
+  if (SUM.faces !== STACKN) { const r = await get("/api/stacks"); STACKOF = r.of; STACKN = r.n; }
   const set = (id, n, hot) => { const e = $("#n-" + id); e.textContent = n ? n.toLocaleString() : ""; e.classList.toggle("hot", !!hot && n > 0); };
   set("suggested", SUM.suggested, true); set("unknown", SUM.unknown, true); set("possible", SUM.possible); set("auto", SUM.auto); set("checks", SUM.checks);
   set("tagged", SUM.tagged, true);
@@ -443,7 +446,7 @@ async function render(top) {
   const scroll = top ? 0 : main.scrollTop;
   markNav();
   let html;
-  order = []; secOf = new Map();
+  order = []; secOf = new Map(); STACK.clear();       // stacks are rebuilt by grid() for this view only
   try {
     const low = showLow ? "1" : "0";
     if (view.v === "suggested") html = viewSuggested(await get(`/api/suggested?low=${low}`));
@@ -472,6 +475,16 @@ const SECTIONS = new Map();
 let secId = 0;
 function grid(faces, sec, opts = {}) {
   const id = "g" + (++secId);
+  // the same picture again (a screenshot avatar, burst shots, copies) shows once, as a stack: acting on the
+  // tile acts on every face in it (act() expands it)
+  const firstOf = new Map(), out = [];
+  for (const f of faces) {
+    const k = STACKOF[f.i];
+    if (k == null) { out.push(f); continue; }
+    if (!firstOf.has(k)) { firstOf.set(k, f); out.push(f); STACK.set(f.i, [f.i]); }
+    else STACK.get(firstOf.get(k).i).push(f.i);
+  }
+  faces = out;
   SECTIONS.set(id, { faces, sec, opts });
   return `<div class="grid" data-grid="${id}"></div>`;
 }
@@ -501,8 +514,9 @@ function tile(f, o) {
                cam ? (f.by === "auto" ? "webcam snapshot, named automatically: it teaches the recognizer once you confirm it" : "webcam snapshot") : "",
                vid ? "from a video" : ""]
     .filter(Boolean).join(", ");
-  return `<button class="face ${sel.has(f.i) ? "sel" : ""}" data-i="${f.i}" title="${tip}" aria-pressed="${sel.has(f.i)}">
-    <img loading="lazy" src="${thumb(f.i)}" alt="">${bar}${tags ? `<span class="tags">${tags}</span>` : ""}<span class="zoom" aria-hidden="true">⤢</span></button>`;
+  const k = (STACK.get(f.i) || []).length;
+  return `<button class="face ${sel.has(f.i) ? "sel" : ""}" data-i="${f.i}" title="${tip}${k > 1 ? `${tip ? ", " : ""}the same picture in ${k} photos: acting on it acts on all ${k}` : ""}" aria-pressed="${sel.has(f.i)}">
+    <img loading="lazy" src="${thumb(f.i)}" alt="">${bar}${tags ? `<span class="tags">${tags}</span>` : ""}${k > 1 ? `<span class="stackn">×${k}</span>` : ""}<span class="zoom" aria-hidden="true">⤢</span></button>`;
 }
 const F3 = a => ({ i: a[0], s: a[1], q: a[2], by: a[3] });
 
@@ -709,7 +723,7 @@ function selbar() {
   const secs = [...selSections()], one = secs.length === 1 ? personSec(secs[0]) : null;
   const named = secs.every(personSec);
   const inSugg = view.v === "suggested" || view.v === "tagged";
-  bar.innerHTML = `<span class="count">${plural(sel.size, "face")}</span>
+  bar.innerHTML = `<span class="count">${plural(expand([...sel]).length, "face")}</span>
     ${inSugg ? `<button class="go" data-k="a">Accept<kbd>A</kbd></button>` : ""}
     <button data-k="n">Name…<kbd>N</kbd></button>
     ${named ? `<button data-k="r">${one ? "Not " + esc(label(one)) : "Not this person"}<kbd>R</kbd></button>` : ""}
@@ -744,8 +758,10 @@ async function key(k) {
 }
 function groupBy(faces) { const m = new Map(); for (const i of faces) { const s = secOf.get(i); m.set(s, [...(m.get(s) || []), i]); } return m; }
 
+const expand = faces => [...new Set(faces.flatMap(i => STACK.get(i) || [i]))];   // a stack tile stands for all its faces
 async function act(action, faces, name, quiet) {
   if (!faces.length) return;
+  faces = expand(faces);
   document.querySelectorAll(faces.map(i => `.face[data-i="${i}"]`).join(",")).forEach(b => b.classList.add("gone"));
   try {
     const r = await post("/api/act", { action, faces, name });

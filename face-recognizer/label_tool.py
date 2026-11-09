@@ -153,6 +153,8 @@ def make_handler(db, importer):
                         s["app"] = "face-labels"
                         s["import"] = importer.status
                         return self.send(s)
+                    if path == "/api/stacks":                # same picture again: {face: first face of its stack}
+                        return self.send({"n": db.n, "of": db.stacks()})
                     if path == "/api/fids":                  # face index -> permanent ID (for image URLs)
                         return self.send({"fids": db.store.fid})
                     if path == "/api/suggested":
