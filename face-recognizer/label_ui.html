@@ -940,7 +940,8 @@ async function openPhoto(i) {
     ${info?.exists ? `<div class="clue" id="desc"><h4>The photo, described <small>(by a model on this computer)</small></h4>
       <div id="desctext"></div>
       <div class="acts" style="margin-top:6px"><button class="btn small" id="descgo" title="Asks the vision model in LM Studio on this computer to describe the photo and read any text in it (nothing leaves this computer)">Describe photo <kbd>D</kbd></button>
-      <label class="vtoggle"><input type="checkbox" id="descauto" ${store.get("describe") === "1" ? "checked" : ""}> Every photo</label></div></div>` : ""}
+      <label class="vtoggle"><input type="checkbox" id="descauto" ${store.get("describe") === "1" ? "checked" : ""}> Every photo</label></div>
+      <div class="acts" style="margin-top:6px"><button class="btn small" id="descall" title="Describes every photo not described yet, in the background (progress at the top; Stop there pauses it, and it carries on from where it stopped)">Describe all photos</button> <small id="desccount"></small></div></div>` : ""}
     ${nm ? "" : clues(info?.hints)}
     ${info?.exists ? `<label class="vtoggle" title="Dashed boxes: things the detector thinks may be faces (blurry, turned or partly hidden) that weren't kept when the photo was added. Nothing is saved until you click one."><input type="checkbox" id="possible" ${store.get("possible") !== "0" ? "checked" : ""}> Show possible faces <span id="possn"></span></label>` : ""}
     <div class="acts">${info?.exists && info?.video == null ? `<button class="btn" id="drawface" title="Drag a box around a face the detector missed (hidden, turned away, tiny), then name it">Draw a face <kbd>B</kbd></button>` : ""}
@@ -954,6 +955,17 @@ async function openPhoto(i) {
   if ($("#drawface")) $("#drawface").onclick = () => drawMode(true);
   if ($("#desc")) {
     $("#descgo").onclick = () => describePhoto(i, true);
+    $("#descall").onclick = async () => {
+      try { await post("/api/describe/all", {}); toast("Describing every photo in the background: progress at the top"); pollImport(); }
+      catch (err) { toast(err.message, true); }
+    };
+    get("/api/describe/status").then(r => {
+      if (vIndex !== i || !$("#desccount")) return;
+      const left = r.photos - r.described;
+      $("#desccount").textContent = r.ok ? `${r.described.toLocaleString()} of ${r.photos.toLocaleString()} described` : r.why;
+      if (left <= 0) $("#descall").style.display = "none";
+      else $("#descall").textContent = `Describe all photos (${left.toLocaleString()} to go, about ${Math.max(1, Math.round(left * 3.5 / 3600))} h)`;
+    }).catch(() => {});
     $("#descauto").onchange = () => { store.set("describe", $("#descauto").checked ? "1" : "0"); if ($("#descauto").checked) describePhoto(i, false); };
     get(`/api/describe/${i}`).then(r => {
       if (vIndex !== i) return;
@@ -1215,16 +1227,19 @@ function showImport(st) {
   const el = (Date.now() / 1000 - st.started);
   const rate = st.done - st.known > 0 ? (st.done - st.known) / el : 0;
   const left = rate > 0 ? Math.round((st.total - st.done) / rate) : null;
-  const parts = [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.videos ? "photos and videos" : "photos"}`, plural(st.faces, "face") + " found",
-    `${st.auto.toLocaleString()} named automatically`];
-  if (st.known) parts.push(st.folder === "possible faces" ? `${st.known.toLocaleString()} not on this computer now` : `${st.known.toLocaleString()} already added`);
+  const descr = st.folder === "photo descriptions";
+  const parts = descr ? [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} photos`, `${st.new.toLocaleString()} described`]
+    : [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.videos ? "photos and videos" : "photos"}`, plural(st.faces, "face") + " found",
+       `${st.auto.toLocaleString()} named automatically`];
+  if (st.known) parts.push(descr ? `${st.known.toLocaleString()} not on this computer now` : st.folder === "possible faces" ? `${st.known.toLocaleString()} not on this computer now` : `${st.known.toLocaleString()} already added`);
   if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
   if (st.errors) parts.push(`${st.errors} unreadable`);
   // the folder's own name (the whole path is in the tooltip): the counts are what matter at a glance
   const where = cam ? "webcam snapshots" : (st.folder || "").split(/[\\/]/).filter(Boolean).pop() || "";
   parts.unshift(where);
+  if (descr) parts.shift();                         // the stage already says what it is
   let txt = st.running && !st.total ? `${st.stage}: ${where}`
-    : st.running ? `${st.stage}: ${parts.join(", ")}${left != null && /^Reading/.test(st.stage) ? `, about ${left < 90 ? left + " s" : Math.round(left / 60) + " min"} left` : ""}`
+    : st.running ? `${st.stage}: ${parts.join(", ")}${left != null && /^(Reading|Describing|Looking)/.test(st.stage) ? `, about ${left < 90 ? left + " s" : left < 5400 ? Math.round(left / 60) + " min" : (left / 3600).toFixed(1) + " h"} left` : ""}`
     : st.error ? `Adding photos failed: ${st.error}` : `${st.stage === "Stopped" ? "Stopped" : "Finished"}: ${parts.join(", ")}.`;
   p.querySelector(".txt").textContent = txt;
   p.querySelector(".txt").title = st.folder && !cam ? `${txt}\n${st.folder}` : txt;

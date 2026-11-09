@@ -79,6 +79,77 @@ def make_handler(db, importer):
             img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
         return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
 
+    def describe_all():
+        """Describe every photo not described yet (not videos, duplicates or online-only cloud files) in the
+        background; progress in importer.status so the page's progress bar shows it, and the page's Stop button
+        stops it. One request to LM Studio at a time, the next photos loading meanwhile: with 3 at once, LM Studio's
+        log showed generation falling from 48 to 1.3 tokens/s per request (Qwen 3.6 35B-A3B), 45 s a photo
+        instead of about 3.5 s."""
+        if importer.thread and importer.thread.is_alive():
+            raise ValueError("An import is already running.")
+        name = describe.model()                  # raises Unavailable with what's missing
+        importer.stop.clear()
+
+        def run():
+            st = importer.status = dict(running=True, folder="photo descriptions", stage="Describing photos",
+                                        total=0, done=0, new=0, known=0, duplicates=0, faces=0, auto=0, errors=0,
+                                        started=time.time(), error=None)
+            try:
+                with db.lock:
+                    todo = [(h, p["path"]) for h, p in db.store.photos.items()
+                            if p.get("path") and not p.get("video") and not p.get("dup_of")]
+                todo = [(h, p) for h, p in todo if not describe.saved(h)]
+                st["total"] = len(todo)
+
+                def load(item):                     # on 2 loader threads, a few photos ahead
+                    h, path = item
+                    if not Path(path).exists() or L.online_only(path):
+                        return h, None
+                    img = F.load_image(path)
+                    if img is None:
+                        raise OSError("unreadable")
+                    sc = min(1.0, 1024 / max(img.shape[:2]))
+                    if sc < 1:
+                        img = cv2.resize(img, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
+                    return h, cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(2) as ex:
+                    window = [ex.submit(load, it) for it in todo[:4]]
+                    nxt = 4
+                    while window and not importer.stop.is_set():
+                        fu = window.pop(0)
+                        if nxt < len(todo):
+                            window.append(ex.submit(load, todo[nxt]))
+                            nxt += 1
+                        try:
+                            h, jpg = fu.result()
+                            if jpg is None:
+                                st["known"] += 1
+                            else:
+                                describe.save(h, describe.ask(jpg, name), write=False)
+                                st["new"] += 1
+                        except describe.Unavailable as e:
+                            st["errors"] += 1
+                            if "isn't running" in str(e):
+                                raise
+                        except Exception:
+                            st["errors"] += 1
+                        st["done"] += 1
+                        if st["done"] % 25 == 0:
+                            describe.flush()
+                    for fu in window:
+                        fu.cancel()
+                st["stage"] = "Stopped" if importer.stop.is_set() else "Done"
+            except Exception as e:
+                st["error"] = f"{type(e).__name__}: {e}"
+                st["stage"] = "Failed"
+            finally:
+                describe.flush()
+                st["running"] = False
+                st["elapsed"] = round(time.time() - st["started"], 1)
+        importer.thread = threading.Thread(target=run, daemon=True)
+        importer.thread.start()
+
     def search_picture(i, face):
         """JPEG to search the web with: the whole photo, or the face with hair, chin and some background
         around it (enlarged to at least 400 px, as search sites find small pictures poorly)."""
@@ -141,7 +212,10 @@ def make_handler(db, importer):
                     return self.send(jpg, "image/jpeg", cache=True)
                 # "Describe photo" (describe.py): outside the database lock, as it asks LM Studio
                 if path == "/api/describe/status":
-                    return self.send(describe.status())
+                    with db.lock:
+                        n = sum(1 for p in db.store.photos.values()
+                                if p.get("path") and not p.get("video") and not p.get("dup_of"))
+                    return self.send(dict(describe.status(), described=describe.count(), photos=n))
                 if path.startswith("/api/describe/"):
                     i = int(path[14:])
                     if not 0 <= i < db.n:
@@ -244,6 +318,12 @@ def make_handler(db, importer):
                     return self.send({"ok": True, **n})
                 if path == "/api/autoname":
                     return self.send({"ok": True, "named": db.autoname()})
+                if path == "/api/describe/all":          # describe every photo not described yet (background)
+                    try:
+                        describe_all()
+                    except describe.Unavailable as e:
+                        raise ValueError(str(e))
+                    return self.send({"ok": True})
                 if path == "/api/describe":              # describe the photo with the local model (LM Studio)
                     i = body.get("i")
                     if not (isinstance(i, int) and 0 <= i < db.n):

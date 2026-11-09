@@ -102,12 +102,29 @@ def saved(key):
         return _load().get(key)
 
 
-def save(key, d):
+def save(key, d, write=True):
+    """Keep a description; write=False leaves writing the file to flush() (the describe-all pass writes
+    every 25 photos, not after each: the file grows to several MB)."""
     with _lock:
         s = _load()
         s[key] = dict(d, when=time.strftime("%Y-%m-%d %H:%M"))
-        STORE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = STORE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(s, ensure_ascii=False, indent=0), "utf-8")
-        os.replace(tmp, STORE)
+        if write:
+            _write(s)
         return s[key]
+
+
+def flush():
+    with _lock:
+        _write(_load())
+
+
+def _write(s):
+    STORE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = STORE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(s, ensure_ascii=False, indent=0), "utf-8")
+    os.replace(tmp, STORE)
+
+
+def count():
+    with _lock:
+        return len(_load())
