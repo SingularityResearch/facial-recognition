@@ -4,8 +4,16 @@ fetch_models.py - download the face models the apps use, when they're missing.
 The models live in the repo through Git LFS. A copy made without Git LFS (Download ZIP without LFS
 files, or git clone without git-lfs) has small placeholder files instead, and FaceRecognizer.exe from
 a GitHub Release comes without models. This downloads the ones the tracker and labeling tool use
-(about 196 MB) from the project's GitHub Release "models-v1", checks each file's SHA-256, and puts it
-in models\. Files already there and correct are left alone.
+(about 196 MB), checks each file's SHA-256, and puts it in models\. Files already there and correct are
+left alone.
+
+Where from: each model from its original publisher when it offers the very same file (checked 2026-11-09:
+byte-identical), else, or when that fails or the file there has changed, from the project's GitHub Release
+"models-v1":
+- YuNet, eDifFIQA, the expression model: OpenCV Zoo on Hugging Face (pinned revisions).
+- Face and pose landmarker: Google's MediaPipe model storage (version 1, not "latest").
+- ArcFace R50: only "models-v1". InsightFace publishes it inside buffalo_l.zip (289 MB for this 174 MB file).
+- Wav2Small: only "models-v1". audEERING publishes the weights; the ONNX file is made by tools/get_wav2small.py.
 
 Run:  python fetch_models.py           (FaceRecognizer.exe does this by itself on first start)
 
@@ -33,7 +41,21 @@ BASE = f"https://github.com/{REPO}/releases/download/{TAG}/"
 API = f"https://api.github.com/repos/{REPO}/releases/tags/{TAG}"
 _api_urls = {}
 LFS_SIGN = b"version https://git-lfs"
-TRIES, WAIT = 4, 3                    # attempts per file; seconds before retry n is WAIT * n
+TRIES, WAIT = 4, 3                    # attempts at models-v1 per file; seconds before retry n is WAIT * n
+HF = "https://huggingface.co/opencv/{}/resolve/{}/{}"
+MP = "https://storage.googleapis.com/mediapipe-models/{}/{}/float16/1/{}"
+# The original publishers' copies of the same files (same size and SHA-256 as below), tried first, once each.
+ORIGIN = {
+    "face_detection_yunet_2023mar.onnx":
+        HF.format("face_detection_yunet", "3cc26e7f1014a5ee5d74a42acee58bafc9d0a310", "face_detection_yunet_2023mar.onnx"),
+    "ediffiqa_tiny_jun2024.onnx":
+        HF.format("face_image_quality_assessment_ediffiqa", "4fce5f6a5438b55a9f996a4e02164b63b849c587", "ediffiqa_tiny_jun2024.onnx"),
+    "facial_expression_recognition_mobilefacenet_2022july.onnx":
+        HF.format("facial_expression_recognition", "b473270576eabddaacffd08adb4bed27b3fc54e6",
+                  "facial_expression_recognition_mobilefacenet_2022july.onnx"),
+    "face_landmarker.task": MP.format("face_landmarker", "face_landmarker", "face_landmarker.task"),
+    "pose_landmarker_lite.task": MP.format("pose_landmarker", "pose_landmarker_lite", "pose_landmarker_lite.task"),
+}
 
 # file: (size in bytes, sha256). Change TAG and these together when a model changes.
 FILES = {
@@ -66,8 +88,8 @@ def needed():
 
 
 def _source(name, attempt):
-    """(url, headers) for a download attempt: odd attempts use the release download link, even ones
-    GitHub's API for the same file (falling back to the link if the API listing can't be read)."""
+    """(url, headers) for a download attempt at models-v1: odd attempts use the release download link,
+    even ones GitHub's API for the same file (falling back to the link if the API listing can't be read)."""
     hdr = {"User-Agent": "FaceRecognizer-model-fetch"}
     if attempt % 2 == 0:
         try:
@@ -87,12 +109,14 @@ def fetch(progress=None):
     todo = needed()
     total, done = sum(FILES[n][0] for n in todo), 0
     MODELS.mkdir(parents=True, exist_ok=True)
+    hdr0 = {"User-Agent": "FaceRecognizer-model-fetch"}
     for name in todo:
         size, sha = FILES[name]
         tmp = MODELS / (name + ".download")
-        for attempt in range(1, TRIES + 1):
+        # attempt 0: the original publisher (any failure, including a changed file, falls through to models-v1)
+        for attempt in range(0 if name in ORIGIN else 1, TRIES + 1):
             h, got = hashlib.sha256(), 0
-            url, hdr = _source(name, attempt)
+            url, hdr = (ORIGIN[name], hdr0) if attempt == 0 else _source(name, attempt)
             req = urllib.request.Request(url, headers=hdr)
             try:
                 with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
@@ -109,6 +133,10 @@ def fetch(progress=None):
                 break
             except Exception as e:
                 tmp.unlink(missing_ok=True)
+                if progress:
+                    progress(done, total, name)
+                if attempt == 0:
+                    continue
                 # GitHub's download servers sometimes answer 5xx or drop a large download midway: try
                 # again after a pause. A 4xx (e.g. 404: the release is gone) won't fix itself.
                 lasting = isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500
