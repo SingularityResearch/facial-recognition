@@ -877,5 +877,2230 @@
     "exactPages": 0
    }
   }
+ },
+ "0bf1092f26011091-824-320-f1050": {
+  "when": "2026-11-08 17:11",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "rock concert"
+    ],
+    "names": [
+     "Guitarist",
+     "Concert",
+     "World Music Day",
+     "Rock and roll"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "f4a336eefeb27382-770-343-f2370": {
+  "when": "2026-11-08 17:11",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "concert"
+    ],
+    "names": [
+     "Concert"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "df338d1a0522fafa-625-378-f390": {
+  "when": "2026-11-08 17:12",
+  "suggestions": [
+   {
+    "name": "Jani Liimatainen",
+    "level": "medium",
+    "confidence": 87.4,
+    "why": [
+     "Amazon recognizes Jani Liimatainen (87.4% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q432750",
+     "https://www.imdb.com/name/nm1816049"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Jani Liimatainen",
+     "confidence": 87.4,
+     "links": [
+      "https://www.wikidata.org/wiki/Q432750",
+      "https://www.imdb.com/name/nm1816049"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "rock concert"
+    ],
+    "names": [
+     "Rock concert",
+     "Guitarist",
+     "Concert",
+     "Musical ensemble",
+     "Flat-panel display",
+     "Composer",
+     "Display device"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "df338d1a0522fafa-587-363-f300": {
+  "when": "2026-11-08 17:12",
+  "suggestions": [
+   {
+    "name": "Jani Liimatainen",
+    "level": "low",
+    "confidence": 83.9,
+    "why": [
+     "Amazon recognizes Jani Liimatainen (83.9% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q432750",
+     "https://www.imdb.com/name/nm1816049"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Jani Liimatainen",
+     "confidence": 83.9,
+     "links": [
+      "https://www.wikidata.org/wiki/Q432750",
+      "https://www.imdb.com/name/nm1816049"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "rock concert"
+    ],
+    "names": [
+     "Musical ensemble",
+     "Guitarist",
+     "Concert",
+     "Rock concert",
+     "World Music Day",
+     "Composer"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "646517c4705a831f-376-190-f390": {
+  "when": "2026-11-08 17:12",
+  "suggestions": [
+   {
+    "name": "Les Claypool",
+    "level": "high",
+    "confidence": 98.7,
+    "why": [
+     "Amazon recognizes Les Claypool (98.7% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q514985",
+     "https://www.imdb.com/name/nm0165633"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Les Claypool",
+     "confidence": 98.7,
+     "links": [
+      "https://www.wikidata.org/wiki/Q514985",
+      "https://www.imdb.com/name/nm0165633"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "rock concert"
+    ],
+    "names": [
+     "Bruce Springsteen",
+     "Concert",
+     "Rock and roll",
+     "Rock concert",
+     "Blues rock",
+     "Heavy metal",
+     "Blues",
+     "Rock festival"
+    ],
+    "pages": [
+     {
+      "title": "Top Five (5) Rock Concert Opening Songs Of All Time - YouTube",
+      "url": "https://www.youtube.com/watch?v=m4Dku9b-87M&vl=en",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "The Biggest Rock Concerts of All Time - YouTube",
+      "url": "https://www.youtube.com/watch?v=yfaueg12Few&vl=en",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "The Winter of Rock Festival Concert - School of Rock - YouTube",
+      "url": "https://www.youtube.com/watch?v=1pZfOcLWRsc",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "The Rock Orchestra - Numb ft. Halocene at the Arena of Fire",
+      "url": "https://www.youtube.com/watch?v=VVWaCvgowZI",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "10 Rock Concerts That Changed Music FOREVER! - YouTube",
+      "url": "https://www.youtube.com/watch?v=4hOc_lNqluc",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "10 LEGENDARY Rock Performances You Can't Miss - YouTube",
+      "url": "https://www.youtube.com/watch?v=FEfG6wwZxSI",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "TOP 10 - GREATEST LIVE PERFORMANCES OF ALL TIME",
+      "url": "https://www.youtube.com/watch?v=yr9JuEDau7I",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Rock The RoC ft. The Avett Brothers, Jason Mraz & more - YouTube",
+      "url": "https://www.youtube.com/watch?v=X2eOfFhyvVA",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "edff818775fba3b0-542-365-f3210": {
+  "when": "2026-11-08 17:13",
+  "suggestions": [
+   {
+    "name": "Henry Rollins",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Henry Rollins (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q318509",
+     "https://www.imdb.com/name/nm0738433"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Henry Rollins",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q318509",
+      "https://www.imdb.com/name/nm0738433"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "monochrome"
+    ],
+    "names": [],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "949773c8af349166-317-540-f270": {
+  "when": "2026-11-08 17:13",
+  "suggestions": [
+   {
+    "name": "Donald Glover",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Donald Glover (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q1239933",
+     "https://www.imdb.com/name/nm2255973"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Donald Glover",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q1239933",
+      "https://www.imdb.com/name/nm2255973"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "barechested"
+    ],
+    "names": [
+     "Barechestedness"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "949773c8af349166-370-538-f30": {
+  "when": "2026-11-08 17:13",
+  "suggestions": [
+   {
+    "name": "Donald Glover",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Donald Glover (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q1239933",
+     "https://www.imdb.com/name/nm2255973"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Donald Glover",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q1239933",
+      "https://www.imdb.com/name/nm2255973"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "barechested"
+    ],
+    "names": [
+     "light-hearted",
+     "Barechestedness"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "6dcff88ec3504e0f-391-123-f390": {
+  "when": "2026-11-08 17:13",
+  "suggestions": [
+   {
+    "name": "John Lennon",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes John Lennon (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q1203",
+     "https://www.imdb.com/name/nm0006168"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "John Lennon",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q1203",
+      "https://www.imdb.com/name/nm0006168"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "television set"
+    ],
+    "names": [
+     "TV",
+     "LCD television",
+     "Television",
+     "Cable television",
+     "LED-backlit LCD",
+     "Liquid-crystal display",
+     "Light-emitting diode",
+     "Backlight"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "0f9b3bd2542889da-347-107-f30": {
+  "when": "2026-11-08 17:14",
+  "suggestions": [
+   {
+    "name": "Tobey Maguire",
+    "level": "high",
+    "confidence": 97.9,
+    "why": [
+     "Amazon recognizes Tobey Maguire (97.9% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q165524",
+     "https://www.imdb.com/name/nm0001497"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Tobey Maguire",
+     "confidence": 97.9,
+     "links": [
+      "https://www.wikidata.org/wiki/Q165524",
+      "https://www.imdb.com/name/nm0001497"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "standing"
+    ],
+    "names": [
+     "STX IT20 RISK.5RV NR EO",
+     "Formal wear"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "f63ed1d494699a2d-397-556-f30": {
+  "when": "2026-11-08 17:14",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "guitarist"
+    ],
+    "names": [
+     "Guitarist",
+     "Composer"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "ede27edca4a2bdd1-396-555-f60": {
+  "when": "2026-11-08 17:15",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "guitarist"
+    ],
+    "names": [
+     "Guitarist",
+     "Composer"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "abf971070a75936f-583-414-f0": {
+  "when": "2026-11-08 17:15",
+  "suggestions": [
+   {
+    "name": "Thom Yorke",
+    "level": "high",
+    "confidence": 99.9,
+    "why": [
+     "Amazon recognizes Thom Yorke (99.9% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q188668",
+     "https://www.imdb.com/name/nm0948810"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Thom Yorke",
+     "confidence": 99.9,
+     "links": [
+      "https://www.wikidata.org/wiki/Q188668",
+      "https://www.imdb.com/name/nm0948810"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "singing"
+    ],
+    "names": [
+     "LED-backlit LCD",
+     "Light-emitting diode",
+     "Liquid-crystal display",
+     "Backlight",
+     "Performance M",
+     "Display device"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "b6d731a2b663df20-565-292-f30": {
+  "when": "2026-11-08 17:15",
+  "suggestions": [
+   {
+    "name": "Robin Williams",
+    "level": "high",
+    "confidence": 99.9,
+    "why": [
+     "Amazon recognizes Robin Williams (99.9% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q83338",
+     "https://www.imdb.com/name/nm0000245"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Robin Williams",
+     "confidence": 99.9,
+     "links": [
+      "https://www.wikidata.org/wiki/Q83338",
+      "https://www.imdb.com/name/nm0000245"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "gentleman"
+    ],
+    "names": [
+     "Human"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "5984d54c92d85487-149-155": {
+  "when": "2026-11-08 17:16",
+  "suggestions": [
+   {
+    "name": "Jonathan Goldsmith",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Jonathan Goldsmith (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q1255362",
+     "https://www.imdb.com/name/nm0326091"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Jonathan Goldsmith",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q1255362",
+      "https://www.imdb.com/name/nm0326091"
+     ]
+    }
+   ],
+   "google": {
+    "match": "none",
+    "guess": [],
+    "names": [],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "661d5dfdf26ac7c3-436-375": {
+  "when": "2026-11-08 17:16",
+  "suggestions": [
+   {
+    "name": "Jodie Foster",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Jodie Foster (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q41351",
+     "https://www.imdb.com/name/nm0000149"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Jodie Foster",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q41351",
+      "https://www.imdb.com/name/nm0000149"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "girl"
+    ],
+    "names": [
+     "Selfie"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "3167ae1d18c54af8-310-404": {
+  "when": "2026-11-08 17:16",
+  "suggestions": [
+   {
+    "name": "Bob Marley",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Bob Marley (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q409",
+     "https://www.imdb.com/name/nm0002490"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Bob Marley",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q409",
+      "https://www.imdb.com/name/nm0002490"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "Bob Marley"
+    ],
+    "names": [
+     "Bob Marley",
+     "Reggae",
+     "Bob Marley and the Wailers",
+     "YouTube Music",
+     "Musician",
+     "Bob Marley 1945\u20131981",
+     "One Love / People Get Ready",
+     "Songwriter"
+    ],
+    "pages": [
+     {
+      "title": "Bob Marley went from working as a welder to becoming a world ...",
+      "url": "https://www.instagram.com/reel/DSU7BY7gDL7/?hl=en",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "Bob Marley Quote: If She's Amazing She Won't Be Easy Truth",
+      "url": "https://www.facebook.com/timlion.egemasifayah/videos/without-you-_-every-king-deserves-a-queen-and-every-queen-deserves-ah-king-foryo/1100598542351222/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "This is a MUST-WATCH for everyone here. Bob Marley was singing ...",
+      "url": "https://www.instagram.com/reel/DZ5U4UhIRqQ/",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "On May 11, 1981, the world lost Bob Marley More than just a ...",
+      "url": "https://www.instagram.com/p/DYMmo-6Agsh/?hl=en",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "A Quote Often Misattributed to Bob Marley A quote widely shared ...",
+      "url": "https://www.instagram.com/p/DbotJ7esIgX/?hl=en",
+      "domain": "www.instagram.com",
+      "match": "partial"
+     },
+     {
+      "title": "Jo Mersa Marley, Bob Marley's grandson, dies at 31 - Facebook",
+      "url": "https://www.facebook.com/NBCNews/posts/reggae-musician-joseph-jo-mersa-marley-bob-marleys-grandson-and-stephen-marleys-/7520769441276354/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Bob Marley Motivational Quotes - Pinterest",
+      "url": "https://www.pinterest.com/ideas/bob-marley-motivational-quotes/944815564768/",
+      "domain": "www.pinterest.com",
+      "match": "partial"
+     },
+     {
+      "title": "Bob Marley Buffalo Soldier 1 hour loop - YouTube",
+      "url": "https://www.youtube.com/watch?v=iNv0Ml5s_Kc",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "62c957929de72978-716-233-f30": {
+  "when": "2026-11-08 17:16",
+  "suggestions": [
+   {
+    "name": "Eddie Vedderjxhkw",
+    "level": "high",
+    "confidence": 98.0,
+    "why": [
+     "Amazon recognizes Eddie Vedderjxhkw (98.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q221535",
+     "https://www.imdb.com/name/nm0891641"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Eddie Vedderjxhkw",
+     "confidence": 98.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q221535",
+      "https://www.imdb.com/name/nm0891641"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "led-backlit lcd display"
+    ],
+    "names": [
+     "TV",
+     "Television",
+     "LED-backlit LCD",
+     "Cable television",
+     "Liquid-crystal display",
+     "Light-emitting diode",
+     "Backlight",
+     "Y3W"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "43a3ec5995c55507-541-608": {
+  "when": "2026-11-08 17:17",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "darkness"
+    ],
+    "names": [
+     "Performance M"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "d98434d2249b23e9-744-269": {
+  "when": "2026-11-08 17:17",
+  "suggestions": [
+   {
+    "name": "Jack White",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Jack White (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q272031",
+     "https://www.imdb.com/name/nm1226421"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Jack White",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q272031",
+      "https://www.imdb.com/name/nm1226421"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "girl"
+    ],
+    "names": [],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "d98434d2249b23e9-197-357": {
+  "when": "2026-11-08 17:17",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "girl"
+    ],
+    "names": [],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "88df2a20cccd3437-633-175": {
+  "when": "2026-11-08 17:17",
+  "suggestions": [
+   {
+    "name": "Mike Patton",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Mike Patton (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q316878",
+     "https://www.imdb.com/name/nm0666604"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Mike Patton",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q316878",
+      "https://www.imdb.com/name/nm0666604"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "television set"
+    ],
+    "names": [
+     "Mike Patton",
+     "Faith No More",
+     "TV",
+     "Television",
+     "LCD television",
+     "Analog television",
+     "Image",
+     "Cable television"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "c2307babf6a09b0c-995-303": {
+  "when": "2026-11-08 17:18",
+  "suggestions": [
+   {
+    "name": "Dan Finnerty",
+    "level": "low",
+    "confidence": 76.7,
+    "why": [
+     "Amazon recognizes Dan Finnerty (76.7% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q5213480",
+     "https://www.imdb.com/name/nm0278248"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Dan Finnerty",
+     "confidence": 76.7,
+     "links": [
+      "https://www.wikidata.org/wiki/Q5213480",
+      "https://www.imdb.com/name/nm0278248"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "scott bessent getty"
+    ],
+    "names": [
+     "Scott Bessent",
+     "Economic D-Day",
+     "George Soros",
+     "United States Secretary of the Treasury",
+     "United States Department of the Treasury",
+     "US President",
+     "Axios",
+     "Economy"
+    ],
+    "pages": [
+     {
+      "title": "5,897 Scott Bessent Photos and High-Res Pictures - Getty Images",
+      "url": "https://www.gettyimages.com/photos/scott-bessent",
+      "domain": "www.gettyimages.com",
+      "match": "partial"
+     },
+     {
+      "title": "6,087 Bessent Photos and High-Res Pictures - Getty Images",
+      "url": "https://www.gettyimages.com/photos/bessent",
+      "domain": "www.gettyimages.com",
+      "match": "partial"
+     },
+     {
+      "title": "45,157 Secretary Of The Treasury Photos and High-Res Pictures",
+      "url": "https://www.gettyimages.com/photos/secretary-of-the-treasury",
+      "domain": "www.gettyimages.com",
+      "match": "partial"
+     },
+     {
+      "title": "Treasury Secretary Scott Bessent Joins White House Press Briefing",
+      "url": "https://www.gettyimages.com/detail/video/treasury-secretary-scott-bessent-speaks-about-bringing-news-footage/2212599187",
+      "domain": "www.gettyimages.com",
+      "match": "partial"
+     },
+     {
+      "title": "Bessent says China \"can't be trusted\" as trade fight escalates - Axios",
+      "url": "https://www.axios.com/2025/10/15/us-china-trade-war",
+      "domain": "www.axios.com",
+      "match": "partial"
+     },
+     {
+      "title": "Scott Bessent Celebrates Renaming Of Joint Base Charleston",
+      "url": "https://www.youtube.com/watch?v=lJ_HPFAoLW4",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Who is Scott Bessent? Meet Trump's New US Treasury Secretary",
+      "url": "https://www.linkedin.com/posts/scott-treacy-cfa-3a09942_who-is-scott-bessent-meet-trumps-new-us-activity-7267610010132660227-rcON",
+      "domain": "www.linkedin.com",
+      "match": "partial"
+     },
+     {
+      "title": "Trump Lauds 'Central Casting' Scott Bessent - YouTube",
+      "url": "https://www.youtube.com/watch?v=9mOmBOxYjMU",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "e1a9166ec2eb4fda-900-367": {
+  "when": "2026-11-08 17:18",
+  "suggestions": [
+   {
+    "name": "Ralph Fiennes",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Ralph Fiennes (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q28493",
+     "https://www.imdb.com/name/nm0000146"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Ralph Fiennes",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q28493",
+      "https://www.imdb.com/name/nm0000146"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "flash photography"
+    ],
+    "names": [
+     "Photography",
+     "Flash"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "7e220781bcc7c67f-178-251": {
+  "when": "2026-11-08 17:18",
+  "suggestions": [
+   {
+    "name": "Christopher Walken",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Christopher Walken (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q185051",
+     "https://www.imdb.com/name/nm0000686"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Christopher Walken",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q185051",
+      "https://www.imdb.com/name/nm0000686"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "gentleman"
+    ],
+    "names": [
+     "Fatboy Slim",
+     "Music video",
+     "Mind of a Genius Records",
+     "Actor",
+     "Weapon of Choice",
+     "MTV",
+     "Gentleman",
+     "Electronic music"
+    ],
+    "pages": [
+     {
+      "title": "Gentleman - Gratitude (Best Of) - YouTube",
+      "url": "https://www.youtube.com/watch?v=fIdjD_Lm_3s",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Gentleman - Superior (MTV Unplugged) - YouTube",
+      "url": "https://www.youtube.com/watch?v=TrJSMk87CpE",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Gentleman - YouTube",
+      "url": "https://www.youtube.com/watch?v=zH0XUv6RCC0",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Gentleman - YouTube",
+      "url": "https://www.youtube.com/watch?v=JgkxDi2klBc",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Gentleman - Amazon.com",
+      "url": "https://www.amazon.com/gentleman/s?k=gentleman",
+      "domain": "www.amazon.com",
+      "match": "partial"
+     },
+     {
+      "title": "Official ' A Gentleman' Trailer - IMDb",
+      "url": "https://www.imdb.com/video/embed/vi1590016281/",
+      "domain": "www.imdb.com",
+      "match": "partial"
+     },
+     {
+      "title": "Gentleman by Givenchy Eau De Parfum Spray 2 oz for Men",
+      "url": "https://touchofmodern.com/products/gentleman-by-givenchy-eau-de-parfum-spray-2-oz-for-men",
+      "domain": "touchofmodern.com",
+      "match": "partial"
+     },
+     {
+      "title": "Headhunters",
+      "url": "https://www.headhuntersflyshop.com/",
+      "domain": "www.headhuntersflyshop.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "df338d1a0522fafa-698-347-f210": {
+  "when": "2026-11-08 17:20",
+  "suggestions": [
+   {
+    "name": "Colin Petersen",
+    "level": "low",
+    "confidence": 78.7,
+    "why": [
+     "Amazon recognizes Colin Petersen (78.7% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q390321",
+     "https://www.imdb.com/name/nm0676789"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Colin Petersen",
+     "confidence": 78.7,
+     "links": [
+      "https://www.wikidata.org/wiki/Q390321",
+      "https://www.imdb.com/name/nm0676789"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "concert"
+    ],
+    "names": [
+     "Guitarist",
+     "Concert",
+     "World Music Day",
+     "Composer"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "6b31d02b4b37bc5a-725-470": {
+  "when": "2026-11-08 17:21",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "human"
+    ],
+    "names": [
+     "Human",
+     "Primate",
+     "Hominini",
+     "Southern ape",
+     "Science",
+     "Bipedalism",
+     "Human body",
+     "Evolution"
+    ],
+    "pages": [
+     {
+      "title": "HUMAN Extended version VOL.1 - YouTube",
+      "url": "https://www.youtube.com/watch?v=vdb4XGVTHkE",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "HUMAN The movie (Director's cut version) - YouTube",
+      "url": "https://www.youtube.com/watch?v=fC5qucSk18w",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Human | Official Trailer HD | Watch at Home - YouTube",
+      "url": "https://www.youtube.com/watch?v=4DXcW6MzPeQ",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Every Human Species Explained - YouTube",
+      "url": "https://www.youtube.com/shorts/xuH0cYsWSJg",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Video: Human & Humane | Definition, Examples & Difference",
+      "url": "https://study.com/learn/lesson/video/humane-vs-human-overview-examples-origins-functions.html",
+      "domain": "study.com",
+      "match": "partial"
+     },
+     {
+      "title": "Human (2023) - Stream Free | Tubi",
+      "url": "https://tubitv.com/movies/100006139/human",
+      "domain": "tubitv.com",
+      "match": "partial"
+     },
+     {
+      "title": "How We Became Human: 518 Ma to 1 Ma Evolution Timeline",
+      "url": "https://www.facebook.com/VGraphs/videos/how-we-became-human/1340041008105164/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "HUMAN: The Movie (Director's Cut Version) (2020) - Films For Action",
+      "url": "https://www.filmsforaction.org/watch/human-the-movie-directors-cut-version/",
+      "domain": "www.filmsforaction.org",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "f4a336eefeb27382-914-170-f1140": {
+  "when": "2026-11-08 17:21",
+  "suggestions": [
+   {
+    "name": "Juan Alderete",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Juan Alderete (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q2272293"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Juan Alderete",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q2272293"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "guitarist"
+    ],
+    "names": [
+     "Guitarist",
+     "Concert",
+     "World Music Day",
+     "Gentleman",
+     "Composer",
+     "Rock and roll"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "1369f42fae8b19cf-630-211": {
+  "when": "2026-11-08 17:23",
+  "suggestions": [
+   {
+    "name": "Paul Stamets",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Paul Stamets (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q783942",
+     "https://www.imdb.com/name/nm2812309"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Paul Stamets",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q783942",
+      "https://www.imdb.com/name/nm2812309"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "fedora"
+    ],
+    "names": [
+     "Flat-panel display",
+     "Fedora",
+     "Display device"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "0bf1092f26011091-706-373-f1710": {
+  "when": "2026-11-08 17:25",
+  "suggestions": [
+   {
+    "name": "Keni Burke",
+    "level": "low",
+    "confidence": 84.2,
+    "why": [
+     "Amazon recognizes Keni Burke (84.2% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q6389203",
+     "https://www.imdb.com/name/nm1683585"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Keni Burke",
+     "confidence": 84.2,
+     "links": [
+      "https://www.wikidata.org/wiki/Q6389203",
+      "https://www.imdb.com/name/nm1683585"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "monochrome"
+    ],
+    "names": [],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "ad7933b5d4cb7feb-774-513-f570": {
+  "when": "2026-11-08 17:27",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "concert"
+    ],
+    "names": [
+     "Concert"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "1304fba21a9928b7-606-449": {
+  "when": "2026-11-08 17:28",
+  "suggestions": [],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "girl"
+    ],
+    "names": [
+     "Billy Joel",
+     "Make a Smile for Me",
+     "Album",
+     "Song",
+     "Violin",
+     "Girl",
+     "You're My Home",
+     "Men I Trust"
+    ],
+    "pages": [
+     {
+      "title": "GIRL by @marenmorris I've had this song on repeat since it was ...",
+      "url": "https://www.facebook.com/tyramadisonmusic/videos/girl-by-marenmorris-ive-had-this-song-on-repeat-since-it-was-released-maren-morr/287271151970394/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Girl - YouTube",
+      "url": "https://www.youtube.com/watch?v=MODp3HmYJHM",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Girl (2025) - YouTube",
+      "url": "https://www.youtube.com/watch?v=c7T_6S0Qr0s",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Girl - YouTube",
+      "url": "https://www.youtube.com/watch?v=bmjnP6LmeKc",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "GIRL - YouTube",
+      "url": "https://www.youtube.com/watch?v=6Wl_wlyfU-I",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Michelle Haughian Violin: Products",
+      "url": "https://michellehaughianviolin.com/",
+      "domain": "michellehaughianviolin.com",
+      "match": "partial"
+     },
+     {
+      "title": "Piano Man Violin Premium Practise Pack",
+      "url": "https://michellehaughianviolin.com/products/piano-man-violin-premium-practi",
+      "domain": "michellehaughianviolin.com",
+      "match": "partial"
+     },
+     {
+      "title": "Piano Man Violin Sheet Music",
+      "url": "https://michellehaughianviolin.com/products/piano-man-violin-sheet-music",
+      "domain": "michellehaughianviolin.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "ab87689a1002c197-300-246": {
+  "when": "2026-11-08 17:28",
+  "suggestions": [
+   {
+    "name": "Administrative Results",
+    "level": "medium",
+    "confidence": null,
+    "why": [
+     "Google finds this exact picture on 1 web page naming Administrative Results"
+    ],
+    "links": [
+     "https://www.facebook.com/949TheBull/photos/love-you-mom-/10152622458504104/"
+    ]
+   },
+   {
+    "name": "Georg Hackenschmidt",
+    "level": "low",
+    "confidence": 76.3,
+    "why": [
+     "Amazon recognizes Georg Hackenschmidt (76.3% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q947695",
+     "https://www.imdb.com/name/nm8076074"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Georg Hackenschmidt",
+     "confidence": 76.3,
+     "links": [
+      "https://www.wikidata.org/wiki/Q947695",
+      "https://www.imdb.com/name/nm8076074"
+     ]
+    }
+   ],
+   "google": {
+    "match": "exact",
+    "guess": [
+     "assault rifle"
+    ],
+    "names": [
+     "Magazine",
+     "Semi-automatic rifle",
+     "Intermediate cartridge",
+     "Automatic rifle",
+     "Administrative Results",
+     "Battle rifle",
+     "Semi-automatic firearm",
+     "Automatic firearm"
+    ],
+    "pages": [
+     {
+      "title": "94.9 - Love you mom. :) | Facebook",
+      "url": "https://www.facebook.com/949TheBull/photos/love-you-mom-/10152622458504104/",
+      "domain": "www.facebook.com",
+      "match": "exact"
+     },
+     {
+      "title": "Enough Nonsense; What is an \"Assault Rifle\"? - YouTube",
+      "url": "https://www.youtube.com/watch?v=RYWkuV5FbJM",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Assault rifles vs. Machine Guns: What's the difference? - YouTube",
+      "url": "https://www.youtube.com/watch?v=llK-kngIBE4",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Every Assault Rifle Ever Made - YouTube",
+      "url": "https://www.youtube.com/watch?v=9R42QoYhins",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "The Differences of an AR15 and an Assault Rifle - TheFireArmGuy",
+      "url": "https://www.youtube.com/watch?v=dAn_KdciO00",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "What is an Assault rifle and why is what ATF and media call AR an ...",
+      "url": "https://www.reddit.com/r/liberalgunowners/comments/qtfofa/what_is_an_assault_rifle_and_why_is_what_atf_and/",
+      "domain": "www.reddit.com",
+      "match": "partial"
+     },
+     {
+      "title": "Happy ScorpioSeason! Celebrate with us by tagging your favorite ...",
+      "url": "https://www.facebook.com/colbertlateshow/posts/happy-scorpioseason-celebrate-with-us-by-tagging-your-favorite-scorpios-%EF%B8%8F/2685365291608205/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Greetings to my fellow Scorpios. Happy Conception Month to us!",
+      "url": "https://www.facebook.com/groups/264075505029841/posts/442181423885914/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 1
+   }
+  }
+ },
+ "73ebde72964c06fc-539-575": {
+  "when": "2026-11-08 17:29",
+  "suggestions": [
+   {
+    "name": "John Travolta",
+    "level": "very high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes John Travolta (100.0% match)",
+     "Google finds this exact picture on 1 web page naming John Travolta"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q80938",
+     "https://www.imdb.com/name/nm0000237"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "John Travolta",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q80938",
+      "https://www.imdb.com/name/nm0000237"
+     ]
+    }
+   ],
+   "google": {
+    "match": "exact",
+    "guess": [
+     "vintage clothing"
+    ],
+    "names": [
+     "John Travolta",
+     "Vintage clothing",
+     "Clothing",
+     "1970s",
+     "1950s",
+     "Fashion",
+     "Dress",
+     "Photograph"
+    ],
+    "pages": [
+     {
+      "title": "70s Haircut Men: Classic Retro Haircuts That Built Confidence, Not Tre",
+      "url": "https://mendeserve.com/blogs/hair/70s-haircut-men-trends",
+      "domain": "mendeserve.com",
+      "match": "exact"
+     },
+     {
+      "title": "Exploring True Vintage Clothing (Shopping, Pickups, and More)",
+      "url": "https://www.youtube.com/watch?v=cPXJtZVxugU",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Vintage Haul | Clothing from the 30s, 60s, 70s, 90s & More - YouTube",
+      "url": "https://www.youtube.com/watch?v=3qHtPEwv8Uk",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Vintage clothing-BUY 2 GET FREE SHIPPING - USA Casual Wear",
+      "url": "https://usacasualwear.com/collections/vintage-clothing15",
+      "domain": "usacasualwear.com",
+      "match": "partial"
+     },
+     {
+      "title": "Vintage clothing-BUY 2 GET FREE SHIPPING - USA Casual Wear",
+      "url": "https://usacasualwear.com/collections/vintage-clothing12",
+      "domain": "usacasualwear.com",
+      "match": "partial"
+     },
+     {
+      "title": "Happy birthday to actor John Travolta We gave this Taylor Swift tune ...",
+      "url": "https://www.facebook.com/postmodernjukebox/posts/happy-birthday-to-actor-john-travolta-we-gave-this-taylor-swift-tune-a-fun-vinta/3819793491400851/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Grease Photo - Etsy",
+      "url": "https://www.etsy.com/market/grease_photo",
+      "domain": "www.etsy.com",
+      "match": "partial"
+     },
+     {
+      "title": "John Travolta Card - Etsy",
+      "url": "https://www.etsy.com/market/john_travolta_card",
+      "domain": "www.etsy.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 1
+   }
+  }
+ },
+ "482df197f23e57b3-327-596": {
+  "when": "2026-11-08 17:29",
+  "suggestions": [
+   {
+    "name": "Salvador Dali",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Salvador Dali (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q5577",
+     "https://www.imdb.com/name/nm0198557"
+    ]
+   },
+   {
+    "name": "Frida Kahlo",
+    "level": "medium",
+    "confidence": null,
+    "why": [
+     "Google finds this exact picture on 8 web pages naming Frida Kahlo"
+    ],
+    "links": [
+     "https://thermocontmt.com/?r=12650083011350",
+     "https://businesskidspr.com/product/category/view_more/12650083001890"
+    ]
+   },
+   {
+    "name": "The Starry Night",
+    "level": "medium",
+    "confidence": null,
+    "why": [
+     "Google finds this exact picture on 8 web pages naming The Starry Night"
+    ],
+    "links": [
+     "https://thermocontmt.com/?r=12650083011350",
+     "https://businesskidspr.com/product/category/view_more/12650083001890"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Salvador Dali",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q5577",
+      "https://www.imdb.com/name/nm0198557"
+     ]
+    }
+   ],
+   "google": {
+    "match": "exact",
+    "guess": [
+     "frida kahlo y vincent van gogh"
+    ],
+    "names": [
+     "Vincent van Gogh",
+     "Frida Kahlo",
+     "The Starry Night",
+     "Art",
+     "Painting",
+     "Artwork",
+     "Poster",
+     "Painter"
+    ],
+    "pages": [
+     {
+      "title": "Art Van Gogh Salvador Dali CENTRAL FLORIDA REVIEW Dali ...",
+      "url": "https://thermocontmt.com/?r=12650083011350",
+      "domain": "thermocontmt.com",
+      "match": "exact"
+     },
+     {
+      "title": "Art Van Gogh Salvador Dali Salvador Dali And Vincent Van Gogh ...",
+      "url": "https://businesskidspr.com/product/category/view_more/12650083001890",
+      "domain": "businesskidspr.com",
+      "match": "exact"
+     },
+     {
+      "title": "Salvador Dali And Vincent Van Gogh And Frida Kahlo In Car Starry ...",
+      "url": "https://fineartamerica.com/featured/salvador-dali-and-vincent-van-gogh-and-frida-kahlo-in-car-starry-night-antonio-sanford.html?product=tank-top-tshirt",
+      "domain": "fineartamerica.com",
+      "match": "exact"
+     },
+     {
+      "title": "Frida Kahlo & Vincent van Gogh - Facebook",
+      "url": "https://www.facebook.com/Galleryartnewyork/posts/frida-kahlo-vincent-van-gogh/964102719087175/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Bill Whitlock art of van gogh and frida kahlo (Phoenix 2026)",
+      "url": "https://www.facebook.com/bill.whitlock.796476/posts/so-proud-to-receive-this-recognition-for-my-art-vincent-van-gogh-having-a-conver/1154623447507937/",
+      "domain": "www.facebook.com",
+      "match": "partial"
+     },
+     {
+      "title": "Once Upon a Time Art (frida Kahlo, Salvador Dali, Vincent Van Gogh ...",
+      "url": "https://www.etsy.com/listing/1168965245/once-upon-a-time-art-frida-kahlo",
+      "domain": "www.etsy.com",
+      "match": "partial"
+     },
+     {
+      "title": "Once upon a time Art (Frida Kahlo, Salvador Dali, Vincent van Gogh ...",
+      "url": "https://www.etsy.com/in-en/listing/1168965245/once-upon-a-time-art-frida-kahlo",
+      "domain": "www.etsy.com",
+      "match": "partial"
+     },
+     {
+      "title": "Vincent Van Gogh And Salvador Dali Artwork Frida Kahlo Salvador ...",
+      "url": "https://www.thermocontmt.com/?r=11142316081350",
+      "domain": "www.thermocontmt.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 8
+   }
+  }
+ },
+ "98f07b191435d6a6-509-411": {
+  "when": "2026-11-08 17:30",
+  "suggestions": [
+   {
+    "name": "Emil Minty",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Emil Minty (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q1336561",
+     "https://www.imdb.com/name/nm0591755"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Emil Minty",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q1336561",
+      "https://www.imdb.com/name/nm0591755"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "television set"
+    ],
+    "names": [
+     "LCD television",
+     "TV",
+     "Television",
+     "Cable television",
+     "LED-backlit LCD",
+     "Liquid-crystal display",
+     "Light-emitting diode",
+     "Backlight"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
+ },
+ "1cb541dafcc11b45-672-270": {
+  "when": "2026-11-08 17:36",
+  "suggestions": [
+   {
+    "name": "Carina Round",
+    "level": "high",
+    "confidence": 99.2,
+    "why": [
+     "Amazon recognizes Carina Round (99.2% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q441428",
+     "https://www.imdb.com/name/nm2638231"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Carina Round",
+     "confidence": 99.2,
+     "links": [
+      "https://www.wikidata.org/wiki/Q441428",
+      "https://www.imdb.com/name/nm2638231"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "Puscifer"
+    ],
+    "names": [
+     "Maynard James Keenan",
+     "Carina Round",
+     "Puscifer",
+     "Mat Mitchell",
+     "Normal Isn't",
+     "Self Evident",
+     "Album",
+     "Bad Wolf"
+    ],
+    "pages": [
+     {
+      "title": "PUSCIFER \u2013 Puscifer Entertainment",
+      "url": "https://puscifer.com/",
+      "domain": "puscifer.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer - \"Self Evident\" (Official Music Video) - YouTube",
+      "url": "https://www.youtube.com/watch?v=NfQb5-NEyr8",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer - \"Pendulum\" (Official Music Video) - YouTube",
+      "url": "https://www.youtube.com/watch?v=k88UuciRe-Q",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer - \"A Public Stoning\" (Official Video) - YouTube",
+      "url": "https://www.youtube.com/watch?v=fVIUwpOWTYM",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer - \"Bad Wolf\" (Official Music Video) - YouTube",
+      "url": "https://www.youtube.com/watch?v=gQsFPPFNUXk",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Album review: Puscifer \u2013 Normal Isn't - Kerrang!",
+      "url": "https://www.kerrang.com/album-review-puscifer-normal-isnt-maynard-james-keenan",
+      "domain": "www.kerrang.com",
+      "match": "partial"
+     },
+     {
+      "title": "Amazon What Is Puscifer Puscifer Guitarist Explains Why He Finds ...",
+      "url": "https://www.iai-diy.com/?d=9409069021500",
+      "domain": "www.iai-diy.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer Concerts & Live Tour Dates: 2026-2027 Tickets | Bandsintown",
+      "url": "https://www.bandsintown.com/a/1190-puscifer",
+      "domain": "www.bandsintown.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "1cb541dafcc11b45-217-310": {
+  "when": "2026-11-08 17:37",
+  "suggestions": [
+   {
+    "name": "Mario Biondi",
+    "level": "low",
+    "confidence": 81.9,
+    "why": [
+     "Amazon recognizes Mario Biondi (81.9% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q1376248",
+     "https://www.imdb.com/name/nm3147063"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Mario Biondi",
+     "confidence": 81.9,
+     "links": [
+      "https://www.wikidata.org/wiki/Q1376248",
+      "https://www.imdb.com/name/nm3147063"
+     ]
+    }
+   ],
+   "google": {
+    "match": "partial",
+    "guess": [
+     "Puscifer"
+    ],
+    "names": [
+     "Maynard James Keenan",
+     "Carina Round",
+     "Puscifer",
+     "Mat Mitchell",
+     "Normal Isn't",
+     "Album",
+     "Bad Wolf",
+     "Self Evident"
+    ],
+    "pages": [
+     {
+      "title": "PUSCIFER \u2013 Puscifer Entertainment",
+      "url": "https://puscifer.com/",
+      "domain": "puscifer.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer - \"Self Evident\" (Official Music Video) - YouTube",
+      "url": "https://www.youtube.com/watch?v=NfQb5-NEyr8",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer - \"Pendulum\" (Official Music Video) - YouTube",
+      "url": "https://www.youtube.com/watch?v=k88UuciRe-Q",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer - \"A Public Stoning\" (Official Video) - YouTube",
+      "url": "https://www.youtube.com/watch?v=fVIUwpOWTYM",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer - \"Bad Wolf\" (Official Music Video) - YouTube",
+      "url": "https://www.youtube.com/watch?v=gQsFPPFNUXk",
+      "domain": "www.youtube.com",
+      "match": "partial"
+     },
+     {
+      "title": "Album review: Puscifer \u2013 Normal Isn't - Kerrang!",
+      "url": "https://www.kerrang.com/album-review-puscifer-normal-isnt-maynard-james-keenan",
+      "domain": "www.kerrang.com",
+      "match": "partial"
+     },
+     {
+      "title": "Amazon What Is Puscifer Puscifer Guitarist Explains Why He Finds ...",
+      "url": "https://www.iai-diy.com/?d=9409069021500",
+      "domain": "www.iai-diy.com",
+      "match": "partial"
+     },
+     {
+      "title": "Puscifer Concerts & Live Tour Dates: 2026-2027 Tickets | Bandsintown",
+      "url": "https://www.bandsintown.com/a/1190-puscifer",
+      "domain": "www.bandsintown.com",
+      "match": "partial"
+     }
+    ],
+    "exactPages": 0
+   }
+  }
+ },
+ "e451706f03e7e533-199-542": {
+  "when": "2026-11-08 17:40",
+  "suggestions": [
+   {
+    "name": "Terrence Howard",
+    "level": "high",
+    "confidence": 100.0,
+    "why": [
+     "Amazon recognizes Terrence Howard (100.0% match)"
+    ],
+    "links": [
+     "https://www.wikidata.org/wiki/Q296500",
+     "https://www.imdb.com/name/nm0005024"
+    ]
+   }
+  ],
+  "checked": [
+   "Amazon celebrity recognition (the face)",
+   "Google pages with this picture (the whole photo)"
+  ],
+  "details": {
+   "amazon": [
+    {
+     "name": "Terrence Howard",
+     "confidence": 100.0,
+     "links": [
+      "https://www.wikidata.org/wiki/Q296500",
+      "https://www.imdb.com/name/nm0005024"
+     ]
+    }
+   ],
+   "google": {
+    "match": "similar",
+    "guess": [
+     "led-backlit lcd display"
+    ],
+    "names": [
+     "Cable television",
+     "Television",
+     "LED-backlit LCD",
+     "Liquid-crystal display",
+     "Light-emitting diode",
+     "Backlight",
+     "Display device",
+     "Electrical cable"
+    ],
+    "pages": [],
+    "exactPages": 0
+   }
+  }
  }
 }
