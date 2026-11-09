@@ -22,7 +22,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 TITLE = "Face Recognizer"
-VERSION = "1.5"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.5.1"                                    # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = Path(os.environ.get("APPDATA", Path.home())) / "FaceLabels"   # private: outside the published project
 
