@@ -875,9 +875,13 @@ function draw() {
 // Face mesh: MediaPipe's points joined into triangles. Each triangle is shaded by the angle it
 // faces (its 3D normal, from the points' depth): facing the camera is clear, turned away is darker,
 // so the shading follows the shape and turn of the head. Then all the edges in the person's colour.
+// The triangles are drawn in MESH_SHADES groups of similar shade, one fill per group: a fill per
+// triangle (852 a face) made the page crawl with several people in view.
+const MESH_SHADES = 8;
 function drawMesh(m, col, lw) {
   ctx.save();
   const base = ctx.globalAlpha;
+  const groups = Array.from({ length: MESH_SHADES }, () => new Path2D());
   for (let k = 0; k < meshTris.length; k += 3) {
     const a = meshTris[k] * 3, b = meshTris[k + 1] * 3, c = meshTris[k + 2] * 3;
     const ux = m[b] - m[a], uy = m[b + 1] - m[a + 1], uz = m[b + 2] - m[a + 2];
@@ -885,11 +889,14 @@ function drawMesh(m, col, lw) {
     const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
     const len = Math.hypot(nx, ny, nz);
     if (!len) continue;
-    const facing = Math.abs(nz) / len;                 // 1 = faces the camera, 0 = edge-on
-    ctx.globalAlpha = base * 0.45 * (1 - facing) ** 1.5;
-    ctx.fillStyle = "#08130f";
-    ctx.beginPath(); ctx.moveTo(m[a], m[a + 1]); ctx.lineTo(m[b], m[b + 1]); ctx.lineTo(m[c], m[c + 1]); ctx.closePath(); ctx.fill();
+    const shade = (1 - Math.abs(nz) / len) ** 1.5;     // 0 = faces the camera, 1 = edge-on
+    const g = Math.round(shade * (MESH_SHADES - 1));
+    if (!g) continue;                                  // facing the camera: clear, nothing to fill
+    const p = groups[g];
+    p.moveTo(m[a], m[a + 1]); p.lineTo(m[b], m[b + 1]); p.lineTo(m[c], m[c + 1]); p.closePath();
   }
+  ctx.fillStyle = "#08130f";
+  for (let g = 1; g < MESH_SHADES; g++) { ctx.globalAlpha = base * 0.45 * g / (MESH_SHADES - 1); ctx.fill(groups[g]); }
   ctx.globalAlpha = base * 0.55; ctx.strokeStyle = col; ctx.lineWidth = Math.max(0.6, lw * 0.3);
   ctx.beginPath();
   for (let k = 0; k < meshTris.length; k += 3) {

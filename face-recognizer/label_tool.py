@@ -240,7 +240,11 @@ def watch_webcam(importer, every=20):
     while True:
         try:
             newest = max((p.stat().st_mtime for p in F.WEBCAM.glob("*.jpg")), default=0.0)
-            if newest > seen and not importer.status.get("running"):
+            st = importer.status
+            # leave a folder import's result on screen for 5 minutes before this replaces it
+            folder_done = st.get("folder") and Path(st["folder"]) != F.WEBCAM and \
+                time.time() - st.get("started", 0) - (st.get("elapsed") or 0) < 300
+            if newest > seen and not st.get("running") and not folder_done:
                 importer.start(F.WEBCAM)
                 seen = newest
         except (OSError, ValueError):

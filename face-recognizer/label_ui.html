@@ -1041,10 +1041,12 @@ async function pollImport() {
 }
 function showImport(st) {
   const p = $("#progress");
-  // A finished import stays up for a minute, and only if it added something or failed: the webcam
-  // snapshots are re-checked every 20 seconds and mostly find nothing new.
+  // A finished webcam import stays up for a minute, and only if it added something or failed: the
+  // snapshots are re-checked every 20 seconds and mostly find nothing new. A folder you added stays up
+  // for 5 minutes even when nothing was new: "all already added" is the answer you were waiting for.
   const ended = st && !st.running && st.started ? st.started + (st.elapsed || 0) : null;
-  const quiet = ended != null && !st.error && (!st.new || Date.now() / 1000 - ended > 60);
+  const cam = /[\\/]webcam$/i.test(st?.folder || "");
+  const quiet = ended != null && !st.error && (cam ? !st.new || Date.now() / 1000 - ended > 60 : Date.now() / 1000 - ended > 300);
   if (!st || (!st.running && !st.stage) || quiet) { p.classList.remove("on"); return; }
   if (st.running && !polling) pollImport();
   p.classList.add("on");
@@ -1055,15 +1057,19 @@ function showImport(st) {
   const left = rate > 0 ? Math.round((st.total - st.done) / rate) : null;
   const parts = [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.videos ? "photos and videos" : "photos"}`, plural(st.faces, "face") + " found",
     `${st.auto.toLocaleString()} named automatically`];
+  if (st.known) parts.push(`${st.known.toLocaleString()} already added`);
   if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
   if (st.errors) parts.push(`${st.errors} unreadable`);
-  if (/[\\/]webcam$/i.test(st.folder || "")) parts.unshift("webcam snapshots");
-  let txt = st.running ? `${st.stage}: ${parts.join(", ")}${left != null && /^Reading/.test(st.stage) ? `, about ${left < 90 ? left + " s" : Math.round(left / 60) + " min"} left` : ""}`
+  parts.unshift(cam ? "webcam snapshots" : st.folder || "");
+  let txt = st.running && !st.total ? `${st.stage}: ${st.folder || ""}`
+    : st.running ? `${st.stage}: ${parts.join(", ")}${left != null && /^Reading/.test(st.stage) ? `, about ${left < 90 ? left + " s" : Math.round(left / 60) + " min"} left` : ""}`
     : st.error ? `Adding photos failed: ${st.error}` : `${st.stage === "Stopped" ? "Stopped" : "Finished"}: ${parts.join(", ")}.`;
   p.querySelector(".txt").textContent = txt;
   p.querySelector(".txt").title = txt;
   $("#stopimp").style.display = st.running ? "" : "none";
 }
+// An import started anywhere else (the webcam check, another window) shows up here too.
+setInterval(() => { if (!polling && !document.hidden) get("/api/import").then(showImport).catch(() => {}); }, 4000);
 
 // ------------------------------------------------------------------ toast
 let toastT = null;
