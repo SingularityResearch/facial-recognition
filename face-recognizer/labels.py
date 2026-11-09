@@ -1226,6 +1226,68 @@ class Importer:
         self.thread = threading.Thread(target=self.run, args=(folder,), daemon=True)
         self.thread.start()
 
+    MORE_SCORE = 0.45                 # "Find more faces": detector confidence, far below F.DET_SCORE ...
+    MORE_SIZES = (10_000, 640, 480, 320)   # ... at more scales: you look at what it finds and decide
+
+    def find_more(self, i):
+        """Look again for faces in the photo (or video frame) that face i is in, with a much lower
+        detector cut-off than an import uses, and add the ones not found before. Only on request from the
+        photo view: in a sample of 400 photos, faces scored 0.55-0.85 were about half real faces and half
+        food, tyres, drawings and pets, too many to add to every photo, but easy to sort for one.
+        Returns the new faces' indexes."""
+        db, store = self.db, self.db.store
+        with db.lock:
+            h = store.photo[i]
+            rec = store.photos.get(h, {})
+            path = rec.get("path")
+            frame = rec.get("at", {}).get(store.fid[i]) if rec.get("video") else None
+            mine = [j for j in db.by_photo().get(h, [])
+                    if not rec.get("video") or rec.get("at", {}).get(store.fid[j]) == frame]
+            have = [store.box[j] for j in mine]
+        if not (path and Path(path).exists()):
+            raise ValueError("The original photo isn't on this computer any more.")
+        img = F.load_image(path) if frame is None else F.video_frame(path, frame)
+        if img is None:
+            raise ValueError("Couldn't read the photo.")
+        if self.faces is None:
+            self.faces = F.Faces()
+        if getattr(self, "_more_det", None) is None:   # its own detector: an import may be using the other
+            self._more_det = cv2.FaceDetectorYN.create(str(F.DET_MODEL), "", (320, 320), self.MORE_SCORE, 0.3, 5000)
+        rows = []
+        h_, w_ = img.shape[:2]
+        for side in self.MORE_SIZES:
+            s = min(1.0, side / max(h_, w_))
+            im = cv2.resize(img, (round(w_ * s), round(h_ * s)), interpolation=cv2.INTER_AREA) if s < 1 else img
+            self._more_det.setInputSize((im.shape[1], im.shape[0]))
+            _, found = self._more_det.detect(im)
+            if found is not None:
+                found = found.copy()
+                found[:, :14] /= s
+                rows += list(found)
+        rows.sort(key=lambda r: -r[14])
+        kept = []
+        for r in rows:
+            if min(r[2], r[3]) < F.MIN_FACE:
+                continue
+            if all(F._iou(r, k) < 0.3 for k in kept + have):
+                kept.append(r)
+        new = []
+        for row in kept:
+            crop = F.align(img, row)
+            emb, q = self.faces.embed(crop), self.faces.quality(crop)
+            with db.lock:
+                j = store.add(h, rec.get("name") or Path(path).name, row, emb, crop, q, frame)
+                if frame is not None:
+                    rec.setdefault("at", {})[store.fid[j]] = int(frame)
+                new.append(j)
+        if new:
+            with db.lock:
+                rec["faces"] = rec.get("faces", 0) + len(new)
+                db.groups = None                  # regroup unknown faces with the new ones
+                db.changed()
+                store.save()
+        return new
+
     def run(self, folder):
         db, store = self.db, self.db.store
         st = self.status = dict(running=True, folder=str(folder), stage="Loading the face models", total=0, done=0,

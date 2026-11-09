@@ -178,6 +178,9 @@ def make_handler(db, importer):
                         raise ValueError("faces must be a list of numbers")
                     n = db.act(str(body.get("action")), faces, body.get("name"))
                     return self.send({"ok": True, "changed": n, "undo": db.undo_stack[-1]["text"] if db.undo_stack else ""})
+                if path == "/api/morefaces":              # look again for faces in one photo (photo view)
+                    new = importer.find_more(int(body.get("i", -1)))
+                    return self.send({"ok": True, "new": new})
                 if path == "/api/rename":
                     n = db.rename(str(body.get("old", "")), str(body.get("new", "")))
                     return self.send({"ok": True, "changed": n})

@@ -889,12 +889,24 @@ async function openPhoto(i) {
       ${nm !== IGN ? `<button class="btn" data-v="x">Ignore <kbd>X</kbd></button>` : ""}</div>
     ${others.length ? `<div class="meta">Also in this ${info?.video != null ? "frame" : "photo"}: ${others.map(f => esc(f.name ? label(f.name) : "someone not named yet")).join(", ")}. Click a box to switch to that face.</div>` : ""}
     ${nm ? "" : clues(info?.hints)}
-    <div class="acts"><button class="btn" id="wsopen" title="Sends this face to Amazon and this photo to Google, and suggests who it is">Web search</button></div>
+    <div class="acts">${info?.exists ? `<button class="btn" id="morefaces" title="Looks again for faces in this ${info?.video != null ? "frame" : "photo"} with a much lower cut-off: it may also find things that aren't faces (Ignore them)">Find more faces</button>` : ""}
+      <button class="btn" id="wsopen" title="Sends this face to Amazon and this photo to Google, and suggests who it is">Web search</button></div>
     <div class="keys"><kbd>←</kbd> <kbd>→</kbd> previous / next face<br><kbd>Esc</kbd> close</div>`;
   $("#vside").querySelectorAll("[data-v]").forEach(b => b.onclick = () => viewerKey(b.dataset.v));
   $("#vside").querySelectorAll("[data-nm]").forEach(b => b.onclick = async () => { await act("name", [i], b.dataset.nm); openPhoto(i); });
   $("#vside").querySelectorAll("[data-see]").forEach(b => b.onclick = () => openPhoto(+b.dataset.see));
   $("#wsopen").onclick = () => { $("#websearch").classList.add("on"); webSearch(false); };
+  const more = $("#morefaces");
+  if (more) more.onclick = async () => {
+    more.disabled = true; more.textContent = "Looking…";
+    try {
+      const r = await post("/api/morefaces", { i });
+      if (!r.new.length) { toast("No more faces found"); more.textContent = "No more faces found"; return; }
+      await loadSummary();                          // the new faces get indexes (FIDS) and show up in New faces
+      toast(`Found ${plural(r.new.length, "more face")}: click a box to name it`);
+      if (vIndex === i) openPhoto(r.new[0]);
+    } catch (err) { toast(err.message, true); more.disabled = false; more.textContent = "Find more faces"; }
+  };
   const k = order.indexOf(i);
   $("#vprev").style.visibility = k > 0 ? "visible" : "hidden";
   $("#vnext").style.visibility = k >= 0 && k < order.length - 1 ? "visible" : "hidden";
