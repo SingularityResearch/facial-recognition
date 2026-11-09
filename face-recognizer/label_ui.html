@@ -182,6 +182,8 @@
   #vwrap.drawing, #vwrap.drawing .box { cursor: crosshair; }
   #vwrap.drawing .box { pointer-events: none; }
   .box.drawn { border: 2px solid #38bdf8; pointer-events: none; }
+  #desctext { white-space: pre-wrap; color: var(--fg); font-size: 13px; line-height: 1.45; }
+  #desctext small { color: var(--muted); }
   .vtoggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
   .stage .nofile { color: #d8ddda; text-align: center; }
   .side { background: var(--panel); padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
@@ -919,6 +921,10 @@ async function openPhoto(i) {
       ${nm && nm !== IGN ? `<button class="btn" data-v="r">Not ${esc(nm)} <kbd>R</kbd></button>` : ""}
       ${nm !== IGN ? `<button class="btn" data-v="x">Ignore <kbd>X</kbd></button>` : ""}</div>
     ${others.length ? `<div class="meta">Also in this ${info?.video != null ? "frame" : "photo"}: ${others.map(f => esc(f.name ? label(f.name) : "someone not named yet")).join(", ")}. Click a box to switch to that face.</div>` : ""}
+    ${info?.exists ? `<div class="clue" id="desc"><h4>The photo, described <small>(by a model on this computer)</small></h4>
+      <div id="desctext"></div>
+      <div class="acts" style="margin-top:6px"><button class="btn small" id="descgo" title="Asks the vision model in LM Studio on this computer to describe the photo and read any text in it (nothing leaves this computer)">Describe photo <kbd>D</kbd></button>
+      <label class="vtoggle"><input type="checkbox" id="descauto" ${store.get("describe") === "1" ? "checked" : ""}> Every photo</label></div></div>` : ""}
     ${nm ? "" : clues(info?.hints)}
     ${info?.exists ? `<label class="vtoggle" title="Dashed boxes: things the detector thinks may be faces (blurry, turned or partly hidden) that weren't kept when the photo was added. Nothing is saved until you click one."><input type="checkbox" id="possible" ${store.get("possible") !== "0" ? "checked" : ""}> Show possible faces <span id="possn"></span></label>` : ""}
     <div class="acts">${info?.exists && info?.video == null ? `<button class="btn" id="drawface" title="Drag a box around a face the detector missed (hidden, turned away, tiny), then name it">Draw a face <kbd>B</kbd></button>` : ""}
@@ -930,6 +936,15 @@ async function openPhoto(i) {
   $("#vside").querySelectorAll("[data-see]").forEach(b => b.onclick = () => openPhoto(+b.dataset.see));
   $("#wsopen").onclick = () => { $("#websearch").classList.add("on"); webSearch(false); };
   if ($("#drawface")) $("#drawface").onclick = () => drawMode(true);
+  if ($("#desc")) {
+    $("#descgo").onclick = () => describePhoto(i, true);
+    $("#descauto").onchange = () => { store.set("describe", $("#descauto").checked ? "1" : "0"); if ($("#descauto").checked) describePhoto(i, false); };
+    get(`/api/describe/${i}`).then(r => {
+      if (vIndex !== i) return;
+      if (r.saved) showDescription(r.saved);
+      else if (store.get("describe") === "1") describePhoto(i, false);
+    }).catch(() => {});
+  }
   const more = $("#morefaces");
   if (more) more.onclick = () => addPossible(i, null);
   const pos = $("#possible");
@@ -998,6 +1013,25 @@ function drawMode(on) {
     };
     addEventListener("pointermove", move); addEventListener("pointerup", up);
   };
+}
+// "Describe photo": a vision model in LM Studio on this computer describes the photo (describe.py); saved
+// per photo outside the project, so each photo is described once. D asks (again), "Every photo" asks on opening.
+function showDescription(d) {
+  const t = $("#desctext");
+  if (!t) return;
+  t.innerHTML = `${esc(d.text)}<br><small>${esc(d.model || "")}${d.when ? ", " + esc(d.when) : ""}${d.secs ? `, ${d.secs} s` : ""}</small>`;
+  $("#descgo").innerHTML = "Describe again <kbd>D</kbd>";
+}
+async function describePhoto(i, refresh) {
+  const t = $("#desctext"), go = $("#descgo");
+  if (!t || go.disabled) return;
+  go.disabled = true;
+  t.innerHTML = `<small>Describing… (the first time, LM Studio may take about 40 seconds to load the model)</small>`;
+  try {
+    const d = await post("/api/describe", { i, refresh: !!refresh });
+    if (vIndex === i) showDescription(d);
+  } catch (err) { if (vIndex === i) t.innerHTML = `<small>${esc(err.message)}</small>`; }
+  finally { go.disabled = false; }
 }
 async function addPossible(i, box) {
   try {
@@ -1204,6 +1238,7 @@ addEventListener("keydown", e => {
     if (k === "escape" && $("#vwrap").classList.contains("drawing")) drawMode(false);
     else if (k === "escape") closePhoto();
     else if (k === "b") drawMode(!$("#vwrap").classList.contains("drawing"));
+    else if (k === "d" && $("#descgo")) describePhoto(vIndex, true);
     else if (k === "arrowleft") stepPhoto(-1);
     else if (k === "arrowright") stepPhoto(1);
     else if (["n", "x", "r"].includes(k)) viewerKey(k);

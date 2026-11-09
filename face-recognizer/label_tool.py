@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urlparse
 import cv2
 import numpy as np
 
+import describe
 import websearch
 from localguard import refuse_reason
 
@@ -59,6 +60,24 @@ def make_handler(db, importer):
         while len(photo_cache) > 12:
             photo_cache.popitem(last=False)
         return jpg
+
+    def describe_key(i):
+        """Descriptions are per photo (per frame for a video): every face in it shares one."""
+        h = db.store.photo[i]
+        rec = db.store.photos.get(h, {})
+        frame = rec.get("at", {}).get(db.store.fid[i]) if rec.get("video") else None
+        return h if frame is None else f"{h}:{frame}"
+
+    def describe_picture(i):
+        """The photo of face i at most 1024 px on its longer side, as JPEG, for the local model."""
+        jpg = photo_jpeg(i)
+        if jpg is None:
+            raise ValueError("The original photo isn't on this computer any more.")
+        img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+        s = min(1.0, 1024 / max(img.shape[:2]))
+        if s < 1:
+            img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+        return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
 
     def search_picture(i, face):
         """JPEG to search the web with: the whole photo, or the face with hair, chin and some background
@@ -120,6 +139,14 @@ def make_handler(db, importer):
                     if jpg is None:
                         return self.send({"error": "photo not found"}, code=404)
                     return self.send(jpg, "image/jpeg", cache=True)
+                # "Describe photo" (describe.py): outside the database lock, as it asks LM Studio
+                if path == "/api/describe/status":
+                    return self.send(describe.status())
+                if path.startswith("/api/describe/"):
+                    i = int(path[14:])
+                    if not 0 <= i < db.n:
+                        return self.send({"error": "no such face"}, code=404)
+                    return self.send({"saved": describe.saved(describe_key(i))})
                 with db.lock:
                     if path == "/api/summary":
                         s = db.summary()
@@ -215,6 +242,19 @@ def make_handler(db, importer):
                     return self.send({"ok": True, **n})
                 if path == "/api/autoname":
                     return self.send({"ok": True, "named": db.autoname()})
+                if path == "/api/describe":              # describe the photo with the local model (LM Studio)
+                    i = body.get("i")
+                    if not (isinstance(i, int) and 0 <= i < db.n):
+                        raise ValueError("no such face")
+                    k = describe_key(i)
+                    d = describe.saved(k)
+                    if d and not body.get("refresh"):
+                        return self.send(dict(d, cached=True))
+                    try:
+                        d = describe.ask(describe_picture(i))
+                    except describe.Unavailable as e:
+                        raise ValueError(str(e))
+                    return self.send(describe.save(k, d))
                 if path == "/api/websearch/key":        # optional Cloud Vision key, kept outside the project
                     websearch.save_key(body.get("key"))
                     return self.send({"ok": True, "set": bool(websearch.key()), "services": websearch.services()})

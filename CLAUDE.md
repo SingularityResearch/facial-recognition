@@ -38,6 +38,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     Labeling tabs; starts both servers in one process (`tracker.bind/attach`, `label_tool.attach`), each still on its
     own port and page. PyInstaller one-file build; uses `models\` and `data\` beside the .exe (`face_id.ROOT`).
   - `websearch.py` — the labeling tool's **Web search**: Amazon Rekognition celebrity recognition + Google Cloud Vision web detection, combined into suggestions with a confidence level (on click only; US services, English results, each capped under $10/month; keys in `%APPDATA%\FaceLabels`, never in the repo).
+  - `describe.py` — the labeling tool's **Describe photo**: a vision model in LM Studio on this computer
+    (`127.0.0.1:1234`, `FACE_LLM_URL`; `reasoning_effort` none, ~3 s a photo) describes the photo and reads its text;
+    saved per photo in `%APPDATA%\FaceLabels\descriptions.json`, never `data/`. Told not to identify anyone.
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
   - `fetch_models.py` — downloads missing models (or Git LFS placeholders) from the GitHub Release `models-v1`
