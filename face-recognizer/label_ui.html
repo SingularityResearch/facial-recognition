@@ -939,9 +939,10 @@ async function openPhoto(i) {
     ${others.length ? `<div class="meta">Also in this ${info?.video != null ? "frame" : "photo"}: ${others.map(f => esc(f.name ? label(f.name) : "someone not named yet")).join(", ")}. Click a box to switch to that face.</div>` : ""}
     ${info?.exists ? `<div class="clue" id="desc"><h4>The photo, described <small>(by a model on this computer)</small></h4>
       <div id="desctext"></div>
-      <div class="acts" style="margin-top:6px"><button class="btn small" id="descgo" title="Asks the vision model in LM Studio on this computer to describe the photo and read any text in it (nothing leaves this computer)">Describe photo <kbd>D</kbd></button>
+      <div class="acts" style="margin-top:6px"><button class="btn small" id="descgo" title="Asks a vision model on this computer (LM Studio, or the built-in one) to describe the photo and read any text in it (nothing leaves this computer)">Describe photo <kbd>D</kbd></button>
       <label class="vtoggle"><input type="checkbox" id="descauto" ${store.get("describe") === "1" ? "checked" : ""}> Every photo</label></div>
-      <div class="acts" style="margin-top:6px"><button class="btn small" id="descall" title="Describes every photo not described yet, in the background (progress at the top; Stop there pauses it, and it carries on from where it stopped)">Describe all photos</button> <small id="desccount"></small></div></div>` : ""}
+      <div class="acts" style="margin-top:6px"><button class="btn small" id="descall" title="Describes every photo not described yet, in the background (progress at the top; Stop there pauses it, and it carries on from where it stopped)">Describe all photos</button> <small id="desccount"></small></div>
+      <div class="acts" style="margin-top:6px;display:none" id="descget"><button class="btn small" id="descgetgo" title="Downloads Florence-2, a smaller vision model that runs inside this app when LM Studio isn't available (from Hugging Face; your photos aren't sent anywhere). Plainer descriptions than LM Studio's.">Download the built-in model</button> <small id="descgetmsg"></small></div></div>` : ""}
     ${nm ? "" : clues(info?.hints)}
     ${info?.exists ? `<label class="vtoggle" title="Dashed boxes: things the detector thinks may be faces (blurry, turned or partly hidden) that weren't kept when the photo was added. Nothing is saved until you click one."><input type="checkbox" id="possible" ${store.get("possible") !== "0" ? "checked" : ""}> Show possible faces <span id="possn"></span></label>` : ""}
     <div class="acts">${info?.exists && info?.video == null ? `<button class="btn" id="drawface" title="Drag a box around a face the detector missed (hidden, turned away, tiny), then name it">Draw a face <kbd>B</kbd></button>` : ""}
@@ -959,13 +960,10 @@ async function openPhoto(i) {
       try { await post("/api/describe/all", {}); toast("Describing every photo in the background: progress at the top"); pollImport(); }
       catch (err) { toast(err.message, true); }
     };
-    get("/api/describe/status").then(r => {
-      if (vIndex !== i || !$("#desccount")) return;
-      const left = r.photos - r.described;
-      $("#desccount").textContent = r.ok ? `${r.described.toLocaleString()} of ${r.photos.toLocaleString()} described` : r.why;
-      if (left <= 0) $("#descall").style.display = "none";
-      else $("#descall").textContent = `Describe all photos (${left.toLocaleString()} to go, about ${Math.max(1, Math.round(left * 3.5 / 3600))} h)`;
-    }).catch(() => {});
+    describeStatus(i);
+    $("#descgetgo").onclick = async () => {
+      try { await post("/api/describe/getmodel", {}); describeStatus(i); } catch (err) { toast(err.message, true); }
+    };
     $("#descauto").onchange = () => { store.set("describe", $("#descauto").checked ? "1" : "0"); if ($("#descauto").checked) describePhoto(i, false); };
     get(`/api/describe/${i}`).then(r => {
       if (vIndex !== i) return;
@@ -1050,14 +1048,29 @@ function showDescription(d) {
   t.innerHTML = `${esc(d.text)}<br><small>${esc(d.model || "")}${d.when ? ", " + esc(d.when) : ""}${d.secs ? `, ${d.secs} s` : ""}</small>`;
   $("#descgo").innerHTML = "Describe again <kbd>D</kbd>";
 }
+// what describes photos (LM Studio, or the built-in model), how many are done, and the built-in model's download
+async function describeStatus(i) {
+  let r;
+  try { r = await get("/api/describe/status"); } catch { return; }
+  if (vIndex !== i || !$("#desccount")) return;
+  const left = r.photos - r.described, b = r.builtin || {};
+  $("#desccount").textContent = r.ok ? `${r.described.toLocaleString()} of ${r.photos.toLocaleString()} described` : r.why;
+  if (left <= 0 || !r.ok) $("#descall").style.display = "none";
+  else $("#descall").textContent = `Describe all photos (${left.toLocaleString()} to go, about ${Math.max(1, Math.round(left * 3.5 / 3600))} h)`;
+  $("#descget").style.display = !r.ok || b.running ? "" : "none";
+  $("#descgetgo").disabled = !!b.running;
+  $("#descgetgo").textContent = `Download the built-in model (${(b.size_mb / 1000).toFixed(1)} GB)`;
+  $("#descgetmsg").textContent = b.running ? `${Math.floor(b.done * 100 / (b.size_mb * 1e6))}% downloaded` : b.error || "";
+  if (b.running) setTimeout(() => describeStatus(i), 2000);
+}
 async function describePhoto(i, refresh) {
   const t = $("#desctext"), go = $("#descgo");
   if (!t || go.disabled) return;
   go.disabled = true;
-  t.innerHTML = `<small>Describing… (the first time, LM Studio may take about 40 seconds to load the model)</small>`;
+  t.innerHTML = `<small>Describing… (the first time, the model may take up to 40 seconds to load)</small>`;
   try {
     const d = await post("/api/describe", { i, refresh: !!refresh });
-    if (vIndex === i) showDescription(d);
+    if (vIndex === i) { showDescription(d); describeStatus(i); }
   } catch (err) { if (vIndex === i) t.innerHTML = `<small>${esc(err.message)}</small>`; }
   finally { go.disabled = false; }
 }

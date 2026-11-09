@@ -324,7 +324,10 @@ def make_handler(db, importer):
                     except describe.Unavailable as e:
                         raise ValueError(str(e))
                     return self.send({"ok": True})
-                if path == "/api/describe":              # describe the photo with the local model (LM Studio)
+                if path == "/api/describe/getmodel":     # download the built-in describer (florence.py), background
+                    describe.florence.download_in_background()
+                    return self.send({"ok": True})
+                if path == "/api/describe":              # describe the photo with the local model (LM Studio or built-in)
                     i = body.get("i")
                     if not (isinstance(i, int) and 0 <= i < db.n):
                         raise ValueError("no such face")

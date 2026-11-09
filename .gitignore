@@ -22,3 +22,6 @@ face-recognizer/models/adaface_src/
 
 # labels.json copies from each labeling-tool start: local safety net only (git history has the rest)
 face-recognizer/data/backups/
+
+# Built-in photo describer (florence.py): 0.8 GB, downloaded on request from Hugging Face
+face-recognizer/models/florence2/

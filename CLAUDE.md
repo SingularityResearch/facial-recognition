@@ -41,6 +41,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `describe.py` — the labeling tool's **Describe photo**: a vision model in LM Studio on this computer
     (`127.0.0.1:1234`, `FACE_LLM_URL`; `reasoning_effort` none, ~3 s a photo) describes the photo and reads its text;
     saved per photo in `%APPDATA%\FaceLabels\descriptions.json`, never `data/`. Told not to identify anyone.
+    Without LM Studio: `florence.py`, the built-in Florence-2 large (ONNX int8, CPU only: DirectML gave garbage;
+    ~3 s a photo; plainer and less accurate), 0.8 GB downloaded on request from Hugging Face (pinned revision, SHA-256)
+    into `models/florence2/` (not in git, not in `fetch_models.py`).
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
   - `fetch_models.py` — downloads missing models (or Git LFS placeholders) from the GitHub Release `models-v1`

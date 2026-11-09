@@ -8,6 +8,9 @@ else LM Studio loads the first one it lists (about 40 s the first time). Reasoni
 (reasoning_effort "none"): with it, Qwen 3.6 35B-A3B spent ~350 of 400 tokens thinking (6.6 s a photo);
 without it, 3.3 s for the same description.
 
+When LM Studio isn't there (not running, or no vision model in it), the built-in Florence-2 model (florence.py,
+downloaded on request, 0.8 GB) describes instead: plainer and less accurate, about 3.4 s a photo on the CPU.
+
 The model is told not to guess who anyone is: names come from the face recognizer and from you.
 Descriptions are saved in %APPDATA%\\FaceLabels\\descriptions.json (outside the project: data\\ is published,
 and these describe personal photos in words), one per photo (or video frame), so each is described once.
@@ -20,6 +23,8 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+import florence
 
 URL = os.environ.get("FACE_LLM_URL", "http://127.0.0.1:1234").rstrip("/")
 HOME = Path(os.environ.get("APPDATA", Path.home())) / "FaceLabels"
@@ -43,7 +48,17 @@ def _get(path, timeout=5):
 
 
 def model():
-    """The vision model to use: a loaded one if any, else the first LM Studio lists. Raises Unavailable."""
+    """The vision model to use: LM Studio's (a loaded one if any, else the first it lists), else the built-in
+    one if it's downloaded. Raises Unavailable."""
+    try:
+        return lmstudio_model()
+    except Unavailable as e:
+        if florence.ready():
+            return florence.NAME
+        raise Unavailable(f"{e}, or download the built-in model ({florence.SIZE / 1e9:.1f} GB, plainer descriptions)") from e
+
+
+def lmstudio_model():
     try:
         ms = _get("/api/v0/models").get("data", [])
     except (OSError, ValueError) as e:
@@ -57,15 +72,21 @@ def model():
 
 def status():
     """{"ok": bool, "model" or "why"} for the page."""
+    b = florence.status()
     try:
-        return {"ok": True, "model": model()}
+        return {"ok": True, "model": model(), "builtin": b}
     except Unavailable as e:
-        return {"ok": False, "why": str(e)}
+        return {"ok": False, "why": str(e), "builtin": b}
 
 
 def ask(jpeg, name=None):
     """Describe one JPEG with the local model. Returns {"text", "model", "secs"}."""
     name = name or model()
+    if name == florence.NAME:
+        try:
+            return florence.describe(jpeg)
+        except OSError as e:
+            raise Unavailable(str(e)) from e
     body = {"model": name, "temperature": 0.2, "max_tokens": 400, "reasoning_effort": "none",
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": PROMPT},
