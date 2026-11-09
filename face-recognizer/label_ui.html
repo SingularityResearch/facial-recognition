@@ -581,13 +581,16 @@ function viewUnknown(d) {
 
 function viewPossible(d) {
   SECTIONS.clear();
+  const likely = d.faces.filter(f => f[4]), unlikely = d.faces.filter(f => !f[4]);
   let h = head("Possible faces", d.faces.length ? plural(d.faces.length, "face") : null,
-    `Faces the detector was less sure of (45% to 85%): blurry, turned, small or partly hidden faces, and some things that only look like faces. They're kept so you can name them now or later; once one looks like someone you've named, it moves to <b>Suggestions</b>. Not a face: <b>Ignore</b>. Surest first.`);
+    `Faces the detector was less sure of (45% to 85%): blurry, turned, small or partly hidden faces, and many things that only look like faces. Sorted by how much each looks like a real face (learned from the faces you've named and ignored); only the first group gets dashed boxes in the photo view. Once one looks like someone you've named, it moves to <b>Suggestions</b>. Not a face: <b>Ignore</b> (that also teaches the sorting).`);
   if (d.left) h += `<p style="margin:-6px 0 16px"><button class="btn small" id="scanpossible" title="Looks at every photo added before possible faces were kept (videos and online-only cloud photos are skipped)">Look in ${plural(d.left, "photo")} added before</button></p>`;
   if (!d.faces.length) return h + `<div class="empty"><b>No possible faces${d.left ? " yet" : ""}</b>${d.left ? "Look in the photos added before to find them." : "Every one is named, suggested or ignored."}</div>`;
-  h += `<section class="sec" data-sec="possible"><div class="sechead"><h3>Not named yet</h3><span class="cnt">${d.faces.length}</span>
-    <div class="acts" style="color:var(--muted);font-size:13px">Select faces, then <kbd>N</kbd> to name or <kbd>X</kbd> to ignore. Open one (double-click) to see it in its photo.</div></div>
-    ${grid(d.faces.map(f => ({ i: f[0], q: f[1] })), "possible")}</section>`;
+  const sec = (key, title, faces, note) => faces.length ? `<section class="sec" data-sec="${key}"><div class="sechead"><h3>${title}</h3><span class="cnt">${faces.length}</span>
+    <div class="acts" style="color:var(--muted);font-size:13px">${note}</div></div>
+    ${grid(faces.map(f => ({ i: f[0], q: f[1] })), key)}</section>` : "";
+  h += sec("possible", "Look like faces", likely, "Select faces, then <kbd>N</kbd> to name or <kbd>X</kbd> to ignore. Double-click one to see it in its photo.");
+  h += sec("unlikely", "Less likely to be faces", unlikely, "Mostly food, objects and textures; no dashed boxes for these.");
   return h;
 }
 
@@ -896,6 +899,7 @@ async function openPhoto(i) {
   if (img) img.onload = () => {
     const s = img.clientWidth / img.naturalWidth;
     for (const f of info.faces) {
+      if (f.shown === false && f.i !== i) continue;   // possible face that doesn't look enough like a real face
       const b = document.createElement("div");
       b.className = "box" + (f.i === i ? " me" : "") + (f.maybe != null && !f.name ? " maybe" : "");
       Object.assign(b.style, { left: f.box[0] * s + "px", top: f.box[1] * s + "px", width: f.box[2] * s + "px", height: f.box[3] * s + "px" });

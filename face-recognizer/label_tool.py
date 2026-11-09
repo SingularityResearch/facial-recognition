@@ -149,7 +149,7 @@ def make_handler(db, importer):
                         h = db.store.photo[i]
                         p = db.store.photos.get(h, {})
                         others = [{"i": j, "box": [round(float(v)) for v in db.store.box[j][:4]], "name": db.name(j),
-                                   "q": db.q(j), "maybe": db.maybe(j)} for j in db.by_photo().get(h, [])]
+                                   "q": db.q(j), "maybe": db.maybe(j), "shown": db.shown(j)} for j in db.by_photo().get(h, [])]
                         path_ = p.get("path")
                         others = [f for f in others if db.video_at(f["i"]) == db.video_at(i)]   # same video frame
                         return self.send({"i": i, "path": path_ or p.get("name") or db.store.file[i],

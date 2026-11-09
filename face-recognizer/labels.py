@@ -62,6 +62,9 @@ def file_hash(path):
 CLOUD = 0x400000 | 0x1000                     # Windows file attributes: data still in the cloud (online-only)
 
 
+FACE_SHOW = 0.25   # share of possible faces drawn as dashed boxes: the most face-like (LabelDB.face_cut)
+
+
 def needs_possible(p):
     """True if photo record p hasn't been looked at for possible faces yet (videos aren't: too slow)."""
     return bool(p.get("path")) and not p.get("video") and not p.get("dup_of") and "maybe" not in p
@@ -667,7 +670,8 @@ class LabelDB:
 
     def changed(self):
         self.version += 1
-        self._cache = {k: v for k, v in self._cache.items() if k in ("E", "E_n")}
+        # kept: face prints, and the faceness model (retrained when faces are added, not on every label)
+        self._cache = {k: v for k, v in self._cache.items() if k in ("E", "E_n", "fm", "fm_n", "fs", "fc", "fc_n")}
 
     def by_photo(self):
         if self._cache.get("bp_n") != self.n:
@@ -858,13 +862,85 @@ class LabelDB:
         singles.sort(key=lambda i: -(self.q(i) or 0))
         return {"groups": out, "singles": [[i, self.q(i)] for i in singles]}
 
+    def _face_sets(self):
+        """(real, junk) face indexes to learn faceness from: real = faces from the normal detector (85% sure;
+        named or not, but not Ignored: trained on only the named ones, it ranked real faces worse) and
+        possible faces you named; junk = possible faces not named, or Ignored (most possible faces aren't
+        faces: 85% of a hand-sorted sample of 160). Faces drawn by hand count as neither."""
+        pos, neg = [], []
+        for i in range(self.n):
+            nm, mb = self.name(i), self.maybe(i)
+            if mb is None:
+                if nm != IGNORE:
+                    pos.append(i)
+            elif mb > 0:
+                (neg if not nm or nm == IGNORE else pos).append(i)
+        return pos, neg
+
+    @staticmethod
+    def _fit(E, pos, neg):
+        from sklearn.linear_model import LogisticRegression
+        return LogisticRegression(C=0.1, max_iter=5000, class_weight="balanced").fit(
+            E[pos + neg], [1] * len(pos) + [0] * len(neg))
+
+    def _face_model(self):
+        """Logistic regression on face prints, real faces against possible faces (_face_sets), for faces it
+        hasn't seen (the photo view's on-the-spot boxes). Retrained when the number of faces changes. None when
+        there's too little to learn from."""
+        if self._cache.get("fm_n") != self.n:
+            self._cache["fm_n"] = self.n
+            pos, neg = self._face_sets()
+            self._cache["fm"] = self._fit(self.E(), pos, neg) if len(pos) >= 50 and len(neg) >= 50 else None
+        return self._cache["fm"]
+
+    def faceness(self, emb):
+        """'Looks like a real face' score (0..1) for face prints (rows of emb), or None without a model."""
+        m = self._face_model()
+        return None if m is None else m.predict_proba(np.atleast_2d(emb))[:, 1]
+
+    def face_cut(self):
+        """The faceness a possible face needs for its dashed box: the score of the top FACE_SHOW share of
+        possible faces. Each possible face is scored by a model trained without it (5 folds), so it isn't
+        simply learned as junk. On 160 hand-sorted possible faces (24 real; AUC 0.84), showing the top 25%
+        kept 17 of the 24 real faces and 21 of the other 136, about half of those drawings and game
+        characters (to a face print, a drawn face is a face): about 9 in 10 non-face objects get no box.
+        Top 35% kept 18 real and 32 others, top 50% 21 and 47. 0 (show all) without enough to learn from."""
+        if self._cache.get("fc_n") != self.n:
+            self._cache["fc_n"] = self.n
+            pos, neg = self._face_sets()
+            idx = [i for i in range(self.n) if (self.maybe(i) or 0) > 0]
+            scores = {}
+            if len(pos) >= 50 and len(neg) >= 50 and idx:
+                E = self.E()
+                negset = set(neg)
+                folds = [neg[k::5] for k in range(5)]
+                for k, fold in enumerate(folds):
+                    m = self._fit(E, pos, [j for kk, f in enumerate(folds) if kk != k for j in f])
+                    for j, v in zip(fold, m.predict_proba(E[fold])[:, 1].tolist()):
+                        scores[j] = v
+                rest = [j for j in idx if j not in negset]        # possible faces you named: full model
+                if rest:
+                    for j, v in zip(rest, self.faceness(E[rest]).tolist()):
+                        scores[j] = v
+            self._cache["fs"] = scores
+            self._cache["fc"] = float(np.quantile(list(scores.values()), 1 - FACE_SHOW)) if scores else 0.0
+        return self._cache["fc"]
+
+    def face_score(self, i):
+        """Faceness of possible face i (1.0 for faces drawn by hand and faces that aren't possible faces)."""
+        self.face_cut()
+        return self._cache["fs"].get(i, 1.0)
+
+    def shown(self, i):
+        """Whether the photo view draws face i: every face except unnamed possible faces below face_cut."""
+        return self.maybe(i) is None or bool(self.name(i)) or self.face_score(i) >= self.face_cut()
+
     def possible(self):
-        """Possible faces nobody has named and the model doesn't suggest a name for, surest first:
-        [[i, quality, detector score]]. Their own list, so New faces isn't buried in them: in a sample
-        of 400 photos about half of those scored 0.55-0.85 weren't faces (food, tyres, drawings, pets)."""
-        out = [[i, self.q(i), self.maybe(i)] for i, nm, s, _ in self.triage()
-               if self.maybe(i) is not None and not (nm and s >= MATCH)]
-        return sorted(out, key=lambda f: -f[2])
+        """Possible faces nobody has named and the model doesn't suggest a name for, most face-like first:
+        [[i, quality, detector score, faceness, shown]]. Their own list, so New faces isn't buried in them."""
+        out = [[i, self.q(i), self.maybe(i), round(self.face_score(i), 3), self.shown(i)]
+               for i, nm, s, _ in self.triage() if self.maybe(i) is not None and not (nm and s >= MATCH)]
+        return sorted(out, key=lambda f: -f[3])
 
     def possible_left(self):
         """Photos not yet looked at with the low cut-off (Importer.scan_possible)."""
@@ -1046,7 +1122,7 @@ class LabelDB:
                            "auto": sum(1 for i in faces if self.rec(i).get("by") == "auto")})
         chk = self.checks()
         return {"faces": self.n, "photos": len(self.store.photos), "suggested": sugg, "unknown": unk,
-                "hiddenLow": low, "possible": len(self.possible()), "possibleLeft": self.possible_left(),
+                "hiddenLow": low, "possible": sum(1 for f in self.possible() if f[4]), "possibleLeft": self.possible_left(),
                 "auto": sum(1 for r in self.labels.values() if r.get("by") == "auto" and r.get("n")),
                 "checks": len(chk["mislabeled"]) + len(chk["few"]), "people": people,
                 "tagged": sum(len(g["faces"]) for g in self.tagged()), "facts": self.facts.status,
@@ -1333,8 +1409,16 @@ class Importer:
         return h, rec, frame, img, [r for r in rows if all(F._iou(r, k) < 0.3 for k in have)]
 
     def possible_faces(self, i):
-        """[{box: [x, y, w, h], score}] for the photo view's dashed boxes (nothing is saved)."""
-        rows = self._possible(i)[4]
+        """[{box: [x, y, w, h], score}] for the photo view's dashed boxes (nothing is saved): only those
+        that look enough like a real face (LabelDB.face_cut), like the saved possible faces."""
+        _, _, _, img, rows = self._possible(i)
+        if rows:
+            if self.faces is None:
+                self.faces = F.Faces()
+            f = self.db.faceness(np.asarray([self.faces.embed(F.align(img, r)) for r in rows]))
+            if f is not None:
+                cut = self.db.face_cut()
+                rows = [r for r, v in zip(rows, f) if v >= cut]
         return [{"box": [round(float(v), 1) for v in r[:4]], "score": round(float(r[14]), 2)} for r in rows]
 
     def find_more(self, i, box=None):
