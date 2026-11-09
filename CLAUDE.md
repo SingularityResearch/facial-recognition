@@ -22,6 +22,8 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     `photos.json` `at`), `relocate` (finds photos that moved, e.g. a changed drive letter, at start),
     auto-naming, duplicate-photo detection, undo history, `PhotoFacts` (camera dates + people tags, saved in `data/photo_facts.json`)
     and clues for unnamed faces (`hints`: closest people, photo tags, same occasion).
+    Possible faces: each photo is also read with a low detector cut-off (`Importer.MORE_SCORE` 0.45, 4 sizes; sampled,
+    not measured for accuracy); those faces are marked in `photos.json` `maybe` and listed apart from New faces.
   - `label_tool.py` + `label_ui.html` / `label.bat` — labeling web app on `http://127.0.0.1:8765`.
     Chris calls this "the recognizer".
   - `tracker.py` + `tracker_ui.html` / `recognize.bat` — live tracker on `http://127.0.0.1:8766`.

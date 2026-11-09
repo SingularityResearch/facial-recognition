@@ -176,6 +176,10 @@
   .box.me { border-color: var(--accent); border-width: 3px; box-shadow: 0 0 0 2000px rgb(0 0 0 / .18); }
   .box span { position: absolute; left: -2px; bottom: 100%; margin-bottom: 3px; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: rgb(0 0 0 / .7); color: #fff; }
   .box.me span { background: var(--accent); color: var(--accent-ink); }
+  .box.maybe { border: 2px dashed rgb(250 204 21 / .85); }
+  .box.maybe:hover { border-style: solid; }
+  .box.maybe span { background: rgb(250 204 21 / .9); color: #111; }
+  .vtoggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
   .stage .nofile { color: #d8ddda; text-align: center; }
   .side { background: var(--panel); padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
   .side .who { font-size: 20px; font-weight: 650; }
@@ -224,6 +228,7 @@
     <h2>To review</h2>
     <button class="nav" data-v="suggested">Suggestions <span class="n" id="n-suggested"></span></button>
     <button class="nav" data-v="unknown">New faces <span class="n" id="n-unknown"></span></button>
+    <button class="nav" data-v="possible" title="Blurry, turned, small or partly hidden faces, kept with a lower detector cut-off">Possible faces <span class="n" id="n-possible"></span></button>
     <button class="nav" data-v="tagged">From photo tags <span class="n" id="n-tagged"></span></button>
     <button class="nav" data-v="auto">Named automatically <span class="n" id="n-auto"></span></button>
     <button class="nav" data-v="checks">Checks <span class="n" id="n-checks"></span></button>
@@ -363,7 +368,7 @@ async function loadSummary() {
   SUM = await get("/api/summary");
   if (SUM.faces !== FIDS.length) FIDS = (await get("/api/fids")).fids;
   const set = (id, n, hot) => { const e = $("#n-" + id); e.textContent = n ? n.toLocaleString() : ""; e.classList.toggle("hot", !!hot && n > 0); };
-  set("suggested", SUM.suggested, true); set("unknown", SUM.unknown, true); set("auto", SUM.auto); set("checks", SUM.checks);
+  set("suggested", SUM.suggested, true); set("unknown", SUM.unknown, true); set("possible", SUM.possible); set("auto", SUM.auto); set("checks", SUM.checks);
   set("tagged", SUM.tagged, true);
   WEBCAM = new Set(SUM.webcam || []);
   VIDEO = new Set(SUM.video || []);
@@ -403,7 +408,7 @@ const hashOf = v => "#" + (v.v === "person" ? "person/" + encodeURIComponent(v.n
 function viewOf(hash) {
   const h = hash.replace(/^#/, "");
   if (h.startsWith("person/")) return { v: "person", name: decodeURIComponent(h.slice(7)) };
-  return ["suggested", "unknown", "tagged", "auto", "checks"].includes(h) ? { v: h } : null;
+  return ["suggested", "unknown", "possible", "tagged", "auto", "checks"].includes(h) ? { v: h } : null;
 }
 function go(v) {
   view = v; clearSel(); render(true);
@@ -438,6 +443,7 @@ async function render(top) {
     const low = showLow ? "1" : "0";
     if (view.v === "suggested") html = viewSuggested(await get(`/api/suggested?low=${low}`));
     else if (view.v === "unknown") html = viewUnknown(await get(`/api/unknown?low=${low}${view.regroup ? "&regroup=1" : ""}`));
+    else if (view.v === "possible") html = viewPossible(await get("/api/possiblefaces"));
     else if (view.v === "auto") html = viewAuto(await get("/api/auto"));
     else if (view.v === "tagged") html = viewTagged(await get(`/api/tagged?low=${low}`));
     else if (view.v === "checks") html = viewChecks(await get("/api/checks"));
@@ -449,6 +455,11 @@ async function render(top) {
   wire(main);
   main.scrollTop = scroll;
   pruneSel();
+  const scan = $("#scanpossible");
+  if (scan) scan.onclick = async () => {
+    try { await post("/api/possible/scan", {}); scan.disabled = true; scan.textContent = "Looking… (progress at the top)"; pollImport(); }
+    catch (err) { toast(err.message, true); }
+  };
 }
 
 // sections hold their faces until drawn, so huge views stay fast
@@ -562,6 +573,18 @@ function viewUnknown(d) {
       <div class="acts" style="color:var(--muted);font-size:13px">Select faces, then <kbd>N</kbd> to name or <kbd>X</kbd> to ignore. Open one (double-click) for clues to who it is.</div></div>
       ${grid(d.singles.map(f => ({ i: f[0], q: f[1] })), "singles")}</section>`;
   }
+  return h;
+}
+
+function viewPossible(d) {
+  SECTIONS.clear();
+  let h = head("Possible faces", d.faces.length ? plural(d.faces.length, "face") : null,
+    `Faces the detector was less sure of (45% to 85%): blurry, turned, small or partly hidden faces, and some things that only look like faces. They're kept so you can name them now or later; once one looks like someone you've named, it moves to <b>Suggestions</b>. Not a face: <b>Ignore</b>. Surest first.`);
+  if (d.left) h += `<p style="margin:-6px 0 16px"><button class="btn small" id="scanpossible" title="Looks at every photo added before possible faces were kept (videos and online-only cloud photos are skipped)">Look in ${plural(d.left, "photo")} added before</button></p>`;
+  if (!d.faces.length) return h + `<div class="empty"><b>No possible faces${d.left ? " yet" : ""}</b>${d.left ? "Look in the photos added before to find them." : "Every one is named, suggested or ignored."}</div>`;
+  h += `<section class="sec" data-sec="possible"><div class="sechead"><h3>Not named yet</h3><span class="cnt">${d.faces.length}</span>
+    <div class="acts" style="color:var(--muted);font-size:13px">Select faces, then <kbd>N</kbd> to name or <kbd>X</kbd> to ignore. Open one (double-click) to see it in its photo.</div></div>
+    ${grid(d.faces.map(f => ({ i: f[0], q: f[1] })), "possible")}</section>`;
   return h;
 }
 
@@ -871,13 +894,14 @@ async function openPhoto(i) {
     const s = img.clientWidth / img.naturalWidth;
     for (const f of info.faces) {
       const b = document.createElement("div");
-      b.className = "box" + (f.i === i ? " me" : "");
+      b.className = "box" + (f.i === i ? " me" : "") + (f.maybe != null && !f.name ? " maybe" : "");
       Object.assign(b.style, { left: f.box[0] * s + "px", top: f.box[1] * s + "px", width: f.box[2] * s + "px", height: f.box[3] * s + "px" });
-      b.innerHTML = `<span>${esc(f.name ? label(f.name) : "?")}</span>`;
-      b.title = f.name ? label(f.name) : "Not named yet";
+      b.innerHTML = `<span>${esc(f.name ? label(f.name) : f.maybe != null ? `Face? ${Math.round(f.maybe * 100)}%` : "?")}</span>`;
+      b.title = f.name ? label(f.name) : f.maybe != null ? `Possible face (the detector is ${Math.round(f.maybe * 100)}% sure), not named yet` : "Not named yet";
       b.onclick = () => openPhoto(f.i);
       $("#vwrap").appendChild(b);
     }
+    if (store.get("possible") !== "0") showPossible(i, s);
   };
   const others = (info?.faces || []).filter(f => f.i !== i);
   vInfo = info;
@@ -889,7 +913,8 @@ async function openPhoto(i) {
       ${nm !== IGN ? `<button class="btn" data-v="x">Ignore <kbd>X</kbd></button>` : ""}</div>
     ${others.length ? `<div class="meta">Also in this ${info?.video != null ? "frame" : "photo"}: ${others.map(f => esc(f.name ? label(f.name) : "someone not named yet")).join(", ")}. Click a box to switch to that face.</div>` : ""}
     ${nm ? "" : clues(info?.hints)}
-    <div class="acts">${info?.exists ? `<button class="btn" id="morefaces" title="Looks again for faces in this ${info?.video != null ? "frame" : "photo"} with a much lower cut-off: it may also find things that aren't faces (Ignore them)">Find more faces</button>` : ""}
+    ${info?.exists ? `<label class="vtoggle" title="Dashed boxes: things the detector thinks may be faces (blurry, turned or partly hidden) that weren't kept when the photo was added. Nothing is saved until you click one."><input type="checkbox" id="possible" ${store.get("possible") !== "0" ? "checked" : ""}> Show possible faces <span id="possn"></span></label>` : ""}
+    <div class="acts">${info?.exists ? `<button class="btn" id="morefaces" style="display:none" title="Adds every dashed box to this ${info?.video != null ? "frame" : "photo"}, ready to name (Ignore any that aren't faces)">Add all possible faces</button>` : ""}
       <button class="btn" id="wsopen" title="Sends this face to Amazon and this photo to Google, and suggests who it is">Web search</button></div>
     <div class="keys"><kbd>←</kbd> <kbd>→</kbd> previous / next face<br><kbd>Esc</kbd> close</div>`;
   $("#vside").querySelectorAll("[data-v]").forEach(b => b.onclick = () => viewerKey(b.dataset.v));
@@ -897,19 +922,45 @@ async function openPhoto(i) {
   $("#vside").querySelectorAll("[data-see]").forEach(b => b.onclick = () => openPhoto(+b.dataset.see));
   $("#wsopen").onclick = () => { $("#websearch").classList.add("on"); webSearch(false); };
   const more = $("#morefaces");
-  if (more) more.onclick = async () => {
-    more.disabled = true; more.textContent = "Looking…";
-    try {
-      const r = await post("/api/morefaces", { i });
-      if (!r.new.length) { toast("No more faces found"); more.textContent = "No more faces found"; return; }
-      await loadSummary();                          // the new faces get indexes (FIDS) and show up in New faces
-      toast(`Found ${plural(r.new.length, "more face")}: click a box to name it`);
-      if (vIndex === i) openPhoto(r.new[0]);
-    } catch (err) { toast(err.message, true); more.disabled = false; more.textContent = "Find more faces"; }
+  if (more) more.onclick = () => addPossible(i, null);
+  const pos = $("#possible");
+  if (pos) pos.onchange = () => {
+    store.set("possible", pos.checked ? "1" : "0");
+    if (pos.checked) { const img = $("#vimg"); if (img?.naturalWidth) showPossible(i, img.clientWidth / img.naturalWidth); }
+    else { document.querySelectorAll("#vwrap .box.cand").forEach(b => b.remove()); $("#possn").textContent = ""; $("#morefaces").style.display = "none"; }
   };
   const k = order.indexOf(i);
   $("#vprev").style.visibility = k > 0 ? "visible" : "hidden";
   $("#vnext").style.visibility = k >= 0 && k < order.length - 1 ? "visible" : "hidden";
+}
+// Possible faces: the detector run again on this photo with a much lower cut-off (labels.py
+// Importer.possible_faces), shown as dashed boxes. Clicking one adds it as a face, ready to name.
+async function showPossible(i, s) {
+  $("#possn").textContent = "(looking…)";
+  const r = await get(`/api/possible/${i}`).catch(() => null);
+  if (vIndex !== i || !$("#possible")?.checked) return;
+  document.querySelectorAll("#vwrap .box.cand").forEach(b => b.remove());
+  const faces = r?.faces || [];
+  $("#possn").textContent = r ? `(${faces.length || "none"})` : "(couldn't look)";
+  $("#morefaces").style.display = faces.length > 1 ? "" : "none";
+  for (const f of faces) {
+    const b = document.createElement("div");
+    b.className = "box maybe cand";          // cand: not saved yet (clicking adds it)
+    Object.assign(b.style, { left: f.box[0] * s + "px", top: f.box[1] * s + "px", width: f.box[2] * s + "px", height: f.box[3] * s + "px" });
+    b.innerHTML = `<span>Face? ${Math.round(f.score * 100)}%</span>`;
+    b.title = `Possible face (the detector is ${Math.round(f.score * 100)}% sure; photos keep faces from 85%). Click to add it and name it.`;
+    b.onclick = () => addPossible(i, f.box);
+    $("#vwrap").appendChild(b);
+  }
+}
+async function addPossible(i, box) {
+  try {
+    const r = await post("/api/morefaces", box ? { i, box } : { i });
+    if (!r.new.length) { toast("Nothing new to add"); return; }
+    await loadSummary();                            // the new faces get indexes (FIDS) and show up in New faces
+    toast(box ? "Face added: name it, or Ignore it if it isn't a face" : `Added ${plural(r.new.length, "face")}: click a box to name it`);
+    if (vIndex === i) openPhoto(r.new[0]);
+  } catch (err) { toast(err.message, true); }
 }
 // clues to who an unnamed face is; a chip names the face (Z undoes), ⤢ opens that person's face from the occasion
 function clues(h) {
@@ -1069,7 +1120,7 @@ function showImport(st) {
   const left = rate > 0 ? Math.round((st.total - st.done) / rate) : null;
   const parts = [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.videos ? "photos and videos" : "photos"}`, plural(st.faces, "face") + " found",
     `${st.auto.toLocaleString()} named automatically`];
-  if (st.known) parts.push(`${st.known.toLocaleString()} already added`);
+  if (st.known) parts.push(st.folder === "possible faces" ? `${st.known.toLocaleString()} not on this computer now` : `${st.known.toLocaleString()} already added`);
   if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
   if (st.errors) parts.push(`${st.errors} unreadable`);
   // the folder's own name (the whole path is in the tooltip): the counts are what matter at a glance

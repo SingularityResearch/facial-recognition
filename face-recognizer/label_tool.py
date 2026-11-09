@@ -140,12 +140,16 @@ def make_handler(db, importer):
                         return self.send(db.checks())
                     if path == "/api/import":
                         return self.send(importer.status)
+                    if path == "/api/possiblefaces":         # the Possible faces list
+                        return self.send({"faces": db.possible(), "left": db.possible_left()})
+                    if path.startswith("/api/possible/"):   # possible faces the import didn't keep (shown only)
+                        return self.send({"faces": importer.possible_faces(int(path[14:]))})
                     if path.startswith("/api/photoinfo/"):
                         i = int(path[15:])
                         h = db.store.photo[i]
                         p = db.store.photos.get(h, {})
                         others = [{"i": j, "box": [round(float(v)) for v in db.store.box[j][:4]], "name": db.name(j),
-                                   "q": db.q(j)} for j in db.by_photo().get(h, [])]
+                                   "q": db.q(j), "maybe": db.maybe(j)} for j in db.by_photo().get(h, [])]
                         path_ = p.get("path")
                         others = [f for f in others if db.video_at(f["i"]) == db.video_at(i)]   # same video frame
                         return self.send({"i": i, "path": path_ or p.get("name") or db.store.file[i],
@@ -179,7 +183,7 @@ def make_handler(db, importer):
                     n = db.act(str(body.get("action")), faces, body.get("name"))
                     return self.send({"ok": True, "changed": n, "undo": db.undo_stack[-1]["text"] if db.undo_stack else ""})
                 if path == "/api/morefaces":              # look again for faces in one photo (photo view)
-                    new = importer.find_more(int(body.get("i", -1)))
+                    new = importer.find_more(int(body.get("i", -1)), body.get("box"))
                     return self.send({"ok": True, "new": new})
                 if path == "/api/rename":
                     n = db.rename(str(body.get("old", "")), str(body.get("new", "")))
@@ -188,6 +192,9 @@ def make_handler(db, importer):
                     return self.send({"ok": True, "undone": db.undo()})
                 if path == "/api/import":
                     importer.start(body.get("folder", ""))
+                    return self.send({"ok": True})
+                if path == "/api/possible/scan":            # look for possible faces in photos added before
+                    importer.scan_possible()
                     return self.send({"ok": True})
                 if path == "/api/import/stop":
                     importer.stop.set()

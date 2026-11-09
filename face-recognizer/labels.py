@@ -62,6 +62,11 @@ def file_hash(path):
 CLOUD = 0x400000 | 0x1000                     # Windows file attributes: data still in the cloud (online-only)
 
 
+def needs_possible(p):
+    """True if photo record p hasn't been looked at for possible faces yet (videos aren't: too slow)."""
+    return bool(p.get("path")) and not p.get("video") and not p.get("dup_of") and "maybe" not in p
+
+
 def online_only(path):
     try:
         return bool(os.stat(path).st_file_attributes & CLOUD)
@@ -727,6 +732,14 @@ class LabelDB:
             self._cache["cam_n"] = self.n
         return self.store.photo[i] in self._cache["cam"]
 
+    def maybe(self, i):
+        """Detector score of face i if it's a possible face (kept with the low cut-off Importer.MORE_SCORE,
+        not the import's F.DET_SCORE), else None."""
+        if self._cache.get("mb_n") != self.n or "mb" not in self._cache:
+            self._cache["mb"] = {fid: sc for p in self.store.photos.values() for fid, sc in p.get("maybe", {}).items()}
+            self._cache["mb_n"] = self.n
+        return self._cache["mb"].get(self.store.fid[i])
+
     def video_at(self, i):
         """Seconds into its video where face i was found, or None for a face from a photo."""
         p = self.store.photos.get(self.store.photo[i], {})
@@ -737,13 +750,14 @@ class LabelDB:
         """{name: [face indices]} of named, usable faces: what each person is recognized from.
         Webcam faces named automatically wait for your confirmation first: many snapshots of one visit
         come in at once, so one wrong automatic name would otherwise teach the recognizer the wrong
-        face and name the next snapshots wrongly too."""
+        face and name the next snapshots wrongly too. Possible faces (maybe()) named automatically wait too."""
         if "gal" not in self._cache:
             idx_of = {f: i for i, f in enumerate(self.store.fid)}
             gal = {}
             for fid, r in self.labels.items():
                 i = idx_of.get(fid)
-                if i is not None and r.get("n") and self.usable(i) and not (r.get("by") == "auto" and self.webcam(i)):
+                if i is not None and r.get("n") and self.usable(i) and \
+                        not (r.get("by") == "auto" and (self.webcam(i) or self.maybe(i) is not None)):
                     gal.setdefault(r["n"], []).append(i)
             self._cache["gal"] = {k: sorted(v) for k, v in gal.items()}
         return self._cache["gal"]
@@ -817,7 +831,7 @@ class LabelDB:
         return None if np.isnan(q) else round(float(q), 3)
 
     def unknown(self, show_low=False, regroup=False):
-        tri = [(i, nm, s) for i, nm, s, _ in self.triage() if not (nm and s >= MATCH)]
+        tri = [(i, nm, s) for i, nm, s, _ in self.triage() if not (nm and s >= MATCH) and self.maybe(i) is None]
         unk = {i for i, _, _ in tri}
         if regroup or self.groups is None:
             self._regroup(sorted(unk))
@@ -843,6 +857,18 @@ class LabelDB:
             out.append({"id": k + 1, "faces": [[i, self.q(i)] for i in g], "hint": hint})
         singles.sort(key=lambda i: -(self.q(i) or 0))
         return {"groups": out, "singles": [[i, self.q(i)] for i in singles]}
+
+    def possible(self):
+        """Possible faces nobody has named and the model doesn't suggest a name for, surest first:
+        [[i, quality, detector score]]. Their own list, so New faces isn't buried in them: in a sample
+        of 400 photos about half of those scored 0.55-0.85 weren't faces (food, tyres, drawings, pets)."""
+        out = [[i, self.q(i), self.maybe(i)] for i, nm, s, _ in self.triage()
+               if self.maybe(i) is not None and not (nm and s >= MATCH)]
+        return sorted(out, key=lambda f: -f[2])
+
+    def possible_left(self):
+        """Photos not yet looked at with the low cut-off (Importer.scan_possible)."""
+        return sum(1 for p in self.store.photos.values() if needs_possible(p))
 
     def _regroup(self, idx):
         """Cluster faces nobody is suggested for into look-alike groups (same settings as `cluster`)."""
@@ -1009,7 +1035,7 @@ class LabelDB:
     def summary(self):
         tri = self.triage()
         sugg = sum(1 for i, nm, s, _ in tri if nm and s >= MATCH and self.usable(i))
-        unk = sum(1 for i, nm, s, _ in tri if not (nm and s >= MATCH) and self.usable(i))
+        unk = sum(1 for i, nm, s, _ in tri if not (nm and s >= MATCH) and self.usable(i) and self.maybe(i) is None)
         low = sum(1 for i, _, _, _ in tri if not self.usable(i))
         people = []
         gal = self.gallery()
@@ -1020,7 +1046,8 @@ class LabelDB:
                            "auto": sum(1 for i in faces if self.rec(i).get("by") == "auto")})
         chk = self.checks()
         return {"faces": self.n, "photos": len(self.store.photos), "suggested": sugg, "unknown": unk,
-                "hiddenLow": low, "auto": sum(1 for r in self.labels.values() if r.get("by") == "auto" and r.get("n")),
+                "hiddenLow": low, "possible": len(self.possible()), "possibleLeft": self.possible_left(),
+                "auto": sum(1 for r in self.labels.values() if r.get("by") == "auto" and r.get("n")),
                 "checks": len(chk["mislabeled"]) + len(chk["few"]), "people": people,
                 "tagged": sum(len(g["faces"]) for g in self.tagged()), "facts": self.facts.status,
                 "canUndo": bool(self.undo_stack), "undoText": self.undo_stack[-1]["text"] if self.undo_stack else "",
@@ -1215,6 +1242,9 @@ class Importer:
         self.faces = None
         self.thread = None
         self.stop = threading.Event()
+        self._more_lock = threading.Lock()
+        self._more_det = None
+        self._more_cache = {}                     # (photo, frame) -> (image, possible-face rows)
 
     def start(self, folder):
         folder = Path(str(folder).strip().strip('"'))
@@ -1226,67 +1256,155 @@ class Importer:
         self.thread = threading.Thread(target=self.run, args=(folder,), daemon=True)
         self.thread.start()
 
-    MORE_SCORE = 0.45                 # "Find more faces": detector confidence, far below F.DET_SCORE ...
+    MORE_SCORE = 0.45                 # possible faces: detector confidence, far below F.DET_SCORE ...
     MORE_SIZES = (10_000, 640, 480, 320)   # ... at more scales: you look at what it finds and decide
 
-    def find_more(self, i):
-        """Look again for faces in the photo (or video frame) that face i is in, with a much lower
-        detector cut-off than an import uses, and add the ones not found before. Only on request from the
-        photo view: in a sample of 400 photos, faces scored 0.55-0.85 were about half real faces and half
-        food, tyres, drawings and pets, too many to add to every photo, but easy to sort for one.
-        Returns the new faces' indexes."""
+    def _low_rows(self, img):
+        """Every face the detector sees in img with the low cut-off MORE_SCORE, at MORE_SIZES."""
+        with self._more_lock:                     # its own detector (an import may use the other), one at a time
+            if self._more_det is None:
+                self._more_det = cv2.FaceDetectorYN.create(str(F.DET_MODEL), "", (320, 320), self.MORE_SCORE, 0.3, 5000)
+            rows = []
+            h_, w_ = img.shape[:2]
+            for side in self.MORE_SIZES:
+                s = min(1.0, side / max(h_, w_))
+                im = cv2.resize(img, (round(w_ * s), round(h_ * s)), interpolation=cv2.INTER_AREA) if s < 1 else img
+                self._more_det.setInputSize((im.shape[1], im.shape[0]))
+                _, found = self._more_det.detect(im)
+                if found is not None:
+                    found = found.copy()
+                    found[:, :14] /= s
+                    rows += list(found)
+        rows.sort(key=lambda r: -r[14])
+        kept = []
+        for r in rows:
+            if min(r[2], r[3]) >= F.MIN_FACE and all(F._iou(r, k) < 0.3 for k in kept):
+                kept.append(r)
+        return kept
+
+    def _add_possible(self, h, rec, img, rows, frame=None):
+        """Add rows as possible faces of photo h (record rec) and mark the photo as looked at.
+        Returns their indexes; the caller saves."""
+        db, store = self.db, self.db.store
+        if rows and self.faces is None:
+            self.faces = F.Faces()
+        new = []
+        for row in rows:
+            crop = F.align(img, row)
+            emb, q = self.faces.embed(crop), self.faces.quality(crop)
+            with db.lock:
+                j = store.add(h, rec.get("name") or Path(rec["path"]).name, row, emb, crop, q, frame)
+                rec.setdefault("maybe", {})[store.fid[j]] = round(float(row[14]), 3)
+                if frame is not None:
+                    rec.setdefault("at", {})[store.fid[j]] = int(frame)
+                new.append(j)
+        with db.lock:
+            rec.setdefault("maybe", {})
+            rec["faces"] = rec.get("faces", 0) + len(new)
+            if new:
+                db.groups = None                  # regroup unknown faces with the new ones
+            db.changed()
+        return new
+
+    def _possible(self, i):
+        """Possible faces in the photo (or video frame) that face i is in that aren't faces there yet, for
+        the photo view's dashed boxes. Returns (photo hash, photo record, frame, image, candidate rows)."""
         db, store = self.db, self.db.store
         with db.lock:
             h = store.photo[i]
             rec = store.photos.get(h, {})
             path = rec.get("path")
             frame = rec.get("at", {}).get(store.fid[i]) if rec.get("video") else None
-            mine = [j for j in db.by_photo().get(h, [])
+            have = [store.box[j] for j in db.by_photo().get(h, [])
                     if not rec.get("video") or rec.get("at", {}).get(store.fid[j]) == frame]
-            have = [store.box[j] for j in mine]
         if not (path and Path(path).exists()):
             raise ValueError("The original photo isn't on this computer any more.")
-        img = F.load_image(path) if frame is None else F.video_frame(path, frame)
-        if img is None:
-            raise ValueError("Couldn't read the photo.")
-        if self.faces is None:
-            self.faces = F.Faces()
-        if getattr(self, "_more_det", None) is None:   # its own detector: an import may be using the other
-            self._more_det = cv2.FaceDetectorYN.create(str(F.DET_MODEL), "", (320, 320), self.MORE_SCORE, 0.3, 5000)
-        rows = []
-        h_, w_ = img.shape[:2]
-        for side in self.MORE_SIZES:
-            s = min(1.0, side / max(h_, w_))
-            im = cv2.resize(img, (round(w_ * s), round(h_ * s)), interpolation=cv2.INTER_AREA) if s < 1 else img
-            self._more_det.setInputSize((im.shape[1], im.shape[0]))
-            _, found = self._more_det.detect(im)
-            if found is not None:
-                found = found.copy()
-                found[:, :14] /= s
-                rows += list(found)
-        rows.sort(key=lambda r: -r[14])
-        kept = []
-        for r in rows:
-            if min(r[2], r[3]) < F.MIN_FACE:
-                continue
-            if all(F._iou(r, k) < 0.3 for k in kept + have):
-                kept.append(r)
-        new = []
-        for row in kept:
-            crop = F.align(img, row)
-            emb, q = self.faces.embed(crop), self.faces.quality(crop)
-            with db.lock:
-                j = store.add(h, rec.get("name") or Path(path).name, row, emb, crop, q, frame)
-                if frame is not None:
-                    rec.setdefault("at", {})[store.fid[j]] = int(frame)
-                new.append(j)
+        key = (h, frame)
+        if key in self._more_cache:
+            img, rows = self._more_cache[key]
+        else:
+            img = F.load_image(path) if frame is None else F.video_frame(path, frame)
+            if img is None:
+                raise ValueError("Couldn't read the photo.")
+            rows = self._low_rows(img)
+            self._more_cache[key] = (img, rows)
+            while len(self._more_cache) > 4:      # a few photos: stepping back and forth stays quick
+                self._more_cache.pop(next(iter(self._more_cache)), None)
+        return h, rec, frame, img, [r for r in rows if all(F._iou(r, k) < 0.3 for k in have)]
+
+    def possible_faces(self, i):
+        """[{box: [x, y, w, h], score}] for the photo view's dashed boxes (nothing is saved)."""
+        rows = self._possible(i)[4]
+        return [{"box": [round(float(v), 1) for v in r[:4]], "score": round(float(r[14]), 2)} for r in rows]
+
+    def find_more(self, i, box=None):
+        """Add the possible face at `box` (as possible_faces gave it), or all of them, to the photo of face i,
+        ready to name. Returns the new faces' indexes."""
+        h, rec, frame, img, rows = self._possible(i)
+        if box is not None:
+            rows = [r for r in rows if F._iou(r, [float(v) for v in box]) > 0.8][:1]
+        new = self._add_possible(h, rec, img, rows, frame) if rows else []
         if new:
-            with db.lock:
-                rec["faces"] = rec.get("faces", 0) + len(new)
-                db.groups = None                  # regroup unknown faces with the new ones
-                db.changed()
-                store.save()
+            with self.db.lock:
+                self.db.store.save()
         return new
+
+    def scan_possible(self):
+        """Look for possible faces in every photo added before possible faces were kept, in the background
+        (progress in self.status, like an import). Skips videos, and online-only cloud files (they'd be
+        downloaded just for this): those are looked at another time, once they're on this computer."""
+        if self.thread and self.thread.is_alive():
+            raise ValueError("An import is already running.")
+        self.stop.clear()
+        self.thread = threading.Thread(target=self._scan_possible, daemon=True)
+        self.thread.start()
+
+    def _scan_possible(self):
+        db, store = self.db, self.db.store
+        st = self.status = dict(running=True, folder="possible faces", stage="Looking for possible faces", total=0,
+                                done=0, new=0, known=0, duplicates=0, faces=0, auto=0, errors=0,
+                                started=time.time(), error=None)
+        pending = []
+        try:
+            with db.lock:
+                todo = [h for h, p in store.photos.items() if needs_possible(p)]
+            st["total"] = len(todo)
+            for k, h in enumerate(todo):
+                if self.stop.is_set():
+                    break
+                rec = store.photos[h]
+                path = rec.get("path")
+                try:
+                    if not Path(path).exists() or online_only(path):
+                        st["known"] += 1          # not on this computer now: another time
+                    else:
+                        img = F.load_image(path)
+                        if img is None:
+                            raise OSError("unreadable")
+                        with db.lock:
+                            have = [store.box[j] for j in db.by_photo().get(h, [])]
+                        rows = [r for r in self._low_rows(img) if all(F._iou(r, b) < 0.3 for b in have)]
+                        new = self._add_possible(h, rec, img, rows)
+                        pending += new
+                        st["faces"] += len(new)
+                        st["new"] += bool(new)
+                except Exception:
+                    st["errors"] += 1
+                st["done"] += 1
+                if (k + 1) % 100 == 0:
+                    self._checkpoint(pending)
+            self._checkpoint(pending)
+            st["stage"] = "Stopped" if self.stop.is_set() else "Done"
+        except Exception as e:
+            st["error"] = f"{type(e).__name__}: {e}"
+            st["stage"] = "Failed"
+            try:
+                self._checkpoint(pending)
+            except Exception:
+                pass
+        finally:
+            st["running"] = False
+            st["elapsed"] = round(time.time() - st["started"], 1)
 
     def run(self, folder):
         db, store = self.db, self.db.store
@@ -1401,12 +1519,16 @@ class Importer:
                                 for row, emb, crop, q in found:
                                     pending.append(store.add(h, f.name, row, emb, crop, q))
                                 store.photos[h] = dict(meta, fp=fp, faces=len(found), name=f.name)
-                                if found:
-                                    added.append(h)
                                 db._fp = None
                                 db.changed()
+                            # and the possible faces: what the detector sees with the low cut-off too
+                            low = [r for r in self._low_rows(img) if all(F._iou(r, k[0]) < 0.3 for k in found)]
+                            more = self._add_possible(h, store.photos[h], img, low)
+                            pending += more
+                            if found or more:
+                                added.append(h)
                             st["new"] += 1
-                            st["faces"] += len(found)
+                            st["faces"] += len(found) + len(more)
                     st["done"] += 1
                     if st["new"] and st["new"] % 50 == 0 and pending:
                         self._checkpoint(pending)
