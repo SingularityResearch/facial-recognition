@@ -36,7 +36,7 @@ jobs:
           python-version: "3.12"
       - name: Install test requirements
         # headless OpenCV here; the app itself uses opencv-contrib-python (requirements.txt)
-        run: pip install -r requirements-dev.txt numpy==2.5.4 opencv-contrib-python-headless==5.0.0.93
+        run: pip install -r requirements-dev.txt numpy==2.5.4 opencv-contrib-python-headless==5.0.0.93 truststore==0.10.5
       - name: "Python checker (ruff, with the pyflakes rules; ruff.toml)"
         run: python -m ruff check .
       - name: Python tests
