@@ -1066,12 +1066,12 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                 `ONNX Runtime can use: ${h.onnxruntime.join(", ") || "not installed"}`, `${h.system}, Python ${h.python}`]
           .filter(Boolean).join("\n"); } },
     { section: "This computer", id: "hwnet", label: "LM Studio on the network", type: "info",
-      hint: "Every LM Studio server on this computer's local network: each computer's name, the addresses and port to reach it at, and the models it serves (which read pictures, which are loaded now). Found by trying LM Studio's port (1234) on each address of this network, only while Settings is open; Describe photo can use any of them (put its address in Server address).",
+      hint: "Every LM Studio server on this computer's local network: each computer's name, the addresses and port to reach it at, and the models it serves (which read pictures, which are loaded now). Found two ways, only while Settings is open: servers that announce themselves on the network (mDNS, _lmstudio._tcp) say their own address and port; the rest are found by trying LM Studio's port (1234, this computer's own LM Studio port, and any port announced) on each address of this computer's networks; Describe photo can use any of them (put its address in Server address).",
       get: async () => { const s = (await get("/api/hardware/network")).servers || [];
         if (!s.length) return "None found on this network (LM Studio's server must listen on all interfaces: Serve on local network).";
         return s.map(e => {
           const ms = e.models.filter(m => m.kind !== "embeddings").map(m => `${m.id}${m.vision ? " (reads pictures)" : ""}${m.loaded ? ", loaded" : ""}`);
-          return `${e.host}${e.this_computer ? " (this computer)" : ""}: ${e.urls.join(", ")}\n  ${ms.length} model${ms.length === 1 ? "" : "s"}: ${ms.join("; ") || "none"}`;
+          return `${e.host}${e.this_computer ? " (this computer)" : ""}: ${e.urls.join(", ")}${e.announced ? " (announces itself)" : ""}\n  ${ms.length} model${ms.length === 1 ? "" : "s"}: ${ms.join("; ") || "none"}`;
         }).join("\n"); } },
     { section: "This computer", id: "hwai", label: "AI model apps", type: "info",
       hint: "Apps that can run a vision model for Describe photo: the usual ports on this computer (LM Studio, Ollama, Jan, llama.cpp, vLLM and others), the server set under Describe photo (which may be another device), and apps installed but not running. Nothing else on the network is asked.",

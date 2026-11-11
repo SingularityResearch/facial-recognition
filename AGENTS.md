@@ -222,7 +222,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   the browser reports for the frame's parent (`location.ancestorOrigins`).
 - `hardware.ai_apps` asks 127.0.0.1's usual AI ports and the configured describe server (with that server's own key,
   through `describe.server_models`). `hardware.lmstudio_network` (Settings → LM Studio on the network, only while the
-  tab is open, cached a minute) tries port 1234 on every address of the /24 of each real interface
+  tab is open, cached a minute) takes announced servers from mDNS (`mdns_services`: `_lmstudio._tcp`, or `_http._tcp`
+  with `app=LM Studio`; their own port) and tries port 1234, this computer's LM Studio port and announced ports on every
+  address of the /24 of each real interface
   (`own_addresses`: no loopback, containers or VPN tunnels), reads each server's model list (`/api/v0/models`), and
   names computers by mDNS reverse lookup or NetBIOS name status; nothing is sent but those questions.
 - Describe photo: the API key belongs to its server address (changing the address clears it; Test sends it only to

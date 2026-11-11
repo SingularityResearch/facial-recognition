@@ -64,3 +64,16 @@ def test_lmstudio_network_merges_one_computers_addresses(monkeypatch):
     assert [(e["host"], e["ips"], e["this_computer"]) for e in found] == \
         [("sentient", ["10.0.0.6", "10.0.0.13"], True), ("shiva-ubuntu", ["10.0.0.18"], False)]
     assert found[1]["urls"] == ["http://10.0.0.18:1234"] and found[1]["models"][1]["loaded"]
+
+
+def test_an_announced_server_is_found_on_its_own_port(monkeypatch):
+    monkeypatch.setattr(hardware, "own_addresses", lambda: ["10.0.0.13"])
+    monkeypatch.setattr(hardware, "lmstudio_port", lambda: None)
+    monkeypatch.setattr(hardware, "mdns_services", lambda timeout=1.5: [
+        {"host": "shiva-ubuntu", "ip": "10.0.0.18", "port": 18234, "txt": ["app=LM Studio"]}])
+    monkeypatch.setattr(hardware, "_port_open", lambda port, host="127.0.0.1", timeout=0.25: (host, port) == ("10.0.0.18", 18234))
+    monkeypatch.setattr(hardware, "_name_of", lambda ip: None)
+    monkeypatch.setattr(hardware, "_lms_models", lambda url, timeout=3: [{"id": "m", "vision": True, "loaded": False,
+                                                                          "quant": "Q4", "kind": "vlm"}])
+    found = hardware.lmstudio_network(max_age=0)
+    assert [(e["host"], e["urls"], e["announced"]) for e in found] == [("shiva-ubuntu", ["http://10.0.0.18:18234"], True)]

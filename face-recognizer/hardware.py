@@ -365,6 +365,93 @@ def _lms_models(url, timeout=3):
         return None
 
 
+def _dns_name(data, i, depth=0):
+    """(name, next offset) of a DNS name in a packet, following compression pointers."""
+    labels = []
+    while i < len(data) and depth < 10:
+        n = data[i]
+        if n == 0:
+            return ".".join(labels), i + 1
+        if n >= 0xC0:
+            rest, _ = _dns_name(data, ((n & 0x3F) << 8) | data[i + 1], depth + 1)
+            return ".".join(labels + ([rest] if rest else [])), i + 2
+        labels.append(data[i + 1:i + 1 + n].decode("utf-8", "replace"))
+        i += 1 + n
+    return ".".join(labels), i
+
+
+MDNS_TYPES = ("_lmstudio._tcp.local", "_http._tcp.local")
+
+
+def mdns_services(timeout=1.5):
+    """LM Studio servers that announce themselves on the local network (mDNS / DNS-SD, as Avahi does): [{host, ip,
+    port, txt}]. Asks for each MDNS_TYPES service, collects every answer for `timeout` seconds, and keeps the
+    services that say they are LM Studio (service type _lmstudio._tcp, or app=LM Studio in their text)."""
+    import struct
+    q = struct.pack(">HHHHHH", 0, 0, len(MDNS_TYPES), 0, 0, 0)
+    for name in MDNS_TYPES:
+        q += b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\0" + struct.pack(">HH", 12, 0x8001)
+    records = {"PTR": [], "SRV": {}, "TXT": {}, "A": {}}
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(0.3)
+            s.sendto(q, ("224.0.0.251", 5353))
+            end = time.time() + timeout
+            while time.time() < end:
+                try:
+                    data, _ = s.recvfrom(9000)
+                except socket.timeout:
+                    continue
+                try:
+                    qd, an, ns, ar = struct.unpack(">HHHH", data[4:12])
+                    i = 12
+                    for _ in range(qd):
+                        i = _dns_name(data, i)[1] + 4
+                    for _ in range(an + ns + ar):
+                        name, i = _dns_name(data, i)
+                        rtype, _, _, rdlen = struct.unpack(">HHIH", data[i:i + 10])
+                        rd = i + 10
+                        if rtype == 12:
+                            records["PTR"].append((name, _dns_name(data, rd)[0]))
+                        elif rtype == 33:
+                            port = struct.unpack(">H", data[rd + 4:rd + 6])[0]
+                            records["SRV"][name] = (_dns_name(data, rd + 6)[0], port)
+                        elif rtype == 16:
+                            txt, j = [], rd
+                            while j < rd + rdlen:
+                                txt.append(data[j + 1:j + 1 + data[j]].decode("utf-8", "replace"))
+                                j += 1 + data[j]
+                            records["TXT"][name] = txt
+                        elif rtype == 1 and rdlen == 4:
+                            records["A"].setdefault(name, set()).add(socket.inet_ntoa(data[rd:rd + 4]))
+                        i = rd + rdlen
+                except (struct.error, IndexError):
+                    continue
+    except OSError:
+        return []
+    out = []
+    for stype, inst in records["PTR"]:
+        txt = records["TXT"].get(inst, [])
+        if inst not in records["SRV"] or not (stype.startswith("_lmstudio") or "app=LM Studio" in txt):
+            continue
+        target, port = records["SRV"][inst]
+        for ip in sorted(records["A"].get(target, set())):
+            if not any(o["ip"] == ip and o["port"] == port for o in out):      # announced as both types: once
+                out.append({"host": target.removesuffix(".local"), "ip": ip, "port": port, "txt": txt})
+    return out
+
+
+def lmstudio_port():
+    """The port this computer's LM Studio serves on (its own settings), or None."""
+    for f in (Path.home() / ".lmstudio" / ".internal" / "http-server-config.json",
+              Path.home() / ".cache" / "lm-studio" / ".internal" / "http-server-config.json"):
+        try:
+            return int(json.loads(f.read_text(encoding="utf-8")).get("port"))
+        except (OSError, ValueError, TypeError):
+            continue
+    return None
+
+
 def _mdns_name(ip, timeout=1.0):
     """The name a computer announces for itself on the local network (mDNS, as Avahi on Linux and macOS do): a
     reverse-lookup question to 224.0.0.251:5353 asking for a direct answer. None if nothing answers."""
@@ -379,18 +466,8 @@ def _mdns_name(ip, timeout=1.0):
     except OSError:
         return None
 
-    def name_at(i, depth=0):
-        labels = []
-        while i < len(data) and depth < 10:
-            n = data[i]
-            if n == 0:
-                return ".".join(labels), i + 1
-            if n >= 0xC0:                                 # compressed: the rest is elsewhere in the packet
-                rest, _ = name_at(((n & 0x3F) << 8) | data[i + 1], depth + 1)
-                return ".".join(labels + ([rest] if rest else [])), i + 2
-            labels.append(data[i + 1:i + 1 + n].decode("utf-8", "replace"))
-            i += 1 + n
-        return ".".join(labels), i
+    def name_at(i):
+        return _dns_name(data, i)
     try:
         _, qd, an = struct.unpack(">HHH", data[2:8])[0], *struct.unpack(">HH", data[4:8])
         i = 12
@@ -449,11 +526,15 @@ def lmstudio_network(max_age=60):
             return _net_cache["found"]
     from concurrent.futures import ThreadPoolExecutor
     own = set(own_addresses())                    # every interface's network is looked at (two 10G ports: both)
-    targets = sorted({(f"{'.'.join(ip.split('.')[:3])}.{n}", port) for ip in own for n in range(1, 255)
-                      for port in LMS_PORTS})
+    announced = mdns_services()                   # servers that say where they are: their port, whatever it is
+    ports = set(LMS_PORTS) | {a["port"] for a in announced} | ({lmstudio_port()} - {None})
+    targets = {(f"{'.'.join(ip.split('.')[:3])}.{n}", port) for ip in own for n in range(1, 255) for port in ports}
+    targets = sorted(targets | {(a["ip"], a["port"]) for a in announced})       # announced on another network too
     with ThreadPoolExecutor(64) as ex:
         up = [t for t, ok in zip(targets, ex.map(lambda t: _port_open(t[1], t[0], 0.4), targets)) if ok]
-        names = dict(zip([ip for ip, _ in up], ex.map(_name_of, [ip for ip, _ in up])))
+        named = {a["ip"]: a["host"] for a in announced}
+        rest = sorted({ip for ip, _ in up} - set(named))
+        names = {**dict(zip(rest, ex.map(_name_of, rest))), **named}
         models = list(ex.map(lambda t: _lms_models(f"http://{t[0]}:{t[1]}"), up))
     found = []
     for (ip, port), m in zip(up, models):
@@ -465,7 +546,8 @@ def lmstudio_network(max_age=60):
         if same:                                  # the same server reached by another address of its computer
             same["ips"].append(ip)
             continue
-        found.append({"host": host, "ips": [ip], "port": port, "this_computer": ip in own, "models": m})
+        found.append({"host": host, "ips": [ip], "port": port, "this_computer": ip in own, "models": m,
+                      "announced": any(a["ip"] == ip and a["port"] == port for a in announced)})
     for e in found:
         e["ips"].sort(key=lambda a: tuple(int(x) for x in a.split(".")))
         e["urls"] = [f"http://{a}:{e['port']}" for a in e["ips"]]
