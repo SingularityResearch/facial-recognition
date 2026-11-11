@@ -1121,6 +1121,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
           setTimeout(SettingsBridge.changed, 3000);
         }
         else if (g?.error) lines.push(`Download stopped: ${g.error}`);
+        if (g?.notes?.length) lines.push(...g.notes);
         else if (g?.done?.length) lines.push(`Downloaded: ${g.done.join(", ")}`);
         if (!!s.missing.length !== lmsOffer) { lmsOffer = !!s.missing.length; setTimeout(SettingsBridge.changed, 0); }
         return lines.join("\n"); } },

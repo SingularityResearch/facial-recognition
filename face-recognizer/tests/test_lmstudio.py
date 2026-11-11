@@ -99,3 +99,19 @@ def test_a_damaged_shared_copy_is_refused(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="SHA-256"):
         L.from_share("qwen/qwen3.8-27b@q4_k_m")
     assert not list(models.rglob("*.gguf"))                   # nothing half-copied left behind
+
+
+def test_any_shared_folder_failure_falls_back_to_the_internet(monkeypatch):
+    got = []
+    monkeypatch.setattr(L, "lms_path", lambda: "lms")
+    monkeypatch.setattr(L, "from_share", lambda v, st=None: (_ for _ in ()).throw(OSError("NAS went away")))
+    monkeypatch.setattr(L, "_lms_get", lambda v, st: (got.append(v) or True, ""))
+    L.STATE["get"] = None
+    L.get_models(["qwen/qwen3.8-27b@q4_k_m"])
+    for _ in range(100):
+        if not L.STATE["get"]["running"]:
+            break
+        __import__("time").sleep(0.02)
+    g = L.STATE["get"]
+    assert got == ["qwen/qwen3.8-27b@q4_k_m"] and g["error"] is None
+    assert g["done"] == ["qwen/qwen3.8-27b@q4_k_m (downloaded)"] and "NAS went away" in g["notes"][0]

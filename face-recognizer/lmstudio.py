@@ -288,7 +288,8 @@ def get_models(variants):
         return
 
     def run():
-        st = STATE["get"] = {"running": True, "done": [], "now": None, "error": None, "how": None, "pct": None}
+        st = STATE["get"] = {"running": True, "done": [], "now": None, "error": None, "how": None, "pct": None,
+                             "notes": []}
         for v in variants:
             st.update(now=v, pct=None, how="copying from the shared folder")
             try:
@@ -301,8 +302,8 @@ def get_models(variants):
                                        f"Studio has an unfinished download of it, cancel that in LM Studio's Downloads; "
                                        f"else restart LM Studio.")
                     continue
-            except OSError as e:
-                st["error"] = f"{v}: copying from the shared folder failed ({e}); downloading instead"
+            except OSError as e:                         # any failure there: straight to the internet, no retry
+                st["notes"].append(f"{v}: the shared folder's copy failed ({e}); downloaded from the internet instead")
             st.update(how="downloading with LM Studio", pct=None, bytes=None, total=None, started=time.time())
             ok, why = _lms_get(v, st)                           # ... else LM Studio's own sources
             if not ok:
