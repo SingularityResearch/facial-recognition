@@ -57,6 +57,8 @@ MP = "https://storage.googleapis.com/mediapipe-models/{}/{}/float16/1/{}"
 ORIGIN = {
     "face_detection_yunet_2023mar.onnx":
         HF.format("face_detection_yunet", "3cc26e7f1014a5ee5d74a42acee58bafc9d0a310", "face_detection_yunet_2023mar.onnx"),
+    "face_recognition_sface_2021dec.onnx":         # the fallback recognizer (and FACE_MODEL=sface_2021dec)
+        HF.format("face_recognition_sface", "3d7082438a6e4551e840c9b2bb60b71e8da4b524", "face_recognition_sface_2021dec.onnx"),
     "ediffiqa_tiny_jun2024.onnx":
         HF.format("face_image_quality_assessment_ediffiqa", "4fce5f6a5438b55a9f996a4e02164b63b849c587", "ediffiqa_tiny_jun2024.onnx"),
     "facial_expression_recognition_mobilefacenet_2022july.onnx":
@@ -73,6 +75,7 @@ ORIGIN = {
 FILES = {
     "face_detection_yunet_2023mar.onnx": (232589, "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"),
     "arcface_w600k_r50.onnx": (174383860, "4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43"),
+    "face_recognition_sface_2021dec.onnx": (38696353, "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79"),
     "ediffiqa_tiny_jun2024.onnx": (7272678, "9426c899cc0f01665240cb7d9e7f98e18e24e456c178326c771a43da289bfc6a"),
     "facial_expression_recognition_mobilefacenet_2022july.onnx":
         (4791892, "4f61307602fc089ce20488a31d4e4614e3c9753a7d6c41578c854858b183e1a9"),

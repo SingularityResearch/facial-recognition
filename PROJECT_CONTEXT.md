@@ -491,7 +491,7 @@ Webcam / OpenCV on this Windows machine:
 Claude ↔ PC tooling (relevant if continuing with Claude's device tools):
 - `device_commit_files` fails above ~30 MB → large models were once shipped as 20 MB `.partN` files
   rejoined by `_join_parts()`. Removed 2026-11-08: the models are in Git LFS, and `fetch_models.py`
-  downloads any that are missing: since 2026-11-09 six from their publishers (OpenCV Zoo on Hugging Face,
+  downloads any that are missing: since 2026-11-09 six (seven since 2026-11-10: SFace) from their publishers (OpenCV Zoo on Hugging Face,
   MediaPipe storage, ArcFace's 160 MB out of InsightFace's buffalo_l.zip by HTTP range requests; byte-identical,
   SHA-256 checked), Wav2Small and fallbacks from the Release `models-v1`.
 - `device_list_dir` truncates at 2,000 entries.

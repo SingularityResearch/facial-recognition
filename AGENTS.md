@@ -98,7 +98,7 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     `LINUX_SYSTEM_LIBS`). Run by `build_app.bat` on Windows, by hand on macOS and Linux, and by CI's `build` job on all
     three, which keeps 14 days the `FaceRecognizer-windows-x64`, `-macos-arm64` and `-linux-x64` artifacts (with
     BUILD-INFO.json: commit, run, SHA-256, signed). Release steps: face-recognizer/README.md, "Building the app".
-  - `fetch_models.py` — downloads missing models (or Git LFS placeholders): six from their publishers (OpenCV Zoo on Hugging
+  - `fetch_models.py` — downloads missing models (or Git LFS placeholders): seven from their publishers (OpenCV Zoo on Hugging
     Face, pinned; MediaPipe storage v1; ArcFace's bytes only, by range requests, from InsightFace's `buffalo_l.zip`),
     Wav2Small (and any fallback) from the GitHub Release `models-v1`,
     with SHA-256 checks (also of files already there, remembered by size and time in `models/.verified.json`,
