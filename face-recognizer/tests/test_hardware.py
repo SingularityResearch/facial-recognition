@@ -27,13 +27,14 @@ def test_uses_says_where_each_job_runs():
 
 def test_ai_apps_reports_servers_and_installed_apps(monkeypatch):
     import describe
-    monkeypatch.setattr(hardware, "_port_open", lambda port, host="127.0.0.1", timeout=0.25: port == 1234)
+    monkeypatch.setattr(hardware, "_port_open", lambda port, host="127.0.0.1", timeout=0.25: port == 1234 and host == "127.0.0.1")
     monkeypatch.setattr(describe, "server_models", lambda url=None, key=None: ([("qwen-vl", True), ("llama", False)], ["qwen-vl"]))
     monkeypatch.setattr(describe, "config", lambda: {"url": "http://127.0.0.1:1234", "key": ""})
     monkeypatch.setattr(hardware, "_installed_ai_apps", lambda: ["LM Studio", "Ollama"])
     found = hardware.ai_apps(max_age=0)
     lm = next(e for e in found if e["app"] == "LM Studio")
     assert lm["running"] and lm["models"] == 2 and lm["vision"] == ["qwen-vl"] and "qwen-vl" in lm["note"]
+    assert lm["lan"] == []                                # this test's port answers on 127.0.0.1 only
     assert any(e["app"] == "Ollama" and not e["running"] for e in found)
     assert sum(e["app"] == "LM Studio" for e in found) == 1              # running, so not listed again as installed
 
@@ -43,3 +44,23 @@ def test_an_nvidia_card_without_cuda_is_explained(monkeypatch):
     assert "setup.sh" in hardware.gpu_note()
     monkeypatch.setattr(hardware, "describe", lambda: {"gpus": ["NVIDIA GeForce RTX 4060"], "onnxruntime": ["CUDA", "CPU"]})
     assert hardware.gpu_note() == ""
+
+
+def test_lan_addresses_are_this_computers_own():
+    for ip in hardware.lan_addresses():
+        assert not ip.startswith("127.") and ip.count(".") == 3
+
+
+def test_lmstudio_network_merges_one_computers_addresses(monkeypatch):
+    monkeypatch.setattr(hardware, "lan_addresses", lambda: ["10.0.0.13"])
+    monkeypatch.setattr(hardware.socket, "gethostbyname_ex", lambda h: (h, [], ["10.0.0.13", "10.0.0.6"]))
+    up = {"10.0.0.6", "10.0.0.13", "10.0.0.18"}
+    monkeypatch.setattr(hardware, "_port_open", lambda port, host="127.0.0.1", timeout=0.25: host in up)
+    monkeypatch.setattr(hardware, "_name_of", lambda ip: {"10.0.0.18": "shiva-ubuntu"}.get(ip, "sentient"))
+    pc = [{"id": "qwen/qwen3.6-35b-a3b", "vision": True, "loaded": False, "quant": "Q4_K_M", "kind": "vlm"}]
+    other = pc + [{"id": "openai/gpt-oss-20b", "vision": False, "loaded": True, "quant": "MXFP4", "kind": "llm"}]
+    monkeypatch.setattr(hardware, "_lms_models", lambda url, timeout=3: other if "10.0.0.18" in url else pc)
+    found = hardware.lmstudio_network(max_age=0)
+    assert [(e["host"], e["ips"], e["this_computer"]) for e in found] == \
+        [("sentient", ["10.0.0.6", "10.0.0.13"], True), ("shiva-ubuntu", ["10.0.0.18"], False)]
+    assert found[1]["urls"] == ["http://10.0.0.18:1234"] and found[1]["models"][1]["loaded"]

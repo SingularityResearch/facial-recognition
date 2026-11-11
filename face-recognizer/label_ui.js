@@ -1065,6 +1065,14 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                 `Graphics: ${h.gpus.length ? h.gpus.join("; ") : "none found"}`, `NPU: ${h.npu || "none found"}`,
                 `ONNX Runtime can use: ${h.onnxruntime.join(", ") || "not installed"}`, `${h.system}, Python ${h.python}`]
           .filter(Boolean).join("\n"); } },
+    { section: "This computer", id: "hwnet", label: "LM Studio on the network", type: "info",
+      hint: "Every LM Studio server on this computer's local network: each computer's name, the addresses and port to reach it at, and the models it serves (which read pictures, which are loaded now). Found by trying LM Studio's port (1234) on each address of this network, only while Settings is open; Describe photo can use any of them (put its address in Server address).",
+      get: async () => { const s = (await get("/api/hardware/network")).servers || [];
+        if (!s.length) return "None found on this network (LM Studio's server must listen on all interfaces: Serve on local network).";
+        return s.map(e => {
+          const ms = e.models.filter(m => m.kind !== "embeddings").map(m => `${m.id}${m.vision ? " (reads pictures)" : ""}${m.loaded ? ", loaded" : ""}`);
+          return `${e.host}${e.this_computer ? " (this computer)" : ""}: ${e.urls.join(", ")}\n  ${ms.length} model${ms.length === 1 ? "" : "s"}: ${ms.join("; ") || "none"}`;
+        }).join("\n"); } },
     { section: "This computer", id: "hwai", label: "AI model apps", type: "info",
       hint: "Apps that can run a vision model for Describe photo: the usual ports on this computer (LM Studio, Ollama, Jan, llama.cpp, vLLM and others), the server set under Describe photo (which may be another device), and apps installed but not running. Nothing else on the network is asked.",
       get: async () => { const a = (await get("/api/hardware")).ai || [];
@@ -1072,7 +1080,8 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         return a.map(e => {
           const state = e.running ? `running, ${e.models} model${e.models === 1 ? "" : "s"}` : "";
           const sees = e.vision.length ? `reads pictures: ${e.vision.join(", ")}` : "";
-          return `${e.app}${e.url ? ` (${e.url})` : ""}: ${[state, e.note, sees].filter(Boolean).join("; ") || "not running"}`;
+          const lan = e.lan?.length ? `other devices can use it at ${e.lan.join(", ")}` : (e.running && e.url?.includes("127.0.0.1") ? "this computer only" : "");
+          return `${e.app}${e.url ? ` (${e.url})` : ""}: ${[state, e.note, sees, lan].filter(Boolean).join("; ") || "not running"}`;
         }).join("\n"); } },    { section: "This computer", id: "hwuses", label: "Where the work runs", type: "info",
       hint: "The app picks the fastest way for each job by itself: a graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) is used for a model only after a check at start shows it gives the processor's answers, faster. To choose yourself, start the app with FACE_DEVICE set to gpu, cpu or npu.",
       get: async () => { const u = (await get("/api/hardware")).uses, d = u.devices;

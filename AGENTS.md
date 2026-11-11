@@ -30,9 +30,10 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     from there ahead of the bundled copy; falls back to it if that fails). `FACE_CUDA=off` turns it off.
   - `hardware.py` — what the computer has (`describe`: processor, memory, GPUs, NPU, ONNX Runtime providers; from
     the registry, /proc and /sys, sysctl) and how the programs use it (`uses`: `face_id.LAST_DEVICES`,
-    `GPU_DECISIONS`, `import_workers`), and `ai_apps` (AI model apps for Describe photo: the usual local ports, the
-    configured describe server, installed apps, LM Studio's downloads; cached a minute); the labeling tool's
-    `/api/hardware`, shown in Settings → This computer.
+    `GPU_DECISIONS`, `import_workers`), `ai_apps` (AI model apps for Describe photo: the usual local ports, the
+    configured describe server, installed apps, LM Studio's downloads, the LAN address when served to the network;
+    cached a minute) and `lmstudio_network` (every LM Studio server on the local network: name, addresses, port,
+    models); the labeling tool's `/api/hardware` and `/api/hardware/network`, shown in Settings → This computer.
   - `paths.py` — `ROOT` (models\ and data\; `FACE_ROOT` overrides), `HOME` (`%APPDATA%\FaceLabels`; `FACE_HOME`
     overrides), `atomic_write`/`replace_file`. Every module takes its folders from here.
   - `labels.py` — labeling engine: per-face labels (`LabelDB`), auto-naming, duplicate-photo detection, undo history
@@ -219,8 +220,11 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   download starts only from its Settings button, and only `onnxruntime/` and `nvidia/` are unpacked from the wheels.
 - `settings_bridge.js` answers only its parent window, on `127.0.0.1`/`localhost`, and only when that is the origin
   the browser reports for the frame's parent (`location.ancestorOrigins`).
-- `hardware.ai_apps` asks only 127.0.0.1's usual AI ports and the configured describe server (with that server's own
-  key, through `describe.server_models`); it never scans the network.
+- `hardware.ai_apps` asks 127.0.0.1's usual AI ports and the configured describe server (with that server's own key,
+  through `describe.server_models`). `hardware.lmstudio_network` (Settings → LM Studio on the network, only while the
+  tab is open, cached a minute) tries port 1234 on every address of the /24 of each real interface
+  (`own_addresses`: no loopback, containers or VPN tunnels), reads each server's model list (`/api/v0/models`), and
+  names computers by mDNS reverse lookup or NetBIOS name status; nothing is sent but those questions.
 - Describe photo: the API key belongs to its server address (changing the address clears it; Test sends it only to
   that address); redirects aren't followed; answers are capped (`MAX_ANSWER`, `MAX_TEXT`).
 - Background jobs (imports, possible-face scans, Describe all) start through `Importer.begin` (one at a time, under

@@ -221,6 +221,43 @@ def _port_open(port, host="127.0.0.1", timeout=0.25):
         return False
 
 
+def lan_addresses():
+    """This computer's own addresses on the local network (IPv4, not loopback): the one it reaches the network
+    through first. Opening a UDP socket toward a private address sends nothing; it only picks the route."""
+    found = []
+    for probe in ("10.255.255.255", "192.168.255.255", "172.31.255.255"):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect((probe, 1))
+                ip = s.getsockname()[0]
+            if ip and not ip.startswith("127.") and ip not in found:
+                found.append(ip)
+        except OSError:
+            continue
+    return found
+
+
+VIRTUAL = ("lo", "docker", "br-", "veth", "virbr", "tun", "tap", "wg", "zt", "tailscale", "CloudflareWARP", "vEthernet")
+
+
+def own_addresses():
+    """Every IPv4 address of this computer's real network interfaces (each 10G port, Wi-Fi...), not loopback, VPN
+    tunnels or containers. Linux: `ip -4 -o addr`; elsewhere the system's own list for this computer's name."""
+    found = list(lan_addresses())
+    if platform.system() == "Linux":
+        for line in _run(["ip", "-4", "-o", "addr", "show", "scope", "global"]).splitlines():
+            parts = line.split()
+            if len(parts) > 3 and not parts[1].startswith(VIRTUAL) and "/32" not in parts[3]:
+                found.append(parts[3].split("/")[0])
+    else:
+        try:
+            found += socket.gethostbyname_ex(socket.gethostname())[2]
+        except OSError:
+            pass
+    return sorted({ip for ip in found if not ip.startswith(("127.", "169.254."))},
+                  key=lambda a: tuple(int(x) for x in a.split(".")))
+
+
 def _installed_ai_apps():
     """AI model apps installed on this computer, running or not (where each normally installs itself)."""
     home, s = Path.home(), platform.system()
@@ -286,6 +323,8 @@ def ai_apps(max_age=60):
             url = f"http://127.0.0.1:{port}"
             seen.add(url)
             probe(app, url)
+            # served to the network too? then other devices (Describe photo on them) can use this address
+            out[-1]["lan"] = [f"http://{ip}:{port}" for ip in own_addresses() if _port_open(port, ip)]
     configured = describe.config()["url"]
     if configured not in seen:
         app = next((a for p, a in AI_PORTS if configured.endswith(f":{p}")), "Describe photo server")
@@ -307,3 +346,130 @@ def ai_apps(max_age=60):
     with _ai_lock:
         _ai_cache.update(at=time.time(), found=out)
     return out
+
+
+# --------------------------------------------------------------------------- LM Studio on the local network
+LMS_PORTS = (1234,)           # LM Studio's server port (its default; this project's devices all use it)
+_net_cache = {"at": 0.0, "found": None}
+
+
+def _lms_models(url, timeout=3):
+    """[{id, vision, loaded, quant}] from an LM Studio server's own model list, or None if it isn't LM Studio."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url + "/api/v0/models", timeout=timeout) as r:
+            data = json.loads(r.read(2_000_000)).get("data", [])
+        return [{"id": m.get("id"), "vision": m.get("type") == "vlm", "loaded": m.get("state") == "loaded",
+                 "quant": m.get("quantization"), "kind": m.get("type")} for m in data if isinstance(m, dict)]
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _mdns_name(ip, timeout=1.0):
+    """The name a computer announces for itself on the local network (mDNS, as Avahi on Linux and macOS do): a
+    reverse-lookup question to 224.0.0.251:5353 asking for a direct answer. None if nothing answers."""
+    import struct
+    qname = b"".join(bytes([len(p)]) + p.encode() for p in (ip.split(".")[::-1] + ["in-addr", "arpa"])) + b"\0"
+    query = struct.pack(">HHHHHH", 0, 0, 1, 0, 0, 0) + qname + struct.pack(">HH", 12, 0x8001)   # PTR, IN, answer me
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(timeout)
+            s.sendto(query, ("224.0.0.251", 5353))
+            data, _ = s.recvfrom(4096)
+    except OSError:
+        return None
+
+    def name_at(i, depth=0):
+        labels = []
+        while i < len(data) and depth < 10:
+            n = data[i]
+            if n == 0:
+                return ".".join(labels), i + 1
+            if n >= 0xC0:                                 # compressed: the rest is elsewhere in the packet
+                rest, _ = name_at(((n & 0x3F) << 8) | data[i + 1], depth + 1)
+                return ".".join(labels + ([rest] if rest else [])), i + 2
+            labels.append(data[i + 1:i + 1 + n].decode("utf-8", "replace"))
+            i += 1 + n
+        return ".".join(labels), i
+    try:
+        _, qd, an = struct.unpack(">HHH", data[2:8])[0], *struct.unpack(">HH", data[4:8])
+        i = 12
+        for _ in range(qd):
+            i = name_at(i)[1] + 4
+        for _ in range(an):
+            _, i = name_at(i)
+            rtype, _, _, rdlen = struct.unpack(">HHIH", data[i:i + 10])
+            if rtype == 12:
+                return name_at(i + 10)[0].removesuffix(".local") or None
+            i += 10 + rdlen
+    except (struct.error, IndexError):
+        pass
+    return None
+
+
+def _netbios_name(ip, timeout=1.0):
+    """A Windows computer's name, from its answer to a NetBIOS name-status question (UDP 137). None if it doesn't
+    answer."""
+    import struct
+    query = (struct.pack(">HHHHHH", 0x4652, 0, 1, 0, 0, 0) + b"\x20" + b"CK" + b"AA" * 15 + b"\x00"
+             + struct.pack(">HH", 0x21, 1))           # "*", NBSTAT, IN
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(timeout)
+            s.sendto(query, (ip, 137))
+            data, _ = s.recvfrom(2048)
+        i = 12 + 34 + 10                                  # header, the name asked about, type/class/ttl/length
+        for k in range(data[i]):
+            entry = data[i + 1 + 18 * k: i + 19 + 18 * k]
+            if entry[15] == 0x00 and not entry[16] & 0x80:    # the computer's own (unique, workstation) name
+                return entry[:15].decode("ascii", "replace").strip() or None
+    except (OSError, IndexError):
+        pass
+    return None
+
+
+def _name_of(ip):
+    """A computer's name: its own mDNS announcement (Linux, macOS), its NetBIOS name (Windows), else the network's
+    name service."""
+    name = _mdns_name(ip) or _netbios_name(ip)
+    if name:
+        return name
+    try:
+        return socket.gethostbyaddr(ip)[0].split(".")[0]
+    except OSError:
+        return None
+
+
+def lmstudio_network(max_age=60):
+    """LM Studio servers on the local network: [{host, ip, url, this_computer, models}]. Asks LM Studio's port on
+    every address of this computer's /24 network(s) (a quick connection attempt each), then each server that
+    answers for its model list. Only when Settings asks (cached max_age seconds)."""
+    with _ai_lock:
+        if _net_cache["found"] is not None and time.time() - _net_cache["at"] < max_age:
+            return _net_cache["found"]
+    from concurrent.futures import ThreadPoolExecutor
+    own = set(own_addresses())                    # every interface's network is looked at (two 10G ports: both)
+    targets = sorted({(f"{'.'.join(ip.split('.')[:3])}.{n}", port) for ip in own for n in range(1, 255)
+                      for port in LMS_PORTS})
+    with ThreadPoolExecutor(64) as ex:
+        up = [t for t, ok in zip(targets, ex.map(lambda t: _port_open(t[1], t[0], 0.4), targets)) if ok]
+        names = dict(zip([ip for ip, _ in up], ex.map(_name_of, [ip for ip, _ in up])))
+        models = list(ex.map(lambda t: _lms_models(f"http://{t[0]}:{t[1]}"), up))
+    found = []
+    for (ip, port), m in zip(up, models):
+        if m is None:
+            continue
+        host = names.get(ip) or ("this computer" if ip in own else ip)
+        same = next((e for e in found if e["port"] == port and (e["host"] == host or (ip in own and e["this_computer"]))
+                     and [x["id"] for x in e["models"]] == [x["id"] for x in m]), None)
+        if same:                                  # the same server reached by another address of its computer
+            same["ips"].append(ip)
+            continue
+        found.append({"host": host, "ips": [ip], "port": port, "this_computer": ip in own, "models": m})
+    for e in found:
+        e["ips"].sort(key=lambda a: tuple(int(x) for x in a.split(".")))
+        e["urls"] = [f"http://{a}:{e['port']}" for a in e["ips"]]
+    found.sort(key=lambda e: (not e["this_computer"], e["host"]))
+    with _ai_lock:
+        _net_cache.update(at=time.time(), found=found)
+    return found

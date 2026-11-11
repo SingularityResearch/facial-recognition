@@ -290,6 +290,8 @@ def make_handler(db, importer):
                         return self.send(db.checks())
                     if path == "/api/import":
                         return self.send(importer.status)
+                    if path == "/api/hardware/network":       # LM Studio servers on the local network (Settings)
+                        return self.send({"servers": hardware.lmstudio_network()})
                     if path == "/api/hardware":               # this computer, and where each job runs (Settings)
                         return self.send({"has": hardware.describe(), "uses": hardware.uses(), "ai": hardware.ai_apps()})
                     if path == "/api/possiblefaces":         # the Possible faces list
