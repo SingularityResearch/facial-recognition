@@ -362,6 +362,12 @@ the app window on the Linux laptop: v1.9 89.5 s; workers + draft, CPU only 73.3 
 every frame decoded; OpenCV's pip build has no hardware video decoding and seeking was slower; key frames only with
 PyAV would help but adds a dependency). `tools/import_profile.py` times each step; py-spy on the running app showed
 the rest. First full import of a 6,189-file folder on the network drive with v1.9: 1,217 s, GPU 2% busy, ~10 cores.
+v1.10 (released 2026-11-10, tag at 35b14cb): the downloaded Linux app ships plain ONNX Runtime; with an NVIDIA card,
+Settings → This computer checks driver/card (`cudasupport.check`) and offers Download CUDA support (onnxruntime-gpu +
+NVIDIA cu12/cuDNN 9 wheels from PyPI, 1.95 GB, 3.1 GB unpacked in `ROOT/cuda`); from the next start `activate()`
+imports it ahead of the bundled copy. Tested in the built app on the RTX 4060 laptop: download ~1 min, all models
+pass their checks onto CUDA; the 412-file import took 45.2 / 42.8 / 43.8 s with CUDA vs 62.6 / 62.7 s with
+FACE_CUDA=off (4 vs 8-10 cores busy). The 1.6 GB sample alone takes 16 s to read over Wi-Fi 6 (~100 MB/s).
 The NPU needs the Ryzen AI env's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`) and
 the static model in `models\npu\`; `tools/hw_bench.py` compiles it and re-measures all three
 (`data/hw_bench.json`). `tracker.py` prints `Recognition model: <name> on <device>` at startup.
