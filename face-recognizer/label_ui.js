@@ -1058,6 +1058,25 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     flag("descauto", "describe", "Describe every photo as it's opened", false, "Uses the photo describer below; descriptions stay on this computer."),
     { section: L, id: "folders", label: "Photo folders added", type: "info",
       get: () => (SUM?.settings.folders || []).join("\n") || "None yet: use Add photos." },
+    { section: "This computer", id: "hwhas", label: "Hardware", type: "info",
+      hint: "What the app found on this computer when it started.",
+      get: async () => { const h = (await get("/api/hardware")).has;
+        return [`Processor: ${h.cpu}, ${h.threads} threads`, h.memory_gb ? `Memory: ${h.memory_gb} GB` : null,
+                `Graphics: ${h.gpus.length ? h.gpus.join("; ") : "none found"}`, `NPU: ${h.npu || "none found"}`,
+                `ONNX Runtime can use: ${h.onnxruntime.join(", ") || "not installed"}`, `${h.system}, Python ${h.python}`]
+          .filter(Boolean).join("\n"); } },
+    { section: "This computer", id: "hwuses", label: "Where the work runs", type: "info",
+      hint: "The app picks the fastest way for each job by itself: a graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) is used for a model only after a check at start shows it gives the processor's answers, faster. To choose yourself, start the app with FACE_DEVICE set to gpu, cpu or npu.",
+      get: async () => { const u = (await get("/api/hardware")).uses, d = u.devices;
+        const job = (name, k) => d[k] ? `${name}: ${d[k]}` : null;
+        const lines = [job("Face finding", "detection"), job("Recognition (face prints)", "recognition"),
+                       job("Photo quality", "quality"), job("Expression", "expression"),
+                       job("Face shape cues", "cues"), job("Body posture", "pose")].filter(Boolean);
+        if (!lines.length) lines.push("Decided when the models first load (adding photos, or the face tracker).");
+        lines.push(`Adding photos: ${u.import_workers} at once; photos ${u.photos}`, `Videos: ${u.videos}`,
+                   `NPU: ${u.npu_note}`);
+        const why = Object.entries(u.decisions).map(([m, w]) => `  ${m}: ${w}`);
+        return lines.concat(why.length ? ["Checks at start:", ...why] : []).join("\n"); } },
     { section: W, id: "wskeys", label: "Keys", type: "info",
       hint: "Web search sends a face to Amazon (celebrity recognition) and its photo to Google (pages with the same picture), only when you click Web search. The keys are your own (how to make them: the Web search section of the README) and stay in %APPDATA%\\FaceLabels on this computer. Save an empty key to remove it.",
       get: async () => { const r = await get("/api/websearch/key");

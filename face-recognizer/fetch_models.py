@@ -17,6 +17,7 @@ byte-identical), else, or when that fails or the file there has changed, from th
 - ArcFace R50: InsightFace's release v0.7, inside buffalo_l.zip (289 MB, 5 models). Only this file's 160 MB
   of compressed bytes are fetched (HTTP range requests: the zip's table of contents, then the one file),
   and unpacked as they arrive.
+- YuNet with any input size (face finding on a GPU): only "models-v1", made by tools/get_yunet_dynamic.py.
 - Wav2Small: only "models-v1". audEERING publishes the weights; the ONNX file is made by tools/get_wav2small.py.
 
 Run:  python fetch_models.py           (FaceRecognizer.exe does this by itself on first start)
@@ -82,6 +83,8 @@ FILES = {
     "face_landmarker.task": (3758596, "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"),
     "pose_landmarker_lite.task": (5777746, "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a"),
     "wav2small.onnx": (71332, "c9df50bb1e7a4f1f5010279fcebe2110717ff94a3cc6fe66e1b151e177a91210"),
+    # YuNet with any input size, for face finding on a GPU (tools/get_yunet_dynamic.py; only in models-v1)
+    "face_detection_yunet_2023mar_dynamic.onnx": (229738, "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0"),
 }
 
 
@@ -147,6 +150,11 @@ def is_good(name):
     if got == sha:
         _remember(name, got)
     return got == sha
+
+
+# Files the programs work without (another way is used instead): one that can't be downloaded is skipped with a note,
+# not an error, and tried again next time.
+OPTIONAL = {"face_detection_yunet_2023mar_dynamic.onnx"}     # without it faces are found on the CPU (OpenCV)
 
 
 def needed():
@@ -255,8 +263,9 @@ def _source(name, attempt):
 
 def fetch(progress=None):
     """Download every needed model. progress(done_bytes, total_bytes, file name) is called as it goes.
-    Returns the names downloaded. Raises OSError (with the reason) when one can't be fetched."""
+    Returns the names downloaded. Raises OSError (with the reason) when one can't be fetched, unless it's OPTIONAL."""
     todo = needed()
+    got_all = []
     total, done = sum(FILES[n][0] for n in todo), 0
     MODELS.mkdir(parents=True, exist_ok=True)
     hdr0 = {"User-Agent": "FaceRecognizer-model-fetch"}
@@ -297,9 +306,16 @@ def fetch(progress=None):
                 # again after a pause. A 4xx (e.g. 404: the release is gone) won't fix itself.
                 lasting = isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500
                 if lasting or attempt == TRIES:
+                    if name in OPTIONAL:
+                        print(f"\n  (Skipped {name}, which is optional: {e})", flush=True)
+                        break
                     raise OSError(f"Couldn't download {name} from {BASE}: {e}") from e
                 time.sleep(WAIT * attempt)
-    return todo
+        else:
+            continue
+        if (MODELS / name).exists() and not is_placeholder(MODELS / name):
+            got_all.append(name)
+    return got_all
 
 
 def main():

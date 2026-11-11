@@ -49,7 +49,7 @@ Mac builds) and on **Linux** (built and tested on Ubuntu; x86_64, and ARM from s
   Without working OpenGL the window can't draw; the app notices (it tries the window first) and uses the browser.
 - **In the browser instead:** `./start.sh --browser` (or `FaceRecognizer --browser`) opens the same tabs in your web
   browser. The app does this by itself where no app window can open.
-- **What's different:** the app picks the processor for each model itself (see **GPU and NPU**):
+- **What's different:** the app picks the processor for each model itself (see **Your hardware: what the app uses**):
   an NVIDIA card on Linux (`./setup.sh` installs ONNX Runtime with CUDA when `nvidia-smi` works) or Apple Silicon's
   CoreML, when a check at start shows it gives the same results and is faster; otherwise the CPU (OpenCV). The labeling tool's handling of
   online-only cloud files (iCloud, OneDrive) is Windows-only for now. On first use, macOS asks once whether the app
@@ -68,7 +68,7 @@ Mac builds) and on **Linux** (built and tested on Ubuntu; x86_64, and ARM from s
 - **Build it** with **build_app.bat**; see **Building the app** below for the full steps on Windows, macOS and Linux. Or download a ready-made one from GitHub **Releases**.
 - **Keep it in this folder.** The .exe carries only the code and pages. It uses the `models\` and `data\` folders beside it, so it shares labels with the .bat launchers and git. Rebuild it after changing any `.py`, `.html` or `.js` file.
 - **The window** is Edge WebView2 (part of Windows 11), WebKit on macOS, and Qt's web view on Linux. On Windows the camera and microphone are allowed for the app's own pages without a prompt; macOS asks once for the app. The window remembers each page's options and the per-person baselines in `%APPDATA%\FaceLabels\webview\`, separately from your browser's. Messages and errors go to `%APPDATA%\FaceLabels\app.log`.
-- **Settings** gathers every option in sections: App (version, Check for updates, and buttons that open the `data` folder and `%APPDATA%\FaceLabels`), Face tracking (camera, display, expression and signals, recognition, alerts and presence log: tick who to be alerted about in a list of everyone known, plus Unknown), Labeling, Web search (enter or remove your own keys) and Describe photo (which model describes photos; download the built-in one). Changes apply at once and are remembered between runs; sections have **Reset to defaults**. The same options stay on the Face tracking and Labeling tabs too, and the two always agree. Every Face tracking option is now remembered between runs (before, only some were).
+- **Settings** gathers every option in sections: App (version, Check for updates, and buttons that open the `data` folder and `%APPDATA%\FaceLabels`), Face tracking (camera, display, expression and signals, recognition, alerts and presence log: tick who to be alerted about in a list of everyone known, plus Unknown), Labeling, This computer (the processor, memory, graphics processors and NPU the app found, and where each job runs: see **Your hardware: what the app uses**), Web search (enter or remove your own keys) and Describe photo (which model describes photos; download the built-in one). Changes apply at once and are remembered between runs; sections have **Reset to defaults**. The same options stay on the Face tracking and Labeling tabs too, and the two always agree. Every Face tracking option is now remembered between runs (before, only some were).
 - **Check for updates** (top right of the window) asks GitHub for the latest release, only when you click it, and offers to open its download page if it's newer.
 - **If the camera is "busy" or missing**, another app has it, often the tracker still open in a browser tab, which starts the camera by itself. Close that tab (or the other app) and press **Start camera** again.
 
@@ -432,28 +432,47 @@ python face_id.py name 4 9 15 Chris                       # name groups 4, 9 and
 python face_id.py name 7 --ignore                         # group 7 isn't anyone to recognize
 ```
 
-## GPU and NPU
+## Your hardware: what the app uses
 
-Measured on this PC (AMD Ryzen AI Max+ 395: 16-core CPU, Radeon 8060S GPU, XDNA 2 NPU), ArcFace, one face at a time:
+The app looks at the computer when it starts and picks, job by job, the fastest way it has that gives the same answers. **Settings → This computer** shows what it found (processor, memory, graphics processors, NPU) and where each job runs, with the start-up check behind each choice.
 
-| Processor | Time per face | Notes |
-|---|---|---|
-| **GPU** (Radeon 8060S, DirectML) | **2.6-3.6 ms** | default; identical results to CPU |
-| CPU (OpenCV) | ~12 ms | fallback |
-| NPU (Ryzen AI 1.8, BF16) | ~25 ms | low power; results 99.97% identical; first start compiles for ~6 minutes |
-
-The app looks at the hardware when it starts and decides, model by model, where the recognizer, quality and expression models run:
-
-| Hardware | What it uses |
+| Job | Where it runs |
 |---|---|
-| Windows with a DirectX 12 GPU | the GPU through DirectML (`onnxruntime-directml`, installed by setup.bat): measured to give the same names, 3-4x faster |
-| Linux with an NVIDIA card | CUDA (`./setup.sh` installs `onnxruntime-gpu` with its own CUDA and cuDNN libraries when `nvidia-smi` works; no CUDA toolkit needed), if the check below passes |
-| Mac with Apple Silicon | CoreML, if the check below passes |
-| anything else, or the check fails | the CPU (OpenCV) |
+| Face finding (YuNet), recognition (ArcFace), photo quality, expression | a graphics processor (GPU) when there is one and it passes the check below, else the processor (OpenCV) |
+| Reading and decoding photos | the processor, on several threads at once (Settings shows how many); JPEGs are decoded straight at reduced size, each file is read once |
+| Videos | the processor decodes them; about one frame a second is looked at, and its faces go through the jobs above |
+| Face-shape cues, body posture (MediaPipe), voice | the processor (about 10 ms a face, 15 ms a frame, a few ms per 2 s of sound) |
+| NPU | not used by itself: measured slower than the GPU and the processor for one face at a time |
 
-The check, for CUDA and CoreML: each model runs once on the GPU and once on the CPU with the same test input; the GPU is used only if its answer is within 1% of the CPU's and it's faster (median of 5 runs). The decision and the timings are printed at start (for example `arcface_w600k_r50.onnx: CUDA: same results (0.00% apart), 1.2 ms vs 30.5 ms on the CPU: GPU`), and the tracker's list of processors shows `GPU (CUDA, checked)`. The NPU is never picked by itself (measured slower for one face at a time). Face detection (YuNet) stays on the CPU, where it takes a few milliseconds, as do the optional MediaPipe face-shape cues (about 10 ms a face), body posture (about 15 ms a frame) and the voice model (a few milliseconds per 2-second clip). To choose yourself, set `FACE_DEVICE` to `gpu` (the GPU without the check), `cpu` or `npu` before starting. `npu` needs the Ryzen AI environment's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`); `tools/hw_bench.py` compiles the NPU model and re-measures all three. At startup the tracker runs each model once (so the first camera frame isn't the slow one) and lists which processor runs it and how long that first run took.
+Which GPU route, by system:
 
-**macOS and Linux:** without CUDA or CoreML passing the check, the models run on the CPU (OpenCV), the path measured above (about 12 ms a face here; 58 ms on a laptop CPU in a Linux test). For a fuller measurement on real faces, `.venv/bin/python tools/hw_bench.py` reports milliseconds per face and agreement with the CPU (it needs some photos added first).
+| Hardware | Route |
+|---|---|
+| Windows with a DirectX 12 GPU (AMD, NVIDIA, Intel) | DirectML (`onnxruntime-directml`, installed by setup.bat) |
+| Linux with an NVIDIA card | CUDA: `./setup.sh` installs `onnxruntime-gpu` with its own CUDA and cuDNN libraries when `nvidia-smi` works (no CUDA toolkit needed) |
+| Mac with Apple Silicon | CoreML |
+| anything else | the processor |
+
+**The check:** each model runs once on the GPU and once on the processor with the same test input. The GPU is used only if its answer is within 1% of the processor's and it is faster (median of 10 runs, after warming up). Face finding is compared with OpenCV's own detector on a photo-sized picture. The decisions are printed at start, for example `arcface_w600k_r50.onnx: CUDA: same results (0.10% apart), 4.7 ms vs 22.1 ms on the CPU: GPU`. If the GPU fails later (for example it runs out of memory), face finding switches to the processor and says so. Face finding on a GPU needs one more model file, `face_detection_yunet_2023mar_dynamic.onnx`, which `fetch_models.py` downloads; without it faces are found on the processor.
+
+To choose yourself, set `FACE_DEVICE` before starting: `gpu` (the GPU without the check), `cpu`, or `npu` (needs the Ryzen AI environment's Python, `X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`; `tools/hw_bench.py` compiles the NPU model and re-measures). `FACE_IMPORT_WORKERS` sets how many photos an import works on at once.
+
+**Measured** (ArcFace, one face at a time):
+
+| Computer | GPU | Processor | NPU |
+|---|---|---|---|
+| Ryzen AI Max+ 395, Radeon 8060S (Windows, DirectML) | 2.6-3.6 ms | ~12 ms | ~25 ms (BF16, 99.97% identical; first start compiles ~6 min) |
+| Ryzen 7 7840HS, RTX 4060 laptop (Linux, CUDA) | 4.7 ms | 22 ms | not available under Linux there |
+
+**Adding photos**, 412 files from a network drive (180 HEIC, 156 JPEG, 64 PNG, 12 videos) on the Ryzen 7 7840HS + RTX 4060, through the app window:
+
+| Version | Time |
+|---|---|
+| v1.9: 4 files read at a time, faces found one photo at a time on the processor | 89.5 s |
+| photos worked on 12 at once, JPEGs decoded at reduced size, processor only (`FACE_DEVICE=cpu`) | 73.3 s |
+| the same, with face finding on the GPU (the default there) | **43.5 s** |
+
+What's left is mostly decoding: a 12-megapixel HEIC takes about 300 ms on the processor, a JPEG 66 ms, a PNG 90 ms; a video about 2 s. `tools/import_profile.py <folder>` times each step of an import on your own photos.
 
 **Bigger models tried:** AdaFace IR-101 (WebFace12M, `tools/get_adaface.py` converts the official weights) ran at 8.5 ms per face on the GPU but didn't beat ArcFace on your photos: 95.5% vs 99.4% of labeled faces correct, about the same on blurry frames. Combining both models didn't help either (`tools/eval_models.py` reproduces the comparison).
 

@@ -194,6 +194,12 @@ def test_tracker_checks_the_request_size(track, length, code):
     assert raw_post(track[0], "/api/recognize", length) == code
 
 
+def test_label_tool_says_what_this_computer_has(label_url):
+    status, _, body = request(label_url, "/api/hardware")
+    got = json.loads(body)
+    assert status == 200 and got["has"]["threads"] >= 1 and "import_workers" in got["uses"]
+
+
 # --------------------------------------------------------------------------- the tracker's routes
 def _frame():
     img = np.full((480, 640, 3), 200, np.uint8)

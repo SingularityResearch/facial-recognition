@@ -5,7 +5,7 @@ phone used as a webcam) and reads facial expression, voice and other signals liv
 are recognized the same way: the same face prints and matching, with faces named in the labeling tool. The expression side is also a small, honest research testbed: it measures what each
 signal is actually worth on your own face before letting it influence anything.
 
-Everything runs on one computer: Windows, macOS (14+, Apple Silicon) or Linux (Ubuntu 22.04+). No photos, video, audio or face data leave the machine unless you send them
+Everything runs on one computer: Windows, macOS (14+, Apple Silicon) or Linux (Ubuntu 22.04+). It identifies that computer's processor, graphics processors and NPU at start and runs each job the fastest way that gives the same answers (Settings, **This computer**). No photos, video, audio or face data leave the machine unless you send them
 on purpose: the labeling tool's **Web search** (one face or photo, when you click it) and **Describe photo** if
 you point it at a model server on another device.
 
@@ -36,6 +36,7 @@ you point it at a model server on another device.
 | **Local only**: two tiny servers on 127.0.0.1, with request checks (`localguard.py`) | Faces and voices are personal data. Nothing is uploaded, the pages load nothing from the internet (a Content-Security-Policy allows only their own server), and other websites can't reach the servers. The one exception is opt-in per click: the labeling tool's **Web search** sends that face to Amazon and that photo to Google (US services, English results) to suggest who it is. |
 | **Thresholds are measured values**, never guesses | Each matching, quality and voting threshold was measured on the owner's labeled photos, for example ArcFace match 0.35: 100% of labeled faces correct, 0% of strangers named. Changing one means re-measuring. |
 | **ArcFace for recognition**, with SFace as a fallback; AdaFace evaluated and rejected | ArcFace named 76% of blurry webcam-like faces correctly vs 44% for SFace. AdaFace was slower and less accurate on these photos (95.5% vs 99.4%). |
+| **The hardware decides, after a check** | Each model runs on the graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) only after a start-up check shows it gives the processor's answers (within 1%), faster; photos are read and decoded on several processor threads at once. Measured on a Ryzen 7 7840HS + RTX 4060: importing 412 files went from 89.5 s to 43.5 s, with the same faces found. The NPU isn't picked by itself: it was slower for one face at a time. |
 | **Labels per face, not per cluster** | Cluster numbers change on every regrouping. A permanent ID per face keeps every decision, with undo history. |
 | **"Looks", not "feels"** | Research shows facial expression is a weak, context-dependent indicator of felt emotion. The wording follows the evidence. |
 | **Layered expression reading** | A quality gate, then voting over time, then a per-person "usual look", then evidence. Each layer fixes a specific failure of single-frame emotion detection. |

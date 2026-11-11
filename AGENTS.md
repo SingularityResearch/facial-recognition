@@ -23,6 +23,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   import-map `integrity` (SHA-384).
 - `face-recognizer/` — the Python project. All programs share `face-recognizer/data/`:
   - `face_id.py` — core library + CLI (`scan`, `cluster`, `name`, `people`, `recognize`, `reembed`, `migrate`).
+  - `hardware.py` — what the computer has (`describe`: processor, memory, GPUs, NPU, ONNX Runtime providers; from
+    the registry, /proc and /sys, sysctl) and how the programs use it (`uses`: `face_id.LAST_DEVICES`,
+    `GPU_DECISIONS`, `import_workers`); the labeling tool's `/api/hardware`, shown in Settings → This computer.
   - `paths.py` — `ROOT` (models\ and data\; `FACE_ROOT` overrides), `HOME` (`%APPDATA%\FaceLabels`; `FACE_HOME`
     overrides), `atomic_write`/`replace_file`. Every module takes its folders from here.
   - `labels.py` — labeling engine: per-face labels (`LabelDB`), auto-naming, duplicate-photo detection, undo history
@@ -35,6 +38,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     - `importer.py` — background photo/video `Importer` (videos: `face_id.video_faces`, ~1 frame/s, each person
       followed and their 3 clearest faces kept; frame numbers in `photos.json` `at`); one job at a time
       (`Importer.begin`); unreadable files kept with the reason (`note_problem`, shown by the page's **Why?**).
+      Each file's work that doesn't touch the database (read once: hash and picture from the same bytes, decode,
+      faces, possible faces, a whole video) runs on `hardware.import_workers()` threads; the import thread only adds
+      the results. Each thread has its own OpenCV detector (`Faces._detector`); GPU runs go through `ACCEL_LOCK`.
     Possible faces: each photo is also read with a low detector cut-off (`Importer.MORE_SCORE` 0.45, 4 sizes; sampled,
     not measured for accuracy); those faces are marked in `photos.json` `maybe` and listed apart from New faces.
   - `label_tool.py` + `label_ui.html` (layout) + `label_ui.js` (script) / `label.bat`, `label.sh` — labeling web app on
@@ -112,7 +118,8 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     rewrite history),
     `wav2small.onnx` (voice arousal/dominance/valence, optional; made by `tools/get_wav2small.py`),
     `pose_landmarker_lite.task` (MediaPipe body posture, optional).
-  - `tools/` — `eval_models.py`, `hw_bench.py`, `expr_check.py`, `expr_eval.py`, `get_adaface.py`, `get_wav2small.py`, `import_bench.py`, `websearch_check.py`, `webcam_eval.py` (live naming on confirmed webcam snapshots; measured the
+  - `tools/` — `eval_models.py`, `hw_bench.py`, `expr_check.py`, `expr_eval.py`, `get_adaface.py`, `get_wav2small.py`, `get_yunet_dynamic.py` (YuNet with free input sizes, for GPU face finding; published in models-v1),
+    `import_bench.py`, `import_profile.py` (each step of an import timed on a folder), `websearch_check.py`, `webcam_eval.py` (live naming on confirmed webcam snapshots; measured the
     averaged-print rule the tracker uses via `/api/who`).
   - `tests/` — Node tests (`*.test.js`: `expression.js`, `signals.js`, `settings_bridge.js`, every page script parses
     and is served and packed, no inline handlers, no internet fonts) and Python tests (`test_*.py`, pytest: request
@@ -152,8 +159,8 @@ macOS (14+, Apple Silicon) and Linux (Ubuntu 22.04+), from `face-recognizer/`:
 Platform differences live in `paths.py` (folders), `desktop.py` (open a folder, attention), `app.py` (WebView2
 camera hook on Windows only; on Linux the window is first tried in a child process, `--probe-window`, falling back to
 the browser) and `face_id.py` (`auto` decides from the hardware: DirectML on Windows; CUDA or CoreML per model after a start-up check against
-the CPU, `_gpu_check`; `setup.sh` installs `onnxruntime-gpu[cuda,cudnn]` instead of `onnxruntime` when `nvidia-smi`
-works). Online-only
+the CPU, `_gpu_check`; face finding too, `_yunet_runner`, with `DET_DYNAMIC` and a session per input size; `setup.sh`
+installs `onnxruntime-gpu[cuda,cudnn]` instead of `onnxruntime` when `nvidia-smi` works). Online-only
 cloud files (`photofiles.py`) are handled on Windows only. Ports: `FACE_PORTS=<n>` moves the app window's 8764-8766.
 
 ## Checks before committing
@@ -221,6 +228,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   `face_id.py` (`REC_MODELS[...]["match"/"cluster"]`, `Q_ENROLL`, `Q_EXPR`, `MAX_TURN`),
   `labels.py` (`AUTO`, `MARGIN`, `TOPK`, `DUP_BITS`), `tracker_ui.html` (strictness default 0.35),
   and `expression.js` (`X_SURE`, `X_MARGIN`, `X_MIN_VOTES`, vote windows).
+  Also measured, for speed (2026-11-10, Ryzen 7 7840HS + RTX 4060 and Ryzen AI Max+ 395 + Radeon 8060S; numbers in
+  PROJECT_CONTEXT.md): `face_id.py` `GPU_TOLERANCE`, `DET_PAD`, `DET_SESSIONS`, `hardware.import_workers`. A GPU path
+  must give the same faces as the CPU path: re-run the comparison (regular faces identical) when changing them.
 - Not yet measured, so evidence only: `expression.js` `H_STAY` (state model) and every `signals.js` constant
   (`TALK_JAW_SD`, pulse, voice). The options that let them change the label (skip while talking, state model)
   stay off by default until `tools/expr_eval.py` shows they help on posed sessions. Same for the hand-on-face skip.

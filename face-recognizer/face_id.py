@@ -36,6 +36,7 @@ import os
 import sys
 import threading
 import time
+from io import BytesIO
 from pathlib import Path
 
 import cv2
@@ -50,6 +51,9 @@ ROOT = paths.ROOT                # FACE_ROOT=<folder> uses another (tests)
 MODELS = ROOT / "models"
 DATA = ROOT / "data"
 DET_MODEL = MODELS / "face_detection_yunet_2023mar.onnx"
+# The same detector with any input size (the file above is fixed at 640x640; OpenCV resizes it itself), for running
+# it on a GPU through ONNX Runtime. Made by tools/get_yunet_dynamic.py; fetch_models.py downloads it.
+DET_DYNAMIC = MODELS / "face_detection_yunet_2023mar_dynamic.onnx"
 QUAL_MODEL = MODELS / "ediffiqa_tiny_jun2024.onnx"            # eDifFIQA face-quality model (optional)
 EXPR_MODEL = MODELS / "facial_expression_recognition_mobilefacenet_2022july.onnx"   # expression model (optional)
 EXPRESSIONS = ["angry", "disgust", "fearful", "happy", "neutral", "sad", "surprised"]   # its outputs, in order
@@ -195,6 +199,7 @@ ACCEL_LOCK = threading.Lock()
 CHECKED_GPU = [("CUDAExecutionProvider", "CUDA"), ("CoreMLExecutionProvider", "CoreML")]
 GPU_TOLERANCE = 0.01        # largest relative difference from the CPU's answer (|gpu - cpu| / |cpu|) to count as same
 GPU_DECISIONS = {}          # model file -> what the check found, for the startup log
+LAST_DEVICES = {}           # job (detection, recognition...) -> where it runs, as the last Faces() decided (Settings)
 
 
 def _ort_runner(path, npu_static=None):
@@ -268,9 +273,21 @@ def _test_input(sess):
     return np.random.default_rng(0).uniform(-1, 1, shape).astype(np.float32)
 
 
-def _gpu_check(gpu, cpu, x, runs=5):
+def _median_ms(fn, runs=10, warm=3):
+    """fn's median time in milliseconds over `runs`, after `warm` runs (a GPU raises its clock under load)."""
+    for _ in range(warm):
+        fn()
+    times = []
+    for _ in range(runs):
+        t = time.perf_counter()
+        fn()
+        times.append((time.perf_counter() - t) * 1000)
+    return float(np.median(times))
+
+
+def _gpu_check(gpu, cpu, x, runs=10, speed=True):
     """Decide whether to use the GPU for one model: (use it, why). run(x) callables for each. Same results
-    (within GPU_TOLERANCE of the CPU's) and faster (median of `runs`, after one run each to warm up)."""
+    (within GPU_TOLERANCE of the CPU's) and, if `speed`, faster (median of `runs`, after warming up)."""
     try:
         a = np.asarray(gpu(x), np.float64).ravel()
         b = np.asarray(cpu(x), np.float64).ravel()
@@ -281,15 +298,9 @@ def _gpu_check(gpu, cpu, x, runs=5):
     diff = float(np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-6))
     if diff > GPU_TOLERANCE:
         return False, f"different results from the CPU ({diff:.1%} apart)"
-
-    def median_ms(run):
-        times = []
-        for _ in range(runs):
-            t = time.perf_counter()
-            run(x)
-            times.append((time.perf_counter() - t) * 1000)
-        return float(np.median(times))
-    g, c = median_ms(gpu), median_ms(cpu)
+    if not speed:
+        return True, f"same results ({diff:.2%} apart)"
+    g, c = _median_ms(lambda: gpu(x), runs), _median_ms(lambda: cpu(x), runs)
     if g >= c:
         return False, f"same results but not faster ({g:.1f} ms vs {c:.1f} ms on the CPU)"
     return True, f"same results ({diff:.2%} apart), {g:.1f} ms vs {c:.1f} ms on the CPU"
@@ -310,22 +321,133 @@ def _preload_cuda(ort):
             pass
 
 
-def _locked(sess):
+def _locked(sess, every_output=False):
     name = sess.get_inputs()[0].name
 
     def run(x):
         with ACCEL_LOCK:
-            return sess.run(None, {name: x})[0]
+            out = sess.run(None, {name: x})
+        return out if every_output else out[0]
     return run
 
 
-def _cv_runner(path):
-    """run(x) for an ONNX model on the CPU with OpenCV DNN."""
-    net = cv2.dnn.readNetFromONNX(str(path))
+# YuNet on a GPU: the picture is padded to a multiple of DET_PAD px each way (the model needs 32), and each input size
+# gets its own session. Measured on CUDA (RTX 4060 laptop): a run takes 3-6 ms while the size stays the same, but
+# ~30 ms whenever it differs from the run before (the session sets itself up again), and padding everything to one
+# square wastes most of the work. Pictures up to 1280 px give at most 16 sizes; past DET_SESSIONS sizes the first
+# session takes the rest (slower, but no more GPU memory). Padding to 32 instead (as OpenCV does) needed 82 sizes for
+# 400 photos and ran an 8 GB GPU out of memory. Regular faces found: the same as OpenCV's on those 400 photos (2,400
+# passes); possible faces (cut-off 0.45): 30 of the borderline ones differ (scores 0.46-0.56).
+DET_PAD = 320
+DET_SESSIONS = 12
+GPU_DETECTORS = [("DmlExecutionProvider", "DirectML", {}),
+                 ("CUDAExecutionProvider", "CUDA", {"cudnn_conv_algo_search": "HEURISTIC",
+                                                    "arena_extend_strategy": "kSameAsRequested"}),
+                 ("CoreMLExecutionProvider", "CoreML", {})]
+
+
+def _yunet_runner():
+    """(run, device) for the face detector on a GPU through ONNX Runtime, or None for OpenCV's (the CPU). Like the
+    other models: used in auto only when a start-up check finds the same answers as on the CPU, and faster."""
+    if DEVICE not in ("auto", "gpu") or not DET_DYNAMIC.exists():
+        return None
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        return None
+    avail = ort.get_available_providers()
+    so = ort.SessionOptions()
+    so.log_severity_level = 3
+    for provider, name, opts in GPU_DETECTORS:
+        if provider not in avail:
+            continue
+        if provider == "CUDAExecutionProvider":
+            _preload_cuda(ort)
+        try:
+            with ACCEL_LOCK:
+                sess = ort.InferenceSession(str(DET_DYNAMIC), so, providers=[(provider, opts), "CPUExecutionProvider"])
+        except Exception as e:
+            _decided(DET_DYNAMIC, f"{name} couldn't load it ({str(e)[:120]}): CPU")
+            continue
+        if sess.get_providers()[0] != provider:
+            _decided(DET_DYNAMIC, f"{name} isn't working on this computer: CPU")
+            continue
+        run = _per_size(sess, lambda p=provider, o=opts: ort.InferenceSession(
+            str(DET_DYNAMIC), so, providers=[(p, o), "CPUExecutionProvider"]))
+        if DEVICE == "gpu":
+            _decided(DET_DYNAMIC, f"{name}, asked for with FACE_DEVICE=gpu (not checked)")
+            return run, f"GPU ({name}, not checked)"
+        cpu = ort.InferenceSession(str(DET_DYNAMIC), so, providers=["CPUExecutionProvider"])
+        x = np.random.default_rng(0).uniform(0, 255, (1, 3, 640, 640)).astype(np.float32)   # a photo's pixel range
+
+        def joined(r):
+            return lambda v: np.concatenate([np.asarray(o, np.float32).ravel() for o in r(v)])
+        ok, why = _gpu_check(joined(run), joined(lambda v, cpu=cpu: cpu.run(None, {"input": v})), x, speed=False)
+        if ok:      # faster than the CPU's way, OpenCV's detector, at a photo's size: the whole pass, decoding included
+            pic = np.tile(np.linspace(0, 255, 1280, dtype=np.uint8)[None, :, None], (960, 1, 3))
+            det = cv2.FaceDetectorYN.create(str(DET_MODEL), "", (1280, 960), DET_SCORE, 0.3, 5000)
+            g = _median_ms(lambda r=run, p=pic: _yunet_rows(r, p, DET_SCORE))
+            c = _median_ms(lambda d=det, p=pic: d.detect(p))
+            ok = g < c
+            why = (f"{why}, {g:.1f} ms vs {c:.1f} ms with OpenCV on the CPU" if ok
+                   else f"same results but not faster ({g:.1f} ms vs {c:.1f} ms with OpenCV on the CPU)")
+        _decided(DET_DYNAMIC, f"{name}: {why}: {'GPU' if ok else 'CPU'}")
+        if ok:
+            return run, f"GPU ({name}, checked)"
+    return None
+
+
+def _per_size(first, make):
+    """run(x) -> every output, with a session per input size (`first` for the first size seen, then make())."""
+    sessions = {}
 
     def run(x):
-        net.setInput(x)
-        return net.forward()
+        with ACCEL_LOCK:
+            sess = sessions.get(x.shape)
+            if sess is None:
+                sess = first if not sessions or len(sessions) >= DET_SESSIONS else make()
+                if len(sessions) < DET_SESSIONS:
+                    sessions[x.shape] = sess
+            return sess.run(None, {"input": x})
+    return run
+
+
+def _yunet_rows(run, bgr, score, nms=0.3, top_k=5000):
+    """YuNet's rows (x, y, w, h, 5 points, score) for the faces in bgr, from the model's raw outputs, decoded as
+    OpenCV's FaceDetectorYN does (score = sqrt(class x objectness), boxes and points per grid cell at strides
+    8/16/32, then non-maximum suppression), so either way finds the same faces."""
+    h, w = bgr.shape[:2]
+    ph, pw = -(-h // DET_PAD) * DET_PAD, -(-w // DET_PAD) * DET_PAD
+    out = run(cv2.dnn.blobFromImage(cv2.copyMakeBorder(bgr, 0, ph - h, 0, pw - w, cv2.BORDER_CONSTANT, value=0)))
+    found = []
+    for k, stride in enumerate((8, 16, 32)):
+        both = np.clip(out[k][0, :, 0], 0, 1) * np.clip(out[3 + k][0, :, 0], 0, 1)
+        keep = np.flatnonzero(both >= score * score)          # sqrt(class x objectness) >= score
+        if not len(keep):
+            continue
+        box, kps, sc = out[6 + k][0][keep], out[9 + k][0][keep], np.sqrt(both[keep])
+        r, c = keep // (pw // stride), keep % (pw // stride)
+        cx, cy = (c + box[:, 0]) * stride, (r + box[:, 1]) * stride
+        bw, bh = np.exp(box[:, 2]) * stride, np.exp(box[:, 3]) * stride
+        pts = np.empty((len(keep), 10), np.float32)
+        pts[:, 0::2] = (kps[:, 0::2] + c[:, None]) * stride
+        pts[:, 1::2] = (kps[:, 1::2] + r[:, None]) * stride
+        found.append(np.column_stack([cx - bw / 2, cy - bh / 2, bw, bh, pts, sc]).astype(np.float32))
+    if not found:
+        return []
+    rows = np.vstack(found)
+    keep = cv2.dnn.NMSBoxes(rows[:, :4].tolist(), rows[:, 14].tolist(), score, nms, top_k=top_k)
+    return [rows[i] for i in np.asarray(keep, int).ravel()]
+
+
+def _cv_runner(path):
+    """run(x) for an ONNX model on the CPU with OpenCV DNN (one run at a time: the network keeps its input)."""
+    net, lock = cv2.dnn.readNetFromONNX(str(path)), threading.Lock()
+
+    def run(x):
+        with lock:
+            net.setInput(x)
+            return net.forward()
     return run
 
 
@@ -341,11 +463,15 @@ class Faces:
     def __init__(self):
         if not DET_MODEL.exists():
             sys.exit(f"Missing model file: {DET_MODEL}")
-        self.det = cv2.FaceDetectorYN.create(str(DET_MODEL), "", (320, 320), DET_SCORE, 0.3, 5000)
+        self._dets = threading.local()                   # a detector per thread: imports find faces on several
         path = MODELS / REC["file"]
         if REC_NAME.startswith("sface"):
-            sface = cv2.FaceRecognizerSF.create(str(path), "")
-            self._feature = lambda crop: sface.feature(crop)
+            sface, sface_lock = cv2.FaceRecognizerSF.create(str(path), ""), threading.Lock()
+
+            def sface_feature(crop):
+                with sface_lock:                         # one OpenCV network: one run at a time
+                    return sface.feature(crop)
+            self._feature = sface_feature
             self.device = "CPU (OpenCV)"
         else:
             run, self.device = (_ort_runner(path, MODELS / "npu" / (path.stem + "_b1.onnx"))
@@ -355,6 +481,7 @@ class Faces:
                 x = (cv2.cvtColor(crop, cv2.COLOR_BGR2RGB).astype(np.float32) - 127.5) / 127.5
                 return run(np.ascontiguousarray(x.transpose(2, 0, 1)[None]))   # one face per call
             self._feature = arcface
+        self._yunet = _yunet_runner()                    # the face detector on a GPU, or None: OpenCV's
         self._qrun, qdev = self._optional(QUAL_MODEL)    # quality and expression models: GPU or CPU
         self._xrun, xdev = self._optional(EXPR_MODEL)
         self.expression_model = EXPR_MODEL.name if self._xrun else None
@@ -363,9 +490,10 @@ class Faces:
         self._poser = None                               # MediaPipe pose, loaded on first use of poses()
         self.pose_available = POSE_MODEL.exists() and _has_module("mediapipe")
         # Which processor runs each model, so a silent fall back to the CPU shows up in the startup log
-        self.devices = {"detection": "CPU (OpenCV)", "recognition": self.device, "quality": qdev,
+        self.devices = {"detection": self._yunet[1] if self._yunet else "CPU (OpenCV)", "recognition": self.device, "quality": qdev,
                         "expression": xdev, "cues": "CPU (MediaPipe)" if self.cues_available else None,
                         "pose": "CPU (MediaPipe)" if self.pose_available else None}
+        LAST_DEVICES.update(self.devices)
 
     @staticmethod
     def _optional(path):
@@ -482,15 +610,39 @@ class Faces:
         return [np.array([[p.x * w, p.y * h, p.visibility if p.visibility is not None else 0.0] for p in lm], np.float32)
                 for lm in found.pose_landmarks]
 
-    def _detect_at(self, bgr, side):
+    def _detector(self, score):
+        """This thread's YuNet detector with cut-off `score` (an OpenCV detector can't be shared by threads)."""
+        det = getattr(self._dets, f"s{score}", None)
+        if det is None:
+            det = cv2.FaceDetectorYN.create(str(DET_MODEL), "", (320, 320), score, 0.3, 5000)
+            setattr(self._dets, f"s{score}", det)
+        return det
+
+    def _detect_at(self, bgr, side, score=DET_SCORE):
+        """YuNet's rows (15 values) for the faces in bgr shrunk to `side` px at most, in bgr's coordinates."""
         h, w = bgr.shape[:2]
         s = min(1.0, side / max(h, w))
         img = cv2.resize(bgr, (round(w * s), round(h * s)), interpolation=cv2.INTER_AREA) if s < 1 else bgr
-        self.det.setInputSize((img.shape[1], img.shape[0]))
-        _, rows = self.det.detect(img)
-        if rows is None:
-            return []
-        rows = rows.copy()
+        rows = None
+        if self._yunet:
+            try:
+                rows = _yunet_rows(self._yunet[0], img, score)
+            except Exception as e:                       # e.g. the GPU ran out of memory: the CPU from now on
+                print(f"Face finding on the GPU failed ({str(e)[:160]}); using the CPU (OpenCV) from now on",
+                      file=sys.stderr, flush=True)
+                self._yunet, self.devices["detection"] = None, "CPU (OpenCV, after a GPU error)"
+                LAST_DEVICES["detection"] = self.devices["detection"]
+        if rows is not None:
+            if not rows:
+                return []
+            rows = np.array(rows)
+        else:
+            det = self._detector(score)
+            det.setInputSize((img.shape[1], img.shape[0]))
+            _, rows = det.detect(img)
+            if rows is None:
+                return []
+            rows = rows.copy()
         rows[:, :14] /= s                     # back to full-image coordinates
         return list(rows)
 
@@ -632,8 +784,10 @@ def iou(a, b):
 _heif_ready = None
 
 
-def load_image(path):
-    """Load any photo as BGR, upright (EXIF rotation applied), shrunk to MAX_SIDE."""
+def load_image(path, data=None):
+    """Load any photo as BGR, upright (EXIF rotation applied), shrunk to MAX_SIDE. `data`: the file's bytes, when
+    already read (an import reads each file once, for its hash and its picture). A JPEG is decoded straight at the
+    smallest of 1/1, 1/2, 1/4, 1/8 size that is still at least MAX_SIDE (JPEG "draft" mode): about half the time."""
     global _heif_ready
     from PIL import Image, ImageOps
     ext = Path(path).suffix.lower()
@@ -648,7 +802,9 @@ def load_image(path):
     if ext in (".heic", ".heif") and not _heif_ready:
         return None
     try:
-        with Image.open(path) as im:
+        with Image.open(BytesIO(data) if data is not None else path) as im:
+            if im.format == "JPEG":
+                im.draft("RGB", (MAX_SIDE, MAX_SIDE))
             im = ImageOps.exif_transpose(im)
             im = im.convert("RGB")
             scale = MAX_SIDE / max(im.size)

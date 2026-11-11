@@ -108,6 +108,14 @@ def test_no_good_source_raises_and_leaves_nothing(one_model, monkeypatch):
     assert not (M.MODELS / "test.onnx").exists() and not list(M.MODELS.glob("*.download"))
 
 
+def test_an_optional_file_that_cant_be_fetched_is_skipped(one_model, monkeypatch):
+    monkeypatch.setattr(M, "ORIGIN", {})
+    monkeypatch.setattr(M, "OPTIONAL", {"test.onnx"})
+    monkeypatch.setattr(M, "_source", lambda name, attempt: (f"{one_model}/missing.onnx", {}))     # 404
+    assert M.fetch() == [] and M.needed() == ["test.onnx"]           # no error; tried again next time
+    assert not list(M.MODELS.glob("*.download"))
+
+
 def test_placeholders_count_as_missing(one_model):
     M.MODELS.mkdir()
     (M.MODELS / "test.onnx").write_bytes(b"version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 1\n")

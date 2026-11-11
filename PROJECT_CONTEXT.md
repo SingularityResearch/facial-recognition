@@ -337,12 +337,31 @@ Measured on Chris's labeled faces:
 | CPU (OpenCV DNN) | ~12 ms | fallback |
 | NPU (Ryzen AI 1.8 VitisAI, BF16) | ~25 ms | 99.97% identical; first start compiles ~6 min (342 s) |
 
-The recognizer, quality and expression models use ONNX Runtime when available; YuNet stays on the CPU.
-`auto` decides from the hardware: DirectML (measured) when present; else CUDA or CoreML for each model whose
-start-up check passes (`_gpu_check`: GPU and OpenCV CPU on a fixed test input, within `GPU_TOLERANCE` 1%, and
-faster by median of 5 runs; decisions printed and in `face_id.GPU_DECISIONS`); else the CPU. Tried on this PC with
-ONNX Runtime's CPU standing in for the GPU (2026-11-10): ArcFace and eDifFIQA 0.00% apart from OpenCV, so real
-models pass the agreement part. Not yet run on an actual CUDA or CoreML machine.
+Every model runs through ONNX Runtime when it can, face finding (YuNet) included since 2026-11-10.
+`auto` decides from the hardware (`hardware.py` lists it; Settings → This computer shows it): DirectML when present
+(measured; YuNet on DirectML also passes its check here: 0.00% apart, 12.9 vs 26.4 ms with OpenCV); else CUDA or
+CoreML for each model whose start-up check passes (`_gpu_check`: GPU and CPU on a fixed test input, within
+`GPU_TOLERANCE` 1%, and faster by median of 10 runs after 3 warm-up runs; decisions printed and in
+`face_id.GPU_DECISIONS`); else the CPU. Linux + RTX 4060 laptop (2026-11-10): every model passes:
+ArcFace 0.10% apart, 4.7 vs 22 ms; YuNet 0.05%, 18 vs 24 ms per 1280x960 pass; quality and expression 0.03%.
+
+GPU face finding (`_yunet_runner`, `_yunet_rows`): `face_detection_yunet_2023mar_dynamic.onnx` (input sizes marked
+free by `tools/get_yunet_dynamic.py`; the original is fixed at 640x640 and OpenCV resizes it itself), decoded like
+OpenCV's FaceDetectorYN. Measured on CUDA: a run takes 3-6 ms while the input size stays the same but ~30 ms when it
+differs from the run before, so each size gets its own session (`_per_size`), and pictures are padded to multiples of
+`DET_PAD` 320 (11 sizes for 400 photos; padding to 32 needed 82 and ran the 8 GB card out of memory; at most
+`DET_SESSIONS` 12, then the first session takes the rest). With that: 17 ms per photo for all 6 detection passes vs
+46-55 ms with OpenCV. Same faces: on 400 photos x 6 passes, regular faces (0.85) identical; 30 borderline possible
+faces (0.45 cut-off, scores 0.46-0.56) differ. A GPU error switches face finding to OpenCV for the rest of the run.
+
+Imports (`importer.py`): each file's work runs on `hardware.import_workers()` threads (threads - 2, 2..12), a photo is
+read once (hash and picture from the same bytes) and a JPEG decoded straight at reduced size (`draft`: same faces on
+120 JPEGs, prints >= 0.987 alike). 412 files from a network drive (180 HEIC, 156 JPEG, 64 PNG, 12 videos), fresh data, through
+the app window on the Linux laptop: v1.9 89.5 s; workers + draft, CPU only 73.3 s; + GPU face finding 43.5 s (6, 10, 14,
+20 workers: 47, 46, 44, 44 s). Left: decoding (HEIC ~300 ms, JPEG 66, PNG 90 ms on the CPU) and videos (~2 s each,
+every frame decoded; OpenCV's pip build has no hardware video decoding and seeking was slower; key frames only with
+PyAV would help but adds a dependency). `tools/import_profile.py` times each step; py-spy on the running app showed
+the rest. First full import of a 6,189-file folder on the network drive with v1.9: 1,217 s, GPU 2% busy, ~10 cores.
 The NPU needs the Ryzen AI env's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`) and
 the static model in `models\npu\`; `tools/hw_bench.py` compiles it and re-measures all three
 (`data/hw_bench.json`). `tracker.py` prints `Recognition model: <name> on <device>` at startup.

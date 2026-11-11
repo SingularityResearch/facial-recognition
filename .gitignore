@@ -16,6 +16,8 @@ face-recognizer/FaceRecognizer.exe
 # AdaFace: evaluation only, made locally by tools/get_adaface.py (not shipped)
 face-recognizer/models/adaface_ir101_webface12m.onnx
 face-recognizer/models/adaface_src/
+# YuNet with any input size (GPU face finding): made by tools/get_yunet_dynamic.py, downloaded by fetch_models.py
+face-recognizer/models/face_detection_yunet_2023mar_dynamic.onnx
 
 # fetch_models.py partial downloads, and its note of model files already checked (size, time, SHA-256)
 *.download

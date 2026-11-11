@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 
 import describe
+import hardware
 import websearch
 import localguard
 
@@ -288,6 +289,8 @@ def make_handler(db, importer):
                         return self.send(db.checks())
                     if path == "/api/import":
                         return self.send(importer.status)
+                    if path == "/api/hardware":               # this computer, and where each job runs (Settings)
+                        return self.send({"has": hardware.describe(), "uses": hardware.uses()})
                     if path == "/api/possiblefaces":         # the Possible faces list
                         return self.send({"faces": db.possible(), "left": db.possible_left()})
                     if path.startswith("/api/possible/"):   # possible faces the import didn't keep (shown only)

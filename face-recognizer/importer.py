@@ -3,6 +3,7 @@ importer.py - adding photos and videos in the background (Importer): reading, fi
 duplicates, naming the faces it is sure of; one job at a time (Importer.begin). Files it can't read are counted
 and the last few kept with the reason (note_problem). Split out of labels.py; `labels` re-exports it.
 """
+import hashlib
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -12,6 +13,7 @@ import cv2
 import numpy as np
 
 import face_id as F
+import hardware
 
 from photofiles import (fingerprint, file_hash, make_local, needs_possible, online_only, remember_folder,
                         unpin)
@@ -29,7 +31,7 @@ def note_problem(st, path, why):
 
 
 # --------------------------------------------------------------------------- import
-VIDEO = object()                 # load() result for a video: its faces are found frame by frame
+VIDEO = object()                 # load() result for a video: its faces, found frame by frame on the worker
 
 
 def is_video(path):
@@ -47,8 +49,6 @@ class Importer:
         self.thread = None
         self.stop = threading.Event()
         self.job_lock = threading.Lock()          # imports, possible-face scans and Describe all: one at a time
-        self._more_lock = threading.Lock()
-        self._more_det = None
         self._more_cache = {}                     # (photo, frame) -> (image, possible-face rows)
 
     def start(self, folder):
@@ -70,21 +70,11 @@ class Importer:
     MORE_SIZES = (10_000, 640, 480, 320)   # ... at more scales: you look at what it finds and decide
 
     def _low_rows(self, img):
-        """Every face the detector sees in img with the low cut-off MORE_SCORE, at MORE_SIZES."""
-        with self._more_lock:                     # its own detector (an import may use the other), one at a time
-            if self._more_det is None:
-                self._more_det = cv2.FaceDetectorYN.create(str(F.DET_MODEL), "", (320, 320), self.MORE_SCORE, 0.3, 5000)
-            rows = []
-            h_, w_ = img.shape[:2]
-            for side in self.MORE_SIZES:
-                s = min(1.0, side / max(h_, w_))
-                im = cv2.resize(img, (round(w_ * s), round(h_ * s)), interpolation=cv2.INTER_AREA) if s < 1 else img
-                self._more_det.setInputSize((im.shape[1], im.shape[0]))
-                _, found = self._more_det.detect(im)
-                if found is not None:
-                    found = found.copy()
-                    found[:, :14] /= s
-                    rows += list(found)
+        """Every face the detector sees in img with the low cut-off MORE_SCORE, at MORE_SIZES (any thread: each
+        has its own detector)."""
+        if self.faces is None:
+            self.faces = F.Faces()
+        rows = [r for side in self.MORE_SIZES for r in self.faces._detect_at(img, side, self.MORE_SCORE)]
         rows.sort(key=lambda r: -r[14])
         kept = []
         for r in rows:
@@ -332,30 +322,49 @@ class Importer:
             st["stage"] = "Reading photos"
 
             def load(f):
+                """On a worker: everything about one file that doesn't change the database. A photo is read once
+                (its hash and its picture from the same bytes), decoded, and its faces and possible faces found."""
                 if make_local(f):
                     pinned.append(f)
                 s = f.stat()
-                h = file_hash(f)
+                if is_video(f):
+                    h = file_hash(f)
+                    if h in store.photos:
+                        return f, s, h, None
+                    try:
+                        return f, s, h, (VIDEO, F.video_faces(self.faces, f, self.stop), None)
+                    except Exception as e:
+                        return f, s, h, (VIDEO, (None, None), e)
+                data = f.read_bytes()
+                if len(data) != s.st_size:             # e.g. an online-only cloud file that wasn't all downloaded
+                    raise OSError(f"read only {len(data):,} of {s.st_size:,} bytes of {f.name}")
+                h = hashlib.sha1(data).hexdigest()       # the same key as photofiles.file_hash
                 if h in store.photos:
                     return f, s, h, None
-                if is_video(f):
-                    return f, s, h, VIDEO               # read on this thread, frame by frame, below
-                return f, s, h, F.load_image(f)
+                img = F.load_image(f, data)
+                if img is None:
+                    return f, s, h, (None,)
+                found = self.faces.detect(img)
+                low = [r for r in self._low_rows(img) if all(F.iou(r, k[0]) < 0.3 for k in found)]
+                return f, s, h, (img, fingerprint(img), found, low)
 
-            with ThreadPoolExecutor(4) as ex:
+            workers = hardware.import_workers()
+            st["workers"] = workers
+            with ThreadPoolExecutor(workers) as ex:
                 def submit(f):
                     fut = ex.submit(load, f)
                     fut.item = f                          # which file, if it fails
                     return fut
-                window = [submit(f) for f in todo[:8]]
-                nxt = 8
+                ahead = 2 * workers                       # files in progress at once
+                window = [submit(f) for f in todo[:ahead]]
+                nxt = ahead
                 while window and not self.stop.is_set():
                     fut = window.pop(0)
                     if nxt < len(todo):
                         window.append(submit(todo[nxt]))
                         nxt += 1
                     try:
-                        f, s, h, img = fut.result()
+                        f, s, h, got = fut.result()
                     except Exception as e:
                         note_problem(st, fut.item, e)
                         st["done"] += 1
@@ -369,15 +378,8 @@ class Importer:
                                 st["known"] += 1
                             else:
                                 st["duplicates"] += 1
-                    elif img is VIDEO:
-                        st["stage"] = f"Reading video {f.name}"
-                        try:
-                            fps, found = F.video_faces(self.faces, f, self.stop)
-                        except Exception as e:
-                            fps, found, why = None, None, e
-                        else:
-                            why = "couldn't read the video"
-                        st["stage"] = "Reading photos"
+                    elif got[0] is VIDEO:
+                        (fps, found), why = got[1], got[2] or "couldn't read the video"
                         if self.stop.is_set():
                             break                         # half-read: read again next time
                         if found is None:
@@ -394,13 +396,12 @@ class Importer:
                                 db.changed()
                             st["new"] += 1
                             st["faces"] += len(found)
-                    elif img is None:
+                    elif got[0] is None:
                         note_problem(st, f, "couldn't read the picture (damaged, or a format it can't open)")
                     else:
-                        fp = fingerprint(img)
+                        img, fp, found, low = got
                         with db.lock:
                             dup = db.near_duplicate(fp)
-                        found = self.faces.detect(img)
                         if dup and db.same_faces(dup, [e for _, e, _, _ in found]):
                             with db.lock:
                                 store.photos[h] = dict(meta, fp=fp, faces=0, dup_of=dup, name=f.name)
@@ -412,8 +413,7 @@ class Importer:
                                 store.photos[h] = dict(meta, fp=fp, faces=len(found), name=f.name)
                                 db._fp = None
                                 db.changed()
-                            # and the possible faces: what the detector sees with the low cut-off too
-                            low = [r for r in self._low_rows(img) if all(F.iou(r, k[0]) < 0.3 for k in found)]
+                            # and the possible faces: what the detector saw with the low cut-off too
                             more = self._add_possible(h, store.photos[h], img, low)
                             pending += more
                             if found or more:
