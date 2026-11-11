@@ -1065,7 +1065,15 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                 `Graphics: ${h.gpus.length ? h.gpus.join("; ") : "none found"}`, `NPU: ${h.npu || "none found"}`,
                 `ONNX Runtime can use: ${h.onnxruntime.join(", ") || "not installed"}`, `${h.system}, Python ${h.python}`]
           .filter(Boolean).join("\n"); } },
-    { section: "This computer", id: "hwuses", label: "Where the work runs", type: "info",
+    { section: "This computer", id: "hwai", label: "AI model apps", type: "info",
+      hint: "Apps that can run a vision model for Describe photo: the usual ports on this computer (LM Studio, Ollama, Jan, llama.cpp, vLLM and others), the server set under Describe photo (which may be another device), and apps installed but not running. Nothing else on the network is asked.",
+      get: async () => { const a = (await get("/api/hardware")).ai || [];
+        if (!a.length) return "None found: LM Studio (lmstudio.ai) with a vision model, or the built-in describer below.";
+        return a.map(e => {
+          const state = e.running ? `running, ${e.models} model${e.models === 1 ? "" : "s"}` : "";
+          const sees = e.vision.length ? `reads pictures: ${e.vision.join(", ")}` : "";
+          return `${e.app}${e.url ? ` (${e.url})` : ""}: ${[state, e.note, sees].filter(Boolean).join("; ") || "not running"}`;
+        }).join("\n"); } },    { section: "This computer", id: "hwuses", label: "Where the work runs", type: "info",
       hint: "The app picks the fastest way for each job by itself: a graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) is used for a model only after a check at start shows it gives the processor's answers, faster. To choose yourself, start the app with FACE_DEVICE set to gpu, cpu or npu.",
       get: async () => { const u = (await get("/api/hardware")).uses, d = u.devices;
         const job = (name, k) => d[k] ? `${name}: ${d[k]}` : null;

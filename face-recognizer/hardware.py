@@ -10,10 +10,15 @@ at once.
 Read from the system itself (Windows registry, Linux /proc and /sys, macOS sysctl), so it takes milliseconds;
 nvidia-smi is asked for NVIDIA card names when it's there.
 """
+import json
 import os
 import platform
+import shutil
+import socket
 import subprocess
 import sys
+import threading
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -182,3 +187,106 @@ def uses():
             "videos": "decoded on the processor, about one frame a second looked at",
             "npu_note": ("not used by itself: measured slower than the GPU and the processor for one face at a time "
                          "(FACE_DEVICE=npu tries it)")}
+
+
+# --------------------------------------------------------------------------- AI model apps (for Describe photo)
+AI_PORTS = [(1234, "LM Studio"), (11434, "Ollama"), (1337, "Jan"), (8080, "llama.cpp / LocalAI"), (8000, "vLLM"),
+            (5000, "text-generation-webui"), (4891, "GPT4All")]
+_ai_cache = {"at": 0.0, "found": None}
+_ai_lock = threading.Lock()
+
+
+def _port_open(port, host="127.0.0.1", timeout=0.25):
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _installed_ai_apps():
+    """AI model apps installed on this computer, running or not (where each normally installs itself)."""
+    home, s = Path.home(), platform.system()
+    local = Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
+    places = {"LM Studio": [home / ".lmstudio", home / ".cache" / "lm-studio", local / "Programs" / "LM Studio",
+                            local / "Programs" / "lm-studio", Path("/Applications/LM Studio.app")],
+              "Jan": [home / "jan", Path(os.environ.get("APPDATA", home)) / "Jan", Path("/Applications/Jan.app")],
+              "GPT4All": [local / "nomic.ai" / "GPT4All", Path("/Applications/GPT4All.app")]}
+    found = [name for name, paths in places.items() if any(p.exists() for p in paths)]
+    if shutil.which("ollama") or (s == "Windows" and (local / "Programs" / "Ollama").exists()) or \
+            Path("/Applications/Ollama.app").exists():
+        found.append("Ollama")
+    return found
+
+
+def lmstudio_downloads():
+    """LM Studio's downloaded models (its models folder, from its settings.json): [(name, reads pictures)], a vision
+    model being one with an mmproj (picture projector) file beside it. [] when LM Studio isn't installed."""
+    home = Path.home() / ".lmstudio"
+    folder = home / "models"
+    try:
+        folder = Path(json.loads((home / "settings.json").read_text(encoding="utf-8")).get("downloadsFolder") or folder)
+    except (OSError, ValueError, AttributeError):
+        pass
+    found = []
+    try:
+        for pub in sorted(p for p in folder.iterdir() if p.is_dir()):
+            for model in sorted(m for m in pub.iterdir() if m.is_dir()):
+                sees = any("mmproj" in f.name.lower() for f in model.iterdir())
+                found.append((f"{pub.name}/{model.name}", sees))
+    except OSError:
+        pass
+    return found
+
+
+def ai_apps(max_age=60):
+    """The AI model apps that could describe photos: [{app, url, running, models, vision, note}]. Asks the usual
+    ports on this computer and the Describe photo server set in Settings (which may be another device), each with
+    a short time limit; nothing else on the network. Cached for max_age seconds."""
+    import describe
+    with _ai_lock:
+        if _ai_cache["found"] is not None and time.time() - _ai_cache["at"] < max_age:
+            return _ai_cache["found"]
+    out, seen = [], set()
+
+    def probe(app, url, key_from_settings=False):
+        entry = {"app": app, "url": url, "running": True, "models": 0, "vision": [], "note": ""}
+        try:
+            found, loaded = describe.server_models(None if key_from_settings else url)
+            entry["models"] = len(found)
+            entry["vision"] = [m for m, sees in found if sees][:6]
+            if loaded:
+                entry["note"] = "loaded: " + ", ".join(loaded[:3])
+        except describe.Unavailable as e:
+            entry["running"], entry["note"] = _port_open(int(url.rsplit(":", 1)[1].split("/")[0])) \
+                if url.startswith("http://127.0.0.1:") else False, str(e)[:200]
+        except (ValueError, IndexError) as e:
+            entry["running"], entry["note"] = False, str(e)[:200]
+        out.append(entry)
+
+    for port, app in AI_PORTS:
+        if _port_open(port):
+            url = f"http://127.0.0.1:{port}"
+            seen.add(url)
+            probe(app, url)
+    configured = describe.config()["url"]
+    if configured not in seen:
+        app = next((a for p, a in AI_PORTS if configured.endswith(f":{p}")), "Describe photo server")
+        probe(app, configured, key_from_settings=True)
+        out[-1]["note"] = ("set in Settings" + (f"; {out[-1]['note']}" if out[-1]["note"] else ""))
+    for app in _installed_ai_apps():
+        same = [e for e in out if app in e["app"]]
+        if any(e["running"] for e in same):
+            continue
+        entry = same[0] if same else {"app": app, "url": None, "running": False, "models": 0, "vision": [], "note": ""}
+        if not same:
+            out.append(entry)
+        entry["note"] = "installed, not running (start it, and its local server)"
+        if app == "LM Studio":
+            disk = lmstudio_downloads()
+            entry["models"], entry["vision"] = len(disk), [m for m, sees in disk if sees][:6]
+            entry["note"] += f"; {len(disk)} model{'' if len(disk) == 1 else 's'} downloaded" + \
+                ("" if entry["vision"] else ", none of them reads pictures")
+    with _ai_lock:
+        _ai_cache.update(at=time.time(), found=out)
+    return out

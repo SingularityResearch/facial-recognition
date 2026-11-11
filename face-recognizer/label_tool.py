@@ -290,7 +290,7 @@ def make_handler(db, importer):
                     if path == "/api/import":
                         return self.send(importer.status)
                     if path == "/api/hardware":               # this computer, and where each job runs (Settings)
-                        return self.send({"has": hardware.describe(), "uses": hardware.uses()})
+                        return self.send({"has": hardware.describe(), "uses": hardware.uses(), "ai": hardware.ai_apps()})
                     if path == "/api/possiblefaces":         # the Possible faces list
                         return self.send({"faces": db.possible(), "left": db.possible_left()})
                     if path.startswith("/api/possible/"):   # possible faces the import didn't keep (shown only)

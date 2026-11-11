@@ -25,7 +25,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `face_id.py` — core library + CLI (`scan`, `cluster`, `name`, `people`, `recognize`, `reembed`, `migrate`).
   - `hardware.py` — what the computer has (`describe`: processor, memory, GPUs, NPU, ONNX Runtime providers; from
     the registry, /proc and /sys, sysctl) and how the programs use it (`uses`: `face_id.LAST_DEVICES`,
-    `GPU_DECISIONS`, `import_workers`); the labeling tool's `/api/hardware`, shown in Settings → This computer.
+    `GPU_DECISIONS`, `import_workers`), and `ai_apps` (AI model apps for Describe photo: the usual local ports, the
+    configured describe server, installed apps, LM Studio's downloads; cached a minute); the labeling tool's
+    `/api/hardware`, shown in Settings → This computer.
   - `paths.py` — `ROOT` (models\ and data\; `FACE_ROOT` overrides), `HOME` (`%APPDATA%\FaceLabels`; `FACE_HOME`
     overrides), `atomic_write`/`replace_file`. Every module takes its folders from here.
   - `labels.py` — labeling engine: per-face labels (`LabelDB`), auto-naming, duplicate-photo detection, undo history
@@ -211,6 +213,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`).
 - `settings_bridge.js` answers only its parent window, on `127.0.0.1`/`localhost`, and only when that is the origin
   the browser reports for the frame's parent (`location.ancestorOrigins`).
+- `hardware.ai_apps` asks only 127.0.0.1's usual AI ports and the configured describe server (with that server's own
+  key, through `describe.server_models`); it never scans the network.
 - Describe photo: the API key belongs to its server address (changing the address clears it; Test sends it only to
   that address); redirects aren't followed; answers are capped (`MAX_ANSWER`, `MAX_TEXT`).
 - Background jobs (imports, possible-face scans, Describe all) start through `Importer.begin` (one at a time, under
