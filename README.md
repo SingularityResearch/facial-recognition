@@ -37,6 +37,7 @@ you point it at a model server on another device.
 | **Thresholds are measured values**, never guesses | Each matching, quality and voting threshold was measured on the owner's labeled photos, for example ArcFace match 0.35: 100% of labeled faces correct, 0% of strangers named. Changing one means re-measuring. |
 | **ArcFace for recognition**, with SFace as a fallback; AdaFace evaluated and rejected | ArcFace named 76% of blurry webcam-like faces correctly vs 44% for SFace. AdaFace was slower and less accurate on these photos (95.5% vs 99.4%). |
 | **The hardware decides, after a check** | Each model runs on the graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) only after a start-up check shows it gives the processor's answers (within 1%), faster; photos are read and decoded on several processor threads at once. Measured on a Ryzen 7 7840HS + RTX 4060: importing 412 files went from 89.5 s to 43.5 s, with the same faces found. The NPU isn't picked by itself: it was slower for one face at a time. |
+| **LM Studio shared across your computers** | Describe photo needs a vision model; the owner runs LM Studio on more than one computer. On every computer with this app and LM Studio, the app keeps LM Studio serving on all network interfaces, announces it on the local network (mDNS, with its port), lists every LM Studio server it finds (names, addresses, ports, models), and gets missing vision models from a shared folder (a NAS: 17.7 GB in about 3.5 min over Wi-Fi) before falling back to the internet (about 2 MB/s from Hugging Face here). Downloads start only when asked, with a progress bar. |
 | **Labels per face, not per cluster** | Cluster numbers change on every regrouping. A permanent ID per face keeps every decision, with undo history. |
 | **"Looks", not "feels"** | Research shows facial expression is a weak, context-dependent indicator of felt emotion. The wording follows the evidence. |
 | **Layered expression reading** | A quality gate, then voting over time, then a per-person "usual look", then evidence. Each layer fixes a specific failure of single-frame emotion detection. |
@@ -231,6 +232,12 @@ writes everything held about them into a folder (`data.json` and their face pict
 name, face prints and pictures from every place above and keeps only where their faces are, so the same photos
 aren't read again. An ignored face (a stranger, a bystander) keeps no face print or picture either.
 
+The local network: when **Settings** is open, the app looks for LM Studio servers on this computer's local
+networks (a connection attempt to LM Studio's port, each server's model list, each computer's name); while it runs, it
+announces this computer's LM Studio there; and with a **Shared models folder** set, it copies vision models to and from
+that folder. Large downloads (models, CUDA support for NVIDIA cards on Linux) happen only when you click. The full list
+of what reaches the network, setting by setting: [docs/SETTINGS.md](docs/SETTINGS.md#what-reaches-the-network).
+
 Until 2026-11-09 the repository included the author's `data/` folder; it was removed from the repository's
 whole history and from the releases then. Keep your own `data/` out of any public repository: it holds
 personal data about the people in your photos.
@@ -254,6 +261,7 @@ those models are replaced or licensed.
 ## Documentation map
 
 - [face-recognizer/README.md](face-recognizer/README.md): user guide for setup, labeling, the live tracker, expression, other signals, files and tuning
+- [docs/SETTINGS.md](docs/SETTINGS.md): every setting, what it is for, its default, the environment variables, and what reaches the network
 - [docs/WHY_LAYERED_EXPRESSION.md](docs/WHY_LAYERED_EXPRESSION.md): the science behind the layered expression design
 - [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md): full history, measured values, environment details and open items
 - [Real-Time Facial Emotion Recognition.md](Real-Time%20Facial%20Emotion%20Recognition.md): the external design review (chat export)

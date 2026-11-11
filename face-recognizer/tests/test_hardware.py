@@ -52,28 +52,28 @@ def test_lan_addresses_are_this_computers_own():
 
 
 def test_lmstudio_network_merges_one_computers_addresses(monkeypatch):
-    monkeypatch.setattr(hardware, "lan_addresses", lambda: ["10.0.0.13"])
-    monkeypatch.setattr(hardware.socket, "gethostbyname_ex", lambda h: (h, [], ["10.0.0.13", "10.0.0.6"]))
-    up = {"10.0.0.6", "10.0.0.13", "10.0.0.18"}
+    monkeypatch.setattr(hardware, "lan_addresses", lambda: ["192.168.1.13"])
+    monkeypatch.setattr(hardware.socket, "gethostbyname_ex", lambda h: (h, [], ["192.168.1.13", "192.168.1.6"]))
+    up = {"192.168.1.6", "192.168.1.13", "192.168.1.18"}
     monkeypatch.setattr(hardware, "_port_open", lambda port, host="127.0.0.1", timeout=0.25: host in up)
-    monkeypatch.setattr(hardware, "_name_of", lambda ip: {"10.0.0.18": "shiva-ubuntu"}.get(ip, "sentient"))
+    monkeypatch.setattr(hardware, "_name_of", lambda ip: {"192.168.1.18": "linux-box"}.get(ip, "windows-pc"))
     pc = [{"id": "qwen/qwen3.6-35b-a3b", "vision": True, "loaded": False, "quant": "Q4_K_M", "kind": "vlm"}]
     other = pc + [{"id": "openai/gpt-oss-20b", "vision": False, "loaded": True, "quant": "MXFP4", "kind": "llm"}]
-    monkeypatch.setattr(hardware, "_lms_models", lambda url, timeout=3: other if "10.0.0.18" in url else pc)
+    monkeypatch.setattr(hardware, "_lms_models", lambda url, timeout=3: other if "192.168.1.18" in url else pc)
     found = hardware.lmstudio_network(max_age=0)
     assert [(e["host"], e["ips"], e["this_computer"]) for e in found] == \
-        [("sentient", ["10.0.0.6", "10.0.0.13"], True), ("shiva-ubuntu", ["10.0.0.18"], False)]
-    assert found[1]["urls"] == ["http://10.0.0.18:1234"] and found[1]["models"][1]["loaded"]
+        [("windows-pc", ["192.168.1.6", "192.168.1.13"], True), ("linux-box", ["192.168.1.18"], False)]
+    assert found[1]["urls"] == ["http://192.168.1.18:1234"] and found[1]["models"][1]["loaded"]
 
 
 def test_an_announced_server_is_found_on_its_own_port(monkeypatch):
-    monkeypatch.setattr(hardware, "own_addresses", lambda: ["10.0.0.13"])
+    monkeypatch.setattr(hardware, "own_addresses", lambda: ["192.168.1.13"])
     monkeypatch.setattr(hardware, "lmstudio_port", lambda: None)
     monkeypatch.setattr(hardware, "mdns_services", lambda timeout=1.5: [
-        {"host": "shiva-ubuntu", "ip": "10.0.0.18", "port": 18234, "txt": ["app=LM Studio"]}])
-    monkeypatch.setattr(hardware, "_port_open", lambda port, host="127.0.0.1", timeout=0.25: (host, port) == ("10.0.0.18", 18234))
+        {"host": "linux-box", "ip": "192.168.1.18", "port": 18234, "txt": ["app=LM Studio"]}])
+    monkeypatch.setattr(hardware, "_port_open", lambda port, host="127.0.0.1", timeout=0.25: (host, port) == ("192.168.1.18", 18234))
     monkeypatch.setattr(hardware, "_name_of", lambda ip: None)
     monkeypatch.setattr(hardware, "_lms_models", lambda url, timeout=3: [{"id": "m", "vision": True, "loaded": False,
                                                                           "quant": "Q4", "kind": "vlm"}])
     found = hardware.lmstudio_network(max_age=0)
-    assert [(e["host"], e["urls"], e["announced"]) for e in found] == [("shiva-ubuntu", ["http://10.0.0.18:18234"], True)]
+    assert [(e["host"], e["urls"], e["announced"]) for e in found] == [("linux-box", ["http://192.168.1.18:18234"], True)]

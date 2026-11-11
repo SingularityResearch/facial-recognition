@@ -8,7 +8,7 @@ the same vision models as the other LM Studio servers there.
 - Announcer: while this app runs and LM Studio's server is up, it is announced over mDNS (DNS-SD) as
   `LM Studio on <computer>` (_lmstudio._tcp and _http._tcp, its port): Windows' own service registration
   (DnsServiceRegister, Windows 10 1809+), macOS Bonjour (dns-sd), Linux Avahi (avahi-publish-service). Not when the
-  computer announces it already (an Avahi service file, as on shiva-ubuntu).
+  computer announces it already (e.g. an Avahi service file).
 - missing_models() / get_models(): the vision models other LM Studio servers on the network serve that this one
   hasn't got (same model and quantization), downloaded with `lms get <model>@<quant>` when asked in Settings.
 

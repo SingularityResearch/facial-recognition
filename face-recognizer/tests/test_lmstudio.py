@@ -19,7 +19,7 @@ def test_a_server_on_this_computer_only_is_started_again_on_all_interfaces(monke
     monkeypatch.setattr(L, "config_path", lambda: None)
     monkeypatch.setattr(L, "running", lambda: True)
     monkeypatch.setattr(L, "on_network", lambda: False)
-    monkeypatch.setattr(L.hardware, "own_addresses", lambda: ["10.0.0.18"])
+    monkeypatch.setattr(L.hardware, "own_addresses", lambda: ["192.168.1.18"])
     monkeypatch.setattr(L, "_lms", lambda *a, timeout=60: calls.append(a) or type("R", (), {"returncode": 0})())
     assert "started again" in L.serve_everywhere()[0]
     assert calls[-1] == ("server", "start", "--port", str(L.port()), "--bind", "0.0.0.0", "--cors")
@@ -29,12 +29,12 @@ def test_missing_models_are_the_networks_vision_models_this_one_lacks(monkeypatc
     monkeypatch.setattr(L, "local_models", lambda: [{"key": "qwen/qwen3.6-35b-a3b", "variant": "qwen/qwen3.6-35b-a3b@q4_k_m",
                                                       "vision": True, "size": 1}])
     net = [{"host": "here", "this_computer": True, "models": [{"id": "x/only-here", "vision": True, "quant": "Q8_0"}]},
-           {"host": "shiva-ubuntu", "this_computer": False, "models": [
+           {"host": "linux-box", "this_computer": False, "models": [
                {"id": "qwen/qwen3.6-35b-a3b", "vision": True, "quant": "Q4_K_M"},
                {"id": "qwen/qwen3.8-27b", "vision": True, "quant": "Q4_K_M"},
                {"id": "openai/gpt-oss-20b", "vision": False, "quant": "MXFP4"}]}]
     monkeypatch.setattr(L, "share", lambda: None)
-    assert L.missing_models(net) == [{"variant": "qwen/qwen3.8-27b@q4_k_m", "from": "shiva-ubuntu", "in_share": False}]
+    assert L.missing_models(net) == [{"variant": "qwen/qwen3.8-27b@q4_k_m", "from": "linux-box", "in_share": False}]
 
 
 def test_not_announced_twice(monkeypatch):

@@ -79,6 +79,9 @@ X:\source\facial-recognition\
     ├── fetch_models.py           first-start model download from the publishers, models-v1 as fallback; SHA-256
     ├── localguard.py             request checks, page headers (CSP, framing, CORP) and body limits shared by the servers
     ├── persondata.py             one person's data: export (folder) and forget (every place it lives)
+    ├── hardware.py               what the computer has (CPU, memory, GPUs, NPU, AI apps, LM Studio on the network)
+    ├── cudasupport.py            NVIDIA CUDA for the downloaded Linux app, fetched when asked in Settings
+    ├── lmstudio.py               LM Studio here: all interfaces, mDNS announcement, models via the shared folder
     ├── tests\                    Node tests (*.test.js) and Python tests (test_*.py, pytest); ruff.toml
     ├── setup.bat                 installs Python 3.12 via winget, then pip installs requirements.txt
     ├── recognize.bat             starts tracker.py (checks cv2/numpy are installed first)
@@ -368,6 +371,20 @@ NVIDIA cu12/cuDNN 9 wheels from PyPI, 1.95 GB, 3.1 GB unpacked in `ROOT/cuda`); 
 imports it ahead of the bundled copy. Tested in the built app on the RTX 4060 laptop: download ~1 min, all models
 pass their checks onto CUDA; the 412-file import took 45.2 / 42.8 / 43.8 s with CUDA vs 62.6 / 62.7 s with
 FACE_CUDA=off (4 vs 8-10 cores busy). The 1.6 GB sample alone takes 16 s to read over Wi-Fi 6 (~100 MB/s).
+
+LM Studio across the owner's computers (2026-11-10/11, after v1.10; `lmstudio.py`, `hardware.lmstudio_network`):
+both computers serve LM Studio on 0.0.0.0:1234 (the Linux laptop: headless llmster 0.0.27 + CUDA 12 llama.cpp 2.72.0 as
+a systemd user service with linger; the Windows PC: the LM Studio app). Announced on the LAN as `_lmstudio._tcp` +
+`_http._tcp` (Linux: an Avahi service file; Windows: the app's `DnsServiceRegister`); discovery reads the port
+from announcements (tested with a stand-in server on port 18234) and otherwise tries 1234 on each /24 of each real
+interface (~3 s), naming computers by mDNS reverse lookup or NetBIOS (Windows answers only the latter); a computer's
+two 10G addresses merge into one entry. Same models: Qwen3.6-35B-A3B and Qwen3.8-27B Q4_K_M + mmproj (hub manifests
+copied too, so ids match `qwen/...`). Shared folder on the NAS: the Windows PC published 37 GB
+in 143 s over 10G; the Linux laptop copied the 17.7 GB 27B from it over Wi-Fi 6 at ~85 MB/s (~3.5 min), byte-identical,
+listed by LM Studio at once; `lms get` from Hugging Face ran at ~2 MB/s (~2 h). Gotcha: stopping `lms get` leaves
+LM Studio's own download as a paused job that hides the model (cleared from `download-jobs-info.json` and
+`single-downloads-info.json`, backups kept); the app now says so if a copied model isn't listed. Describe photo on 
+the Linux laptop's 35B: 9 s for the first photo (model load, split between the RTX 4060 and RAM), 3 s after.
 The NPU needs the Ryzen AI env's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`) and
 the static model in `models\npu\`; `tools/hw_bench.py` compiles it and re-measures all three
 (`data/hw_bench.json`). `tracker.py` prints `Recognition model: <name> on <device>` at startup.
@@ -491,6 +508,15 @@ Releases (FaceRecognizer.exe, GitHub Releases; `models-v1` holds the model files
   README.txt for new users. Web search: US services and English results only.
 - Settings belong in one **Settings** tab as well as on each page (2026-11-09); alerts pick people from a list,
   Unknown included. Describe photo may use a server on any device, inside or outside the home network.
+  Every setting is described in `docs/SETTINGS.md` (2026-11-11).
+- The hardware decides (2026-11-10): the app identifies CPU/GPU/NPU and picks the fastest way that gives the same
+  answers, per job; the docs say so throughout.
+- Big downloads only when asked (2026-11-10): CUDA for the Linux app and LM Studio models are offered in Settings,
+  never fetched by themselves; every download shows a progress bar (size, speed, time left).
+- LM Studio on every computer with this app (2026-11-10): serves on all network interfaces, port 1234; announced on
+  the local network with its real port (discovery reads the port from announcements); the same vision models
+  everywhere, copied from a shared folder on the NAS and, if that copy fails in any way, downloaded from the internet. Settings shows a summary of every LM Studio
+  server found: names, IPs, ports, models.
 
 ---
 

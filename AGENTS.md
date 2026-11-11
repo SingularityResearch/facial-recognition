@@ -17,7 +17,8 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
 
 ## Layout
 
-- `docs/` — background write-ups (`WHY_LAYERED_EXPRESSION.md`).
+- `docs/` — `SETTINGS.md` (every setting, default, purpose, environment variables, what reaches the network; keep it
+  in step with each page's `SettingsBridge.init` list) and background write-ups (`WHY_LAYERED_EXPRESSION.md`).
 - `face-tracker/index.html` — original standalone MediaPipe tracker; double-click to open. It uses the internet (jsDelivr,
   Google model storage and fonts) and isn't part of the offline tool; its MediaPipe main file is pinned with an
   import-map `integrity` (SHA-384).
@@ -232,6 +233,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   download starts only from its Settings button, and only `onnxruntime/` and `nvidia/` are unpacked from the wheels.
 - `settings_bridge.js` answers only its parent window, on `127.0.0.1`/`localhost`, and only when that is the origin
   the browser reports for the frame's parent (`location.ancestorOrigins`).
+- `lmstudio.py` changes another program's settings (LM Studio's `networkInterface` to 0.0.0.0, restarting its server
+  on all interfaces) and announces it on the local network: the owner's rule for every computer with this app and LM
+  Studio (2026-11-10); `FACE_LMSTUDIO=off` turns it off. Model and CUDA downloads start only from a Settings button.
 - `hardware.ai_apps` asks 127.0.0.1's usual AI ports and the configured describe server (with that server's own key,
   through `describe.server_models`). `hardware.lmstudio_network` (Settings → LM Studio on the network, only while the
   tab is open, cached a minute) takes announced servers from mDNS (`mdns_services`: `_lmstudio._tcp`, or `_http._tcp`
@@ -250,6 +254,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 ## Conventions and constraints
 
 - Keep `face-recognizer/README.md` in sync with any user-visible change, and this file with layout or rule changes.
+- A new setting goes in `docs/SETTINGS.md` too (its section, default, what it is for; and in "What reaches the
+  network" if it sends anything anywhere). A new environment variable goes in its table there.
 - A new option on the tracker or labeling page should also be listed in that page's `SettingsBridge.init` list,
   so it shows in the Settings tab. Options the user changes should be remembered (`remember`/`store.set`).
 - Thresholds are **measured values** — don't change them without re-measuring on `data/`:
