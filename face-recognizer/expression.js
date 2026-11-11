@@ -176,6 +176,7 @@
       out = reading(p, r0, r1, flagsFor(p, r0, r1).length === 0 ? "plain" : "unsure", extra);
     }
     out.learning = learning;
+    out.usualKnown = calibrating ? !!usual : null;     // null: not calibrated (calibration off, or an unknown face)
     out.cal = calibrated(p, r0, opts.temperature);
     if (track.state) {
       const b = rank(track.state)[0];
@@ -207,7 +208,36 @@
     return parts.join(" · ");
   }
 
-  const api = { Track, UsualLooks, read, text, evidence, filterStep, calibrated, VA, CUE_SIGNS,
+  // The same evidence as fixed cells for the page's Live readout table: [label, value, hot, wide], always the same
+  // cells in the same order, value null when there's nothing (a dash), so the table never grows or shrinks.
+  // The face-shape cues share one wide cell ("smile .82 · cheek .61"): which cues there are depends on the label.
+  function fields(e) {
+    const sign = v => (v >= 0 ? "+" : "") + v.toFixed(1);
+    const va = e ? e.vaFit || e.va : null, flags = e ? e.flags.filter(f => f !== "learning") : [];
+    // every cell says something whenever there's a reading: the state model's answer even when it agrees with
+    // the label (highlighted when it doesn't), whether the usual look is learned, "none" for flags and for a label
+    // that no face-shape cue goes with (neutral); a dash only for no reading (or no cue frames yet)
+    const cues = !e?.cues ? null : Object.keys(e.cues).length
+      ? Object.entries(e.cues).map(([c, v]) => `${c} ${v.toFixed(2).replace(/^0/, "")}`).join(" · ")
+      : `none go with ${e.label}`;
+    const usual = !e ? null : e.learning != null ? `${Math.round(e.learning * 100)}% learned`
+      : e.usualKnown ? "learned" : e.usualKnown === false ? "learning" : "not used";
+    return [
+      ["votes", e ? String(e.votes) : null],
+      ["share", e ? `${Math.round(e.share * 100)}%` : null],
+      ["lead", e ? String(Math.round(e.lead * 100)) : null],
+      [e?.vaFit ? "valence (fit)" : "valence", va ? sign(va[0]) : null],
+      [e?.vaFit ? "arousal (fit)" : "arousal", va ? sign(va[1]) : null],
+      ["calibrated", e?.cal != null ? `${Math.round(e.cal * 100)}%` : null],
+      ["state model", e?.belief ? `${e.belief.label} ${Math.round(e.belief.p * 100)}%` : null,
+       !!e?.belief && e.belief.label !== e.label],
+      ["usual look", usual],
+      ["flags", e ? flags.join(", ") || "none" : null, flags.length > 0, true],
+      ["cues", cues, false, true],
+    ];
+  }
+
+  const api = { Track, UsualLooks, read, text, evidence, fields, filterStep, calibrated, VA, CUE_SIGNS,
                 X: { X_SURE, X_MARGIN, X_MIN_VOTES, X_WINDOW, X_STALE, X_FLOOR, X_RATE, X_SETTLED, X_LEARN_Q, X_CHANGE_SHARE,
                      H_STAY, H_FULL_Q } };
   if (typeof module === "object" && module.exports) module.exports = api;

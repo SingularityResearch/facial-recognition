@@ -13,7 +13,8 @@ Where from: each model from its original publisher when it offers the very same 
 byte-identical), else, or when that fails or the file there has changed, from the project's GitHub Release
 "models-v1":
 - YuNet, eDifFIQA, the expression model: OpenCV Zoo on Hugging Face (pinned revisions).
-- Face and pose landmarker: Google's MediaPipe model storage (version 1, not "latest").
+- Face, pose and hand landmarker: Google's MediaPipe model storage (version 1, not "latest"). The hand landmarker
+  (fingers, for drawing only) is optional and isn't in "models-v1" yet: when Google's copy can't be had, it's skipped.
 - ArcFace R50: InsightFace's release v0.7, inside buffalo_l.zip (289 MB, 5 models). Only this file's 160 MB
   of compressed bytes are fetched (HTTP range requests: the zip's table of contents, then the one file),
   and unpacked as they arrive.
@@ -67,6 +68,7 @@ ORIGIN = {
                   "facial_expression_recognition_mobilefacenet_2022july.onnx"),
     "face_landmarker.task": MP.format("face_landmarker", "face_landmarker", "face_landmarker.task"),
     "pose_landmarker_lite.task": MP.format("pose_landmarker", "pose_landmarker_lite", "pose_landmarker_lite.task"),
+    "hand_landmarker.task": MP.format("hand_landmarker", "hand_landmarker", "hand_landmarker.task"),
     # (zip, file in it): only that file's bytes are downloaded
     "arcface_w600k_r50.onnx":
         ("https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip", "w600k_r50.onnx"),
@@ -82,6 +84,7 @@ FILES = {
         (4791892, "4f61307602fc089ce20488a31d4e4614e3c9753a7d6c41578c854858b183e1a9"),
     "face_landmarker.task": (3758596, "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"),
     "pose_landmarker_lite.task": (5777746, "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a"),
+    "hand_landmarker.task": (7819105, "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"),
     "wav2small.onnx": (71332, "c9df50bb1e7a4f1f5010279fcebe2110717ff94a3cc6fe66e1b151e177a91210"),
     # YuNet with any input size, for face finding on a GPU (tools/get_yunet_dynamic.py; only in models-v1)
     "face_detection_yunet_2023mar_dynamic.onnx": (229738, "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0"),
@@ -154,7 +157,8 @@ def is_good(name):
 
 # Files the programs work without (another way is used instead): one that can't be downloaded is skipped with a note,
 # not an error, and tried again next time.
-OPTIONAL = {"face_detection_yunet_2023mar_dynamic.onnx"}     # without it faces are found on the CPU (OpenCV)
+OPTIONAL = {"face_detection_yunet_2023mar_dynamic.onnx",     # without it faces are found on the CPU (OpenCV)
+            "hand_landmarker.task"}                          # without it the Hand skeleton option is greyed out
 
 
 def needed():

@@ -157,6 +157,33 @@ test("baselines: learning until trusted, then departures in spreads from the per
   assert.ok(Math.abs(z.pitch) < 0.5);
   assert.match(S.unusualEvidence(b, "Chris", { head: 0.3, pitch: 121 }, "alone"), /^unusual for Chris \(alone\): head -\d\.\d SD$/);
   assert.equal(S.unusualEvidence(b, "Chris", { head: 0.5, pitch: 120 }, "alone"), "usual for Chris (alone)");
+  // the Live readout's three fixed cells
+  const nf = S.normalFields(b, "Chris", { head: 0.3, pitch: 121 }, "alone");
+  assert.deepEqual(nf.map(([k]) => k), ["now", "most unusual", "next"]);
+  assert.equal(nf[0][1], "unusual (alone)");
+  assert.match(nf[1][1], /^head -\d\.\d SD$/);
+  assert.equal(nf[2][1], null);
+  assert.deepEqual(S.normalFields(b, "Chris", { head: 0.5, pitch: 120 }, "alone").map(([, v]) => v), ["usual (alone)", null, null]);
+  assert.deepEqual(S.normalFields(b, "Unknown", {}, "alone").map(([, v]) => v), [null, null, null]);
+  assert.deepEqual(S.normalFields(b, "Chris", null, "alone").map(([k]) => k), ["now", "most unusual", "next"]);
+});
+
+test("readout fields: fixed labels in a fixed order, a null value when there's no reading", () => {
+  const f = new S.FaceSignals();
+  const r = S.fields(f, 1000, null, false);
+  assert.deepEqual(r.face.map(([k]) => k),
+    ["talking", "moving", "jaw", "blinks", "gaze away", "pulse", "smile rise", "smile asym", "held"]);
+  assert.equal(r.face[0][1], "no");
+  assert.deepEqual(r.voice.map(([k]) => k), ["speaking", "loudness", "pitch", "pitch range", "rate", "arousal", "valence"]);
+  assert.ok(r.voice.every(([, v]) => v === null));                 // no voice for this face: the same cells, all dashes
+  assert.ok(r.face.slice(1).every(([, v]) => v === null));
+  assert.equal(S.fields(f, 1000, null, true).face[0][2], true);    // talking is highlighted
+  const body = S.bodyFields(f, 1000);
+  assert.deepEqual(body.map(([k]) => k), ["head", "neck", "tilt", "lean", "movement", "breathing", "hand on face", "arms crossed"]);
+  assert.ok(body.every(([, v]) => v === null));
+  const v = S.fields(f, 1000, { stats: { speaking: 0.5, loudness: 12, pitch: 120, pitchSd: 1.24, rate: 3.1 }, avd: [0.4, 0.5, 0.6] }, false).voice;
+  assert.deepEqual(v.map(([k, val]) => [k, val]), [["speaking", "50%"], ["loudness", "+12 dB"], ["pitch", "120 Hz"],
+    ["pitch range", "±1.2 st"], ["rate", "3.1/s"], ["arousal", ".40"], ["valence", ".60"]]);
 });
 
 test("baselines: one sample a second, never for Unknown, people differ", () => {

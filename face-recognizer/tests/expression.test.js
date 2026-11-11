@@ -152,4 +152,15 @@ test("valence/arousal and cues follow the votes", () => {
   assert.deepEqual(e.va.map(v => +v.toFixed(2)), X.VA.happy);
   assert.deepEqual(e.cues, { smile: 0.8, cheek: 0.6 });          // only the cues that go with "happy"
   assert.match(X.evidence(e), /^4 votes · 100% · lead 100 · V\+0\.8 A\+0\.5 · smile \.80 cheek \.60$/);
+  // the Live readout's cells: the same numbers, fixed labels first, then the cues
+  assert.deepEqual(X.fields(e).map(([k, v]) => [k, v]), [["votes", "4"], ["share", "100%"], ["lead", "100"],
+    ["valence", "+0.8"], ["arousal", "+0.5"], ["calibrated", null], ["state model", X.fields(e)[6][1]],
+    ["usual look", "not used"], ["flags", "none"], ["cues", "smile .80 · cheek .60"]]);
+  assert.match(X.fields(e)[6][1], /^happy \d+%$/);                // the state model's answer, even when it agrees
+  assert.equal(X.fields({ ...e, cues: {}, label: "neutral" })[9][1], "none go with neutral");
+  assert.equal(X.fields({ ...e, usualKnown: true })[7][1], "learned");
+  assert.equal(X.fields({ ...e, learning: 0.4, usualKnown: false })[7][1], "40% learned");
+  // no reading: the same cells, every one a dash, so the readout keeps its height
+  assert.deepEqual(X.fields(null).map(([k]) => k), X.fields(e).map(([k]) => k));
+  assert.ok(X.fields(null).every(([, v]) => v === null));
 });

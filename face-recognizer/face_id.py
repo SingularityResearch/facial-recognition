@@ -77,6 +77,8 @@ POSE_MODEL = MODELS / "pose_landmarker_lite.task"   # MediaPipe Pose Landmarker 
 POSE_POINTS = {"nose": 0, "earL": 7, "earR": 8, "shoulderL": 11, "shoulderR": 12, "elbowL": 13, "elbowR": 14,
                "wristL": 15, "wristR": 16, "indexL": 19, "indexR": 20, "hipL": 23, "hipR": 24}
 POSE_VIS = 0.5           # a body point counts as seen at this visibility
+HAND_MODEL = MODELS / "hand_landmarker.task"  # MediaPipe Hand Landmarker, 21 points a hand (optional; display only)
+MAX_HANDS = 4            # hands looked for in a frame (two people's)
 VOICE_MODEL = MODELS / "wav2small.onnx"       # Wav2Small voice arousal/dominance/valence (optional; tools/get_wav2small.py)
 VOICE_RATE = 16000                            # samples per second it expects
 
@@ -120,7 +122,7 @@ def check_downloaded():
     a small text file left where the real file should be when the project was copied without Git LFS.
     (Reading one would fail later with an error that doesn't say why.)"""
     from fetch_models import is_placeholder
-    files = [DET_MODEL, QUAL_MODEL, EXPR_MODEL, CUE_MODEL, POSE_MODEL, VOICE_MODEL,
+    files = [DET_MODEL, QUAL_MODEL, EXPR_MODEL, CUE_MODEL, POSE_MODEL, HAND_MODEL, VOICE_MODEL,
              *(MODELS / cfg["file"] for cfg in REC_MODELS.values()),
              DATA / "faces.npz", DATA / "people.npz", DATA / "photos.json"]
     missing = [p for p in files if is_placeholder(p)]
@@ -489,10 +491,13 @@ class Faces:
         self.cues_available = CUE_MODEL.exists() and _has_module("mediapipe")
         self._poser = None                               # MediaPipe pose, loaded on first use of poses()
         self.pose_available = POSE_MODEL.exists() and _has_module("mediapipe")
+        self._hander = None                              # MediaPipe hands, loaded on first use of hands()
+        self.hands_available = HAND_MODEL.exists() and _has_module("mediapipe")
         # Which processor runs each model, so a silent fall back to the CPU shows up in the startup log
         self.devices = {"detection": self._yunet[1] if self._yunet else "CPU (OpenCV)", "recognition": self.device, "quality": qdev,
                         "expression": xdev, "cues": "CPU (MediaPipe)" if self.cues_available else None,
-                        "pose": "CPU (MediaPipe)" if self.pose_available else None}
+                        "pose": "CPU (MediaPipe)" if self.pose_available else None,
+                        "hands": "CPU (MediaPipe)" if self.hands_available else None}
         LAST_DEVICES.update(self.devices)
 
     @staticmethod
@@ -517,6 +522,8 @@ class Faces:
             steps["cues"] = lambda: self.cues(np.zeros((360, 640, 3), np.uint8), [270, 130, 100, 100])
         if self.pose_available:
             steps["pose"] = lambda: self.poses(np.zeros((360, 640, 3), np.uint8))
+        if self.hands_available:
+            steps["hands"] = lambda: self.hands(np.zeros((360, 640, 3), np.uint8))
         ms = {}
         for name, step in steps.items():
             t0 = time.perf_counter()
@@ -609,6 +616,23 @@ class Faces:
         found = self._poser.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
         return [np.array([[p.x * w, p.y * h, p.visibility if p.visibility is not None else 0.0] for p in lm], np.float32)
                 for lm in found.pose_landmarks]
+
+    def hands(self, bgr):
+        """Hands in a frame (up to MAX_HANDS): a list of 21x2 arrays of MediaPipe hand landmarks in pixels (wrist,
+        then each finger's joints from the palm out: thumb, index, middle, ring, pinky). Empty when MediaPipe or
+        its hand model isn't installed. For drawing the fingers only; about 10-20 ms on the CPU."""
+        if not self.hands_available:
+            return []
+        if self._hander is None:
+            from mediapipe.tasks.python import BaseOptions, vision
+            self._hander = vision.HandLandmarker.create_from_options(vision.HandLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path=str(HAND_MODEL)),
+                running_mode=vision.RunningMode.IMAGE, num_hands=MAX_HANDS))
+        import mediapipe as mp
+        h, w = bgr.shape[:2]
+        rgb = np.ascontiguousarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+        found = self._hander.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
+        return [np.array([[p.x * w, p.y * h] for p in lm], np.float32) for lm in found.hand_landmarks]
 
     def _detector(self, score):
         """This thread's YuNet detector with cut-off `score` (an OpenCV detector can't be shared by threads)."""
@@ -740,6 +764,40 @@ def pose_points(pose):
     """The POSE_POINTS of one pose, as [[x, y, visibility], ...] rounded for sending."""
     return [[round(float(pose[i][0]), 1), round(float(pose[i][1]), 1), round(float(pose[i][2]), 2)]
             for i in POSE_POINTS.values()]
+
+
+def pose_all(pose):
+    """All 33 points of one pose (MediaPipe numbering: face, arms and rough hands, hips, legs and feet), as
+    [[x, y, visibility], ...] rounded for sending. For drawing the full skeleton."""
+    return [[round(float(x), 1), round(float(y), 1), round(float(v), 2)] for x, y, v in pose]
+
+
+def hands_for_faces(hands, boxes, poses, bodies):
+    """Which face each hand belongs to: a list (one per face box) of that face's hands, each [[x, y] * 21] rounded.
+    A hand goes to the face whose body has a seen wrist within one face width of the hand's wrist (nearest), else to
+    the nearest face whose centre is within 4 face widths; a hand near nobody is left out."""
+    out = [[] for _ in boxes]
+    for hand in hands:
+        wx, wy = float(hand[0][0]), float(hand[0][1])
+        best, dist = None, None
+        for k, (box, bi) in enumerate(zip(boxes, bodies)):
+            w = float(box[2])
+            if bi is None:
+                continue
+            for i in (15, 16):                          # the body's wrists
+                px, py, vis = poses[bi][i]
+                d = float(np.hypot(px - wx, py - wy))
+                if vis >= POSE_VIS and d <= w and (dist is None or d < dist):
+                    best, dist = k, d
+        if best is None:
+            for k, box in enumerate(boxes):
+                x, y, w, h = (float(v) for v in box[:4])
+                d = float(np.hypot(x + w / 2 - wx, y + h / 2 - wy))
+                if d <= 4 * w and (dist is None or d / w < dist):
+                    best, dist = k, d / w
+        if best is not None:
+            out[best].append([[round(float(px), 1), round(float(py), 1)] for px, py in hand[:, :2]])
+    return out
 
 
 class Voice:

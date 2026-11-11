@@ -82,7 +82,7 @@ class FakeEngine:
         self.recorder.DIR = tmp / "expr_eval"
         self.asked = []
         self.faces = types.SimpleNamespace(devices={}, device="cpu", expression_model=None, cues_available=False,
-                                           pose_available=False, warmup=lambda: {})
+                                           pose_available=False, hands_available=False, warmup=lambda: {})
         self.voice = types.SimpleNamespace(device=None, model=None)
         self.warmup_ms = {}
 

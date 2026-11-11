@@ -47,6 +47,8 @@ under *Face tracking: alerts*.
 | **Keypoints (eyes, nose, mouth)** | on | The five points the detector finds on each face. |
 | **Face mesh (triangles)** | off | MediaPipe's 478-point face mesh drawn over each face (needs the face landmarker model). |
 | **Mesh strength** | Normal | How visible the mesh is: Light, Normal, Strong. |
+| **Full body skeleton** | off | The body points the body posture model finds below the face, joined: shoulders, arms with rough hands, hips, legs and feet. Drawn only, never kept. Needs the pose model. |
+| **Hand skeleton (fingers)** | off | The joints of every finger (21 points a hand) from MediaPipe's hand model, in the person's colour; about 10-20 ms more a frame on the CPU. Drawn only, never kept. Needs `models/hand_landmarker.task`. |
 | **Motion trail** | on | A short trail behind each face showing where it moved. |
 | **Show unknown faces** | on | Draw faces the tracker can't name, labeled Unknown. |
 | **Blur unknown faces** | off | Blur the faces of people it doesn't know (for screen sharing or recording). |
@@ -61,7 +63,7 @@ default and don't change the expression label until `tools/expr_eval.py` shows t
 |---|---|---|
 | **Show expression** | on | The face's expression under its name ("looks happy"), read from sharp, camera-facing frames and averaged over the last second. |
 | **Calibrate to each person** | on | Learns each named person's usual look (about a minute) and their normal for every signal; a reading that departs from it is highlighted, one that matches is marked "usual". Kept in the window's storage only. |
-| **Show expression evidence** | off | What the expression is based on: the model's votes, face-shape cues, and why a frame was skipped. |
+| **Show expression evidence** | on | What the expression is based on: the model's votes, face-shape cues, and why a frame was skipped. |
 | **Skip expression while talking** | off | *Evidence only.* No expression reading while the mouth moves with speech. |
 | **Use state model for expression** | off | *Evidence only.* Smooths the label with a model of how expressions change over time. |
 | **Skip expression when a hand is on the face** | off | *Evidence only.* No reading while a hand covers part of the face. |
@@ -177,7 +179,7 @@ What the app found on this computer and what it does with it. See the user guide
 | Setting | What it is for |
 |---|---|
 | **Hardware** | The processor (and threads), memory, graphics processors, NPU, and the ways ONNX Runtime can run models here (DirectML, CUDA, CoreML, CPU). |
-| **Where the work runs** | Which processor runs each job (face finding, recognition, photo quality, expression, face-shape cues, body posture), with the start-up check behind each choice: a model runs on the graphics processor only if it gives the processor's answers (within 1%), faster. Also how many photos an import works on at once. To choose yourself, set `FACE_DEVICE`. |
+| **Where the work runs** | Which processor runs each job (face finding, recognition, photo quality, expression, face-shape cues, body posture, hands), with the start-up check behind each choice: a model runs on the graphics processor only if it gives the processor's answers (within 1%), faster. Also how many photos an import works on at once. To choose yourself, set `FACE_DEVICE`. |
 | **NVIDIA CUDA** (button) | Shown on the downloaded Linux app when it finds an NVIDIA card it can't use yet (after checking the driver, 525.60 or newer, and the card). Downloads NVIDIA's CUDA 12 and cuDNN 9 and Microsoft's ONNX Runtime with CUDA from PyPI (about 1.9 GB, each file checked by SHA-256) into the app's data folder; used from the next start. Nothing is downloaded until clicked. |
 
 ---

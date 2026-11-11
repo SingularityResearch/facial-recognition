@@ -137,6 +137,30 @@
   .faces .usual, .faces .unsure { color: var(--muted); }
   .faces .change { color: var(--accent); font-weight: 600; }
   .faces .evidence { color: var(--muted); font-size: 11px; justify-content: flex-start; margin-top: -4px; padding-left: 16px; }
+  /* Live readout: one block a face; readings in fixed labeled cells so changing numbers stay in place */
+  #faces { gap: 10px; }
+  #faces li.face { display: block; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--bg); }
+  #faces li.face.lost { opacity: .55; }
+  #faces .fhead { display: flex; align-items: center; gap: 2px; }
+  #faces .fhead .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #faces .match { font: 600 18px var(--mono); font-variant-numeric: tabular-nums; }
+  #faces .meter { height: 3px; border-radius: 2px; background: var(--line); margin: 4px 0 6px; overflow: hidden; }
+  #faces .meter i { display: block; height: 100%; background: var(--accent); }
+  #faces .fsub { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); white-space: nowrap; }
+  #faces .fsub span:first-child { color: var(--fg); font-family: var(--sans); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #faces .fsub span.usual, #faces .fsub span.unsure, #faces .fsub span.none { color: var(--muted); }
+  #faces .fsub span.change { color: var(--accent); font-weight: 600; }
+  #faces .grp { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
+  #faces .gl { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 4px;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #faces .cell.wide { grid-column: 1 / -1; }
+  #faces .gl em { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--warn); }
+  #faces .cells { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 8px; }
+  #faces .cell { min-width: 0; display: flex; flex-direction: column; }
+  #faces .cell span { font: 10.5px var(--sans); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #faces .cell b { font: 600 12.5px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #faces .cell b.na { color: var(--muted); font-weight: 400; }
+  #faces .cell b.hot { color: var(--warn); }
   button.small { font-size: 12px; padding: 6px 10px; }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
   .people { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -284,13 +308,15 @@
       <label class="toggle" for="optPoints">Keypoints (eyes, nose, mouth) <input type="checkbox" id="optPoints" checked></label>
       <label class="toggle" for="optMesh" title="MediaPipe's 478 face points joined into triangles, each shaded by the angle it faces">Face mesh (triangles) <input type="checkbox" id="optMesh"></label>
       <label class="toggle" for="optMeshStrength">Mesh strength <select id="optMeshStrength" style="width:auto"><option value="0.6">Light</option><option value="1" selected>Normal</option><option value="1.6">Strong</option></select></label>
+      <label class="toggle" for="optSkeleton" title="The body points the posture model finds below the face, joined: shoulders, arms, rough hands, hips, legs and feet">Full body skeleton <input type="checkbox" id="optSkeleton"></label>
+      <label class="toggle" for="optFingers" title="21 points on each hand, the joints of every finger (a second model: about 10-20 ms more a frame)">Hand skeleton (fingers) <input type="checkbox" id="optFingers"></label>
       <label class="toggle" for="optTrail">Motion trail <input type="checkbox" id="optTrail" checked></label>
       <label class="toggle" for="optUnknown">Show unknown faces <input type="checkbox" id="optUnknown" checked></label>
       <label class="toggle" for="optBlur">Blur unknown faces <input type="checkbox" id="optBlur"></label>
       <label class="toggle" for="optExpr">Show expression <input type="checkbox" id="optExpr" checked></label>
       <label class="toggle" for="optCalib">Calibrate to each person <input type="checkbox" id="optCalib" checked></label>
       <p class="hint" id="exprHint">Expression is read from sharp, camera-facing frames and averaged over the last second. With calibration on, each named person's usual look is learned over about a minute; a reading that departs from it is highlighted, one that matches it is marked "usual". Calibration also learns each person's normal for every other signal (posture, movement, voice, pulse...), alone and in company, over a few minutes, and the evidence shows what is unusual for them. All of it stays in this browser.</p>
-      <label class="toggle" for="optEvidence">Show expression evidence <input type="checkbox" id="optEvidence"></label>
+      <label class="toggle" for="optEvidence">Show expression evidence <input type="checkbox" id="optEvidence" checked></label>
       <div class="row">
         <select id="forgetWho" aria-label="Person to forget" style="width:auto"></select>
         <button class="small" id="calibReset">Forget what's learned</button>

@@ -140,10 +140,12 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `models/` (Git LFS) — YuNet (detect), ArcFace R50 (recognize), SFace (fallback), eDifFIQA (quality),
     expression model, AdaFace (evaluated, unused; local only, made by `tools/get_adaface.py`, not in git),
     `npu/` (static ArcFace + VitisAI config/cache), `face_landmarker.task` (MediaPipe blendshape cues, optional;
-    the two `.task` files and `wav2small_src/model.safetensors` are plain git files, not LFS: moving them would
+    the `.task` files and `wav2small_src/model.safetensors` are plain git files, not LFS: moving them would
     rewrite history),
     `wav2small.onnx` (voice arousal/dominance/valence, optional; made by `tools/get_wav2small.py`),
-    `pose_landmarker_lite.task` (MediaPipe body posture, optional).
+    `pose_landmarker_lite.task` (MediaPipe body posture, optional; all 33 points drawn with Full body skeleton),
+    `hand_landmarker.task` (MediaPipe hands, 21 points each, optional, display only: Hand skeleton; a plain git file
+    like the other `.task` files; in `fetch_models.py` from MediaPipe storage only, OPTIONAL until added to models-v1).
   - `tools/` — `eval_models.py`, `hw_bench.py`, `expr_check.py`, `expr_eval.py`, `get_adaface.py`, `get_wav2small.py`, `get_yunet_dynamic.py` (YuNet with free input sizes, for GPU face finding; published in models-v1),
     `import_bench.py`, `import_profile.py` (each step of an import timed on a folder), `websearch_check.py`, `webcam_eval.py` (live naming on confirmed webcam snapshots; measured the
     averaged-print rule the tracker uses via `/api/who`).

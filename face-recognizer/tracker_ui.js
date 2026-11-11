@@ -19,6 +19,7 @@ let test = null;                           // running expression test: { session
 let calibration = null, vaFit = null;      // fitted by tools/expr_eval.py (data/expr_calibration.json, data/va_fit.json)
 let voiceModel = false;                    // the recognizer has the voice model (models/wav2small.onnx)
 let poseOn = false;                        // the recognizer can send body points (MediaPipe pose model installed)
+let handsOn = false;                       // the recognizer can send finger points (MediaPipe hand model installed)
 let meshTris = null;                       // face-mesh triangles (landmark indices, three per triangle) when MediaPipe is installed
 let qEnroll = 0.3, captured = 0;           // "Collect faces": the quality a face needs to be learned from; snapshots saved
 const CAP_EVERY = 5000, CAP_MAX = 12, CAP_SEEN = 3;   // per face: ms between snapshots, most per visit, checks seen first
@@ -35,7 +36,8 @@ async function loadPeople() {
     setExpressions(r.expressions || null);
     cuesOn = !!r.cues; showDevices(r.devices, r.warmup_ms);
     calibration = r.calibration || null; vaFit = r.vaFit || null; voiceModel = !!r.voice;
-    poseOn = !!r.pose; $("optPose").disabled = $("optHandGate").disabled = !poseOn;
+    poseOn = !!r.pose; $("optPose").disabled = $("optHandGate").disabled = $("optSkeleton").disabled = !poseOn;
+    handsOn = !!r.hands; $("optFingers").disabled = !handsOn;
     meshTris = r.meshTriangles || null; $("optMesh").disabled = !meshTris;
     if (r.qEnroll != null) qEnroll = r.qEnroll;
     if (r.captureDir) $("optCollect").parentElement.title = `Saves snapshots to ${r.captureDir} for the labeling tool`;
@@ -486,6 +488,8 @@ async function sendLoop() {
       if (cuesOn && needCues()) want.set("c", "1");
       if (poseOn && ($("optPose").checked || $("optHandGate").checked)) want.set("p", "1");
       if (meshTris && $("optMesh").checked) want.set("m", "1");
+      if (poseOn && $("optSkeleton").checked) want.set("b", "1");
+      if (handsOn && $("optFingers").checked) want.set("f", "1");
       if (test?.label) {
         want.set("rec", test.label); want.set("session", test.session);
         if (test.talk) want.set("talk", "1");
@@ -499,6 +503,8 @@ async function sendLoop() {
       if (!r.ok) throw new Error(res.error || r.status);
       updateTracks(res.faces.map(f => ({ ...f, box: f.box.map(v => v / s), kps: f.kps.map(([x, y]) => [x / s, y / s]),
                                          pose: f.pose && f.pose.map(([x, y, v]) => [x / s, y / s, v]),
+                                         body: f.body && f.body.map(([x, y, v]) => [x / s, y / s, v]),
+                                         hands: f.hands && f.hands.map(h => h.map(([x, y]) => [x / s, y / s])),
                                          mesh: f.mesh && Float32Array.from(f.mesh, v => v / s) })));
       shown = sync && $("optMesh").checked ? hold : null;
       await identify(want.get("t"));
@@ -605,7 +611,7 @@ function updateTracks(dets) {
     // Other signals (signals.js): motion, face-shape cues over time, expression shares for reports
     const now = performance.now();
     best.fs.addPosition(now, d.box); best.fs.addCues(now, d.cues); best.fs.addExpr(now, d.expr);
-    best.fs.addPose(now, d.pose, d.hand); best.pose = d.pose;
+    best.fs.addPose(now, d.pose, d.hand); best.pose = d.pose; best.body = d.body || null; best.hands = d.hands || null;
     best.talking = isTalking(best, now, dets.length);
     // Expression votes the same way (expression.js). Frames the recognizer didn't score (blurry,
     // turned away; or talking / a hand on the face, with those options on) cast no vote; after ten
@@ -875,8 +881,10 @@ function draw() {
     if ($("optPoints").checked) {
       ctx.fillStyle = col;
       for (const [x, y] of t.kp) { ctx.beginPath(); ctx.arc(x, y, lw * 1.4, 0, Math.PI * 2); ctx.fill(); }
-      if (t.pose && $("optPose").checked && !t.missed) drawBody(t.pose, col, lw);
+      if (t.pose && $("optPose").checked && !t.missed && !(t.body && $("optSkeleton").checked)) drawBody(t.pose, col, lw);
     }
+    if (t.body && $("optSkeleton").checked && !t.missed) drawSkeleton(t.body, col, lw);
+    if (t.hands && $("optFingers").checked && !t.missed) for (const h of t.hands) drawHand(h, col, lw);
     // Name overlaid on the face itself: centred band across the top of the head
     const cx = t.x + t.w / 2;
     const size = Math.max(14, Math.min(t.w / 5.5, canvas.width / 30));
@@ -968,6 +976,34 @@ function drawBody(p, col, lw) {
   ctx.stroke(); ctx.restore();
 }
 
+// Full body skeleton: MediaPipe's 33 pose points (face, arms with rough hands, torso, legs and feet); only seen ones
+// The face's points (0-10: nose, eyes, ears, mouth) aren't drawn: the face has its own keypoints and mesh, and the
+// owner found lines and dots over it clutter.
+const SKELETON_FROM = 11;
+const SKELETON = [[11, 12], [11, 23], [12, 24], [23, 24],                                                             // torso
+  [11, 13], [13, 15], [15, 17], [15, 19], [15, 21], [17, 19], [12, 14], [14, 16], [16, 18], [16, 20], [16, 22], [18, 20],
+  [23, 25], [25, 27], [27, 29], [29, 31], [27, 31], [24, 26], [26, 28], [28, 30], [30, 32], [28, 32]];   // legs, feet
+function drawSkeleton(p, col, lw) {
+  const seen = i => p[i] && p[i][2] >= 0.5;
+  ctx.save(); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw; ctx.globalAlpha *= 0.8; ctx.beginPath();
+  for (const [a, b] of SKELETON) if (seen(a) && seen(b)) { ctx.moveTo(p[a][0], p[a][1]); ctx.lineTo(p[b][0], p[b][1]); }
+  ctx.stroke();
+  for (let i = SKELETON_FROM; i < p.length; i++) if (seen(i)) { ctx.beginPath(); ctx.arc(p[i][0], p[i][1], lw * 1.1, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
+// Hand skeleton: 21 points (wrist, then each finger from the palm out: thumb, index, middle, ring, pinky)
+const HAND = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12],
+  [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]];
+function drawHand(p, col, lw) {
+  if (p.length < 21) return;
+  ctx.save(); ctx.strokeStyle = col; ctx.fillStyle = "#ffffff"; ctx.lineWidth = Math.max(1.5, lw * 0.75); ctx.beginPath();
+  for (const [a, b] of HAND) { ctx.moveTo(p[a][0], p[a][1]); ctx.lineTo(p[b][0], p[b][1]); }
+  ctx.stroke();
+  for (const [x, y] of p) { ctx.beginPath(); ctx.arc(x, y, Math.max(1.5, lw * 0.6), 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
 function renderList() {
   const live = tracks.filter(t => t.missed === 0);
   $("count").textContent = live.length;
@@ -975,19 +1011,38 @@ function renderList() {
   const ul = $("faces");
   if (!tracks.length) { ul.innerHTML = '<li class="none">No faces tracked</li>'; return; }
   const showEv = $("optEvidence").checked && $("optExpr").checked, now = performance.now();
+  // One block a face: name and match on top, expression and size below; with evidence on, the readings in
+  // labeled cells that keep their place (a dash when there's no reading), so changing numbers are easy to follow.
   ul.innerHTML = tracks.map(t => {
-    const unk = t.name === "Unknown";
-    const xt = exprText(t), xs = xt ? `<span class="${t.expr.state}">${xt}</span> · ` : "";
-    const ev = showEv ? (t.expr ? Expression.evidence(t.expr) : t.xt.skip ? `no reading: ${t.xt.skip}` : "") : "";
-    const sv = showEv ? Signals.evidence(t.fs, now, voiceFor(t, now), t.talking) : "";
-    const bv = showEv && $("optPose").checked ? Signals.bodyEvidence(t.fs, now) : "";
-    const nv = showEv && t.snap ? Signals.unusualEvidence(baselines, t.name, t.snap, t.ctx) : "";
-    return `<li><span class="who${unk ? " unk" : ""}"><span class="sw" style="background:${colorFor(t.name)}"></span>${esc(t.name)}</span>` +
-           `<span>${unk ? "" : Math.round(t.sim * 100) + "% · "}${xs}${Math.round(t.tw || t.w)}px${t.missed ? " · lost" : ""}</span></li>` +
-           (ev ? `<li class="evidence">${esc(ev)}</li>` : "") + (sv ? `<li class="evidence">${esc(sv)}</li>` : "") +
-           (bv ? `<li class="evidence">body: ${esc(bv)}</li>` : "") + (nv ? `<li class="evidence">${esc(nv)}</li>` : "");
+    const unk = t.name === "Unknown", pct = Math.round(t.sim * 100);
+    const xt = exprText(t);
+    let html = `<li class="face${t.missed ? " lost" : ""}">` +
+      `<div class="fhead"><span class="sw" style="background:${colorFor(t.name)}"></span>` +
+      `<span class="who${unk ? " unk" : ""}">${esc(t.name)}</span>` +
+      `<span class="match">${unk ? "" : pct + "%"}</span></div>` +
+      (unk ? "" : `<div class="meter"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>`) +
+      `<div class="fsub"><span class="${xt ? t.expr.state : "none"}">${xt ? esc(xt) : $("optExpr").checked ? "no expression yet" : ""}</span>` +
+      `<span>${Math.round(t.tw || t.w)} px${t.missed ? " · lost" : ""}</span></div>`;
+    if (showEv) {
+      const sig = Signals.fields(t.fs, now, voiceFor(t, now), t.talking);
+      const skip = !t.expr && t.xt.skip ? `no reading: ${t.xt.skip}` : "";
+      // each group is shown by its setting, never by whether it has a reading right now, so the blocks keep their height
+      html += group("Expression", Expression.fields(t.expr), skip) + group("Face", sig.face) +
+              ($("optVoice").checked ? group("Voice", sig.voice) : "") +
+              ($("optPose").checked ? group("Body", Signals.bodyFields(t.fs, now)) : "") +
+              ($("optCalib").checked ? group("Their normal", Signals.normalFields(baselines, t.name, t.snap, t.ctx)) : "");
+    }
+    return html + "</li>";
   }).join("");
   $("devices").hidden = !showEv;
+}
+
+// A labeled group of readout cells: [label, value, hot, wide]; value null shows a dash, wide spans the row.
+function group(title, cells, note) {
+  return `<div class="grp"><div class="gl">${esc(title)}${note ? ` <em>${esc(note)}</em>` : ""}</div><div class="cells">` +
+    cells.map(([k, v, hot, wide]) => `<div class="cell${wide ? " wide" : ""}"><span>${esc(k)}</span>` +
+      `<b class="${v == null ? "na" : hot ? "hot" : ""}" title="${esc(v ?? "no reading")}">${v == null ? "–" : esc(v)}</b></div>`).join("") +
+    "</div></div>";
 }
 
 function applyMirror() { $("stage").classList.toggle("mirror", $("optMirror").checked); }
@@ -1065,7 +1120,7 @@ function remember(k, v) { try { localStorage.setItem("ft-" + k, v); } catch {} }
 function recall(k) { try { return localStorage.getItem("ft-" + k); } catch { return null; } }
 // The other options are remembered between visits too (the camera's mirror view follows the source instead)
 const KEEP = ["optPoints", "optTrail", "optUnknown", "optBlur", "optExpr", "optCalib", "optEvidence", "optVoice", "optPulse",
-              "optTalkGate", "optState", "optPose", "optHandGate", "optSmooth", "optThresh", "optMeshStrength",
+              "optTalkGate", "optState", "optPose", "optHandGate", "optSkeleton", "optFingers", "optSmooth", "optThresh", "optMeshStrength",
               "optAlertArrive", "optAlertLeave", "optAlertUnusual", "optArriveGap", "optLeaveGap", "optUnknownStay",
               "optUnusualZ", "optUnusualFor", "optUnusualRepeat", "optDetailsAfter", "optBannerFor"];
 for (const id of KEEP) {
@@ -1085,7 +1140,10 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
   SettingsBridge.init("track", [
     c("camSelect", C, { noReset: true }),
     c("optMirror", C, { hint: "Turned on for the webcam and off for video files when the source starts." }),
-    c("optPoints", D), c("optMesh", D), c("optMeshStrength", D), c("optTrail", D), c("optUnknown", D), c("optBlur", D),
+    c("optPoints", D), c("optMesh", D), c("optMeshStrength", D),
+    c("optSkeleton", D, { hint: "The body points the posture model finds below the face, joined: shoulders, arms with rough hands, hips, legs and feet. Drawn only; nothing is kept." }),
+    c("optFingers", D, { hint: "The joints of every finger, 21 points a hand, from a second model (about 10-20 ms more a frame). Drawn only; nothing is kept." }),
+    c("optTrail", D), c("optUnknown", D), c("optBlur", D),
     c("optSmooth", D, { hint: "How much the boxes are smoothed between frames." }),
     c("optExpr", E), c("optCalib", E, { hint: $("exprHint").textContent }), c("optEvidence", E),
     c("optTalkGate", E), c("optState", E),

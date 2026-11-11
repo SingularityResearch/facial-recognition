@@ -204,12 +204,14 @@ class Engine:
             out.append([name, round(float(sim), 3)])
         return out
 
-    def recognize(self, jpeg, threshold, cues=False, pose=False, mesh=False, record=None):
+    def recognize(self, jpeg, threshold, cues=False, pose=False, mesh=False, record=None, body=False, hands=False):
         """Faces in one webcam frame. cues=True adds the face-shape cues (about 10 ms a face on the
         CPU, so only when the page shows or uses them). mesh=True adds each face's 478 face-mesh
         points (same landmarker run as the cues; for drawing only). pose=True adds each face's body points and
-        whether a hand is on the face (10-20 ms a frame). record=(session, posed label, extra) also
-        appends the largest readable face's numbers to a posed-expression session file (see Recorder)."""
+        whether a hand is on the face (10-20 ms a frame). body=True adds all 33 body points (the full skeleton;
+        the same pose run). hands=True adds each face's hands, 21 points each (fingers; another 10-20 ms; for
+        drawing only). record=(session, posed label, extra) also appends the largest readable face's numbers to a
+        posed-expression session file (see Recorder)."""
         img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError("not a JPEG image")
@@ -226,10 +228,13 @@ class Engine:
             meshes = [self.faces.face_mesh(img, row) if mesh or ((cues or record) and skip is None) else (None, None)
                       for (row, _, _, _), skip in zip(found, skips)]
             shapes = [bs if skip is None else None for (bs, _), skip in zip(meshes, skips)]
-            poses = self.faces.poses(img) if (pose or record) and found else []
+            poses = self.faces.poses(img) if (pose or body or record) and found else []
+            hand_pts = self.faces.hands(img) if hands and found else []
         bodies = [F.pose_for_face(poses, row) for row, _, _, _ in found]
+        their_hands = F.hands_for_faces(hand_pts, [row for row, _, _, _ in found], poses, bodies)
         out = []
-        for (row, emb, crop, quality), skip, expr, bs, (_, pts), bi in zip(found, skips, exprs, shapes, meshes, bodies):
+        for (row, emb, crop, quality), skip, expr, bs, (_, pts), bi, hs in zip(found, skips, exprs, shapes, meshes, bodies,
+                                                                              their_hands):
             name, sim = ident.who(emb, threshold) if ident else ("Unknown", 0.0)
             out.append({
                 "box": [round(float(v), 1) for v in row[:4]],
@@ -249,6 +254,8 @@ class Engine:
                 "mesh": np.round(pts, 1).ravel().tolist() if mesh and pts is not None else None,
                 "pose": F.pose_points(poses[bi]) if bi is not None else None,   # F.POSE_POINTS order
                 "hand": F.hand_on_face(poses[bi], row) if bi is not None else None,
+                "body": F.pose_all(poses[bi]) if body and bi is not None else None,   # all 33, MediaPipe numbering
+                "hands": hs if hands else None,
             })
         if record:
             readable = [(f, bs) for f, bs in zip(out, shapes) if f["expr"] is not None]
@@ -380,6 +387,7 @@ def make_handler(engine):
                                        "meshTriangles": MESH_TRIANGLES if engine.faces.cues_available else None,
                                        "qEnroll": F.Q_ENROLL, "captureDir": str(F.WEBCAM),
                                        "pose": engine.faces.pose_available, "posePoints": list(F.POSE_POINTS),
+                                       "hands": engine.faces.hands_available,
                                        "calibration": _read_json(CALIBRATION), "vaFit": _read_json(VA_FIT),
                                        "sessions": len(engine.recorder.sessions()),
                                        "reports": engine.recorder.reports()})
@@ -449,8 +457,9 @@ def make_handler(engine):
                         extra["vad"] = params["vad"] == "1"
                     record = (params["session"], params["rec"], extra)
                 return self.send_json(engine.recognize(jpeg, threshold, cues=params.get("c") == "1",
-                                                       pose=params.get("p") == "1", mesh=params.get("m") == "1",
-                                                       record=record))
+                                                                       pose=params.get("p") == "1", mesh=params.get("m") == "1",
+                                                       record=record, body=params.get("b") == "1",
+                                                       hands=params.get("f") == "1"))
             except (ValueError, TypeError) as e:       # incl. localguard.RequestError: 400, or 413 when too large
                 return self.send_json({"error": str(e)}, getattr(e, "code", 400))
 

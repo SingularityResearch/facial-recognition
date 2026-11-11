@@ -612,7 +612,71 @@
     return parts.join(" · ");
   }
 
+  // The same readings as fixed cells for the page's Live readout table: [label, value, hot] in a fixed order, value
+  // null when there's no reading (shown as a dash, so cells keep their place), hot when the value deserves a look.
+  // Groups: face, voice (every value null when there's no voice for this face), body, normal (calibration).
+  // The page shows each group by its setting, never by whether there's a reading, so nothing jumps.
+  const d2 = v => v.toFixed(2).replace(/^(-?)0/, "$1");
+  function fields(fs, now, voice, talking) {
+    const m = fs.motion(now), k = fs.talking(now), b = fs.blinkRate(now), g = fs.gazeAway(now, 5000);
+    const tm = fs.timing(now), p = fs.pulse(now);
+    const face = [
+      ["talking", talking ? "yes" : "no", !!talking],
+      ["moving", m ? d2(m.speed) + (Math.abs(m.approach) > 0.3 ? (m.approach > 0 ? " in" : " out") : "") : null],
+      ["jaw", k ? `${k.talking ? "moves" : "still"} ${k.score.toFixed(3).replace(/^0/, "")}` : null],
+      ["blinks", b != null ? `${Math.round(b)}/min` : null],
+      ["gaze away", g != null ? `${Math.round(g * 100)}%` : null, g != null && g > 0.5],
+      ["pulse", p ? `${p.bpm}${p.snr <= 0 ? "?" : ""}` : null],
+      ["smile rise", tm.smileRise != null && tm.smileRise > 0.5 ? `${tm.smileRise.toFixed(1)}/s` : null],
+      ["smile asym", tm.smileAsym != null ? d2(tm.smileAsym) : null],
+      ["held", tm.held != null ? `${Math.round(tm.held)} s` : null],
+    ];
+    const s = voice?.stats || {}, avd = voice?.avd, on = s.speaking > 0.1;
+    const vo = [
+      ["speaking", s.speaking != null ? `${Math.round(s.speaking * 100)}%` : null, on],
+      ["loudness", on && s.loudness != null ? `+${Math.round(s.loudness)} dB` : null],
+      ["pitch", on && s.pitch != null ? `${Math.round(s.pitch)} Hz` : null],
+      ["pitch range", on && s.pitchSd != null ? `±${s.pitchSd.toFixed(1)} st` : null],
+      ["rate", on && s.rate != null ? `${s.rate.toFixed(1)}/s` : null],
+      ["arousal", avd ? d2(avd[0]) : null],
+      ["valence", avd ? d2(avd[2]) : null],
+    ];
+    return { face, voice: vo };
+  }
+  function bodyFields(fs, now) {
+    const q = fs.posture(now) || {}, m = fs.bodyMotion(now), b = fs.breathing(now);
+    return [
+      ["head", q.head != null ? d2(q.head) : null],
+      ["neck", q.neck != null ? d2(q.neck) : null],
+      ["tilt", q.tilt != null ? `${Math.round(q.tilt)}°` : null],
+      ["lean", q.lean != null ? (Math.abs(q.lean) >= LEAN_ON ? (q.lean > 0 ? "in" : "back") : "upright") : null],
+      ["movement", m != null ? d2(m) : null],
+      ["breathing", b ? `${b.bpm}/min${b.snr <= 0 ? "?" : ""}` : null],
+      ["hand on face", q.hand != null ? (q.hand ? "yes" : "no") : null, !!q.hand],
+      ["arms crossed", q.armsCrossed != null ? (q.armsCrossed ? "yes" : "no") : null, !!q.armsCrossed],
+    ];
+  }
+  // Their normal as three fixed cells: now ("learning 40%", "usual (alone)", "unusual"), the most unusual signal and
+  // the rest ("head -3.1 SD", "pitch +2.2 SD +1 more"); values null when there's nothing to say (Unknown, no snapshot).
+  function normalFields(baselines, name, snap, ctx) {
+    const cells = (now, odd = []) => [
+      ["now", now, odd.length > 0],
+      ["most unusual", odd[0] ?? null, odd.length > 0],
+      ["next", odd.length > 1 ? odd[1] + (odd.length > 2 ? ` +${odd.length - 2} more` : "") : null, odd.length > 1],
+    ];
+    if (!baselines || !name || name === "Unknown" || !snap) return cells(null);
+    const z = baselines.z(name, snap, ctx), keys = Object.keys(z);
+    if (!keys.length) {
+      const p = baselines.progress(name);
+      return cells(p < 1 ? `learning ${Math.round(p * 100)}%` : null);
+    }
+    const odd = keys.filter(k => Math.abs(z[k]) >= B_Z).sort((a, b) => Math.abs(z[b]) - Math.abs(z[a]));
+    const scope = keys.some(k => baselines.normal(name, k, ctx)?.scope === ctx) ? ` (${ctx})` : "";
+    return cells((odd.length ? "unusual" : "usual") + scope, odd.map(k => `${k} ${z[k] > 0 ? "+" : ""}${z[k].toFixed(1)} SD`));
+  }
+
   const api = { FaceSignals, VoiceSignals, Baselines, unusualEvidence, skinRegions, pulseFrom, applyFit, evidence, bodyEvidence,
+                fields, bodyFields, normalFields,
                 postureOf, spectralPeak, FEATURES, B_KEYS,
                 S: { TALK_JAW_SD, TALK_MS, TALK_MIN, MOTION_MS, BLINK_ON, BLINK_MIN_MS, GAZE_AWAY, SMILE_ON, SUMMARY_MS,
                      PULSE_MS, PULSE_MIN_MS, PULSE_HZ, PULSE_MAX_MOTION, V_RATE, V_FRAME, V_ON_DB,

@@ -383,6 +383,11 @@ the models from GitHub with CERTIFICATE_VERIFY_FAILED: Python reads only the roo
 Windows adds missing ones on demand for its own (schannel) connections only. paths.py now injects `truststore`
 (pinned 0.10.5), so every HTTPS request is checked by the operating system.
 v1.13 (released 2026-11-11, tag at 286b67f) carries that fix; CI's checks job installs truststore too.
+v1.14 (2026-11-11): Start again button; the Live readout as fixed labeled cells (Expression, Face, Voice, Body, Their
+normal; groups shown by setting, a dash for no reading, so blocks keep their height); Show expression evidence on by
+default; Full body skeleton (pose points below the face) and Hand skeleton (MediaPipe hand_landmarker.task, 21 points,
+~8 ms a frame on the 7840HS; optional in fetch_models.py, not in models-v1). First expr_eval calibration on the one posed
+session (549 readings): temperature 6.03 (very overconfident), ECE 32.5 -> 10.5 points; angry/fearful 0%, sad 9%.
 
 LM Studio across the owner's computers (2026-11-10/11, after v1.10; `lmstudio.py`, `hardware.lmstudio_network`):
 both computers serve LM Studio on 0.0.0.0:1234 (the Linux laptop: headless llmster 0.0.27 + CUDA 12 llama.cpp 2.72.0 as
