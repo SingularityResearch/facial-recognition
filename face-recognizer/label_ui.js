@@ -1249,6 +1249,8 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     history.replaceState(null, "", hashOf(view));
     await render(true);
   } catch (e) {
-    $("#main").innerHTML = `<div class="empty"><b>Couldn't reach Face Labels</b>Start it with label.bat (or python label_tool.py) and reload this page.</div>`;
+    $("#main").innerHTML = `<div class="empty"><b>Couldn't reach Face Labels</b>${window.parent !== window
+      ? "Close Face Recognizer and start it again."
+      : "Start it with label.bat (label.sh on macOS and Linux, or python label_tool.py) and reload this page."}</div>`;
   }
 })();

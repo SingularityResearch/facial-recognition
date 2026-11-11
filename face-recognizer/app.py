@@ -9,6 +9,8 @@ If either is already running from its .bat, that copy is used instead of startin
 Run:  python app.py            (or FaceRecognizer.exe, built with build_app.bat; the app on macOS and Linux)
       python app.py --browser  (the same tab page in the default web browser instead of a window of its own;
                                 FACE_UI=browser does the same)
+      FACE_UI=none             (the servers only: no window and no browser; for test copies, which then never open
+                                anything on the desktop: open http://127.0.0.1:8764/ yourself)
 Needs pywebview (pip install pywebview). The window is Edge WebView2 on Windows, WebKit on macOS, and GTK or Qt on
 Linux; where none can open or draw (a Linux system without those libraries, or without working OpenGL), the app
 falls back to the browser by itself: on Linux it first tries the window in a child process (--probe-window).
@@ -300,12 +302,13 @@ def run_programs():
     threading.Thread(target=go, daemon=True).start()
 
 
-def in_browser(shell):
-    """The tab page in the default web browser (--browser, or no window toolkit): the servers keep running until
-    this process is stopped (Ctrl+C, or closing its terminal)."""
+def in_browser(shell, open_it=True):
+    """The tab page in the default web browser (--browser, or no window toolkit; open_it False: FACE_UI=none, the
+    servers only): the servers keep running until this process is stopped (Ctrl+C, or closing its terminal)."""
     import webbrowser
-    print(f"{TITLE} is running at {shell} (in your web browser). Stop it with Ctrl+C.")
-    webbrowser.open(shell)
+    print(f"{TITLE} is running at {shell}{' (in your web browser)' if open_it else ''}. Stop it with Ctrl+C.")
+    if open_it:
+        webbrowser.open(shell)
     try:
         while True:
             time.sleep(3600)
@@ -370,6 +373,8 @@ def main(argv=None):
     run_programs()                                  # (Settings offers to download CUDA when an NVIDIA card is here)
     import lmstudio                                 # LM Studio here: serve on all interfaces, announce it (every minute)
     lmstudio.keep()
+    if os.environ.get("FACE_UI") == "none":           # test copies: nothing opens on the desktop
+        in_browser(shell, open_it=False)
     if "--browser" in args or os.environ.get("FACE_UI") == "browser":
         in_browser(shell)
     if not window_works():                          # e.g. Linux without working OpenGL for Qt's web view

@@ -196,7 +196,7 @@ Set before starting the app (or a program) to change how it starts.
 | `FACE_LLM_URL` | an address | The default Describe photo server (before one is set in Settings). |
 | `GOOGLE_VISION_API_KEY` | a key | Google key for Web search, instead of saving one. |
 | `FACE_PORTS` | a port n | The app window's ports: n to n+2 instead of 8764 to 8766 (to run a second copy). |
-| `FACE_UI` | `browser` | Open the app in the web browser instead of its window (same as `--browser`). |
+| `FACE_UI` | `browser`, `none` | browser: open the app in the web browser instead of its window (same as `--browser`). none: start the servers only, with no window and no browser (for test copies; open `http://127.0.0.1:8764/` yourself). |
 | `FACE_ROOT` | a folder | Another folder with `models` and `data`. |
 | `FACE_HOME` | a folder | Another folder instead of the private `FaceLabels` folder. |
 

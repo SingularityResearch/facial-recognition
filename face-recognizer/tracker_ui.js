@@ -48,7 +48,7 @@ async function loadPeople() {
     if (!running) setStatus(people.length ? `Ready · knows ${people.length} people${where}` : "Ready · nobody named yet (use the labeling tool)");
     renderPeople();
     return true;
-  } catch { setStatus("Recognizer isn't running. Start it with recognize.bat", "err"); return false; }
+  } catch { setStatus(startAgain("The face tracker isn't answering"), "err"); return false; }
 }
 
 // ---------------------------------------------------------------- alerts and presence log
@@ -643,11 +643,18 @@ function renderForget() {
   if (names.includes(keep)) $("forgetWho").value = keep;
 }
 
+// What to do when this page's program stopped or needs a restart: in the app window, start the app again; opened on
+// its own, start recognize.bat (Windows) or recognize.sh (macOS, Linux) again and reload the page.
+function startAgain(what) {
+  return window.parent !== window ? `${what}. Close Face Recognizer and start it again.`
+    : `${what}. Start it again with recognize.bat (recognize.sh on macOS and Linux), then reload this page.`;
+}
+
 function setExpressions(list) {
   const was = expressions; expressions = list;
   for (const id of ["optExpr", "optEvidence", "testBtn", "optTalkGate", "optState"]) $(id).disabled = !list;
   $("exprHint").textContent = list ? $("exprHint").dataset.on
-    : "Expression model not installed: put facial_expression_recognition_mobilefacenet_2022july.onnx (OpenCV Zoo) in the models folder and restart recognize.bat.";
+    : startAgain("Expression model not installed: put facial_expression_recognition_mobilefacenet_2022july.onnx (OpenCV Zoo) in the models folder");
   if (was && !list) for (const t of tracks) { t.xt.clear(); t.expr = null; }
 }
 

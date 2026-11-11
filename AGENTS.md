@@ -206,6 +206,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - The owner's app holds ports 8764-8766. Start a test copy from source on spare ports (tracker/labeling `--port`,
   or `app.start` with a port offset), with `APPDATA` pointed at a temp folder and `face_id.DATA` at an empty or copied
   folder, so it can't touch the real `data/` or `%APPDATA%\FaceLabels`.
+- Start a built test copy with `FACE_UI=none` (servers only): `FACE_UI=browser` opens the owner's default browser,
+  and that tab says the program stopped once the test copy is killed.
 - Headless Edge over CDP works for page checks. Kill leftover `msedge --remote-debugging-port` processes first:
   an old one keeps old tabs (and their errors) alive.
 - Importing `face_id` works without models; each program calls `face_id.require_models()` when it starts, which
