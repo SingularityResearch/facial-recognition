@@ -37,10 +37,10 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
       (`Importer.begin`); unreadable files kept with the reason (`note_problem`, shown by the page's **Why?**).
     Possible faces: each photo is also read with a low detector cut-off (`Importer.MORE_SCORE` 0.45, 4 sizes; sampled,
     not measured for accuracy); those faces are marked in `photos.json` `maybe` and listed apart from New faces.
-  - `label_tool.py` + `label_ui.html` (layout) + `label_ui.js` (script) / `label.bat` — labeling web app on
+  - `label_tool.py` + `label_ui.html` (layout) + `label_ui.js` (script) / `label.bat`, `label.sh` — labeling web app on
     `http://127.0.0.1:8765`.
     The owner calls this "the recognizer".
-  - `tracker.py` + `tracker_ui.html` + `tracker_ui.js` / `recognize.bat` — live tracker on `http://127.0.0.1:8766`.
+  - `tracker.py` + `tracker_ui.html` + `tracker_ui.js` / `recognize.bat`, `recognize.sh` — live tracker on `http://127.0.0.1:8766`.
     Its **Collect faces** option saves each collected face (never the whole frame: the face with `CAPTURE_MARGIN`
     0.6 face widths around it, the room `face_id.rebuild_crop` re-detects in, other faces greyed out) + the tracker's
     verdict to `%APPDATA%\FaceLabels\webcam\` (`face_id.WEBCAM`); `label_tool.py` imports them by itself and shows
@@ -84,7 +84,7 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     storage itself (`forgetPerson`, sent by the app's tab page after a forget).
   - `desktop.py` — what the app asks of the operating system on Windows, macOS and Linux: show a folder, draw the
     eye to the window for an alert. `paths.user_data` gives each system's application-data folder.
-  - `setup.sh`, `start.sh`, `FaceRecognizer.command` — macOS and Linux: a `.venv` with the pinned libraries (Linux
+  - `setup.sh`, `start.sh`, `label.sh`, `recognize.sh`, `FaceRecognizer.command` — macOS and Linux: a `.venv` with the pinned libraries (Linux
     adds `pywebview[qt]` for the app window), the models, and starting the app (`--browser` for the web browser).
   - `packaging/macos/` — the app's entitlements (camera, microphone) and `sign_and_notarize.sh`, which CI runs when
     the signing secrets are set (MACOS_CERT_P12_BASE64, MACOS_CERT_PASSWORD, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID,
@@ -144,6 +144,8 @@ macOS (14+, Apple Silicon) and Linux (Ubuntu 22.04+), from `face-recognizer/`:
 ```
 ./setup.sh                                   # once: .venv, pinned libraries (+ pywebview[qt] on Linux), models
 ./start.sh                                   # the app window (--browser, or FACE_UI=browser: the web browser)
+./recognize.sh                               # live tracker on its own (port 8766)
+./label.sh                                   # labeling tool on its own (port 8765)
 .venv/bin/python tracker.py                  # or label_tool.py, face_id.py --help: as on Windows
 .venv/bin/python -m pip install -r requirements-build.txt && .venv/bin/python build_exe.py   # build the app
 ```

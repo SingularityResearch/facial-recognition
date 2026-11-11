@@ -57,9 +57,9 @@ X:\source\facial-recognition\
     ├── labels.py                 labeling engine: LabelDB (per-face labels, undo); re-exports the four below
     ├── photofiles.py, photofacts.py, relocate.py, importer.py   hashes/cloud files; dates/tags; upgrade/moved
     │                             photos; background import (split out of labels.py 2026-11-09)
-    ├── label_tool.py             labeling web app  → http://127.0.0.1:8765   (launch: label.bat)
+    ├── label_tool.py             labeling web app  → http://127.0.0.1:8765   (launch: label.bat, label.sh)
     ├── label_ui.html, label_ui.js   labeling page and its script (served by label_tool.py)
-    ├── tracker.py                live tracker server → http://127.0.0.1:8766 (launch: recognize.bat)
+    ├── tracker.py                live tracker server → http://127.0.0.1:8766 (launch: recognize.bat, recognize.sh)
     ├── tracker_ui.html, tracker_ui.js   live tracker page and its script (served by tracker.py)
     ├── expression.js             expression vote, state model, usual looks, evidence (browser; tests\)
     ├── signals.js                motion, talking, blinks, gaze, timing, pulse, voice, VA fit (browser; tests\)
@@ -71,6 +71,7 @@ X:\source\facial-recognition\
     ├── desktop.py                open a folder, draw the eye to the window (Windows, macOS, Linux)
     ├── alerts.py                 the tracker's alert inbox (%APPDATA%\FaceLabels\alerts.json)
     ├── setup.sh, start.sh, FaceRecognizer.command   macOS and Linux: .venv setup, start the app
+    ├── recognize.sh, label.sh    macOS and Linux: start the tracker or the labeling tool on its own
     ├── packaging\macos\          entitlements.plist, sign_and_notarize.sh (CI, with the Apple secrets)
     ├── websearch.py              Web search: Amazon Rekognition + Google Cloud Vision (on click; own keys in %APPDATA%)
     ├── describe.py               Describe photo: LM Studio or any OpenAI-style server (Settings), else florence.py

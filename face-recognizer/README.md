@@ -2,8 +2,8 @@
 
 Three programs share the `data` folder:
 
-- **tracker.py**: the live face tracker in your browser (double-click **recognize.bat**)
-- **label_tool.py**: add photos, confirm suggested names, name new people, fix mistakes (double-click **label.bat**)
+- **tracker.py**: the live face tracker in your browser (double-click **recognize.bat**; macOS, Linux: `./recognize.sh`)
+- **label_tool.py**: add photos, confirm suggested names, name new people, fix mistakes (double-click **label.bat**; macOS, Linux: `./label.sh`)
 - **face_id.py**: command-line scanning, grouping and recognition
 
 Recognizes specific people (by name) on a webcam or in photos and videos, trained on your own photo library.
@@ -190,10 +190,10 @@ The tracker and the labeling tool are ordinary local web apps; the .exe only put
 
 | | Start | Open |
 |---|---|---|
-| Face tracker | double-click `recognize.bat`, or `python tracker.py` | http://127.0.0.1:8766 |
-| Labeling tool | double-click `label.bat`, or `python label_tool.py` | http://127.0.0.1:8765 |
+| Face tracker | double-click `recognize.bat` (macOS, Linux: `./recognize.sh`), or `python tracker.py` | http://127.0.0.1:8766 |
+| Labeling tool | double-click `label.bat` (macOS, Linux: `./label.sh`), or `python label_tool.py` | http://127.0.0.1:8765 |
 
-- Each .bat opens its page in your browser. Leave its console window open while you use it, and close the window to stop it. Run both at once to have both pages; they're separate programs.
+- Each .bat (or .sh) opens its page in your browser. Leave its console or terminal window open while you use it, and close the window to stop it. Run both at once to have both pages; they're separate programs.
 - Options: `--port 9000` uses another port, and `--no-browser` doesn't open the page (for example to bookmark it, or to start it from a script).
 - The browser asks once for the camera and microphone. (In FaceRecognizer.exe's window only the Face tracking tab gets them without asking.) It remembers each page's options and per-person baselines itself, separately from the .exe window's.
 - Both servers listen only on this computer (`127.0.0.1`). Other devices on your network can't reach them, and pages from other websites can't use them.
@@ -205,7 +205,7 @@ The tracker and the labeling tool are ordinary local web apps; the .exe only put
 ### 1. Add new photos
 
 1. Put the new photos in a folder, for example `E:\Users\you\Pictures\New`. Subfolders are included. Supported: JPG, PNG, HEIC/HEIF, WebP, BMP, GIF, TIFF.
-2. Double-click **label.bat**. **Face Labels** opens in your browser at http://127.0.0.1:8765/.
+2. Double-click **label.bat** (macOS, Linux: `./label.sh`). **Face Labels** opens in your browser at http://127.0.0.1:8765/.
 3. Click **Add photos** (top right), type or paste the folder path, and click **Start adding**. Folders you've added before are offered as you type.
 4. Exports from photo apps work well here: a Google Takeout of Google Photos, or a folder tagged in Lightroom, Picasa, digiKam or Windows Photo Gallery. Their people tags show up under **From photo tags**. (Photos straight from an iPhone carry face boxes but no names, so they add nothing here.)
 5. A progress bar at the top shows the folder, photos read, faces found, faces named automatically and photos already added. You can keep labeling while it runs, and **Stop** ends it early. Photos already read are kept, and the rest are read the next time you add the folder. When it's done, the result stays up for 5 minutes, even when nothing was new. An import started some other way (for example the webcam snapshots) shows here too.
@@ -248,12 +248,12 @@ Normal labeling needs no recompute: every change rebuilds `data/people.npz` (wha
 
 ### 4. Start the face tracker
 
-1. Double-click **recognize.bat**. A black **Face Tracker** window opens, loads the models (it lists which processor runs each one), and opens http://127.0.0.1:8766/ in your browser.
+1. Double-click **recognize.bat** (macOS, Linux: `./recognize.sh`). A black **Face Tracker** window (a terminal on macOS and Linux) opens, loads the models (it lists which processor runs each one), and opens http://127.0.0.1:8766/ in your browser.
 2. Pick your webcam in **Camera** and click **Start camera**. The first time, allow camera access in the browser. Next time the same camera starts automatically, unless you last stopped it with **Stop camera**.
 3. Named people show their name and match percentage on their face; everyone else shows **Unknown**. Names you add in Face Labels appear without restarting.
 4. To stop, close the black window (or press Ctrl+C in it). To keep it running but turn the camera off, click **Stop camera**.
 
-If the camera won't start, close other apps that use it (Teams, Zoom, another browser tab) or pick another camera from the list. If the page says "Recognizer isn't running", start recognize.bat again. Running it while the tracker is already open just opens the existing page. The tracker and Face Labels are separate programs and can run at the same time.
+If the camera won't start, close other apps that use it (Teams, Zoom, another browser tab) or pick another camera from the list. If the page says "Recognizer isn't running", start recognize.bat (or recognize.sh) again. Running it while the tracker is already open just opens the existing page. The tracker and Face Labels are separate programs and can run at the same time.
 
 ## Command-line recognition
 
@@ -265,7 +265,7 @@ python face_id.py recognize "D:\some\photos" --out tagged   # tag photos, save a
 
 ## Live tracker: tracker.py
 
-Double-click **recognize.bat**. Your browser opens the Face Tracker:
+Double-click **recognize.bat** (macOS, Linux: `./recognize.sh`). Your browser opens the Face Tracker:
 
 - **Layout**: the video fills the window. The controls are a panel on the right. **Hide controls** (top right, or **Ctrl+.**) slides it away and the video grows to the full width, and **Controls** brings it back. The page remembers which you chose. On narrow windows the panel slides over the video instead and starts closed; **Esc** closes it.
 - **Camera**: pick your webcam from the list by name, then **Start camera**. **Open video** tracks a video file instead.
@@ -354,7 +354,7 @@ Keep the black **Face Tracker** window open while you use it.
 
 ## Label people: label_tool.py (separate app)
 
-Double-click **label.bat**, or run `python label_tool.py`. Your browser opens **Face Labels**. Every change is saved at once, and **Undo** (or Z) takes back the last one.
+Double-click **label.bat** (macOS, Linux: `./label.sh`), or run `python label_tool.py`. Your browser opens **Face Labels**. Every change is saved at once, and **Undo** (or Z) takes back the last one.
 
 **Add photos** reads a folder (subfolders too, photos and videos) in the background, using the GPU. It skips photos it has already read, even renamed or moved ones, and copies of photos (re-saved or resized) whose faces match. When a new face clearly matches someone you've named, it's named automatically. The rest wait for you in two lists:
 
