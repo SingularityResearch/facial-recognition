@@ -49,8 +49,9 @@ Mac builds) and on **Linux** (built and tested on Ubuntu; x86_64, and ARM from s
   Without working OpenGL the window can't draw; the app notices (it tries the window first) and uses the browser.
 - **In the browser instead:** `./start.sh --browser` (or `FaceRecognizer --browser`) opens the same tabs in your web
   browser. The app does this by itself where no app window can open.
-- **What's different:** recognition runs on the CPU (OpenCV), measured to give the same names as the GPU path.
-  `FACE_DEVICE=gpu` tries CoreML (macOS) or CUDA (Linux), not yet measured against it. The labeling tool's handling of
+- **What's different:** the app picks the processor for each model itself (see **GPU and NPU**):
+  an NVIDIA card on Linux (`./setup.sh` installs ONNX Runtime with CUDA when `nvidia-smi` works) or Apple Silicon's
+  CoreML, when a check at start shows it gives the same results and is faster; otherwise the CPU (OpenCV). The labeling tool's handling of
   online-only cloud files (iCloud, OneDrive) is Windows-only for now. On first use, macOS asks once whether the app
   may use the camera and microphone.
 
@@ -441,9 +442,18 @@ Measured on this PC (AMD Ryzen AI Max+ 395: 16-core CPU, Radeon 8060S GPU, XDNA 
 | CPU (OpenCV) | ~12 ms | fallback |
 | NPU (Ryzen AI 1.8, BF16) | ~25 ms | low power; results 99.97% identical; first start compiles for ~6 minutes |
 
-The recognizer, quality and expression models use the GPU automatically (`onnxruntime-directml`, installed by setup.bat). Face detection (YuNet) stays on the CPU, where it takes a few milliseconds, as do the optional MediaPipe face-shape cues (about 10 ms a face), body posture (about 15 ms a frame) and the voice model (a few milliseconds per 2-second clip). To choose explicitly, set `FACE_DEVICE` to `gpu`, `cpu` or `npu` before starting. `npu` needs the Ryzen AI environment's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`); `tools/hw_bench.py` compiles the NPU model and re-measures all three. At startup the tracker runs each model once (so the first camera frame isn't the slow one) and lists which processor runs it and how long that first run took.
+The app looks at the hardware when it starts and decides, model by model, where the recognizer, quality and expression models run:
 
-**macOS and Linux:** there's no DirectML, so the models run on the CPU (OpenCV), the path measured above (about 12 ms a face here; 58 ms on a laptop CPU in a Linux test). `FACE_DEVICE=gpu` tries Apple's CoreML (macOS) or NVIDIA CUDA (Linux, with `onnxruntime-gpu` installed instead of `onnxruntime`); they aren't used by default until `tools/hw_bench.py` has shown they give the same results.
+| Hardware | What it uses |
+|---|---|
+| Windows with a DirectX 12 GPU | the GPU through DirectML (`onnxruntime-directml`, installed by setup.bat): measured to give the same names, 3-4x faster |
+| Linux with an NVIDIA card | CUDA (`./setup.sh` installs `onnxruntime-gpu` with its own CUDA and cuDNN libraries when `nvidia-smi` works; no CUDA toolkit needed), if the check below passes |
+| Mac with Apple Silicon | CoreML, if the check below passes |
+| anything else, or the check fails | the CPU (OpenCV) |
+
+The check, for CUDA and CoreML: each model runs once on the GPU and once on the CPU with the same test input; the GPU is used only if its answer is within 1% of the CPU's and it's faster (median of 5 runs). The decision and the timings are printed at start (for example `arcface_w600k_r50.onnx: CUDA: same results (0.00% apart), 1.2 ms vs 30.5 ms on the CPU: GPU`), and the tracker's list of processors shows `GPU (CUDA, checked)`. The NPU is never picked by itself (measured slower for one face at a time). Face detection (YuNet) stays on the CPU, where it takes a few milliseconds, as do the optional MediaPipe face-shape cues (about 10 ms a face), body posture (about 15 ms a frame) and the voice model (a few milliseconds per 2-second clip). To choose yourself, set `FACE_DEVICE` to `gpu` (the GPU without the check), `cpu` or `npu` before starting. `npu` needs the Ryzen AI environment's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`); `tools/hw_bench.py` compiles the NPU model and re-measures all three. At startup the tracker runs each model once (so the first camera frame isn't the slow one) and lists which processor runs it and how long that first run took.
+
+**macOS and Linux:** without CUDA or CoreML passing the check, the models run on the CPU (OpenCV), the path measured above (about 12 ms a face here; 58 ms on a laptop CPU in a Linux test). For a fuller measurement on real faces, `.venv/bin/python tools/hw_bench.py` reports milliseconds per face and agreement with the CPU (it needs some photos added first).
 
 **Bigger models tried:** AdaFace IR-101 (WebFace12M, `tools/get_adaface.py` converts the official weights) ran at 8.5 ms per face on the GPU but didn't beat ArcFace on your photos: 95.5% vs 99.4% of labeled faces correct, about the same on blurry frames. Combining both models didn't help either (`tools/eval_models.py` reproduces the comparison).
 

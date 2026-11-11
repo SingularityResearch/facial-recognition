@@ -145,8 +145,9 @@ The same code runs on macOS 14+ on Apple Silicon (the onnxruntime and MediaPipe 
 and on Linux (built on Ubuntu 22.04, tested on Ubuntu 26.04 on a real laptop and 24.04 in WSL). From the code:
 `./setup.sh`, `./start.sh`. Built apps keep models and `data` in `~/Library/Application Support/FaceRecognizer` or
 `~/.local/share/FaceRecognizer` (the app itself is read-only) and the private folder in `.../FaceLabels` beside it.
-Recognition runs on the CPU (OpenCV) there, as measured; CoreML and CUDA only with `FACE_DEVICE=gpu`, not yet
-measured. The Linux window is Qt's web view: without working OpenGL it can't draw, so the app tries it in a child
+Recognition runs on the CPU (OpenCV) there, as measured; CUDA (`setup.sh` installs `onnxruntime-gpu[cuda,cudnn]`
+when `nvidia-smi` works) and CoreML are used per model only after the start-up check (`face_id._gpu_check`: same
+results within 1% on a test input, and faster); `tools/hw_bench.py` measures them on real faces. The Linux window is Qt's web view: without working OpenGL it can't draw, so the app tries it in a child
 process first (`--probe-window`) and otherwise opens the browser; the Linux build leaves the graphics libraries to
 the system (bundled ones broke OpenGL on Ubuntu 24.04). Build steps for all three: face-recognizer/README.md,
 "Building the app".
@@ -337,6 +338,11 @@ Measured on Chris's labeled faces:
 | NPU (Ryzen AI 1.8 VitisAI, BF16) | ~25 ms | 99.97% identical; first start compiles ~6 min (342 s) |
 
 The recognizer, quality and expression models use ONNX Runtime when available; YuNet stays on the CPU.
+`auto` decides from the hardware: DirectML (measured) when present; else CUDA or CoreML for each model whose
+start-up check passes (`_gpu_check`: GPU and OpenCV CPU on a fixed test input, within `GPU_TOLERANCE` 1%, and
+faster by median of 5 runs; decisions printed and in `face_id.GPU_DECISIONS`); else the CPU. Tried on this PC with
+ONNX Runtime's CPU standing in for the GPU (2026-11-10): ArcFace and eDifFIQA 0.00% apart from OpenCV, so real
+models pass the agreement part. Not yet run on an actual CUDA or CoreML machine.
 The NPU needs the Ryzen AI env's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`) and
 the static model in `models\npu\`; `tools/hw_bench.py` compiles it and re-measures all three
 (`data/hw_bench.json`). `tracker.py` prints `Recognition model: <name> on <device>` at startup.

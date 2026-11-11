@@ -151,7 +151,9 @@ macOS (14+, Apple Silicon) and Linux (Ubuntu 22.04+), from `face-recognizer/`:
 ```
 Platform differences live in `paths.py` (folders), `desktop.py` (open a folder, attention), `app.py` (WebView2
 camera hook on Windows only; on Linux the window is first tried in a child process, `--probe-window`, falling back to
-the browser) and `face_id.py` (DirectML on Windows; CoreML/CUDA only with FACE_DEVICE=gpu until measured). Online-only
+the browser) and `face_id.py` (`auto` decides from the hardware: DirectML on Windows; CUDA or CoreML per model after a start-up check against
+the CPU, `_gpu_check`; `setup.sh` installs `onnxruntime-gpu[cuda,cudnn]` instead of `onnxruntime` when `nvidia-smi`
+works). Online-only
 cloud files (`photofiles.py`) are handled on Windows only. Ports: `FACE_PORTS=<n>` moves the app window's 8764-8766.
 
 ## Checks before committing

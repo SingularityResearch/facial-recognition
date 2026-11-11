@@ -3,6 +3,8 @@ hw_bench.py - measure the face models on this computer's CPU, GPU and NPU.
 
 Run with the Ryzen AI environment's Python (it has ONNX Runtime with the NPU and GPU providers):
   X:\\ProgramData\\miniconda3\\envs\\ryzen-ai-1.8.0\\python.exe tools\\hw_bench.py
+On Linux with an NVIDIA card (CUDA, after ./setup.sh) or on macOS (CoreML):
+  .venv/bin/python tools/hw_bench.py
 
 For each processor it reports milliseconds per face and how closely the face prints match
 the CPU's (cosine similarity 1.000 = identical), since the NPU computes in 16-bit BF16.
@@ -13,7 +15,6 @@ import time
 from pathlib import Path
 
 import numpy as np
-import onnx
 import onnxruntime as ort
 
 HERE = Path(__file__).resolve().parent.parent
@@ -26,6 +27,10 @@ def static_copy(src, batch=1):
     """The NPU compiler needs fixed tensor shapes: pin the batch dimension."""
     dst = NPU_DIR / f"{src.stem}_b{batch}.onnx"
     if not dst.exists():
+        try:
+            import onnx
+        except ImportError:                        # only the NPU needs it; CPU, CUDA and CoreML take the original
+            return src
         m = onnx.load(str(src))
         for t in list(m.graph.input) + list(m.graph.output):
             d = t.type.tensor_type.shape.dim
@@ -39,7 +44,10 @@ def static_copy(src, batch=1):
 def faces(n):
     """n aligned 112x112 face crops from the face database, as BGR uint8."""
     import cv2
-    z = np.load(HERE / "data" / "thumbs.npz", allow_pickle=False)    # face pictures: kept on this computer only
+    path = HERE / "data" / "thumbs.npz"            # face pictures: kept on this computer only
+    if not path.exists():
+        sys.exit("No data/thumbs.npz (it isn't in git): add some photos in the labeling tool first")
+    z = np.load(path, allow_pickle=False)
     jpg, off = z["thumbs"], z["thumb_off"]
     have = [i for i in range(len(off) - 1) if off[i + 1] > off[i]]
     if not have:
@@ -51,6 +59,9 @@ def faces(n):
 def arcface_input(crops):
     x = np.stack([c[:, :, ::-1] for c in crops]).astype(np.float32)      # BGR -> RGB
     return ((x - 127.5) / 127.5).transpose(0, 3, 1, 2).copy()
+
+
+GPU_PROVIDERS = ["DmlExecutionProvider", "CUDAExecutionProvider", "CoreMLExecutionProvider"]
 
 
 def session(model, provider):
@@ -68,7 +79,12 @@ def session(model, provider):
                 "enable_cache_file_io_in_mem": 0}
         return ort.InferenceSession(str(model), so, providers=["VitisAIExecutionProvider"], provider_options=[opts])
     if provider == "GPU":
-        return ort.InferenceSession(str(model), so, providers=["DmlExecutionProvider"])
+        gpu = next((p for p in GPU_PROVIDERS if p in ort.get_available_providers()), None)
+        if gpu is None:
+            raise RuntimeError("no GPU provider in this ONNX Runtime")
+        if gpu == "CUDAExecutionProvider" and hasattr(ort, "preload_dlls"):
+            ort.preload_dlls()                     # CUDA and cuDNN from pip (onnxruntime-gpu[cuda,cudnn])
+        return ort.InferenceSession(str(model), so, providers=[gpu])
     return ort.InferenceSession(str(model), so, providers=["CPUExecutionProvider"])
 
 

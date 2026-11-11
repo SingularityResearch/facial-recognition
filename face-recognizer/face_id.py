@@ -168,13 +168,18 @@ ARC_TEMPLATE = np.array([[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.73
 
 
 # Where the neural networks run. FACE_DEVICE = auto (default) | gpu | npu | cpu
-#   gpu  ONNX Runtime + DirectML (Windows: any DirectX 12 GPU; on this PC the Radeon 8060S): fastest. On macOS
-#        CoreML and on Linux CUDA (onnxruntime-gpu installed) are tried too, but only when asked for (gpu, not
-#        auto): their results haven't been compared with the measured ones yet (tools/hw_bench.py does that)
-#   npu  ONNX Runtime + VitisAI (Ryzen AI NPU; run from the ryzen-ai conda env): low power, but
-#        measured slower than the GPU and CPU for one face at a time; first start compiles ~6 min
+#   auto Looks at the hardware and decides, per model, when the program starts:
+#        - Windows, any DirectX 12 GPU: ONNX Runtime + DirectML (measured: same results, 3-4x faster than the CPU).
+#        - NVIDIA card (CUDA, onnxruntime-gpu: setup.sh installs it when nvidia-smi works) or Apple Silicon
+#          (CoreML): used only after a check at start (_gpu_check) shows the GPU gives the same results as the
+#          CPU path (OpenCV) on a test input and is faster; otherwise the model stays on the CPU. The decision
+#          is printed and shows in each program's list of which processor runs each model.
+#        - otherwise the CPU (OpenCV).
+#        The NPU is never chosen by itself: measured slower than the GPU and the CPU for one face at a time.
+#   gpu  the GPU when there is one, without the check (CUDA and CoreML even when slower or different)
+#   npu  ONNX Runtime + VitisAI (Ryzen AI NPU; run from the ryzen-ai conda env): low power, but slower; first
+#        start compiles ~6 min
 #   cpu  OpenCV DNN
-#   auto DirectML if available, else CPU (every system: Windows, macOS, Linux)
 # Measured on this PC (ArcFace, one face): GPU 2.6-3.6 ms, CPU 12 ms, NPU 25 ms.
 DEVICE = os.environ.get("FACE_DEVICE", "auto").lower()
 
@@ -185,6 +190,11 @@ DEVICE = os.environ.get("FACE_DEVICE", "auto").lower()
 # loaded or ran one crashed onnxruntime itself at start-up. Both are serialized here. A run takes
 # ~3 ms, so waiting costs little.
 ACCEL_LOCK = threading.Lock()
+
+# GPUs that are checked at start before auto uses them (DirectML is measured, see DEVICE)
+CHECKED_GPU = [("CUDAExecutionProvider", "CUDA"), ("CoreMLExecutionProvider", "CoreML")]
+GPU_TOLERANCE = 0.01        # largest relative difference from the CPU's answer (|gpu - cpu| / |cpu|) to count as same
+GPU_DECISIONS = {}          # model file -> what the check found, for the startup log
 
 
 def _ort_runner(path, npu_static=None):
@@ -209,21 +219,95 @@ def _ort_runner(path, npu_static=None):
                 sess = ort.InferenceSession(str(npu_static), so, providers=["VitisAIExecutionProvider"],
                                             provider_options=[opts])
             return _locked(sess), "NPU (Ryzen AI)"
-    if DEVICE in ("auto", "gpu") and "DmlExecutionProvider" in avail:
+    if DEVICE not in ("auto", "gpu"):
+        return None
+    if "DmlExecutionProvider" in avail:
         with ACCEL_LOCK:                         # loading a model while another runs crashed onnxruntime too
             sess = ort.InferenceSession(str(path), so, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
         return _locked(sess), "GPU (DirectML)"
-    for provider, label in UNMEASURED_GPU:          # only when asked for by name (FACE_DEVICE=gpu), see DEVICE
-        if DEVICE == "gpu" and provider in avail:
+    for provider, name in CHECKED_GPU:
+        if provider not in avail:
+            continue
+        if provider == "CUDAExecutionProvider":
+            _preload_cuda(ort)
+        try:
             with ACCEL_LOCK:
                 sess = ort.InferenceSession(str(path), so, providers=[provider, "CPUExecutionProvider"])
-            return _locked(sess), label
+        except Exception as e:
+            _decided(path, f"{name} couldn't load it ({str(e)[:120]}): CPU")
+            continue
+        if sess.get_providers()[0] != provider:              # the driver or libraries were missing
+            _decided(path, f"{name} isn't working on this computer: CPU")
+            continue
+        if DEVICE == "gpu":
+            _decided(path, f"{name}, asked for with FACE_DEVICE=gpu (not checked)")
+            return _locked(sess), f"GPU ({name}, not checked)"
+        x = _test_input(sess)
+        if x is None:
+            _decided(path, f"{name}: can't make a test input for this model: CPU")
+            continue
+        gpu = _locked(sess)
+        ok, why = _gpu_check(gpu, _cv_runner(path), x)
+        _decided(path, f"{name}: {why}: {'GPU' if ok else 'CPU'}")
+        if ok:
+            return gpu, f"GPU ({name}, checked)"
     return None
 
 
-# GPU paths not yet compared with the measured ones (DirectML, OpenCV CPU): used only with FACE_DEVICE=gpu
-UNMEASURED_GPU = [("CoreMLExecutionProvider", "GPU (CoreML, not yet measured)"),
-                  ("CUDAExecutionProvider", "GPU (CUDA, not yet measured)")]
+def _decided(path, text):
+    GPU_DECISIONS[Path(path).name] = text
+    print(f"{Path(path).name}: {text}", file=sys.stderr, flush=True)
+
+
+def _test_input(sess):
+    """A fixed test input for the model's first input (unknown sizes taken as 1), or None if it isn't float."""
+    inp = sess.get_inputs()[0]
+    if inp.type != "tensor(float)":
+        return None
+    shape = [d if isinstance(d, int) and d > 0 else 1 for d in inp.shape]
+    return np.random.default_rng(0).uniform(-1, 1, shape).astype(np.float32)
+
+
+def _gpu_check(gpu, cpu, x, runs=5):
+    """Decide whether to use the GPU for one model: (use it, why). run(x) callables for each. Same results
+    (within GPU_TOLERANCE of the CPU's) and faster (median of `runs`, after one run each to warm up)."""
+    try:
+        a = np.asarray(gpu(x), np.float64).ravel()
+        b = np.asarray(cpu(x), np.float64).ravel()
+    except Exception as e:
+        return False, f"test run failed ({str(e)[:120]})"
+    if a.shape != b.shape or not np.all(np.isfinite(a)):
+        return False, "different results from the CPU"
+    diff = float(np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-6))
+    if diff > GPU_TOLERANCE:
+        return False, f"different results from the CPU ({diff:.1%} apart)"
+
+    def median_ms(run):
+        times = []
+        for _ in range(runs):
+            t = time.perf_counter()
+            run(x)
+            times.append((time.perf_counter() - t) * 1000)
+        return float(np.median(times))
+    g, c = median_ms(gpu), median_ms(cpu)
+    if g >= c:
+        return False, f"same results but not faster ({g:.1f} ms vs {c:.1f} ms on the CPU)"
+    return True, f"same results ({diff:.2%} apart), {g:.1f} ms vs {c:.1f} ms on the CPU"
+
+
+_cuda_loaded = False
+
+
+def _preload_cuda(ort):
+    """onnxruntime-gpu[cuda,cudnn] (setup.sh, NVIDIA on Linux) brings CUDA and cuDNN as pip packages: load them
+    before the first CUDA session, or it looks only in the system's library folders."""
+    global _cuda_loaded
+    if not _cuda_loaded and hasattr(ort, "preload_dlls"):
+        _cuda_loaded = True
+        try:
+            ort.preload_dlls()
+        except Exception:                         # a system-wide CUDA install still works without it
+            pass
 
 
 def _locked(sess):

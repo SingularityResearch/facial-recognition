@@ -16,7 +16,21 @@ fi
 echo "Using $("$PY" --version)"
 [ -x .venv/bin/python ] || "$PY" -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
+ORT_GPU="onnxruntime-gpu[cuda,cudnn]==1.24.4"     # same version as requirements.txt's onnxruntime
+if [ "$(uname)" = "Linux" ] && nvidia-smi >/dev/null 2>&1; then
+  # NVIDIA card with a working driver: ONNX Runtime with CUDA (the CUDA and cuDNN libraries come from pip, no
+  # CUDA toolkit needed). It replaces plain onnxruntime: both install the same files, like the two OpenCVs.
+  echo "NVIDIA GPU found: installing ONNX Runtime with CUDA."
+  grep -v '^onnxruntime==' requirements.txt > .venv/requirements-nvidia.txt
+  .venv/bin/python -m pip install -r .venv/requirements-nvidia.txt
+  if .venv/bin/python -m pip show onnxruntime >/dev/null 2>&1; then
+    .venv/bin/python -m pip uninstall -y onnxruntime
+    .venv/bin/python -m pip install --force-reinstall --no-deps "onnxruntime-gpu==1.24.4"
+  fi
+  .venv/bin/python -m pip install "$ORT_GPU"
+else
+  .venv/bin/python -m pip install -r requirements.txt
+fi
 if [ "$(uname)" = "Linux" ]; then
   # the app window: Qt's web view, which brings its own browser engine (no system packages needed)
   .venv/bin/python -m pip install "pywebview[qt]==6.2.1" || echo "(No app window libraries: the app will open in your web browser.)"
