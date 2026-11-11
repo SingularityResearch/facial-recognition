@@ -389,6 +389,10 @@ listed by LM Studio at once; `lms get` from Hugging Face ran at ~2 MB/s (~2 h). 
 LM Studio's own download as a paused job that hides the model (cleared from `download-jobs-info.json` and
 `single-downloads-info.json`, backups kept); the app now says so if a copied model isn't listed. Describe photo on 
 the Linux laptop's 35B: 9 s for the first photo (model load, split between the RTX 4060 and RAM), 3 s after.
+Describe all shared between the two (`describe.helpers`, Settings "Share Describe all with other computers",
+2026-11-11, 2 sets of 40 library photos each way, test copy): the PC alone 134.6 / 138.4 s (3.4 s a photo); with the
+laptop helping over Wi-Fi 99.4 / 86.7 s, the laptop doing 13 of 40 each time (~7 s a photo from the PC, against 3 s
+asked on the laptop itself: Wi-Fi and the PC's 1024 px JPEGs), the PC's own rate unchanged: 1.5x overall.
 The NPU needs the Ryzen AI env's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`) and
 the static model in `models\npu\`; `tools/hw_bench.py` compiles it and re-measures all three
 (`data/hw_bench.json`). `tracker.py` prints `Recognition model: <name> on <device>` at startup.

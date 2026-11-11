@@ -12,6 +12,12 @@ models read pictures, so their first model is used unless one is picked. Reasoni
 (reasoning_effort "none"): with it, Qwen 3.6 35B-A3B spent ~350 of 400 tokens thinking (6.6 s a photo);
 without it, 3.3 s for the same description.
 
+Describe all can also share the photos out among the other LM Studio servers on the local network that have the
+same vision model (Settings: "spread", off by default, as it sends photos to those computers): one photo at a time
+to each server, each taking the next as it finishes, so a faster computer takes more (one server answering 3 at
+once slowed to 45 s a photo: see label_tool's describe_all). A server that fails twice in a row is left out and
+its photo goes back to the others; the configured server keeps going to the end.
+
 When LM Studio isn't there (not running, or no vision model in it), the built-in Florence-2 model (florence.py,
 downloaded on request, 0.8 GB) describes instead: plainer and less accurate, about 3.4 s a photo on the CPU.
 
@@ -35,7 +41,7 @@ import paths
 URL = os.environ.get("FACE_LLM_URL", "http://127.0.0.1:1234").rstrip("/")    # the default server
 HOME = paths.HOME                # %APPDATA%\FaceLabels
 STORE = HOME / "descriptions.json"
-CONFIG = HOME / "describe.json"  # the Settings tab's choices: {"use", "url", "model", "key"}
+CONFIG = HOME / "describe.json"  # the Settings tab's choices: {"use", "url", "model", "key", "spread"}
 USES = ("auto", "server", "builtin")   # server if it answers, else built-in / the server only / the built-in model only
 TIMEOUT = 300                    # the first call may wait for LM Studio to load the model
 PROMPT = ("Describe this photo for someone sorting a family photo library, in 2-3 short sentences: the setting "
@@ -53,14 +59,15 @@ class Unavailable(Exception):
 
 # --------------------------------------------------------------------------- settings
 def config():
-    """{"use", "url", "model", "key"} with the defaults filled in."""
+    """{"use", "url", "model", "key", "spread"} with the defaults filled in. spread: Describe all also uses the
+    other LM Studio servers on the local network that have the same model (off unless chosen in Settings)."""
     try:
         with _cfg_lock:
             c = json.loads(CONFIG.read_text("utf-8"))
     except (OSError, ValueError):
         c = {}
     c = {"use": c.get("use") if c.get("use") in USES else "auto", "url": c.get("url") or URL,
-         "model": c.get("model") or "", "key": c.get("key") or ""}
+         "model": c.get("model") or "", "key": c.get("key") or "", "spread": c.get("spread") is True}
     return c
 
 
@@ -98,6 +105,8 @@ def set_config(**kw):
         c["model"] = str(kw["model"] or "").strip()[:200]
     if "key" in kw:
         c["key"] = str(kw["key"] or "").strip()[:500]
+    if "spread" in kw:
+        c["spread"] = kw["spread"] is True
     with _cfg_lock:
         paths.atomic_write(CONFIG, json.dumps(c, indent=1))
     return c
@@ -229,6 +238,8 @@ def status():
         out.update(ok=True, model=model(found))
     except Unavailable as e:
         out.update(ok=False, why=str(e))
+    out["config"]["spread"] = c["spread"]
+    out["helpers"] = helpers(out.get("model")) if out["ok"] else []
     return out
 
 
@@ -243,8 +254,43 @@ def test(url, key=None):
     return f"The server answers: {len(ms)} model(s){': ' + ', '.join(m for m, _ in ms[:5]) if ms else ''}"
 
 
-def ask(jpeg, name=None):
-    """Describe one JPEG with the local model. Returns {"text", "model", "secs"}."""
+def helpers(name):
+    """The other LM Studio servers Describe all may also send photos to: [{"host", "url"}], only with "spread"
+    on, a server model (not the built-in one) and on this computer's local network (hardware.lmstudio_network:
+    found by port and mDNS on its own networks). Each must list the same model as a vision model, so every
+    description comes from the same model. The configured server itself isn't one of them. No API key goes to them."""
+    c = config()
+    if not c["spread"] or c["use"] == "builtin" or not name or name == florence.NAME:
+        return []
+    import hardware
+    main_here = where(c["url"])[0] == "this computer"
+    out = []
+    for e in hardware.lmstudio_network():
+        if c["url"] in e["urls"] or (main_here and e["this_computer"]) or where(e["urls"][0])[0] == "the internet":
+            continue
+        if not any(m["id"] == name and m["vision"] for m in e["models"]):
+            continue
+        # the address that connects first (a computer on Wi-Fi and wired answers at both)
+        best = min(e["urls"], key=_connect_secs)
+        out.append({"host": e["host"], "url": best})
+    return out
+
+
+def _connect_secs(url):
+    """Seconds to open a connection to url's host and port (9 if it doesn't)."""
+    import socket
+    u = urlparse(url)
+    t = time.perf_counter()
+    try:
+        with socket.create_connection((u.hostname, u.port or 80), timeout=0.5):
+            return time.perf_counter() - t
+    except OSError:
+        return 9.0
+
+
+def ask(jpeg, name=None, url=None):
+    """Describe one JPEG with the local model, or with the server at url (one of helpers(): no API key is sent
+    there). Returns {"text", "model", "secs"}."""
     name = name or model()
     if name == florence.NAME:
         try:
@@ -257,10 +303,11 @@ def ask(jpeg, name=None):
                 {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()}}]}]}
     t, c = time.time(), config()
     headers = {"Content-Type": "application/json"}
-    if c["key"]:
-        headers["Authorization"] = "Bearer " + c["key"]
+    key = c["key"] if url is None or url == c["url"] else ""      # a key belongs to its own server only
+    if key:
+        headers["Authorization"] = "Bearer " + key
     for attempt in (0, 1):
-        req = urllib.request.Request(c["url"] + "/v1/chat/completions", data=json.dumps(body).encode(), headers=headers)
+        req = urllib.request.Request((url or c["url"]) + "/v1/chat/completions", data=json.dumps(body).encode(), headers=headers)
         try:
             out = _open(req, TIMEOUT)
             break

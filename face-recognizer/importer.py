@@ -50,6 +50,7 @@ class Importer:
         self.stop = threading.Event()
         self.job_lock = threading.Lock()          # imports, possible-face scans and Describe all: one at a time
         self._more_cache = {}                     # (photo, frame) -> (image, possible-face rows)
+        self._more_lock = threading.Lock()        # a drawn face's detector: one at a time (_points_in)
 
     def start(self, folder):
         folder = Path(str(folder).strip().strip('"'))

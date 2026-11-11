@@ -37,7 +37,7 @@ def test_where(url, place, open_net):
 
 
 def test_settings_round_trip_and_defaults(home):
-    assert D.config() == {"use": "auto", "url": D.URL, "model": "", "key": ""}
+    assert D.config() == {"use": "auto", "url": D.URL, "model": "", "key": "", "spread": False}
     D.set_config(use="server", url="192.168.1.20:1234", model="m" * 300, key="k")
     c = D.config()
     assert c["use"] == "server" and c["url"] == "http://192.168.1.20:1234" and len(c["model"]) == 200 and c["key"] == "k"
@@ -109,3 +109,43 @@ def test_answers_are_capped(home, serve, monkeypatch):
     url = serve(_Recorder)
     with pytest.raises(ValueError):
         D._open(D.urllib.request.Request(url + "/v1/models"), 5)
+
+
+def test_helpers_are_other_lm_studio_servers_with_the_same_model(home, monkeypatch):
+    import hardware
+    net = [{"host": "here", "this_computer": True, "urls": ["http://192.168.1.10:1234"],
+            "models": [{"id": "qwen/qwen3.6-35b-a3b", "vision": True}]},
+           {"host": "linux-box", "this_computer": False, "urls": ["http://192.168.1.18:1234"],
+            "models": [{"id": "qwen/qwen3.6-35b-a3b", "vision": True}]},
+           {"host": "old-box", "this_computer": False, "urls": ["http://192.168.1.19:1234"],
+            "models": [{"id": "qwen/qwen2.5-vl-7b", "vision": True}]}]
+    monkeypatch.setattr(hardware, "lmstudio_network", lambda: net)
+    monkeypatch.setattr(D, "_connect_secs", lambda u: 0.001)
+    assert D.helpers("qwen/qwen3.6-35b-a3b") == []                     # off unless chosen
+    D.set_config(spread=True)
+    assert D.config()["spread"] is True
+    assert D.helpers("qwen/qwen3.6-35b-a3b") == [{"host": "linux-box", "url": "http://192.168.1.18:1234"}]
+    assert D.helpers(D.florence.NAME) == []                            # the built-in model runs here only
+    D.set_config(url="http://192.168.1.18:1234")                       # the server set is the Linux box: here helps
+    assert [h["host"] for h in D.helpers("qwen/qwen3.6-35b-a3b")] == ["here"]
+
+
+class _Describer(_Recorder):
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        type(self).seen.append((self.server.server_address[1], self.path, self.headers.get("Authorization")))
+        body = b'{"choices": [{"message": {"content": "A beach. Text: none"}}]}'
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def test_no_key_goes_to_a_helper(home, serve):
+    _Describer.seen, _Describer.target = [], None
+    main, helper = serve(_Describer), serve(_Describer)
+    D.set_config(url=main, key="SECRET")
+    assert D.ask(b"jpeg", "m1", helper)["text"] == "A beach. Text: none"
+    assert D.ask(b"jpeg", "m1")["text"]
+    by_port = {p: k for p, path, k in _Describer.seen}
+    assert by_port == {int(helper.rsplit(":", 1)[1]): None, int(main.rsplit(":", 1)[1]): "Bearer SECRET"}

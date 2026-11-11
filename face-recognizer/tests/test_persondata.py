@@ -1,6 +1,6 @@
 """persondata.py and the labeling tool's person routes, on a made-up data folder and private folder: everything held
 about one person exported, then forgotten everywhere (their faces kept only as Ignored places); plus the labeling
-tool's Describe all going on past an unreadable photo."""
+tool's Describe all going on past an unreadable photo, and shared out among LM Studio servers."""
 import json
 import re
 import threading
@@ -191,7 +191,7 @@ def test_describe_all_goes_on_past_an_unreadable_photo(data, home, serve, tmp_pa
     db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
     imp = L.Importer(db)
     monkeypatch.setattr(describe, "model", lambda: "test-model")
-    monkeypatch.setattr(describe, "ask", lambda jpg, name=None: {"text": "a photo", "model": "test-model"})
+    monkeypatch.setattr(describe, "ask", lambda jpg, name=None, url=None: {"text": "a photo", "model": "test-model"})
     monkeypatch.setattr(L, "online_only", lambda p: False)
     monkeypatch.setattr(F, "load_image", lambda p: None if p.endswith("p5.jpg") else np.zeros((20, 20, 3), np.uint8))
     url = serve(label_tool.make_handler(db, imp))
@@ -201,3 +201,42 @@ def test_describe_all_goes_on_past_an_unreadable_photo(data, home, serve, tmp_pa
     assert st["stage"] == "Done" and st["done"] == 8 and st["new"] == 7 and st["errors"] == 1, st
     assert st["problems"] == [{"file": str(tmp_path / "p5.jpg"), "why": "OSError: unreadable"}]
     assert describe.count() == 7 and time.time() - st["started"] < 10
+
+
+@pytest.mark.parametrize("helper_works", [True, False])
+def test_describe_all_shares_photos_with_other_servers(data, home, serve, tmp_path, monkeypatch, helper_works):
+    """With other LM Studio servers (describe.helpers), each takes photos as it finishes; one that fails twice is
+    left out, its photos go back to the others, and every photo is still described once."""
+    make_faces(data, 4)
+    photos = {}
+    for k in range(30):
+        f = tmp_path / f"p{k}.jpg"
+        f.write_bytes(b"x")
+        photos[f"h{k}"] = {"path": str(f)}
+    (data / "photos.json").write_text(json.dumps(photos))
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    imp = L.Importer(db)
+    asked = []
+
+    def ask(jpg, name=None, url=None):
+        asked.append(url)
+        time.sleep(0.01)
+        if url and not helper_works:
+            raise describe.Unavailable("The describe server didn't answer")
+        return {"text": "a photo", "model": name}
+    monkeypatch.setattr(describe, "model", lambda: "test-model")
+    monkeypatch.setattr(describe, "helpers", lambda name: [{"host": "other", "url": "http://192.168.1.30:1234"}])
+    monkeypatch.setattr(describe, "ask", ask)
+    monkeypatch.setattr(L, "online_only", lambda p: False)
+    monkeypatch.setattr(F, "load_image", lambda p: np.zeros((20, 20, 3), np.uint8))
+    url = serve(label_tool.make_handler(db, imp))
+    assert _post(url, "/api/describe/all", {})[0] == 200
+    imp.thread.join(10)
+    st = imp.status
+    assert st["stage"] == "Done" and st["done"] == 30 and st["new"] == 30 and st["errors"] == 0, st
+    assert describe.count() == 30 and sum(st["by"].values()) == 30
+    if helper_works:
+        assert st["by"]["other"] > 0 and st["by"]["this computer"] > 0 and not st.get("left_out")
+    else:
+        assert st["by"]["other"] == 0 and asked.count("http://192.168.1.30:1234") == 2
+        assert st["left_out"][0].startswith("other (failed twice")

@@ -1067,17 +1067,21 @@ if ($("optVoice").checked) startVoice();
 for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change", () => SettingsBridge.changed());   // the Settings tab's list
 // The app window's Settings tab (settings_bridge.js): every option of this page, in sections
 {
-  const c = SettingsBridge.control, D = "Face tracking: display", E = "Face tracking: expression and signals",
-        R = "Face tracking: recognition", A = "Face tracking: alerts and presence log";
+  const c = SettingsBridge.control, C = "Face tracking: camera", D = "Face tracking: display",
+        E = "Face tracking: expression", S = "Face tracking: voice, pulse and posture", R = "Face tracking: recognition",
+        A = "Face tracking: alerts", P = "Face tracking: presence log";
   SettingsBridge.init("track", [
-    c("camSelect", "Face tracking: camera", { noReset: true }),
-    c("optMirror", D, { hint: "Turned on for the webcam and off for video files when the source starts." }),
+    c("camSelect", C, { noReset: true }),
+    c("optMirror", C, { hint: "Turned on for the webcam and off for video files when the source starts." }),
     c("optPoints", D), c("optMesh", D), c("optMeshStrength", D), c("optTrail", D), c("optUnknown", D), c("optBlur", D),
     c("optSmooth", D, { hint: "How much the boxes are smoothed between frames." }),
     c("optExpr", E), c("optCalib", E, { hint: $("exprHint").textContent }), c("optEvidence", E),
-    c("optVoice", E), c("optPulse", E), c("optPose", E),
-    c("optTalkGate", E), c("optState", E), c("optHandGate", E, { hint: $("signalsHint").textContent }),
+    c("optTalkGate", E), c("optState", E),
+    c("optHandGate", E, { hint: "The two \"skip\" options and the state model change the expression reading and aren't measured yet: they stay off until the Expression test and tools/expr_eval.py show they help." }),
     c("feelEvery", E, { label: "Ask how I feel (feeling check)" }),
+    c("optVoice", S, { hint: "Analysed live and never recorded: loudness, pitch, speaking rate, and the voice model's arousal and valence." }),
+    c("optPulse", S, { hint: "Reads tiny skin-colour changes; needs a still face in steady light." }),
+    c("optPose", S, { hint: "Head height, shoulders, lean, body movement, breathing, hand on face and crossed arms." }),
     c("optThresh", R, { hint: "Higher strictness means fewer wrong names but more \"Unknown\". The default is the measured best for the active model." }),
     c("optCollect", R, { hint: $("collectHint").textContent }),
     { section: A, id: "alertList", label: "Alert me about these people", type: "multi",
@@ -1100,9 +1104,9 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
       } },
     c("optAlertArrive", A), c("optAlertLeave", A), c("optAlertUnusual", A), c("optAlertUnknown", A, { label: "An unknown face stays" }),
     c("optArriveGap", A), c("optLeaveGap", A), c("optUnknownStay", A), c("optUnusualZ", A), c("optUnusualFor", A),
-    c("optUnusualRepeat", A), c("optDetailsAfter", A), c("optBannerFor", A),
+    c("optUnusualRepeat", A), c("optDetailsAfter", A, { label: "Alert details: measure again after" }), c("optBannerFor", A),
     c("optAlertSound", A, { hint: $("alertHint").textContent }),
-    c("optPresence", A, { hint: "Names and times only, no pictures, in %APPDATA%\\FaceLabels\\presence\\ on this computer." }),
+    c("optPresence", P, { hint: "Names and times only, no pictures, in %APPDATA%\\FaceLabels\\presence\\ on this computer." }),
   ], { forgetPerson, openAlerts });
 }
 // A person forgotten in the labeling tool (its "Their data…"; the app window's tab sends this): what this page

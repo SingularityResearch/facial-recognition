@@ -97,9 +97,11 @@ def make_handler(db, importer):
     def describe_all():
         """Describe every photo not described yet (not videos, duplicates or online-only cloud files) in the
         background; progress in importer.status so the page's progress bar shows it, and the page's Stop button
-        stops it. One request to LM Studio at a time, the next photos loading meanwhile: with 3 at once, LM Studio's
-        log showed generation falling from 48 to 1.3 tokens/s per request (Qwen 3.6 35B-A3B), 45 s a photo
-        instead of about 3.5 s."""
+        stops it. One request to each server at a time, the next photos loading meanwhile: with 3 at once, LM
+        Studio's log showed generation falling from 48 to 1.3 tokens/s per request (Qwen 3.6 35B-A3B), 45 s a photo
+        instead of about 3.5 s. With "spread" on (Settings), the other LM Studio servers on the network with the
+        same model each take the next photo as they finish (describe.helpers); a helper that fails twice in a row
+        is left out and its photo goes back to the others."""
         with importer.job_lock:                  # one background job at a time (imports, scans, this)
             _describe_all()
 
@@ -119,49 +121,17 @@ def make_handler(db, importer):
                             if p.get("path") and not p.get("video") and not p.get("dup_of")]
                 todo = [(h, p) for h, p in todo if not describe.saved(h)]
                 st["total"] = len(todo)
-
-                def load(item):                     # on 2 loader threads, a few photos ahead
-                    h, path = item
-                    if not Path(path).exists() or L.online_only(path):
-                        return h, None
-                    img = F.load_image(path)
-                    if img is None:
-                        raise OSError("unreadable")
-                    sc = min(1.0, 1024 / max(img.shape[:2]))
-                    if sc < 1:
-                        img = cv2.resize(img, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
-                    return h, cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
-                from concurrent.futures import ThreadPoolExecutor
-                with ThreadPoolExecutor(2) as ex:
-                    def submit(item):
-                        fu = ex.submit(load, item)
-                        fu.item = item                      # (hash, path): which photo, if it fails
-                        return fu
-                    window = [submit(it) for it in todo[:4]]
-                    nxt = 4
-                    while window and not importer.stop.is_set():
-                        fu = window.pop(0)
-                        if nxt < len(todo):
-                            window.append(submit(todo[nxt]))      # with .item, so a failure names its photo
-                            nxt += 1
-                        try:
-                            h, jpg = fu.result()
-                            if jpg is None:
-                                st["known"] += 1
-                            else:
-                                describe.save(h, describe.ask(jpg, name), write=False)
-                                st["new"] += 1
-                        except describe.Unavailable as e:
-                            L.note_problem(st, fu.item[1], str(e))
-                            if "isn't running" in str(e):
-                                raise
-                        except Exception as e:
-                            L.note_problem(st, fu.item[1], e)
-                        st["done"] += 1
-                        if st["done"] % 25 == 0:
-                            describe.flush()
-                    for fu in window:
-                        fu.cancel()
+                if todo:
+                    st["stage"] = "Finding LM Studio servers"
+                    servers = [{"host": "this computer" if describe.where(describe.config()["url"])[0] == "this computer"
+                                else urlparse(describe.config()["url"]).hostname, "url": None}]
+                    try:
+                        servers += describe.helpers(name)
+                    except Exception as e:              # the network search failed: describe here alone
+                        st["left_out"] = [f"the other computers (couldn't search the network: {e})"]
+                    st["by"] = {s["host"]: 0 for s in servers}
+                    st["stage"] = "Describing photos" + (f" on {len(servers)} computers" if len(servers) > 1 else "")
+                    _describe_on(servers, todo, name, st)
                 st["stage"] = "Stopped" if importer.stop.is_set() else "Done"
             except Exception as e:
                 st["error"] = f"{type(e).__name__}: {e}"
@@ -172,6 +142,104 @@ def make_handler(db, importer):
                 st["elapsed"] = round(time.time() - st["started"], 1)
         importer.thread = threading.Thread(target=run, daemon=True)
         importer.thread.start()
+
+    def _describe_on(servers, todo, name, st):
+        """Describe the photos in todo [(hash, path)] with one worker per server in servers [{"host", "url"}]
+        (url None: the configured server, which keeps going to the end). Loader threads read and shrink the
+        photos a few ahead; each worker takes the next one as it finishes. Counts go in st (importer.status)."""
+        import queue
+        work = queue.Queue()
+        for it in todo:
+            work.put(it)
+        ready = queue.Queue(maxsize=2 * len(servers) + 2)    # loaded photos waiting for a free server
+        back = queue.Queue()                                # photos a failing helper gave back: taken first
+        lock = threading.Lock()
+        left = [len(todo)]                                  # photos not finished yet (described, skipped, failed)
+        stop = importer.stop
+
+        def finish(n=1):
+            with lock:
+                left[0] -= n
+                st["done"] += n
+                if st["done"] % 25 == 0:
+                    describe.flush()
+
+        def load(item):
+            h, path = item
+            if not Path(path).exists() or L.online_only(path):
+                return None
+            img = F.load_image(path)
+            if img is None:
+                raise OSError("unreadable")
+            sc = min(1.0, 1024 / max(img.shape[:2]))
+            if sc < 1:
+                img = cv2.resize(img, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
+            return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
+
+        def loader():
+            while not stop.is_set():
+                try:
+                    item = work.get_nowait()
+                except queue.Empty:
+                    return
+                try:
+                    jpg = load(item)
+                except Exception as e:
+                    L.note_problem(st, item[1], e)
+                    finish()
+                    continue
+                if jpg is None:                             # not on this computer now (moved, online-only)
+                    with lock:
+                        st["known"] += 1
+                    finish()
+                    continue
+                while not stop.is_set():
+                    try:
+                        ready.put((item, jpg), timeout=0.5)
+                        break
+                    except queue.Full:
+                        pass
+
+        def worker(srv, main):
+            fails = 0
+            while not stop.is_set():
+                with lock:
+                    if left[0] <= 0:
+                        return
+                try:
+                    item, jpg = back.get_nowait()
+                except queue.Empty:
+                    try:
+                        item, jpg = ready.get(timeout=0.5)
+                    except queue.Empty:
+                        continue
+                try:
+                    d = describe.ask(jpg, name, srv["url"])
+                except Exception as e:
+                    if not main:                            # another computer: its photo goes back to the others
+                        back.put((item, jpg))
+                        fails += 1
+                        if fails >= 2:
+                            with lock:                      # shown on the progress bar, not as an unreadable photo
+                                st.setdefault("left_out", []).append(f"{srv['host']} (failed twice: {e})")
+                            return
+                        continue
+                    L.note_problem(st, item[1], str(e))
+                    finish()
+                    continue
+                fails = 0
+                describe.save(item[0], d, write=False)
+                with lock:
+                    st["new"] += 1
+                    st["by"][srv["host"]] = st["by"].get(srv["host"], 0) + 1
+                finish()
+
+        threads = [threading.Thread(target=loader, daemon=True) for _ in range(2 + len(servers))]
+        threads += [threading.Thread(target=worker, args=(s, k == 0), daemon=True) for k, s in enumerate(servers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
     def face_thumb(i, wait=False):
         """Face i's picture as JPEG, or None. A copy of the project from GitHub has no face pictures
@@ -397,7 +465,7 @@ def make_handler(db, importer):
                         raise ValueError(str(e)) from e
                     return self.send({"ok": True})
                 if path == "/api/describe/config":       # Settings: which describer, server, model, API key
-                    describe.set_config(**{k: body[k] for k in ("use", "url", "model", "key") if k in body})
+                    describe.set_config(**{k: body[k] for k in ("use", "url", "model", "key", "spread") if k in body})
                     return self.send({"ok": True})
                 if path == "/api/describe/test":         # Settings' Test button
                     try:

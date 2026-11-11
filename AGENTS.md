@@ -34,7 +34,7 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     `networkInterface` 0.0.0.0; a localhost-only server restarted with `lms server start --bind 0.0.0.0`), `announce`
     (mDNS `_lmstudio._tcp` + `_http._tcp` with its port: Windows `DnsServiceRegister`, macOS `dns-sd -R`, Linux
     `avahi-publish-service`; skipped when the computer announces it already), `missing_models` / `get_models` (vision
-    models other servers on the network have, from Settings → This computer's button: first from the shared models
+    models other servers on the network have, from Settings → LM Studio's button: first from the shared models
     folder, `from_share`, checked by SHA-256, removed again if a file fails; else `lms get <model>@<quant>`), `publish`
     (puts this computer's vision models in the shared folder: `<share>/models/...`, `<share>/hub/...`,
     `<share>/index.json` with each file's size and SHA-256; the folder is this computer's setting in
@@ -46,7 +46,7 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     `GPU_DECISIONS`, `import_workers`), `ai_apps` (AI model apps for Describe photo: the usual local ports, the
     configured describe server, installed apps, LM Studio's downloads, the LAN address when served to the network;
     cached a minute) and `lmstudio_network` (every LM Studio server on the local network: name, addresses, port,
-    models); the labeling tool's `/api/hardware` and `/api/hardware/network`, shown in Settings → This computer.
+    models); the labeling tool's `/api/hardware` and `/api/hardware/network`, shown in Settings → This computer and → LM Studio.
   - `paths.py` — `ROOT` (models\ and data\; `FACE_ROOT` overrides), `HOME` (`%APPDATA%\FaceLabels`; `FACE_HOME`
     overrides), `atomic_write`/`replace_file`. Every module takes its folders from here.
   - `labels.py` — labeling engine: per-face labels (`LabelDB`), auto-naming, duplicate-photo detection, undo history
@@ -86,14 +86,17 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `describe.py` — the labeling tool's **Describe photo**: a vision model in LM Studio on this computer
     (`127.0.0.1:1234`, `FACE_LLM_URL`; `reasoning_effort` none, ~3 s a photo) describes the photo and reads its text.
     The Settings tab can choose the describer (automatic / server only / built-in only), the server address (any
-    OpenAI-style server, also on another device or the internet, with a warning), the model and an API key:
+    OpenAI-style server, also on another device or the internet, with a warning), the model, an API key and
+    `spread` (off by default: Describe all also uses the other LM Studio servers on the LAN with the same model,
+    `helpers()`; one photo at a time each, a helper failing twice is left out; no API key goes to a helper):
     `%APPDATA%\FaceLabels\describe.json`, never `data/`;
     saved per photo in `%APPDATA%\FaceLabels\descriptions.json`, never `data/`. Told not to identify anyone.
     Without LM Studio: `florence.py`, the built-in Florence-2 large (ONNX int8, CPU only: DirectML gave garbage;
     ~3 s a photo; plainer and less accurate), 0.8 GB downloaded on request from Hugging Face (pinned revision, SHA-256)
     into `models/florence2/` (not in git, not in `fetch_models.py`).
   - `settings_bridge.js` — the app window's **Settings** tab (`app.py`) reads and changes each page's settings over
-    postMessage; each page lists its own (`SettingsBridge.init` at the end of its script) and applies changes through
+    postMessage; each page lists its own (`SettingsBridge.init` at the end of its script; the tab shows sections in
+    list order, tracker first: keep related rows in one section and the order in `docs/SETTINGS.md` the same) and applies changes through
     its own controls (`SettingsBridge.control(id, section)`) or its own get/set and actions. Served by both servers.
     Setting types: toggle, range, select, text, multi, info, button, form. The tab owns no settings itself.
   - `localguard.py` — what the three servers share: request checks (Host, `Sec-Fetch-Site`, `X-Face-Tool: 1`,

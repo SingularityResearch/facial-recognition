@@ -952,6 +952,9 @@ function showImport(st) {
   if (st.known) parts.push(descr ? `${st.known.toLocaleString()} not on this computer now` : st.folder === "possible faces" ? `${st.known.toLocaleString()} not on this computer now` : `${st.known.toLocaleString()} already added`);
   if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
   if (st.errors) parts.push(`${st.errors} unreadable`);
+  if (descr && st.by && Object.keys(st.by).length > 1)      // Describe all shared with other computers: who did how many
+    parts.push(Object.entries(st.by).map(([h, n]) => `${h} ${n.toLocaleString()}`).join(", "));
+  if (descr && st.left_out?.length) parts.push(`left out: ${st.left_out.join("; ")}`);
   // the folder's own name (the whole path is in the tooltip): the counts are what matter at a glance
   const where = cam ? "webcam snapshots" : (st.folder || "").split(/[\\/]/).filter(Boolean).pop() || "";
   parts.unshift(where);
@@ -1070,10 +1073,12 @@ $("#psort").onchange = () => { store.set("psort", $("#psort").value); loadSummar
 $("#tilesz").value = store.get("tile") || 88; setTile($("#tilesz").value);
 $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.target.value); };
 
-// The app window's Settings tab (settings_bridge.js): this page's settings, Web search keys and Describe photo
+// The app window's Settings tab (settings_bridge.js): this page's settings, Web search, Describe photo, LM Studio and
+// this computer's hardware, each group in its own section, in that order
 {
-  const c = SettingsBridge.control, L = "Labeling", W = "Web search", P = "Describe photo";
-  const flag = (id, key, label, def, hint) => ({ section: L, id, label, type: "toggle", def, hint,
+  const c = SettingsBridge.control, L = "Labeling", W = "Labeling: Web search", P = "Labeling: Describe photo",
+        M = "LM Studio", H = "This computer";
+  const flag = (section, id, key, label, def, hint) => ({ section, id, label, type: "toggle", def, hint,
     get: () => (store.get(key) ?? (def ? "1" : "0")) === "1",
     set: v => { store.set(key, v ? "1" : "0"); const el = $("#" + id); if (el) el.checked = !!v; } });
   let desc = {}, hw = {}, lms = {}, lmsOffer = false;
@@ -1081,90 +1086,10 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     c("tilesz", L, { label: "Face picture size" }),
     c("psort", L, { label: "Order of the people list" }),
     c("low", L, { label: "Show blurry faces", hint: "Faces too blurry or small to learn from are hidden from the review lists unless this is on." }),
-    flag("possible", "possible", "Show possible faces in photos", true,
+    flag(L, "possible", "possible", "Show possible faces in photos", true,
          "Dashed boxes on things the detector thinks may be faces (blurry, turned or partly hidden). Nothing is saved until you click one."),
-    flag("descauto", "describe", "Describe every photo as it's opened", false, "Uses the photo describer below; descriptions stay on this computer."),
     { section: L, id: "folders", label: "Photo folders added", type: "info",
       get: () => (SUM?.settings.folders || []).join("\n") || "None yet: use Add photos." },
-    { section: "This computer", id: "hwhas", label: "Hardware", type: "info",
-      hint: "What the app found on this computer when it started.",
-      get: async () => { const h = (await get("/api/hardware")).has;
-        return [`Processor: ${h.cpu}, ${h.threads} threads`, h.memory_gb ? `Memory: ${h.memory_gb} GB` : null,
-                `Graphics: ${h.gpus.length ? h.gpus.join("; ") : "none found"}`, `NPU: ${h.npu || "none found"}`,
-                `ONNX Runtime can use: ${h.onnxruntime.join(", ") || "not installed"}`, `${h.system}, Python ${h.python}`]
-          .filter(Boolean).join("\n"); } },
-    { section: "This computer", id: "hwnet", label: "LM Studio on the network", type: "info",
-      hint: "Every LM Studio server on this computer's local network: each computer's name, the addresses and port to reach it at, and the models it serves (which read pictures, which are loaded now). Found two ways, only while Settings is open: servers that announce themselves on the network (mDNS, _lmstudio._tcp) say their own address and port; the rest are found by trying LM Studio's port (1234, this computer's own LM Studio port, and any port announced) on each address of this computer's networks; Describe photo can use any of them (put its address in Server address).",
-      get: async () => { const s = (await get("/api/hardware/network")).servers || [];
-        if (!s.length) return "None found on this network (LM Studio's server must listen on all interfaces: Serve on local network).";
-        return s.map(e => {
-          const ms = e.models.filter(m => m.kind !== "embeddings").map(m => `${m.id}${m.vision ? " (reads pictures)" : ""}${m.loaded ? ", loaded" : ""}`);
-          return `${e.host}${e.this_computer ? " (this computer)" : ""}: ${e.urls.join(", ")}${e.announced ? " (announces itself)" : ""}\n  ${ms.length} model${ms.length === 1 ? "" : "s"}: ${ms.join("; ") || "none"}`;
-        }).join("\n"); } },
-    { section: "This computer", id: "lmshere", label: "LM Studio on this computer", type: "info",
-      hint: "While this app runs, LM Studio here is kept serving on all network interfaces and announced on the network (mDNS: LM Studio on <this computer>, with its port), so the other computers find it. FACE_LMSTUDIO=off turns that off.",
-      get: async () => { const s = lms = await get("/api/lmstudio");
-        if (!s.installed) return "Not installed (lmstudio.ai).";
-        const lines = [s.running ? `Server running on port ${s.port}, ${s.on_network ? "on all network interfaces" : "on this computer only"}` : "Server not running"];
-        if (s.bind) lines.push(`Changed: ${s.bind}`);
-        if (s.announced) lines.push(s.announced[0].toUpperCase() + s.announced.slice(1));
-        if (s.missing.length) lines.push("Missing vision models the other LM Studio servers have:",
-          ...s.missing.map(m => `  ${m.variant} (on ${m.from}): ${m.in_share ? "will be copied from the shared folder; from the internet if that fails" : "will be downloaded from the internet (not in the shared folder)"}`));
-        else lines.push("Has every vision model the other LM Studio servers on the network have.");
-        const sh = s.shared || {};
-        if (sh.share) lines.push(sh.reachable ? `Shared models folder: ${sh.models.length} model${sh.models.length === 1 ? "" : "s"} there${sh.models.length ? ` (${sh.models.join(", ")})` : ""}${sh.note ? `; ${sh.note}` : ""}`
-                                            : `Shared models folder ${sh.share} can't be reached`);
-        if (sh.note) setTimeout(SettingsBridge.changed, 10000);
-        const g = s.get;
-        if (g?.running) {
-          const pct = g.bytes && g.total ? g.bytes * 100 / g.total : g.pct || 0, n = Math.round(pct / 5);
-          lines.push(`${g.fallback ? `${g.fallback[0].toUpperCase() + g.fallback.slice(1)}: ` : ""}${g.how ? g.how[0].toUpperCase() + g.how.slice(1) : "Getting"}: ${g.now}`,
-                     `[${"#".repeat(n)}${"-".repeat(20 - n)}] ${amountText(g)}` + (g.done.length ? `; done: ${g.done.join(", ")}` : ""));
-          setTimeout(SettingsBridge.changed, 3000);
-        }
-        else if (g?.error) lines.push(`Download stopped: ${g.error}`);
-        if (g?.notes?.length) lines.push(...g.notes);
-        else if (g?.done?.length) lines.push(`Got: ${g.done.join(", ")}`);
-        if (!!s.missing.length !== lmsOffer) { lmsOffer = !!s.missing.length; setTimeout(SettingsBridge.changed, 0); }
-        return lines.join("\n"); } },
-    { section: "This computer", id: "lmsget", label: "Same models", type: "button",
-      button: () => `Get ${lms.missing?.length || 0} model${lms.missing?.length === 1 ? "" : "s"} (shared folder first, else the internet)`,
-      hidden: () => !lmsOffer || !!lms.get?.running,
-      hint: "Gets the vision models listed above into LM Studio's models folder, in this order: 1. copied from the Shared models folder when they're there (the very same files, each checked by SHA-256; fast on a local network); 2. if that copy fails in any way, or the model isn't there, downloaded from the internet with LM Studio (the same model and quantization; much slower). The bar at the top of the Labeling tab shows which, how far and how long. Large: tens of GB." },
-    { section: "This computer", id: "lmsshare", label: "Shared models folder", type: "text",
-      hint: "A folder every computer can reach, for example on a NAS (\\\\SERVER\\share\\lmstudio-models on Windows, /mnt/nas/share/lmstudio-models on Linux). Each computer with this app and LM Studio puts its vision models there, and gets the ones it lacks from there before downloading them. Empty: not used.",
-      hidden: () => !lms.installed,
-      get: () => lms.shared?.share || "",
-      set: v => post("/api/lmstudio/share", { folder: v }) },
-    { section: "This computer", id: "hwai", label: "AI model apps", type: "info",
-      hint: "Apps that can run a vision model for Describe photo: the usual ports on this computer (LM Studio, Ollama, Jan, llama.cpp, vLLM and others), the server set under Describe photo (which may be another device), and apps installed but not running. Nothing else on the network is asked.",
-      get: async () => { const a = (await get("/api/hardware")).ai || [];
-        if (!a.length) return "None found: LM Studio (lmstudio.ai) with a vision model, or the built-in describer below.";
-        return a.map(e => {
-          const state = e.running ? `running, ${e.models} model${e.models === 1 ? "" : "s"}` : "";
-          const sees = e.vision.length ? `reads pictures: ${e.vision.join(", ")}` : "";
-          const lan = e.lan?.length ? `other devices can use it at ${e.lan.join(", ")}` : (e.running && e.url?.includes("127.0.0.1") ? "this computer only" : "");
-          return `${e.app}${e.url ? ` (${e.url})` : ""}: ${[state, e.note, sees, lan].filter(Boolean).join("; ") || "not running"}`;
-        }).join("\n"); } },    { section: "This computer", id: "hwuses", label: "Where the work runs", type: "info",
-      hint: "The app picks the fastest way for each job by itself: a graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) is used for a model only after a check at start shows it gives the processor's answers, faster. To choose yourself, start the app with FACE_DEVICE set to gpu, cpu or npu.",
-      get: async () => { const u = (await get("/api/hardware")).uses, d = u.devices;
-        const was = !!hw.cuda_offer?.offer; hw = u;
-        if (!!u.cuda_offer?.offer !== was) setTimeout(SettingsBridge.changed, 0);   // show or hide the CUDA button
-        const job = (name, k) => d[k] ? `${name}: ${d[k]}` : null;
-        const lines = [job("Face finding", "detection"), job("Recognition (face prints)", "recognition"),
-                       job("Photo quality", "quality"), job("Expression", "expression"),
-                       job("Face shape cues", "cues"), job("Body posture", "pose")].filter(Boolean);
-        if (!lines.length) lines.push("Decided when the models first load (adding photos, or the face tracker).");
-        if (u.gpu_note) lines.push(u.gpu_note);
-        if (u.cuda) { lines.push(u.cuda); if (/downloading/.test(u.cuda)) setTimeout(SettingsBridge.changed, 3000); }
-        lines.push(`Adding photos: ${u.import_workers} at once; photos ${u.photos}`, `Videos: ${u.videos}`,
-                   `NPU: ${u.npu_note}`);
-        const why = Object.entries(u.decisions).map(([m, w]) => `  ${m}: ${w}`);
-        return lines.concat(why.length ? ["Checks at start:", ...why] : []).join("\n"); } },
-    { section: "This computer", id: "cudaget", label: "NVIDIA CUDA", type: "button",
-      button: () => `Download CUDA support (${(hw.cuda_offer?.gb || 1.9).toFixed(1)} GB)`,
-      hidden: () => !hw.cuda_offer?.offer,
-      hint: "Lets this app run its models on the NVIDIA card. Downloads NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA from PyPI (the public Python package index), for this app's Python 3.12, each checked by size and SHA-256, into the app's data folder (about 3.5 GB unpacked). Used from the next start; the app checks each model gives the same answers on the card before using it." },
     { section: W, id: "wskeys", label: "Keys", type: "info",
       hint: "Web search sends a face to Amazon (celebrity recognition) and its photo to Google (pages with the same picture), only when you click Web search. The keys are your own (how to make them: the Web search section of the README) and stay in %APPDATA%\\FaceLabels on this computer. Save an empty key to remove it.",
       get: async () => { const r = await get("/api/websearch/key");
@@ -1174,7 +1099,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     { section: W, id: "wsaws", label: "Amazon Rekognition key", type: "form", button: "Save",
       fields: [{ name: "id", placeholder: "Access key ID" }, { name: "secret", placeholder: "Secret access key", secret: true },
                { name: "region", placeholder: "us-east-1", size: 9 }] },
-    { section: P, id: "describer", label: "Describes photos", type: "info",
+    { section: P, id: "describer", label: "Describing with", type: "info",
       get: async () => {
         desc = await get("/api/describe/status");
         const b = desc.builtin || {};
@@ -1184,7 +1109,8 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                 b.running ? `Built-in model: ${Math.floor(b.done * 100 / (b.size_mb * 1e6))}% downloaded.`
                   : b.ready ? "Built-in model: downloaded." : b.error ? `Built-in model: ${b.error}` : "Built-in model: not downloaded."].join("\n");
       } },
-    { section: P, id: "describeUse", label: "Use", type: "select", def: "auto",
+    flag(P, "descauto", "describe", "Describe every photo as it's opened", false, "Runs Describe photo on each photo you open in the photo viewer, with the describer set here."),
+    { section: P, id: "describeUse", label: "Describer", type: "select", def: "auto",
       options: () => [["auto", "Automatic: the server, or the built-in model when it doesn't answer"],
                       ["server", "The server only"], ["builtin", "The built-in model only"]],
       get: () => desc.config?.use || "auto",
@@ -1210,10 +1136,101 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     { section: P, id: "describeKey", label: "API key", type: "form", button: "Save key", hidden: () => desc.config?.use === "builtin",
       hint: () => `Only if the server asks for one (for example behind a proxy). ${desc.config?.key ? "A key is saved." : "None saved."} Save an empty key to remove it. Kept in %APPDATA%\\FaceLabels on this computer.`,
       fields: [{ name: "key", placeholder: "API key", secret: true }] },
+    { section: P, id: "describeSpread", label: "Share Describe all with other computers", type: "toggle", def: false,
+      hidden: () => desc.config?.use === "builtin",
+      hint: "Describe all also sends photos to the other LM Studio servers on your network that have the same vision model, one photo at a time each: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice is left out and its photo goes back to the others. Describing a single photo uses only the server above.",
+      get: () => !!desc.config?.spread,
+      set: v => post("/api/describe/config", { spread: !!v }) },
+    { section: P, id: "describeHelpers", label: "Shared with", type: "info",
+      hidden: () => !desc.config?.spread || desc.config?.use === "builtin",
+      get: () => { const h = desc.helpers || [];
+        return h.length ? h.map(x => `${x.host} (${x.url})`).join("\n") + `\nDescribe all uses ${h.length + 1} computers.`
+          : desc.ok ? `No other LM Studio server on your network has ${desc.model} (see LM Studio below): Describe all uses this server alone.`
+          : "Nothing to share with until the describer works."; } },
     { section: P, id: "descget", label: "Built-in model", type: "button",
       button: () => `Download the built-in model (${((desc.builtin?.size_mb || 831) / 1000).toFixed(1)} GB)`,
       hidden: () => !!(desc.builtin?.ready || desc.builtin?.running),
       hint: "Florence-2 large, from Hugging Face; runs inside this app on the processor, so photos stay on this computer. Plainer descriptions than LM Studio's." },
+    { section: M, id: "lmshere", label: "LM Studio on this computer", type: "info",
+      hint: "While this app runs, LM Studio here is kept serving on all network interfaces and announced on the network (mDNS: LM Studio on <this computer>, with its port), so the other computers find it. FACE_LMSTUDIO=off turns that off.",
+      get: async () => { const s = lms = await get("/api/lmstudio");
+        if (!s.installed) return "Not installed (lmstudio.ai).";
+        const lines = [s.running ? `Server running on port ${s.port}, ${s.on_network ? "on all network interfaces" : "on this computer only"}` : "Server not running"];
+        if (s.bind) lines.push(`Changed: ${s.bind}`);
+        if (s.announced) lines.push(s.announced[0].toUpperCase() + s.announced.slice(1));
+        if (s.missing.length) lines.push("Missing vision models the other LM Studio servers have:",
+          ...s.missing.map(m => `  ${m.variant} (on ${m.from}): ${m.in_share ? "will be copied from the shared folder; from the internet if that fails" : "will be downloaded from the internet (not in the shared folder)"}`));
+        else lines.push("Has every vision model the other LM Studio servers on the network have.");
+        const sh = s.shared || {};
+        if (sh.share) lines.push(sh.reachable ? `Shared models folder: ${sh.models.length} model${sh.models.length === 1 ? "" : "s"} there${sh.models.length ? ` (${sh.models.join(", ")})` : ""}${sh.note ? `; ${sh.note}` : ""}`
+                                            : `Shared models folder ${sh.share} can't be reached`);
+        if (sh.note) setTimeout(SettingsBridge.changed, 10000);
+        const g = s.get;
+        if (g?.running) {
+          const pct = g.bytes && g.total ? g.bytes * 100 / g.total : g.pct || 0, n = Math.round(pct / 5);
+          lines.push(`${g.fallback ? `${g.fallback[0].toUpperCase() + g.fallback.slice(1)}: ` : ""}${g.how ? g.how[0].toUpperCase() + g.how.slice(1) : "Getting"}: ${g.now}`,
+                     `[${"#".repeat(n)}${"-".repeat(20 - n)}] ${amountText(g)}` + (g.done.length ? `; done: ${g.done.join(", ")}` : ""));
+          setTimeout(SettingsBridge.changed, 3000);
+        }
+        else if (g?.error) lines.push(`Download stopped: ${g.error}`);
+        if (g?.notes?.length) lines.push(...g.notes);
+        else if (g?.done?.length) lines.push(`Got: ${g.done.join(", ")}`);
+        if (!!s.missing.length !== lmsOffer) { lmsOffer = !!s.missing.length; setTimeout(SettingsBridge.changed, 0); }
+        return lines.join("\n"); } },
+    { section: M, id: "lmsget", label: "Get the same models", type: "button",
+      button: () => `Get ${lms.missing?.length || 0} model${lms.missing?.length === 1 ? "" : "s"} (shared folder first, else the internet)`,
+      hidden: () => !lmsOffer || !!lms.get?.running,
+      hint: "Gets the vision models listed above into LM Studio's models folder, in this order: 1. copied from the Shared models folder when they're there (the very same files, each checked by SHA-256; fast on a local network); 2. if that copy fails in any way, or the model isn't there, downloaded from the internet with LM Studio (the same model and quantization; much slower). The bar at the top of the Labeling tab shows which, how far and how long. Large: tens of GB." },
+    { section: M, id: "lmsshare", label: "Shared models folder", type: "text",
+      hint: "A folder every computer can reach, for example on a NAS (\\\\SERVER\\share\\lmstudio-models on Windows, /mnt/nas/share/lmstudio-models on Linux). Each computer with this app and LM Studio puts its vision models there, and gets the ones it lacks from there before downloading them. Empty: not used.",
+      hidden: () => !lms.installed,
+      get: () => lms.shared?.share || "",
+      set: v => post("/api/lmstudio/share", { folder: v }) },
+    { section: M, id: "hwnet", label: "LM Studio on the network", type: "info",
+      hint: "Every LM Studio server on this computer's local network: each computer's name, the addresses and port to reach it at, and the models it serves (which read pictures, which are loaded now). Found two ways, only while Settings is open: servers that announce themselves on the network (mDNS, _lmstudio._tcp) say their own address and port; the rest are found by trying LM Studio's port (1234, this computer's own LM Studio port, and any port announced) on each address of this computer's networks; Describe photo can use any of them (put its address in Server address).",
+      get: async () => { const s = (await get("/api/hardware/network")).servers || [];
+        if (!s.length) return "None found on this network (LM Studio's server must listen on all interfaces: Serve on local network).";
+        return s.map(e => {
+          const ms = e.models.filter(m => m.kind !== "embeddings").map(m => `${m.id}${m.vision ? " (reads pictures)" : ""}${m.loaded ? ", loaded" : ""}`);
+          return `${e.host}${e.this_computer ? " (this computer)" : ""}: ${e.urls.join(", ")}${e.announced ? " (announces itself)" : ""}\n  ${ms.length} model${ms.length === 1 ? "" : "s"}: ${ms.join("; ") || "none"}`;
+        }).join("\n"); } },
+    { section: M, id: "hwai", label: "AI model apps found", type: "info",
+      hint: "Apps that can run a vision model for Describe photo: the usual ports on this computer (LM Studio, Ollama, Jan, llama.cpp, vLLM and others), the server set under Labeling: Describe photo (which may be another device), and apps installed but not running. Nothing else on the network is asked.",
+      get: async () => { const a = (await get("/api/hardware")).ai || [];
+        if (!a.length) return "None found: LM Studio (lmstudio.ai) with a vision model, or the built-in model under Labeling: Describe photo.";
+        return a.map(e => {
+          const state = e.running ? `running, ${e.models} model${e.models === 1 ? "" : "s"}` : "";
+          const sees = e.vision.length ? `reads pictures: ${e.vision.join(", ")}` : "";
+          const lan = e.lan?.length ? `other devices can use it at ${e.lan.join(", ")}` : (e.running && e.url?.includes("127.0.0.1") ? "this computer only" : "");
+          return `${e.app}${e.url ? ` (${e.url})` : ""}: ${[state, e.note, sees, lan].filter(Boolean).join("; ") || "not running"}`;
+        }).join("\n"); } },
+    { section: H, id: "hwhas", label: "Hardware", type: "info",
+      hint: "What the app found on this computer when it started.",
+      get: async () => { const h = (await get("/api/hardware")).has;
+        return [`Processor: ${h.cpu}, ${h.threads} threads`, h.memory_gb ? `Memory: ${h.memory_gb} GB` : null,
+                `Graphics: ${h.gpus.length ? h.gpus.join("; ") : "none found"}`, `NPU: ${h.npu || "none found"}`,
+                `ONNX Runtime can use: ${h.onnxruntime.join(", ") || "not installed"}`, `${h.system}, Python ${h.python}`]
+          .filter(Boolean).join("\n"); } },
+    { section: H, id: "hwuses", label: "Where the work runs", type: "info",
+      hint: "The app picks the fastest way for each job by itself: a graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) is used for a model only after a check at start shows it gives the processor's answers, faster. To choose yourself, start the app with FACE_DEVICE set to gpu, cpu or npu.",
+      get: async () => { const u = (await get("/api/hardware")).uses, d = u.devices;
+        const was = !!hw.cuda_offer?.offer; hw = u;
+        if (!!u.cuda_offer?.offer !== was) setTimeout(SettingsBridge.changed, 0);   // show or hide the CUDA button
+        const job = (name, k) => d[k] ? `${name}: ${d[k]}` : null;
+        const lines = [job("Face finding", "detection"), job("Recognition (face prints)", "recognition"),
+                       job("Photo quality", "quality"), job("Expression", "expression"),
+                       job("Face shape cues", "cues"), job("Body posture", "pose")].filter(Boolean);
+        if (!lines.length) lines.push("Decided when the models first load (adding photos, or the face tracker).");
+        if (u.gpu_note) lines.push(u.gpu_note);
+        if (u.cuda) { lines.push(u.cuda); if (/downloading/.test(u.cuda)) setTimeout(SettingsBridge.changed, 3000); }
+        lines.push(`Adding photos: ${u.import_workers} at once; photos ${u.photos}`, `Videos: ${u.videos}`,
+                   `NPU: ${u.npu_note}`);
+        const why = Object.entries(u.decisions).map(([m, w]) => `  ${m}: ${w}`);
+        return lines.concat(why.length ? ["Checks at start:", ...why] : []).join("\n"); } },
+    { section: H, id: "cudaget", label: "NVIDIA CUDA", type: "button",
+      button: () => `Download CUDA support (${(hw.cuda_offer?.gb || 1.9).toFixed(1)} GB)`,
+      hidden: () => !hw.cuda_offer?.offer,
+      hint: "Lets this app run its models on the NVIDIA card. Downloads NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA from PyPI (the public Python package index), for this app's Python 3.12, each checked by size and SHA-256, into the app's data folder (about 3.5 GB unpacked). Used from the next start; the app checks each model gives the same answers on the card before using it." },
   ], {
     wsgoogle: a => post("/api/websearch/key", { key: a.key || "" }),
     wsaws: a => post("/api/websearch/aws", { id: a.id || "", secret: a.secret || "", region: a.region || "us-east-1" }),
