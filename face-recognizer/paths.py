@@ -21,6 +21,21 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 
+def _system_certificates():
+    """HTTPS checks certificates the way the operating system does (truststore): on Windows, Python reads only the
+    root certificates already in the store, and a fresh install has few (Windows adds the rest when it first needs
+    them, for its own connections only), so the model download from GitHub failed with CERTIFICATE_VERIFY_FAILED on
+    a new computer (2026-11-11). Every module imports this one, so every download, update check and Web search gets it."""
+    try:
+        import truststore
+        truststore.inject_into_ssl()
+    except Exception:                          # not installed (an old setup): Python's own checks, as before
+        pass
+
+
+_system_certificates()
+
+
 def user_data(name, platform=sys.platform, env=os.environ, home=None):
     """This user's application-data folder for name, as each system expects it."""
     home = Path(home or Path.home())

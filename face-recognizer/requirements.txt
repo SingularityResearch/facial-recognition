@@ -11,3 +11,4 @@ onnxruntime==1.24.4; sys_platform != "win32"              # macOS (Apple Silicon
 mediapipe==1.2.0         # optional: face-shape cues and body posture in the live tracker
 boto3==1.43.123          # optional: the labeling tool's Web search (Amazon celebrity recognition)
 pywebview==6.2.1         # FaceRecognizer's window (python app.py, and the .exe)
+truststore==0.10.5       # HTTPS certificates checked by the operating system (a fresh Windows has few roots for Python)

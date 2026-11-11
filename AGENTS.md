@@ -48,7 +48,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     cached a minute) and `lmstudio_network` (every LM Studio server on the local network: name, addresses, port,
     models); the labeling tool's `/api/hardware` and `/api/hardware/network`, shown in Settings → This computer and → LM Studio.
   - `paths.py` — `ROOT` (models\ and data\; `FACE_ROOT` overrides), `HOME` (`%APPDATA%\FaceLabels`; `FACE_HOME`
-    overrides), `atomic_write`/`replace_file`. Every module takes its folders from here.
+    overrides), `atomic_write`/`replace_file`. Every module takes its folders from here. Importing it also makes
+    HTTPS check certificates the operating system's way (`truststore`): a fresh Windows has few root certificates for
+    Python, and the first-start model download from GitHub failed there (CERTIFICATE_VERIFY_FAILED).
   - `labels.py` — labeling engine: per-face labels (`LabelDB`), auto-naming, duplicate-photo detection, undo history
     and clues for unnamed faces (`hints`: closest people, photo tags, same occasion). The rest of the engine is split
     into modules that `labels` re-exports (`labels.X` still works):

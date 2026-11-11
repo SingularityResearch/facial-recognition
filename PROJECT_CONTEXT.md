@@ -378,6 +378,10 @@ Known issue: for about the first minute after start the built app may say LM Stu
 v1.12 (released 2026-11-11, tag at ef5ae1a): Describe all shared with the other LM Studio computers, Settings
 regrouped, drawn faces fixed (Importer._more_lock). CI's Ubuntu 22.04 build twice failed to resolve the Azure apt
 mirror; its package step now retries from archive.ubuntu.com. Same known issue as v1.11.
+After v1.12: on the NAS (a fresh Windows, 33 root certificates against 48 on the PC) the first start failed to download
+the models from GitHub with CERTIFICATE_VERIFY_FAILED: Python reads only the roots already in the Windows store, and
+Windows adds missing ones on demand for its own (schannel) connections only. paths.py now injects `truststore`
+(pinned 0.10.5), so every HTTPS request is checked by the operating system.
 
 LM Studio across the owner's computers (2026-11-10/11, after v1.10; `lmstudio.py`, `hardware.lmstudio_network`):
 both computers serve LM Studio on 0.0.0.0:1234 (the Linux laptop: headless llmster 0.0.27 + CUDA 12 llama.cpp 2.72.0 as
