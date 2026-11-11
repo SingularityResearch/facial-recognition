@@ -65,7 +65,9 @@ def port():
 
 
 def running():
-    return hardware._port_open(port())
+    """LM Studio's server answers on this computer. Patient: at start-up the app is busy loading its models, and a
+    quick check timed out there (it said "not running" while the server was up)."""
+    return any(hardware._port_open(port(), timeout=1.0) for _ in range(2))
 
 
 def on_network():
@@ -197,7 +199,10 @@ def announce():
             _active["by"].stop()
             _active.update(port=None, by=None)
             STATE["announced"] = None
-        if p is None or _active["by"]:
+        if p is None:
+            STATE["announced"] = "not announced: LM Studio's server isn't running"
+            return
+        if _active["by"]:
             return
         if announced_already():
             STATE["announced"] = f"announced on the network by this computer itself (port {p})"
@@ -320,6 +325,7 @@ def get_models(variants):
 def keep(every=60):
     """app.py: keep LM Studio serving on all interfaces and announced, while this app runs (if LM Studio is here)."""
     def loop():
+        time.sleep(20)                                  # after start-up: while the models load, checks time out
         while True:
             try:
                 if lms_path() or config_path():
