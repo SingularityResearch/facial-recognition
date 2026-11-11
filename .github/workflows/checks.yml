@@ -79,10 +79,19 @@ jobs:
         run: pip install -r requirements-build.txt
       - name: Install the Linux app window (Qt) and the system libraries it needs
         if: runner.os == 'Linux'
+        # The runner's Azure package mirror sometimes can't be resolved (2026-11-11: two runs failed): try again,
+        # from Ubuntu's own mirror, before giving up.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 \
-            libxcb-shape0 libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libasound2
+          PKGS="libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libnss3
+                libxcomposite1 libxdamage1 libxrandr2 libxtst6 libasound2"
+          for try in 1 2 3; do
+            if sudo apt-get update && sudo apt-get install -y -o Acquire::Retries=3 $PKGS; then break; fi
+            echo "apt failed (try $try): using archive.ubuntu.com instead of the Azure mirror"
+            sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' /etc/apt/sources.list \
+              /etc/apt/sources.list.d/* 2>/dev/null || true
+            sleep 20
+          done
+          dpkg -s $PKGS > /dev/null
           pip install "pywebview[qt]==6.2.1"
       - name: Build
         run: python build_exe.py --no-copy
