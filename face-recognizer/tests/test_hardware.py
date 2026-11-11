@@ -36,3 +36,10 @@ def test_ai_apps_reports_servers_and_installed_apps(monkeypatch):
     assert lm["running"] and lm["models"] == 2 and lm["vision"] == ["qwen-vl"] and "qwen-vl" in lm["note"]
     assert any(e["app"] == "Ollama" and not e["running"] for e in found)
     assert sum(e["app"] == "LM Studio" for e in found) == 1              # running, so not listed again as installed
+
+
+def test_an_nvidia_card_without_cuda_is_explained(monkeypatch):
+    monkeypatch.setattr(hardware, "describe", lambda: {"gpus": ["NVIDIA GeForce RTX 4060"], "onnxruntime": ["CPU"]})
+    assert "setup.sh" in hardware.gpu_note()
+    monkeypatch.setattr(hardware, "describe", lambda: {"gpus": ["NVIDIA GeForce RTX 4060"], "onnxruntime": ["CUDA", "CPU"]})
+    assert hardware.gpu_note() == ""

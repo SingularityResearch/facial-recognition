@@ -1081,6 +1081,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                        job("Photo quality", "quality"), job("Expression", "expression"),
                        job("Face shape cues", "cues"), job("Body posture", "pose")].filter(Boolean);
         if (!lines.length) lines.push("Decided when the models first load (adding photos, or the face tracker).");
+        if (u.gpu_note) lines.push(u.gpu_note);
         lines.push(`Adding photos: ${u.import_workers} at once; photos ${u.photos}`, `Videos: ${u.videos}`,
                    `NPU: ${u.npu_note}`);
         const why = Object.entries(u.decisions).map(([m, w]) => `  ${m}: ${w}`);

@@ -449,7 +449,7 @@ Which GPU route, by system:
 | Hardware | Route |
 |---|---|
 | Windows with a DirectX 12 GPU (AMD, NVIDIA, Intel) | DirectML (`onnxruntime-directml`, installed by setup.bat) |
-| Linux with an NVIDIA card | CUDA: `./setup.sh` installs `onnxruntime-gpu` with its own CUDA and cuDNN libraries when `nvidia-smi` works (no CUDA toolkit needed) |
+| Linux with an NVIDIA card | CUDA, when run from the code: `./setup.sh` installs `onnxruntime-gpu` with its own CUDA and cuDNN libraries when `nvidia-smi` works (no CUDA toolkit needed). The downloaded Linux app can't carry CUDA (its libraries are over 2 GB), so it uses the processor and says so under **This computer** |
 | Mac with Apple Silicon | CoreML |
 | anything else | the processor |
 

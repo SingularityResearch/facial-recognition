@@ -186,7 +186,22 @@ def uses():
             "photos": "decoded on the processor (JPEG straight at reduced size), read once each",
             "videos": "decoded on the processor, about one frame a second looked at",
             "npu_note": ("not used by itself: measured slower than the GPU and the processor for one face at a time "
-                         "(FACE_DEVICE=npu tries it)")}
+                         "(FACE_DEVICE=npu tries it)"),
+            "gpu_note": gpu_note()}
+
+
+def gpu_note():
+    """Why a graphics card that's here isn't used, when this copy of ONNX Runtime can't reach it (else "")."""
+    h, have = describe(), set(describe()["onnxruntime"])
+    if have & {"Dml", "CUDA", "CoreML", "ROCm", "MIGraphX", "OpenVINO"}:
+        return ""
+    if any(g.startswith("NVIDIA") for g in h["gpus"]):
+        return ("An NVIDIA card is here, but this copy of the app has no CUDA (its libraries are too big to ship), so "
+                "everything runs on the processor. To use the card, run the app from the code: ./setup.sh installs "
+                "ONNX Runtime with CUDA, then ./start.sh.")
+    if h["gpus"]:
+        return "No way to run models on this computer's graphics card was found, so everything runs on the processor."
+    return ""
 
 
 # --------------------------------------------------------------------------- AI model apps (for Describe photo)
