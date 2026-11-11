@@ -372,6 +372,10 @@ imports it ahead of the bundled copy. Tested in the built app on the RTX 4060 la
 pass their checks onto CUDA; the 412-file import took 45.2 / 42.8 / 43.8 s with CUDA vs 62.6 / 62.7 s with
 FACE_CUDA=off (4 vs 8-10 cores busy). The 1.6 GB sample alone takes 16 s to read over Wi-Fi 6 (~100 MB/s).
 
+v1.11 (released 2026-11-11, tag at a947e45) carries the LM Studio work below, the download bar and docs/SETTINGS.md.
+Known issue: for about the first minute after start the built app may say LM Studio here isn't running or announced
+(its port check times out while the models load); the next pass, a minute later, corrects it.
+
 LM Studio across the owner's computers (2026-11-10/11, after v1.10; `lmstudio.py`, `hardware.lmstudio_network`):
 both computers serve LM Studio on 0.0.0.0:1234 (the Linux laptop: headless llmster 0.0.27 + CUDA 12 llama.cpp 2.72.0 as
 a systemd user service with linger; the Windows PC: the LM Studio app). Announced on the LAN as `_lmstudio._tcp` +
