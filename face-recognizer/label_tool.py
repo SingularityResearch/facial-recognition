@@ -489,7 +489,8 @@ def downloads():
     out = []
     g = lmstudio.STATE.get("get") or {}
     if g.get("running"):
-        out.append({"what": g.get("now"), "how": g.get("how"), "pct": g.get("pct"), "bytes": g.get("bytes"),
+        out.append({"what": g.get("now"), "how": g.get("how"), "fallback": g.get("fallback"), "pct": g.get("pct"),
+                    "bytes": g.get("bytes"),
                     "total": g.get("total"), "started": g.get("started"), "done": len(g.get("done", []))})
     c = cudasupport.STATE
     if c.get("state") == "downloading":

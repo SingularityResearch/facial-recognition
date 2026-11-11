@@ -291,12 +291,12 @@ def get_models(variants):
         st = STATE["get"] = {"running": True, "done": [], "now": None, "error": None, "how": None, "pct": None,
                              "notes": []}
         for v in variants:
-            st.update(now=v, pct=None, how="copying from the shared folder")
+            st.update(now=v, pct=None, how="copying from the shared folder", fallback=None)
             try:
                 if from_share(v, st):                    # the shared folder first (fast, the very same files) ...
                     time.sleep(3)                        # LM Studio notices new model files by itself
                     if any(m["key"] == v.split("@")[0] for m in local_models() or []):
-                        st["done"].append(f"{v} (from the shared folder)")
+                        st["done"].append(f"{v} (copied from the shared folder)")
                     else:                                # seen once: its own paused download of the model hid it
                         st["error"] = (f"{v}: copied from the shared folder, but LM Studio doesn't list it yet. If LM "
                                        f"Studio has an unfinished download of it, cancel that in LM Studio's Downloads; "
@@ -304,12 +304,14 @@ def get_models(variants):
                     continue
             except OSError as e:                         # any failure there: straight to the internet, no retry
                 st["notes"].append(f"{v}: the shared folder's copy failed ({e}); downloaded from the internet instead")
-            st.update(how="downloading with LM Studio", pct=None, bytes=None, total=None, started=time.time())
+                st["fallback"] = f"the shared folder's copy failed ({str(e)[:120]})"
+            st.update(how="downloading from the internet (LM Studio's sources)", pct=None, bytes=None, total=None,
+                      started=time.time())
             ok, why = _lms_get(v, st)                           # ... else LM Studio's own sources
             if not ok:
                 st["error"] = f"{v}: {why}"
                 break
-            st["done"].append(f"{v} (downloaded)")
+            st["done"].append(f"{v} (downloaded from the internet)")
         st.update(running=False, now=None, how=None)
     threading.Thread(target=run, daemon=True, name="lms-get").start()
 

@@ -999,7 +999,8 @@ async function pollDownloads() {
     const d = items[0];
     const pct = d.bytes && d.total ? d.bytes * 100 / d.total : d.pct || 0;
     p.querySelector("i").style.width = pct + "%";
-    const txt = `${d.how ? d.how[0].toUpperCase() + d.how.slice(1) : "Downloading"}: ${d.what}: ${amountText(d)}` +
+    const how = d.how ? d.how[0].toUpperCase() + d.how.slice(1) : "Downloading";
+    const txt = `${d.fallback ? `${d.fallback[0].toUpperCase() + d.fallback.slice(1)}: ` : ""}${how}: ${d.what}: ${amountText(d)}` +
                 (items.length > 1 ? ` (and ${items.length - 1} more)` : "");
     p.querySelector(".txt").textContent = txt;
     p.title = txt;
@@ -1107,7 +1108,8 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         const lines = [s.running ? `Server running on port ${s.port}, ${s.on_network ? "on all network interfaces" : "on this computer only"}` : "Server not running"];
         if (s.bind) lines.push(`Changed: ${s.bind}`);
         if (s.announced) lines.push(s.announced[0].toUpperCase() + s.announced.slice(1));
-        if (s.missing.length) lines.push(`Missing vision models the other LM Studio servers have: ${s.missing.map(m => `${m.variant} (on ${m.from})`).join(", ")}`);
+        if (s.missing.length) lines.push("Missing vision models the other LM Studio servers have:",
+          ...s.missing.map(m => `  ${m.variant} (on ${m.from}): ${m.in_share ? "will be copied from the shared folder; from the internet if that fails" : "will be downloaded from the internet (not in the shared folder)"}`));
         else lines.push("Has every vision model the other LM Studio servers on the network have.");
         const sh = s.shared || {};
         if (sh.share) lines.push(sh.reachable ? `Shared models folder: ${sh.models.length} model${sh.models.length === 1 ? "" : "s"} there${sh.models.length ? ` (${sh.models.join(", ")})` : ""}${sh.note ? `; ${sh.note}` : ""}`
@@ -1116,19 +1118,19 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         const g = s.get;
         if (g?.running) {
           const pct = g.bytes && g.total ? g.bytes * 100 / g.total : g.pct || 0, n = Math.round(pct / 5);
-          lines.push(`${g.how ? g.how[0].toUpperCase() + g.how.slice(1) : "Getting"}: ${g.now}`,
+          lines.push(`${g.fallback ? `${g.fallback[0].toUpperCase() + g.fallback.slice(1)}: ` : ""}${g.how ? g.how[0].toUpperCase() + g.how.slice(1) : "Getting"}: ${g.now}`,
                      `[${"#".repeat(n)}${"-".repeat(20 - n)}] ${amountText(g)}` + (g.done.length ? `; done: ${g.done.join(", ")}` : ""));
           setTimeout(SettingsBridge.changed, 3000);
         }
         else if (g?.error) lines.push(`Download stopped: ${g.error}`);
         if (g?.notes?.length) lines.push(...g.notes);
-        else if (g?.done?.length) lines.push(`Downloaded: ${g.done.join(", ")}`);
+        else if (g?.done?.length) lines.push(`Got: ${g.done.join(", ")}`);
         if (!!s.missing.length !== lmsOffer) { lmsOffer = !!s.missing.length; setTimeout(SettingsBridge.changed, 0); }
         return lines.join("\n"); } },
     { section: "This computer", id: "lmsget", label: "Same models", type: "button",
-      button: () => `Download ${lms.missing?.length || 0} model${lms.missing?.length === 1 ? "" : "s"} with LM Studio`,
+      button: () => `Get ${lms.missing?.length || 0} model${lms.missing?.length === 1 ? "" : "s"} (shared folder first, else the internet)`,
       hidden: () => !lmsOffer || !!lms.get?.running,
-      hint: "Gets the vision models listed above into LM Studio's models folder: copied from the shared models folder when they're there (the very same files, each checked by SHA-256), else downloaded with LM Studio (lms get: the same model and quantization as on the other computers). Large: tens of GB." },
+      hint: "Gets the vision models listed above into LM Studio's models folder, in this order: 1. copied from the Shared models folder when they're there (the very same files, each checked by SHA-256; fast on a local network); 2. if that copy fails in any way, or the model isn't there, downloaded from the internet with LM Studio (the same model and quantization; much slower). The bar at the top of the Labeling tab shows which, how far and how long. Large: tens of GB." },
     { section: "This computer", id: "lmsshare", label: "Shared models folder", type: "text",
       hint: "A folder every computer can reach, for example on a NAS (\\\\SERVER\\share\\lmstudio-models on Windows, /mnt/nas/share/lmstudio-models on Linux). Each computer with this app and LM Studio puts its vision models there, and gets the ones it lacks from there before downloading them. Empty: not used.",
       hidden: () => !lms.installed,

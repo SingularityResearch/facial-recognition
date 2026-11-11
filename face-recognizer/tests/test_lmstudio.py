@@ -114,4 +114,4 @@ def test_any_shared_folder_failure_falls_back_to_the_internet(monkeypatch):
         __import__("time").sleep(0.02)
     g = L.STATE["get"]
     assert got == ["qwen/qwen3.8-27b@q4_k_m"] and g["error"] is None
-    assert g["done"] == ["qwen/qwen3.8-27b@q4_k_m (downloaded)"] and "NAS went away" in g["notes"][0]
+    assert g["done"] == ["qwen/qwen3.8-27b@q4_k_m (downloaded from the internet)"] and "NAS went away" in g["notes"][0]
