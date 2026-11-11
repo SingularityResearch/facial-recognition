@@ -375,6 +375,9 @@ FACE_CUDA=off (4 vs 8-10 cores busy). The 1.6 GB sample alone takes 16 s to read
 v1.11 (released 2026-11-11, tag at a947e45) carries the LM Studio work below, the download bar and docs/SETTINGS.md.
 Known issue: for about the first minute after start the built app may say LM Studio here isn't running or announced
 (its port check times out while the models load); the next pass, a minute later, corrects it.
+v1.12 (released 2026-11-11, tag at ef5ae1a): Describe all shared with the other LM Studio computers, Settings
+regrouped, drawn faces fixed (Importer._more_lock). CI's Ubuntu 22.04 build twice failed to resolve the Azure apt
+mirror; its package step now retries from archive.ubuntu.com. Same known issue as v1.11.
 
 LM Studio across the owner's computers (2026-11-10/11, after v1.10; `lmstudio.py`, `hardware.lmstudio_network`):
 both computers serve LM Studio on 0.0.0.0:1234 (the Linux laptop: headless llmster 0.0.27 + CUDA 12 llama.cpp 2.72.0 as
