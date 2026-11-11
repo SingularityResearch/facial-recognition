@@ -1,7 +1,8 @@
 # Facial Recognition and Expression Research
 
-A fully local system that recognizes specific people on a webcam and reads facial expression, voice and
-other signals live. The expression side is also a small, honest research testbed: it measures what each
+A fully local system that recognizes specific people on webcams (any camera the computer sees, including a
+phone used as a webcam) and reads facial expression, voice and other signals live. Imported photos and videos
+are recognized the same way: the same face prints and matching, with faces named in the labeling tool. The expression side is also a small, honest research testbed: it measures what each
 signal is actually worth on your own face before letting it influence anything.
 
 Everything runs on one computer: Windows, macOS (14+, Apple Silicon) or Linux (Ubuntu 22.04+). No photos, video, audio or face data leave the machine unless you send them
