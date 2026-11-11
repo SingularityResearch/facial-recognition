@@ -25,7 +25,13 @@ async function poll() {                          // each program's URL once it's
   }
   show(current);
   const w = document.getElementById("wait");
-  if (current !== "set" && errors[current]) { w.className = "wait err"; w.textContent = errors[current]; }
+  if (current !== "set" && errors[current]) {
+    w.className = "wait err";
+    const again = Object.assign(document.createElement("button"), { className: "b", type: "button", textContent: "Start again" });
+    const k = current;
+    again.addEventListener("click", () => startAgain(k));
+    w.replaceChildren(errors[current], document.createElement("br"), document.createElement("br"), again);
+  }
   else {
     w.className = "wait";
     w.textContent = st.fetch   // first start of a downloaded copy: the models come from the project's GitHub Release
@@ -35,6 +41,22 @@ async function poll() {                          // each program's URL once it's
   if (!["track", "label"].every(k => document.getElementById("f-" + k).src || errors[k])) setTimeout(poll, 400);
 }
 poll();
+// Start again: a program that failed to start (the model download, say) or whose page says it stopped answering
+// (its "Start again" button asks this page, over postMessage). app.py starts it again, with any other program that
+// failed; one that still answers is left alone. Its frame is emptied until /status gives its (maybe new) address.
+async function startAgain(k) {
+  let r = {};
+  try { r = await (await fetch(`/restart?what=${k}`, { cache: "no-store", headers: { "X-Face-Tool": "1" } })).json(); } catch {}
+  if (r.now === "running") { frame(k).src = frame(k).src; return; }      // it answers: just reload its page
+  for (const j of ["track", "label"]) {
+    if (j !== k && !errors[j]) continue;
+    delete errors[j];
+    frame(j).removeAttribute("src");
+    STATE[j] = null;
+    document.getElementById("st-" + j).textContent = "";
+  }
+  poll();
+}
 addEventListener("keydown", e => {               // Ctrl+1 / Ctrl+2 / Ctrl+3 switch tabs, Ctrl+4 the alerts
   const t = { "1": "track", "2": "label", "3": "set" }[e.key];
   if (e.ctrlKey && t) { show(t); e.preventDefault(); }
@@ -79,6 +101,7 @@ addEventListener("message", e => {
   // a person forgotten in the labeling tool: the tracker page forgets what it learned about them (its browser storage)
   if (k === "label" && m.fs === "forgot" && typeof m.name === "string" && m.name) act("track", "forgetPerson", { name: m.name });
   if (m.fs === "result" && waiting[m.rid]) { waiting[m.rid](m); delete waiting[m.rid]; }
+  if (m.fs === "restart") startAgain(k);                                  // the page's own Start again button
 });
 const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids.filter(x => x != null)); return n; };
 // One row per setting; rows are made once and then only updated, so typing and dragging aren't interrupted

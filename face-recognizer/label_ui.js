@@ -1249,8 +1249,13 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     history.replaceState(null, "", hashOf(view));
     await render(true);
   } catch (e) {
+    // In the app window Start again asks the window to start it again (app.py /restart); on its own, it reloads
     $("#main").innerHTML = `<div class="empty"><b>Couldn't reach Face Labels</b>${window.parent !== window
-      ? "Close Face Recognizer and start it again."
-      : "Start it with label.bat (label.sh on macOS and Linux, or python label_tool.py) and reload this page."}</div>`;
+      ? "Click Start again (or close Face Recognizer and start it again)."
+      : "Start label.bat again (label.sh on macOS and Linux, or python label_tool.py), then click Start again."}
+      <p><button class="btn primary" id="againBtn" type="button">Start again</button></p></div>`;
+    $("#againBtn").addEventListener("click", () => {
+      if (window.parent !== window) SettingsBridge.notify({ fs: "restart" }); else location.reload();
+    });
   }
 })();

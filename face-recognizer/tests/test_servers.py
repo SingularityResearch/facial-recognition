@@ -368,3 +368,28 @@ def test_a_second_copy_can_use_other_ports():
     assert app.ports({"FACE_PORTS": "nonsense"}) == (8764, 8765, 8766)
     with pytest.raises(SystemExit):
         app.ports({"FACE_PORTS": "80"})
+
+
+# --------------------------------------------------------------------------- Start again (app.py /restart)
+def test_start_again_restarts_what_failed_and_needs_the_pages_header(shell_url, monkeypatch):
+    started = []
+    monkeypatch.setattr(app, "run_programs", lambda keys=("track", "label"): started.append(keys))
+    monkeypatch.setitem(app.STATUS, "track", {"error": "Face tracker couldn't start. (models)"})
+    monkeypatch.setitem(app.STATUS, "label", {"error": "Face Labels couldn't start. (models)"})
+    assert request(shell_url, "/restart?what=track")[0] == 403                     # not from the window's page
+    code, _, body = request(shell_url, "/restart?what=track", headers={"X-Face-Tool": "1"})
+    assert code == 200 and json.loads(body) == {"what": "track", "now": "starting"}
+    assert started == [("track", "label")]                                          # a failed download: both again
+    assert app.STATUS["track"] == {} and app.STATUS["label"] == {}
+    assert json.loads(request(shell_url, "/restart?what=track", headers={"X-Face-Tool": "1"})[2])["now"] == "busy"
+    assert request(shell_url, "/restart?what=other", headers={"X-Face-Tool": "1"})[0] == 400
+
+
+def test_start_again_leaves_a_program_that_answers(monkeypatch):
+    started = []
+    monkeypatch.setattr(app, "run_programs", lambda keys=("track", "label"): started.append(keys))
+    monkeypatch.setitem(app.STATUS, "label", {"url": "http://127.0.0.1:8765/"})
+    monkeypatch.setitem(app.STATUS, "track", {"url": "http://127.0.0.1:8766/"})
+    monkeypatch.setattr(app, "answering", lambda url, which: url.endswith("8765/"))
+    assert app.restart("label") == "running" and not started
+    assert app.restart("track") == "starting" and started == [("track",)]          # stopped answering: started again

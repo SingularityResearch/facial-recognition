@@ -106,7 +106,11 @@ def start(name, module, port, app):
                 return url
             continue
         print(f"{name}: loading ...")
-        module.attach(srv)
+        try:
+            module.attach(srv)
+        except BaseException:
+            srv.server_close()                       # free the port for a later Start again
+            raise
         threading.Thread(target=srv.serve_forever, daemon=True, name=name).start()
         print(f"{name}: serving at {url}")
         return url
@@ -144,7 +148,7 @@ def shell_handler():
     """The tab page's request handler. The same request checks as the two programs (localguard): the right
     Host; and for anything that does something (contacts GitHub, opens a browser or a folder) the X-Face-Tool
     header, which only this page sends."""
-    acts = ("/update", "/open-release", "/open", "/attention")
+    acts = ("/update", "/open-release", "/open", "/attention", "/restart")
 
     class Handler(localguard.Handler):
         frame_ancestors = "'none'"                       # the window's own page: never inside another page
@@ -163,6 +167,11 @@ def shell_handler():
                 q = dict(parse_qsl(self.path.partition("?")[2]))
                 attention(int(q.get("unread", "0") or 0), q.get("flash") == "1")
                 return self.send({})
+            if path == "/restart":                       # a program that failed or stopped: Start again
+                what = dict(parse_qsl(self.path.partition("?")[2])).get("what")
+                if what not in NAMES:
+                    return self.send({"error": "unknown program"}, code=400)
+                return self.send({"what": what, "now": restart(what)})
             if path not in ("/status", "/paths") + acts:
                 return self.send({"error": "not found"}, code=404)
             if path == "/open-release":                 # in the normal browser, not inside this window
@@ -253,7 +262,31 @@ def allow_camera(window):
         traceback.print_exc()
 
 
-def run_programs():
+NAMES = {"track": "Face tracker", "label": "Face Labels"}
+_restart_lock = threading.Lock()
+
+
+def restart(key):
+    """Start one program again (the window's Start again button): after it failed (say the model download), or
+    when it stopped answering. Returns "running" (it answers: nothing to do), "starting" or "busy" (already
+    starting). A new copy may come up on the next port; the tab page takes its URL from /status."""
+    with _restart_lock:
+        s = STATUS.get(key, {})
+        if not s.get("url") and not s.get("error"):
+            return "busy"
+        if s.get("url") and answering(s["url"], "tracker" if key == "track" else "face-labels"):
+            return "running"
+        keys = [key] + [k for k in NAMES if k != key and STATUS.get(k, {}).get("error")]   # a failed download: both
+        for k in keys:
+            print(f"{NAMES[k]}: starting again")
+            STATUS[k] = {}
+        run_programs(tuple(keys))
+        return "starting"
+
+
+def run_programs(keys=("track", "label")):
+    """Start the programs (both at first; one again from restart): models first, then each server in its own
+    thread. STATUS[key] gets {"url"} or {"error"}."""
     def fail(key, name, e):
         traceback.print_exc()
         why = str(e) if isinstance(e, SystemExit) else f"{type(e).__name__}: {e}"   # SystemExit: our own message
@@ -273,9 +306,9 @@ def run_programs():
             STATUS.pop("fetch", None)
             return True
         except OSError as e:
-            for key, name in (("track", "Face tracker"), ("label", "Face Labels")):
-                fail(key, name, OSError(f"The face models couldn't be downloaded: {e}\n"
-                                        f"Check the internet connection and start the app again."))
+            for key in keys:
+                fail(key, NAMES[key], OSError(f"The face models couldn't be downloaded: {e}\n"
+                                              f"Check the internet connection, then click Start again."))
             return False
 
     def one(key, name, module, port, app):
@@ -291,12 +324,12 @@ def run_programs():
             import label_tool
             import tracker                          # imports face_id, which checks the model and data files
         except BaseException as e:
-            for key, name in (("track", "Face tracker"), ("label", "Face Labels")):
-                fail(key, name, e)
+            for key in keys:
+                fail(key, NAMES[key], e)
             return
         jobs = [("track", "Face tracker", tracker, TRACK_PORT, "tracker"),
                 ("label", "Face Labels", label_tool, LABEL_PORT, "face-labels")]
-        for job in jobs:                            # both load at once: tracker models and the label database
+        for job in (j for j in jobs if j[0] in keys):   # both load at once: tracker models and the label database
             threading.Thread(target=one, args=job, daemon=True).start()
 
     threading.Thread(target=go, daemon=True).start()

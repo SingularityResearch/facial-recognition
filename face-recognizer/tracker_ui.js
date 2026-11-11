@@ -47,8 +47,9 @@ async function loadPeople() {
     const where = r.device ? ` · ${r.device.split(" ")[0]}` : "";
     if (!running) setStatus(people.length ? `Ready · knows ${people.length} people${where}` : "Ready · nobody named yet (use the labeling tool)");
     renderPeople();
+    $("againBtn").hidden = true;
     return true;
-  } catch { setStatus(startAgain("The face tracker isn't answering"), "err"); return false; }
+  } catch { setStatus(startAgain("The face tracker isn't answering"), "err"); $("againBtn").hidden = false; return false; }
 }
 
 // ---------------------------------------------------------------- alerts and presence log
@@ -643,12 +644,16 @@ function renderForget() {
   if (names.includes(keep)) $("forgetWho").value = keep;
 }
 
-// What to do when this page's program stopped or needs a restart: in the app window, start the app again; opened on
-// its own, start recognize.bat (Windows) or recognize.sh (macOS, Linux) again and reload the page.
+// What to do when this page's program stopped or needs a restart. In the app window the Start again button asks the
+// window to start it again (app.py /restart); opened on its own, start recognize.bat (Windows) or recognize.sh
+// (macOS, Linux) again, and the button reloads the page.
 function startAgain(what) {
-  return window.parent !== window ? `${what}. Close Face Recognizer and start it again.`
-    : `${what}. Start it again with recognize.bat (recognize.sh on macOS and Linux), then reload this page.`;
+  return window.parent !== window ? `${what}: click Start again (or close Face Recognizer and start it again).`
+    : `${what}: start recognize.bat again (recognize.sh on macOS and Linux), then click Start again.`;
 }
+$("againBtn").addEventListener("click", () => {
+  if (window.parent !== window) SettingsBridge.notify({ fs: "restart" }); else location.reload();
+});
 
 function setExpressions(list) {
   const was = expressions; expressions = list;
