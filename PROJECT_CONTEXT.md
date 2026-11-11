@@ -382,6 +382,7 @@ After v1.12: on the NAS (a fresh Windows, 33 root certificates against 48 on the
 the models from GitHub with CERTIFICATE_VERIFY_FAILED: Python reads only the roots already in the Windows store, and
 Windows adds missing ones on demand for its own (schannel) connections only. paths.py now injects `truststore`
 (pinned 0.10.5), so every HTTPS request is checked by the operating system.
+v1.13 (released 2026-11-11, tag at 286b67f) carries that fix; CI's checks job installs truststore too.
 
 LM Studio across the owner's computers (2026-11-10/11, after v1.10; `lmstudio.py`, `hardware.lmstudio_network`):
 both computers serve LM Studio on 0.0.0.0:1234 (the Linux laptop: headless llmster 0.0.27 + CUDA 12 llama.cpp 2.72.0 as
