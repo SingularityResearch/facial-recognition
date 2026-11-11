@@ -1048,7 +1048,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
   const flag = (id, key, label, def, hint) => ({ section: L, id, label, type: "toggle", def, hint,
     get: () => (store.get(key) ?? (def ? "1" : "0")) === "1",
     set: v => { store.set(key, v ? "1" : "0"); const el = $("#" + id); if (el) el.checked = !!v; } });
-  let desc = {};
+  let desc = {}, hw = {};
   SettingsBridge.init("label", [
     c("tilesz", L, { label: "Face picture size" }),
     c("psort", L, { label: "Order of the people list" }),
@@ -1076,16 +1076,23 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         }).join("\n"); } },    { section: "This computer", id: "hwuses", label: "Where the work runs", type: "info",
       hint: "The app picks the fastest way for each job by itself: a graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) is used for a model only after a check at start shows it gives the processor's answers, faster. To choose yourself, start the app with FACE_DEVICE set to gpu, cpu or npu.",
       get: async () => { const u = (await get("/api/hardware")).uses, d = u.devices;
+        const was = !!hw.cuda_offer?.offer; hw = u;
+        if (!!u.cuda_offer?.offer !== was) setTimeout(SettingsBridge.changed, 0);   // show or hide the CUDA button
         const job = (name, k) => d[k] ? `${name}: ${d[k]}` : null;
         const lines = [job("Face finding", "detection"), job("Recognition (face prints)", "recognition"),
                        job("Photo quality", "quality"), job("Expression", "expression"),
                        job("Face shape cues", "cues"), job("Body posture", "pose")].filter(Boolean);
         if (!lines.length) lines.push("Decided when the models first load (adding photos, or the face tracker).");
         if (u.gpu_note) lines.push(u.gpu_note);
+        if (u.cuda) { lines.push(u.cuda); if (/downloading/.test(u.cuda)) setTimeout(SettingsBridge.changed, 3000); }
         lines.push(`Adding photos: ${u.import_workers} at once; photos ${u.photos}`, `Videos: ${u.videos}`,
                    `NPU: ${u.npu_note}`);
         const why = Object.entries(u.decisions).map(([m, w]) => `  ${m}: ${w}`);
         return lines.concat(why.length ? ["Checks at start:", ...why] : []).join("\n"); } },
+    { section: "This computer", id: "cudaget", label: "NVIDIA CUDA", type: "button",
+      button: () => `Download CUDA support (${(hw.cuda_offer?.gb || 1.9).toFixed(1)} GB)`,
+      hidden: () => !hw.cuda_offer?.offer,
+      hint: "Lets this app run its models on the NVIDIA card. Downloads NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA from PyPI (the public Python package index), for this app's Python 3.12, each checked by size and SHA-256, into the app's data folder (about 3.5 GB unpacked). Used from the next start; the app checks each model gives the same answers on the card before using it." },
     { section: W, id: "wskeys", label: "Keys", type: "info",
       hint: "Web search sends a face to Amazon (celebrity recognition) and its photo to Google (pages with the same picture), only when you click Web search. The keys are your own (how to make them: the Web search section of the README) and stay in %APPDATA%\\FaceLabels on this computer. Save an empty key to remove it.",
       get: async () => { const r = await get("/api/websearch/key");
@@ -1139,6 +1146,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     wsgoogle: a => post("/api/websearch/key", { key: a.key || "" }),
     wsaws: a => post("/api/websearch/aws", { id: a.id || "", secret: a.secret || "", region: a.region || "us-east-1" }),
     descget: () => post("/api/describe/getmodel", {}),
+    cudaget: () => post("/api/cuda/download", {}),
     describeTest: () => post("/api/describe/test", { url: desc.config?.url || "" }),
     describeKey: a => post("/api/describe/config", { key: a.key || "" }),
   });

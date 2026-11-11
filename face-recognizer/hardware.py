@@ -22,6 +22,8 @@ import time
 from functools import lru_cache
 from pathlib import Path
 
+import cudasupport
+
 
 def cpu_threads():
     """Processor threads this program may use (the process's affinity where the system reports it)."""
@@ -187,14 +189,14 @@ def uses():
             "videos": "decoded on the processor, about one frame a second looked at",
             "npu_note": ("not used by itself: measured slower than the GPU and the processor for one face at a time "
                          "(FACE_DEVICE=npu tries it)"),
-            "gpu_note": gpu_note()}
+            "gpu_note": gpu_note(), "cuda": cudasupport.status(), "cuda_offer": cudasupport.offer()}
 
 
 def gpu_note():
     """Why a graphics card that's here isn't used, when this copy of ONNX Runtime can't reach it (else "")."""
     h, have = describe(), set(describe()["onnxruntime"])
-    if have & {"Dml", "CUDA", "CoreML", "ROCm", "MIGraphX", "OpenVINO"}:
-        return ""
+    if have & {"Dml", "CUDA", "CoreML", "ROCm", "MIGraphX", "OpenVINO"} or cudasupport.needed():
+        return ""                             # in use, or the Linux app is fetching CUDA (cudasupport.status says)
     if any(g.startswith("NVIDIA") for g in h["gpus"]):
         return ("An NVIDIA card is here, but this copy of the app has no CUDA (its libraries are too big to ship), so "
                 "everything runs on the processor. To use the card, run the app from the code: ./setup.sh installs "

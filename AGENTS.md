@@ -23,6 +23,11 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   import-map `integrity` (SHA-384).
 - `face-recognizer/` — the Python project. All programs share `face-recognizer/data/`:
   - `face_id.py` — core library + CLI (`scan`, `cluster`, `name`, `people`, `recognize`, `reembed`, `migrate`).
+  - `cudasupport.py` — NVIDIA CUDA for the frozen Linux app (built with plain ONNX Runtime): `check` (driver 525.60+,
+    compute capability 5.2+), `offer` (Settings → This computer's **Download CUDA support**, never automatic),
+    `start_download` (`/api/cuda/download`: onnxruntime-gpu and NVIDIA's cu12 wheels from PyPI, pinned by size and
+    SHA-256, unpacked into `ROOT/cuda`), `activate` (at app start: a meta-path finder imports `onnxruntime`/`nvidia`
+    from there ahead of the bundled copy; falls back to it if that fails). `FACE_CUDA=off` turns it off.
   - `hardware.py` — what the computer has (`describe`: processor, memory, GPUs, NPU, ONNX Runtime providers; from
     the registry, /proc and /sys, sysctl) and how the programs use it (`uses`: `face_id.LAST_DEVICES`,
     `GPU_DECISIONS`, `import_workers`), and `ai_apps` (AI model apps for Describe photo: the usual local ports, the
@@ -210,7 +215,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   The Settings tab builds its rows with `textContent`/DOM properties only.
 - Keys (Web search, describe API key) are never sent to the page: endpoints return only whether one is saved.
 - Only the two fixed folders may be opened (`/open?what=data|private`); photos are addressed by face index, never by path.
-- Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`).
+- Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`, `cudasupport.py`); the CUDA
+  download starts only from its Settings button, and only `onnxruntime/` and `nvidia/` are unpacked from the wheels.
 - `settings_bridge.js` answers only its parent window, on `127.0.0.1`/`localhost`, and only when that is the origin
   the browser reports for the frame's parent (`location.ancestorOrigins`).
 - `hardware.ai_apps` asks only 127.0.0.1's usual AI ports and the configured describe server (with that server's own

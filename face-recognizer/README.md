@@ -449,7 +449,7 @@ Which GPU route, by system:
 | Hardware | Route |
 |---|---|
 | Windows with a DirectX 12 GPU (AMD, NVIDIA, Intel) | DirectML (`onnxruntime-directml`, installed by setup.bat) |
-| Linux with an NVIDIA card | CUDA, when run from the code: `./setup.sh` installs `onnxruntime-gpu` with its own CUDA and cuDNN libraries when `nvidia-smi` works (no CUDA toolkit needed). The downloaded Linux app can't carry CUDA (its libraries are over 2 GB), so it uses the processor and says so under **This computer** |
+| Linux with an NVIDIA card | CUDA, when run from the code: `./setup.sh` installs `onnxruntime-gpu` with its own CUDA and cuDNN libraries when `nvidia-smi` works (no CUDA toolkit needed). The downloaded Linux app can't carry CUDA (its libraries are about 1.9 GB), so when it finds an NVIDIA card it checks the card and driver (CUDA 12 needs driver 525.60 or newer) and **Settings → This computer** offers **Download CUDA support**: NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA, from PyPI, for the app's Python, each checked by size and SHA-256, into the app's data folder (`cuda/`, about 3.5 GB). Nothing is downloaded until you click it; it's used from the next start |
 | Mac with Apple Silicon | CoreML |
 | anything else | the processor |
 

@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlparse
 import cv2
 import numpy as np
 
+import cudasupport
 import describe
 import hardware
 import websearch
@@ -395,6 +396,9 @@ def make_handler(db, importer):
                         return self.send({"ok": True, "message": describe.test(body.get("url") or "", body.get("key"))})
                     except describe.Unavailable as e:
                         raise ValueError(str(e)) from e
+                if path == "/api/cuda/download":          # NVIDIA CUDA for the Linux app (cudasupport.py), when asked
+                    cudasupport.start_download()
+                    return self.send({"ok": True, "status": cudasupport.status()})
                 if path == "/api/describe/getmodel":     # download the built-in describer (florence.py), background
                     describe.florence.download_in_background()
                     return self.send({"ok": True})

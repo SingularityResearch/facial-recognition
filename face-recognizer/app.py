@@ -364,8 +364,10 @@ def main(argv=None):
         log = open(HOME / "app.log", "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = log
         print(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} {TITLE} starting")
+    import cudasupport                              # Linux app + NVIDIA: its downloaded CUDA, before onnxruntime loads
+    cudasupport.activate()
     shell = shell_server()                          # first: the programs started next trust this page to frame them
-    run_programs()
+    run_programs()                                  # (Settings offers to download CUDA when an NVIDIA card is here)
     if "--browser" in args or os.environ.get("FACE_UI") == "browser":
         in_browser(shell)
     if not window_works():                          # e.g. Linux without working OpenGL for Qt's web view
