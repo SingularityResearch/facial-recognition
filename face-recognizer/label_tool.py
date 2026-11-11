@@ -25,6 +25,7 @@ import numpy as np
 import cudasupport
 import describe
 import hardware
+import lmstudio
 import websearch
 import localguard
 
@@ -290,6 +291,11 @@ def make_handler(db, importer):
                         return self.send(db.checks())
                     if path == "/api/import":
                         return self.send(importer.status)
+                    if path == "/api/downloads":               # what is downloading now (the header's bar)
+                        return self.send({"items": downloads()})
+                    if path == "/api/lmstudio":                # LM Studio on this computer, and models it lacks
+                        st = lmstudio.status()
+                        return self.send({**st, "missing": lmstudio.missing_models() if st.get("installed") else []})
                     if path == "/api/hardware/network":       # LM Studio servers on the local network (Settings)
                         return self.send({"servers": hardware.lmstudio_network()})
                     if path == "/api/hardware":               # this computer, and where each job runs (Settings)
@@ -398,6 +404,13 @@ def make_handler(db, importer):
                         return self.send({"ok": True, "message": describe.test(body.get("url") or "", body.get("key"))})
                     except describe.Unavailable as e:
                         raise ValueError(str(e)) from e
+                if path == "/api/lmstudio/share":         # the shared models folder (this computer's setting)
+                    lmstudio.set_share(body.get("folder", ""))
+                    threading.Thread(target=lmstudio.publish, daemon=True).start()
+                    return self.send({"ok": True, "shared": lmstudio.share_status()})
+                if path == "/api/lmstudio/get":           # download the models other LM Studio servers have
+                    lmstudio.get_models([m["variant"] for m in lmstudio.missing_models()])
+                    return self.send({"ok": True})
                 if path == "/api/cuda/download":          # NVIDIA CUDA for the Linux app (cudasupport.py), when asked
                     cudasupport.start_download()
                     return self.send({"ok": True, "status": cudasupport.status()})
@@ -468,6 +481,21 @@ def watch_webcam(importer, every=20):
         except (OSError, ValueError):
             pass                          # folder busy or another import started first: try next time
         time.sleep(every)
+
+
+def downloads():
+    """Downloads in progress, for the progress bar: models for LM Studio (lmstudio.get_models) and CUDA support
+    (cudasupport). [{what, how, pct, bytes, total, started}]"""
+    out = []
+    g = lmstudio.STATE.get("get") or {}
+    if g.get("running"):
+        out.append({"what": g.get("now"), "how": g.get("how"), "pct": g.get("pct"), "bytes": g.get("bytes"),
+                    "total": g.get("total"), "started": g.get("started"), "done": len(g.get("done", []))})
+    c = cudasupport.STATE
+    if c.get("state") == "downloading":
+        out.append({"what": "CUDA support", "how": "downloading from PyPI", "bytes": c.get("done"), "total": c.get("total"),
+                    "pct": int(c.get("done", 0) * 100 / max(c.get("total") or 1, 1)), "started": c.get("started")})
+    return out
 
 
 def attach(srv):

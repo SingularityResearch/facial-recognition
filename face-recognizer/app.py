@@ -368,6 +368,8 @@ def main(argv=None):
     cudasupport.activate()
     shell = shell_server()                          # first: the programs started next trust this page to frame them
     run_programs()                                  # (Settings offers to download CUDA when an NVIDIA card is here)
+    import lmstudio                                 # LM Studio here: serve on all interfaces, announce it (every minute)
+    lmstudio.keep()
     if "--browser" in args or os.environ.get("FACE_UI") == "browser":
         in_browser(shell)
     if not window_works():                          # e.g. Linux without working OpenGL for Qt's web view

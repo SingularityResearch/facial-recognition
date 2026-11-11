@@ -36,15 +36,15 @@
   .btn.primary:hover { filter: brightness(1.06); }
   .btn.small { padding: 3px 9px; font-size: 13px; border-radius: 7px; }
   .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; user-select: none; }
-  #progress { display: none; align-items: center; gap: 10px; min-width: 0; flex: 1 1 360px; }
-  #progress.on { display: flex; }
-  #progress .bar { flex: 0 0 140px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
-  #progress .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  #progress, #dlprogress { display: none; align-items: center; gap: 10px; min-width: 0; flex: 1 1 360px; }
+  #progress.on, #dlprogress.on { display: flex; }
+  #progress .bar, #dlprogress .bar { flex: 0 0 140px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  #progress .bar i, #dlprogress .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
   #progress .why { flex: none; }
   .probs { max-height: 50vh; overflow: auto; margin: 6px 0; padding-left: 18px; font-size: 13px; }
   .probs li { margin: 6px 0; overflow-wrap: anywhere; }
   .probs small { display: block; color: var(--muted); }
-  #progress .txt { color: var(--muted); font-size: 13px; min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #progress .txt, #dlprogress .txt { color: var(--muted); font-size: 13px; min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
   /* ---------- layout */
   /* The sidebar (views and people) is a fly-out on the left: closed, the faces get the whole width.
@@ -229,6 +229,7 @@
   <button class="btn" id="navbtn" aria-controls="sidebar" aria-expanded="true" title="Show or hide the sidebar (Ctrl+.)"><i></i></button>
   <h1>Face Labels</h1>
   <div id="progress" aria-live="polite"><div class="bar"><i></i></div><span class="txt"></span><button class="btn small why" id="impwhy" style="display:none" title="Which files couldn't be read, and why">Why?</button><button class="btn small" id="stopimp">Stop</button></div>
+  <div id="dlprogress" aria-live="polite" title="Downloads: models for LM Studio, CUDA support"><div class="bar"><i></i></div><span class="txt"></span></div>
   <div class="spacer"></div>
   <label class="size" title="Size of the face pictures (remembered)">Size <input type="range" id="tilesz" min="64" max="176" step="8" value="88" aria-label="Face picture size"></label>
   <label class="toggle" title="Faces too blurry or small to learn from are hidden from the review lists"><input type="checkbox" id="low"> Show blurry faces</label>

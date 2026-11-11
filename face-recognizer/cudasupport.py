@@ -191,7 +191,7 @@ def start_download():
 def _download():
     with _lock:
         total = sum(w[1] for w in WHEELS)
-        STATE.update(state="downloading", done=0, total=total, error=None)
+        STATE.update(state="downloading", done=0, total=total, error=None, started=__import__("time").time())
         part = DIR.with_name("cuda.download")
         try:
             shutil.rmtree(part, ignore_errors=True)

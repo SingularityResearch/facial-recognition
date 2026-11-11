@@ -980,6 +980,33 @@ function showProblems() {
 $("#impwhy").onclick = () => { showProblems(); $("#probs").classList.add("on"); };
 $("#probsclose").onclick = () => $("#probs").classList.remove("on");
 $("#probs").onclick = e => { if (e.target.id === "probs") $("#probs").classList.remove("on"); };
+// Downloads (models for LM Studio, CUDA support): their own bar beside the import's, every 2 s while one runs
+function amountText(d) {
+  const gb = n => (n / 1e9).toFixed(1), secs = Date.now() / 1000 - (d.started || Date.now() / 1000);
+  if (!(d.bytes && d.total)) return d.pct != null ? `${d.pct}%` : "starting";
+  const rate = d.bytes / Math.max(secs, 1), left = (d.total - d.bytes) / Math.max(rate, 1);
+  return `${gb(d.bytes)} of ${gb(d.total)} GB (${Math.floor(d.bytes * 100 / d.total)}%), ${(rate / 1e6).toFixed(0)} MB/s, ` +
+    `about ${left > 5400 ? (left / 3600).toFixed(1) + " h" : left > 90 ? Math.round(left / 60) + " min" : Math.max(1, Math.round(left)) + " s"} left`;
+}
+let dlTimer = null;
+async function pollDownloads() {
+  clearTimeout(dlTimer);
+  let items = [];
+  try { items = (await get("/api/downloads")).items || []; } catch { /* the server is busy or restarting */ }
+  const p = $("#dlprogress");
+  p.classList.toggle("on", items.length > 0);
+  if (items.length) {
+    const d = items[0];
+    const pct = d.bytes && d.total ? d.bytes * 100 / d.total : d.pct || 0;
+    p.querySelector("i").style.width = pct + "%";
+    const txt = `${d.how ? d.how[0].toUpperCase() + d.how.slice(1) : "Downloading"}: ${d.what}: ${amountText(d)}` +
+                (items.length > 1 ? ` (and ${items.length - 1} more)` : "");
+    p.querySelector(".txt").textContent = txt;
+    p.title = txt;
+  }
+  dlTimer = setTimeout(pollDownloads, items.length ? 2000 : document.hidden ? 15000 : 6000);
+}
+pollDownloads();
 // An import started anywhere else (the webcam check, another window) shows up here too.
 setInterval(() => { if (!polling && !document.hidden) get("/api/import").then(showImport).catch(() => {}); }, 4000);
 
@@ -1048,7 +1075,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
   const flag = (id, key, label, def, hint) => ({ section: L, id, label, type: "toggle", def, hint,
     get: () => (store.get(key) ?? (def ? "1" : "0")) === "1",
     set: v => { store.set(key, v ? "1" : "0"); const el = $("#" + id); if (el) el.checked = !!v; } });
-  let desc = {}, hw = {};
+  let desc = {}, hw = {}, lms = {}, lmsOffer = false;
   SettingsBridge.init("label", [
     c("tilesz", L, { label: "Face picture size" }),
     c("psort", L, { label: "Order of the people list" }),
@@ -1073,6 +1100,39 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
           const ms = e.models.filter(m => m.kind !== "embeddings").map(m => `${m.id}${m.vision ? " (reads pictures)" : ""}${m.loaded ? ", loaded" : ""}`);
           return `${e.host}${e.this_computer ? " (this computer)" : ""}: ${e.urls.join(", ")}${e.announced ? " (announces itself)" : ""}\n  ${ms.length} model${ms.length === 1 ? "" : "s"}: ${ms.join("; ") || "none"}`;
         }).join("\n"); } },
+    { section: "This computer", id: "lmshere", label: "LM Studio on this computer", type: "info",
+      hint: "While this app runs, LM Studio here is kept serving on all network interfaces and announced on the network (mDNS: LM Studio on <this computer>, with its port), so the other computers find it. FACE_LMSTUDIO=off turns that off.",
+      get: async () => { const s = lms = await get("/api/lmstudio");
+        if (!s.installed) return "Not installed (lmstudio.ai).";
+        const lines = [s.running ? `Server running on port ${s.port}, ${s.on_network ? "on all network interfaces" : "on this computer only"}` : "Server not running"];
+        if (s.bind) lines.push(`Changed: ${s.bind}`);
+        if (s.announced) lines.push(s.announced[0].toUpperCase() + s.announced.slice(1));
+        if (s.missing.length) lines.push(`Missing vision models the other LM Studio servers have: ${s.missing.map(m => `${m.variant} (on ${m.from})`).join(", ")}`);
+        else lines.push("Has every vision model the other LM Studio servers on the network have.");
+        const sh = s.shared || {};
+        if (sh.share) lines.push(sh.reachable ? `Shared models folder: ${sh.models.length} model${sh.models.length === 1 ? "" : "s"} there${sh.models.length ? ` (${sh.models.join(", ")})` : ""}${sh.note ? `; ${sh.note}` : ""}`
+                                            : `Shared models folder ${sh.share} can't be reached`);
+        if (sh.note) setTimeout(SettingsBridge.changed, 10000);
+        const g = s.get;
+        if (g?.running) {
+          const pct = g.bytes && g.total ? g.bytes * 100 / g.total : g.pct || 0, n = Math.round(pct / 5);
+          lines.push(`${g.how ? g.how[0].toUpperCase() + g.how.slice(1) : "Getting"}: ${g.now}`,
+                     `[${"#".repeat(n)}${"-".repeat(20 - n)}] ${amountText(g)}` + (g.done.length ? `; done: ${g.done.join(", ")}` : ""));
+          setTimeout(SettingsBridge.changed, 3000);
+        }
+        else if (g?.error) lines.push(`Download stopped: ${g.error}`);
+        else if (g?.done?.length) lines.push(`Downloaded: ${g.done.join(", ")}`);
+        if (!!s.missing.length !== lmsOffer) { lmsOffer = !!s.missing.length; setTimeout(SettingsBridge.changed, 0); }
+        return lines.join("\n"); } },
+    { section: "This computer", id: "lmsget", label: "Same models", type: "button",
+      button: () => `Download ${lms.missing?.length || 0} model${lms.missing?.length === 1 ? "" : "s"} with LM Studio`,
+      hidden: () => !lmsOffer || !!lms.get?.running,
+      hint: "Gets the vision models listed above into LM Studio's models folder: copied from the shared models folder when they're there (the very same files, each checked by SHA-256), else downloaded with LM Studio (lms get: the same model and quantization as on the other computers). Large: tens of GB." },
+    { section: "This computer", id: "lmsshare", label: "Shared models folder", type: "text",
+      hint: "A folder every computer can reach, for example on a NAS (\\\\SERVER\\share\\lmstudio-models on Windows, /mnt/nas/share/lmstudio-models on Linux). Each computer with this app and LM Studio puts its vision models there, and gets the ones it lacks from there before downloading them. Empty: not used.",
+      hidden: () => !lms.installed,
+      get: () => lms.shared?.share || "",
+      set: v => post("/api/lmstudio/share", { folder: v }) },
     { section: "This computer", id: "hwai", label: "AI model apps", type: "info",
       hint: "Apps that can run a vision model for Describe photo: the usual ports on this computer (LM Studio, Ollama, Jan, llama.cpp, vLLM and others), the server set under Describe photo (which may be another device), and apps installed but not running. Nothing else on the network is asked.",
       get: async () => { const a = (await get("/api/hardware")).ai || [];
@@ -1156,6 +1216,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     wsaws: a => post("/api/websearch/aws", { id: a.id || "", secret: a.secret || "", region: a.region || "us-east-1" }),
     descget: () => post("/api/describe/getmodel", {}),
     cudaget: () => post("/api/cuda/download", {}),
+    lmsget: () => post("/api/lmstudio/get", {}),
     describeTest: () => post("/api/describe/test", { url: desc.config?.url || "" }),
     describeKey: a => post("/api/describe/config", { key: a.key || "" }),
   });

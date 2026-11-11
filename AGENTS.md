@@ -28,6 +28,18 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     `start_download` (`/api/cuda/download`: onnxruntime-gpu and NVIDIA's cu12 wheels from PyPI, pinned by size and
     SHA-256, unpacked into `ROOT/cuda`), `activate` (at app start: a meta-path finder imports `onnxruntime`/`nvidia`
     from there ahead of the bundled copy; falls back to it if that fails). `FACE_CUDA=off` turns it off.
+  - `lmstudio.py` — LM Studio on this computer, kept as the owner wants on every computer with this app and LM Studio
+    (`keep()`, every minute from `app.py`; `FACE_LMSTUDIO=off`): `serve_everywhere` (its `http-server-config.json`
+    `networkInterface` 0.0.0.0; a localhost-only server restarted with `lms server start --bind 0.0.0.0`), `announce`
+    (mDNS `_lmstudio._tcp` + `_http._tcp` with its port: Windows `DnsServiceRegister`, macOS `dns-sd -R`, Linux
+    `avahi-publish-service`; skipped when the computer announces it already), `missing_models` / `get_models` (vision
+    models other servers on the network have, from Settings → This computer's button: first from the shared models
+    folder, `from_share`, checked by SHA-256, removed again if a file fails; else `lms get <model>@<quant>`), `publish`
+    (puts this computer's vision models in the shared folder: `<share>/models/...`, `<share>/hub/...`,
+    `<share>/index.json` with each file's size and SHA-256; the folder is this computer's setting in
+    `%APPDATA%\FaceLabels\lmstudio.json`). Stopping `lms get` doesn't stop LM Studio's own download: it keeps a paused
+    job that hides the model until cancelled in LM Studio. The Labeling header's second bar (`#dlprogress`,
+    `/api/downloads`) shows model and CUDA downloads.
   - `hardware.py` — what the computer has (`describe`: processor, memory, GPUs, NPU, ONNX Runtime providers; from
     the registry, /proc and /sys, sysctl) and how the programs use it (`uses`: `face_id.LAST_DEVICES`,
     `GPU_DECISIONS`, `import_workers`), `ai_apps` (AI model apps for Describe photo: the usual local ports, the
