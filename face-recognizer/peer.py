@@ -201,7 +201,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(jpg)
         except Exception as e:                    # never let one request stop the service
             try:
-                self._deny(500, type(e).__name__)
+                self._deny(500, f"{type(e).__name__}: {str(e)[:200]}")
             except Exception:
                 pass
 
@@ -274,6 +274,8 @@ def _get(addr, port_, fp, path, key):
     if len(status) < 2 or status[1] != b"200":
         if len(status) > 1 and status[1] == b"403":
             raise PermissionError("refused: " + body.decode("utf-8", "replace")[:100])
+        if len(status) > 1 and status[1] != b"404":
+            raise OSError(f"answered {status[1].decode()}: " + body.decode("utf-8", "replace")[:100])
         return None
     m = re.search(rb"\r\ncontent-length:\s*(\d+)", head, re.I)
     if m and len(body) != int(m.group(1)):
