@@ -860,8 +860,8 @@ const TALK_STEPS = [{ label: "neutral", talk: true, prompt: "Talk about your day
 async function runTest() {
   if (test) { test = null; return; }                       // pressing again stops it
   if (!stream) { setStatus("Start the camera first, then start the test.", "err"); return; }
-  const d = new Date(), z = v => String(v).padStart(2, "0");
-  const session = `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+  const d = new Date(), z = v => String(v).padStart(2, "0");    // UTC, like every stored time
+  const session = `${d.getUTCFullYear()}${z(d.getUTCMonth() + 1)}${z(d.getUTCDate())}-${z(d.getUTCHours())}${z(d.getUTCMinutes())}${z(d.getUTCSeconds())}`;
   $("testBtn").textContent = "Stop test";
   test = { session };
   for (const label of expressions) {

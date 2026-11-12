@@ -33,6 +33,7 @@ import numpy as np
 import face_id as F
 import alerts
 import localguard
+import paths
 
 HERE = Path(__file__).resolve().parent
 PAGE = HERE / "tracker_ui.html"
@@ -80,8 +81,9 @@ def save_capture(jpeg, faces, others=()):
         raise ValueError("expected 1-20 faces")
     rest = _boxes(list(others), "other faces")
     H, W = img.shape[:2]
-    when = time.strftime("%Y-%m-%d %H:%M:%S")
-    base = time.strftime("webcam-%Y%m%d-%H%M%S-") + f"{int(time.time() * 1000) % 1000:03d}"
+    when = paths.utc_now()
+    now = time.time()
+    base = f"webcam-{paths.utc_stamp(now)}-{int(now * 1000) % 1000:03d}"
     F.WEBCAM.mkdir(parents=True, exist_ok=True)
     stems = []
     for k, (f, (x, y, w, h)) in enumerate(zip(faces, boxes)):
@@ -303,7 +305,7 @@ class Recorder:
 
     def report(self, rep):
         """One feeling report (already checked by check_report)."""
-        self._append("feel-" + time.strftime("%Y%m%d"), {"t": round(time.time(), 2), "kind": "report", **rep})
+        self._append("feel-" + time.strftime("%Y%m%d", time.gmtime()), {"t": round(time.time(), 2), "kind": "report", **rep})
 
     @staticmethod
     def check_report(body):

@@ -31,7 +31,6 @@ import base64
 import json
 import re
 import shutil
-import time
 from pathlib import Path
 
 import numpy as np
@@ -173,7 +172,7 @@ def export(db, name, folder, web_saved=None):
     expr = F.DATA / "expr_eval"
     out = {
         "person": name,
-        "exported": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "exported": paths.utc_now(),
         "about": "Everything the face recognizer holds about this person on this computer (persondata.py). Face prints"
                  " are 512 float32 numbers, base64. Their usual look and normal signals are only in the tracker"
                  " page's browser storage, which this can't read.",
@@ -194,7 +193,7 @@ def export(db, name, folder, web_saved=None):
     out["expressionTests"] = {k: v for k, v in out["expressionTests"].items() if v}
     out["presence"] = {k: v for k, v in out["presence"].items() if v}
     safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .") or "person"
-    where = dest / f"{safe} - face recognizer data {time.strftime('%Y-%m-%d %H%M%S')}"
+    where = dest / f"{safe} - face recognizer data {paths.utc_stamp()}"
     (where / "faces").mkdir(parents=True, exist_ok=False)
     for fid, jpg in pictures.items():
         (where / "faces" / f"{re.sub(r'[^A-Za-z0-9_.-]', '_', fid)}.jpg").write_bytes(jpg)

@@ -16,6 +16,7 @@ from pathlib import Path
 import face_id as F
 
 from photofiles import file_hash, fingerprint, remember_folder, settings
+import paths
 
 IGNORE = "#ignore"       # = labels.IGNORE (repeated here: labels imports this module)
 
@@ -88,7 +89,7 @@ def migrate(store, folders, log=print):
     for f in folders:
         remember_folder(f)
 
-    old = F.DATA / "backups" / time.strftime("legacy-%Y%m%d-%H%M%S")
+    old = F.DATA / "backups" / ("legacy-" + paths.utc_stamp())
     old.mkdir(parents=True, exist_ok=True)
     for name in ("groups.json", "names.json", "excluded.json", "scanned.json"):
         if (F.DATA / name).exists():

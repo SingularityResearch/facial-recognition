@@ -260,14 +260,14 @@ def test_feeling_reports_keep_only_what_belongs(track):
     good = {"valence": 5, "arousal": 3, "name": "Ann", "features": {"smile": 0.4, "pitch_sd": [1.0, 2.0], "gone": None},
             "extra": "dropped"}
     assert request(url, "/api/expr-eval/report", json.dumps(good).encode())[0] == 200
-    lines = (engine.recorder.DIR / f"feel-{tracker.time.strftime('%Y%m%d')}.jsonl").read_text("utf-8").splitlines()
+    lines = (engine.recorder.DIR / f"feel-{tracker.time.strftime('%Y%m%d', tracker.time.gmtime())}.jsonl").read_text("utf-8").splitlines()
     saved = json.loads(lines[0])
     assert saved["name"] == "Ann" and saved["valence"] == 5 and "extra" not in saved
     assert saved["features"] == {"smile": 0.4, "pitch_sd": [1.0, 2.0], "gone": None}
     for bad in ({**good, "valence": 8}, {**good, "arousal": True}, {**good, "name": ""}, {**good, "features": {"a b": 1}},
                 {**good, "features": {"x": "text"}}, {**good, "features": {"x": [1] * 17}}, [1, 2]):
         assert request(url, "/api/expr-eval/report", json.dumps(bad).encode())[0] == 400, bad
-    assert len((engine.recorder.DIR / f"feel-{tracker.time.strftime('%Y%m%d')}.jsonl").read_text("utf-8").splitlines()) == 1
+    assert len((engine.recorder.DIR / f"feel-{tracker.time.strftime('%Y%m%d', tracker.time.gmtime())}.jsonl").read_text("utf-8").splitlines()) == 1
 
 
 def test_who_names_averaged_prints(track):

@@ -16,6 +16,7 @@ Nothing here imports the rest of the project, so every module (and the tests) ca
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -58,6 +59,40 @@ def _root():
 
 ROOT = _root()
 HOME = Path(os.environ["FACE_HOME"]).resolve() if os.environ.get("FACE_HOME") else user_data("FaceLabels")
+
+
+# Times are kept in UTC everywhere (files, the shared database) and shown in local time only on the pages.
+# Stored text form: ISO 8601 with Z, e.g. 2026-11-12T01:35:37Z. Files written before 2026-11-12 used local time
+# ("2026-11-11 17:35:37"); parse_time reads both.
+
+def utc_now():
+    """Now, in UTC: 2026-11-12T01:35:37Z."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def utc_stamp(t=None):
+    """A UTC time for file and folder names: 20261112-013537 (sorts in time order)."""
+    return time.strftime("%Y%m%d-%H%M%S", time.gmtime(t))
+
+
+def parse_time(text):
+    """An aware datetime (UTC) from a stored time: ISO 8601 (Z or an offset), or an older local-time
+    "YYYY-mm-dd HH:MM[:SS]" (read as this computer's local time). None when it isn't one."""
+    if not isinstance(text, str) or not text:
+        return None
+    try:
+        d = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if d.tzinfo is None:                  # written in local time before times were kept in UTC
+        d = d.astimezone()
+    return d.astimezone(timezone.utc)
+
+
+def utc_text(text):
+    """A stored time as UTC ISO text (unchanged when it isn't a time)."""
+    d = parse_time(text)
+    return d.strftime("%Y-%m-%dT%H:%M:%SZ") if d else text
 
 
 def replace_file(tmp, dest, tries=20):

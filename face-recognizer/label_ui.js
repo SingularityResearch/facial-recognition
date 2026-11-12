@@ -4,6 +4,9 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const IGN = "#ignore";
 const label = n => n === IGN ? "Ignored" : n;
+// Stored times are UTC (2026-11-12T01:35:37Z), shown in this computer's local time; older local-time text as it is.
+const localTime = s => /^\d{4}-\d\d-\d\dT[\d:]+(\.\d+)?(Z|[+-]\d\d:\d\d)$/.test(s || "")
+  ? new Date(s).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : (s || "");
 const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
 
 let STACKOF = {}, STACKN = -1, STACK = new Map();   // same picture again: face -> first face of its stack; tile -> its faces
@@ -741,7 +744,7 @@ function drawMode(on) {
 function showDescription(d) {
   const t = $("#desctext");
   if (!t) return;
-  t.innerHTML = `${esc(d.text)}<br><small>${esc(d.model || "")}${d.when ? ", " + esc(d.when) : ""}${d.secs ? `, ${d.secs} s` : ""}</small>`;
+  t.innerHTML = `${esc(d.text)}<br><small>${esc(d.model || "")}${d.when ? ", " + esc(localTime(d.when)) : ""}${d.secs ? `, ${d.secs} s` : ""}</small>`;
   $("#descgo").innerHTML = "Describe again <kbd>D</kbd>";
 }
 // what describes photos (LM Studio, or the built-in model), how many are done, and the built-in model's download
@@ -788,13 +791,13 @@ function clues(h) {
   const chip = (n, extra) => `<button class="chip" data-nm="${esc(n)}" title="Name this face ${esc(n)}">${avatar(n)}${esc(n)}${extra || ""}</button>`;
   let out = "";
   const live = h.live;                     // webcam snapshot: what the live tracker said when it saved it
-  if (live) out += `<div class="clue"><h4>Live tracker (${esc(live.when)})</h4>${live.name !== "Unknown"
+  if (live) out += `<div class="clue"><h4>Live tracker (${esc(localTime(live.when))})</h4>${live.name !== "Unknown"
     ? `<div class="chips">${chip(live.name, ` <small>${Math.round(live.sim * 100)}%</small>`)}</div>`
     : `<div class="meta">Didn't recognize this face${live.sim > 0 ? ` (best match ${Math.round(live.sim * 100)}%)` : ""}.</div>`}</div>`;
   if (h.tag) out += `<div class="clue"><h4>The photo's own tags</h4><div class="chips">${chip(h.tag)}</div></div>`;
   else if (h.tags.length) out += `<div class="clue"><h4>The photo is tagged with</h4><div class="chips">${h.tags.map(n => chip(n)).join("")}</div></div>`;
   const web = h.web;
-  if (web) out += `<div class="clue"><h4>Web search (${esc(web.when)})</h4>${web.suggestions.length
+  if (web) out += `<div class="clue"><h4>Web search (${esc(localTime(web.when))})</h4>${web.suggestions.length
     ? `<div class="chips">${web.suggestions.map(s => chip(s.name, ` <small>${esc(s.level)}</small>`)).join("")}</div>`
     : `<div class="meta">No suggestions found.</div>`}</div>`;
   if (h.closest.length) out += `<div class="clue"><h4>Closest people (weak guesses)</h4><div class="chips">${h.closest.map(c => chip(c.name, ` <small>${c.s.toFixed(2)}</small>`)).join("")}</div></div>`;
@@ -847,7 +850,7 @@ async function webSearch(refresh) {
             ${x.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(new URL(u).hostname.replace(/^www\./, ""))} ↗</a>`).join(" ")}</div></div>`).join("")
       : `<div><b>No suggestions found.</b></div><div class="meta">${r.checked.length ? "Checked: " + r.checked.map(esc).join("; ") + "." : ""}
           Amazon only knows well-known people, and Google only helps when this same picture is posted online.</div>`) +
-      (r.cached ? `<div><small>Saved answer from your search on ${esc(r.when)}: nothing was sent again. <b>Search again</b> asks anew.</small></div>` : "") +
+      (r.cached ? `<div><small>Saved answer from your search on ${esc(localTime(r.when))}: nothing was sent again. <b>Search again</b> asks anew.</small></div>` : "") +
       (r.cached ? "" : `<div><small>This month: ${Object.entries(r.usage).map(([k, u]) => `${k === "vision" ? "Google" : "Amazon"} ${u.used.toLocaleString()} of ${u.cap.toLocaleString()}`).join(", ")} searches (each stops before $10).</small></div>`);
     if (r.errors.length) $("#wserr").textContent = r.errors.join("; ");
     res.querySelectorAll("[data-tag]").forEach(b => b.onclick = async () => {
@@ -1077,11 +1080,11 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
 // this computer's hardware, each group in its own section, in that order
 {
   const c = SettingsBridge.control, L = "Labeling", W = "Labeling: Web search", P = "Labeling: Describe photo",
-        M = "LM Studio", H = "This computer";
+        M = "LM Studio", H = "This computer", D = "Shared database";
   const flag = (section, id, key, label, def, hint) => ({ section, id, label, type: "toggle", def, hint,
     get: () => (store.get(key) ?? (def ? "1" : "0")) === "1",
     set: v => { store.set(key, v ? "1" : "0"); const el = $("#" + id); if (el) el.checked = !!v; } });
-  let desc = {}, hw = {}, lms = {}, lmsOffer = false;
+  let desc = {}, hw = {}, lms = {}, lmsOffer = false, sdb = {};
   SettingsBridge.init("label", [
     c("tilesz", L, { label: "Face picture size" }),
     c("psort", L, { label: "Order of the people list" }),
@@ -1227,11 +1230,29 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                    `NPU: ${u.npu_note}`);
         const why = Object.entries(u.decisions).map(([m, w]) => `  ${m}: ${w}`);
         return lines.concat(why.length ? ["Checks at start:", ...why] : []).join("\n"); } },
+    { section: D, id: "dbstate", label: "Shared database", type: "info",
+      get: async () => {
+        sdb = await get("/api/db");
+        if (!sdb.available) return sdb.why;
+        const c = sdb.config, st = sdb.sync || {};
+        if (st.state === "joining" || st.state === "online" && st.waiting) setTimeout(SettingsBridge.changed, 3000);
+        return [c ? `${c.user} on ${c.host}:${c.port}, database ${c.dbname}, schema ${c.schema}` +
+                    (c.ca ? " (the server is checked against its own certificate authority)" : "") : "Not set up.",
+                st.text || "", st.waiting ? `${st.waiting} changes on this device wait to be sent.` : "",
+                `This device: ${sdb.device?.name || ""}`].filter(Boolean).join("\n");
+      } },
+    { section: D, id: "dbsetup", label: "Connect", type: "form", button: "Connect",
+      hint: "Keeps this device's faces, names, labels, Web search answers and photo descriptions in a PostgreSQL database (with pgvector) that your other devices share, and takes theirs. The data goes to that server over an encrypted connection; the password is kept on this device only (protected by Windows for your user). While the server can't be reached the app works from this device's copy and sends changes later. Leave the server empty and Connect to stop using it (this device keeps its copy).",
+      fields: [{ name: "host", placeholder: "Server (e.g. sentient-nas)" }, { name: "port", placeholder: "5432", size: 5 },
+               { name: "dbname", placeholder: "Database (sentient)", size: 10 }, { name: "user", placeholder: "User", size: 9 },
+               { name: "password", placeholder: "Password", secret: true }] },
     { section: H, id: "cudaget", label: "NVIDIA CUDA", type: "button",
       button: () => `Download CUDA support (${(hw.cuda_offer?.gb || 1.9).toFixed(1)} GB)`,
       hidden: () => !hw.cuda_offer?.offer,
       hint: "Lets this app run its models on the NVIDIA card. Downloads NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA from PyPI (the public Python package index), for this app's Python 3.12, each checked by size and SHA-256, into the app's data folder (about 3.5 GB unpacked). Used from the next start; the app checks each model gives the same answers on the card before using it." },
   ], {
+    dbsetup: a => post("/api/db/setup", { host: a.host || "", port: +a.port || 5432, dbname: a.dbname || "sentient",
+                                         user: a.user || "", password: a.password || "" }),
     wsgoogle: a => post("/api/websearch/key", { key: a.key || "" }),
     wsaws: a => post("/api/websearch/aws", { id: a.id || "", secret: a.secret || "", region: a.region || "us-east-1" }),
     descget: () => post("/api/describe/getmodel", {}),

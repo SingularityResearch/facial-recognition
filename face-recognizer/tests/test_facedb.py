@@ -104,8 +104,7 @@ def unit(seed, dim=512):
 
 @needs_pg
 def test_import_merges_devices_and_keeps_hand_labels(pg, tmp_path):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-    import db_import
+    import dbimport as db_import
     a = make_device(tmp_path / "a", [("f1", "p1", unit(1)), ("f2", "p2", unit(2)), ("f3", "p3", np.zeros(512))],
                     {"f1": {"n": "Ann", "by": "auto", "s": 0.5}, "f2": {"n": "Bob", "by": "me"},
                      "f3": {"n": "#ignore", "by": "me"}})

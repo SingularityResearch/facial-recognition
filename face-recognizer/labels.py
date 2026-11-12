@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 
 import face_id as F
+import paths
 
 IGNORE = "#ignore"
 MATCH = F.MATCH          # same setting the live recognizer uses
@@ -737,7 +738,7 @@ class LabelDB:
         self.changed()
         F.save_json("labels.json", self.labels)
         with open(F.DATA / "history.jsonl", "a", encoding="utf-8") as h:
-            h.write(json.dumps({"t": time.strftime("%Y-%m-%d %H:%M:%S"), "what": text,
+            h.write(json.dumps({"t": paths.utc_now(), "what": text,
                                 "faces": {f: self.labels.get(f) for f in fids}}) + "\n")
         self.build_people()
 
@@ -774,7 +775,7 @@ class LabelDB:
     def _backup_before_forgetting():
         """One copy of faces.npz and thumbs.npz before the v1.9 change deletes ignored faces' prints and pictures
         (labels.json backups don't hold them, so it couldn't be undone otherwise). Returns the folder."""
-        d = F.DATA / "backups" / time.strftime("before-v1.9-ignore-%Y%m%d-%H%M%S")
+        d = F.DATA / "backups" / ("before-v1.9-ignore-" + paths.utc_stamp())
         d.mkdir(parents=True, exist_ok=True)
         for name in ("faces.npz", "thumbs.npz"):
             if (F.DATA / name).exists():
@@ -786,7 +787,7 @@ class LabelDB:
         if src.exists():
             d = F.DATA / "backups"
             d.mkdir(exist_ok=True)
-            shutil.copy2(src, d / time.strftime("labels-%Y%m%d-%H%M%S.json"))
+            shutil.copy2(src, d / f"labels-{paths.utc_stamp()}.json")
             for old in sorted(d.glob("labels-*.json"))[:-keep]:
                 old.unlink()
 

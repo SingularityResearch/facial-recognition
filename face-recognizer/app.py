@@ -448,7 +448,7 @@ def main(argv=None):
     if getattr(sys, "frozen", False) or sys.stdout is None:      # no console: keep the messages in a log
         log = open(HOME / "app.log", "a", encoding="utf-8", buffering=1)
         sys.stdout = sys.stderr = log
-        print(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} {TITLE} starting")
+        print(f"\n--- {paths.utc_now()} {TITLE} starting")
     import cudasupport                              # Linux app + NVIDIA: its downloaded CUDA, before onnxruntime loads
     cudasupport.activate()
     shell = shell_server()                          # first: the programs started next trust this page to frame them

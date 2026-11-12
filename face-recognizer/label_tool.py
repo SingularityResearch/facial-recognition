@@ -28,6 +28,7 @@ import hardware
 import lmstudio
 import websearch
 import localguard
+import paths
 
 HERE = Path(__file__).resolve().parent
 PAGE = HERE / "label_ui.html"
@@ -49,8 +50,9 @@ def make_handler(db, importer):
     no_thumb = set()                       # faces whose picture couldn't be remade (this run)
     remake = []                            # faces waiting for their picture to be remade (newest asked first)
     remake_cv = threading.Condition()
-    web_saved = F.load_json(WEB_SAVED, {})   # face ID -> its last complete Web search answer
-    web_lock = threading.Lock()
+    # face ID -> its last complete Web search answer (attach() puts it on db, for the shared database's sync)
+    web_saved = db.web_saved if hasattr(db, "web_saved") else F.load_json(WEB_SAVED, {})
+    web_lock = getattr(db, "web_lock", None) or threading.Lock()
 
     def photo_jpeg(i):
         """The whole photo face i was found in (for a video: the frame it was found in), as JPEG."""
@@ -392,6 +394,8 @@ def make_handler(db, importer):
                                           "hints": dict(db.hints(i), web=web_saved.get(db.store.fid[i]))})
                     if path == "/api/websearch/key":
                         return self.send({"set": bool(websearch.key()), "services": websearch.services()})
+                    if path == "/api/db":                    # the shared database: settings (never the password), state
+                        return self.send(db_state(db))
                     if path == "/api/photos":                # photos with all of these people: ?with=A&with=B
                         names = parse_qs(u.query).get("with", [])
                         return self.send({"photos": db.photos_with(names)})
@@ -498,6 +502,15 @@ def make_handler(db, importer):
                     except describe.Unavailable as e:
                         raise ValueError(str(e)) from e
                     return self.send(describe.save(k, d))
+                if path == "/api/db/setup":             # set up (or stop using) the shared database
+                    import facedb
+                    r = facedb.setup(str(body.get("host") or ""), body.get("port") or 5432,
+                                     str(body.get("dbname") or "sentient"), str(body.get("user") or ""),
+                                     str(body.get("password") or ""), str(body.get("schema") or "facerec"),
+                                     getattr(sys.modules.get("app"), "VERSION", ""))
+                    if getattr(db, "sync", None):
+                        db.sync.note()
+                    return self.send(dict(r, **db_state(db)))
                 if path == "/api/websearch/aws":        # optional Amazon key, kept outside the project
                     websearch.save_aws(body.get("id"), body.get("secret"), body.get("region"))
                     return self.send({"ok": True, "services": websearch.services()})
@@ -515,7 +528,7 @@ def make_handler(db, importer):
                         if saved and not body.get("refresh"):   # asked before: no new searches, no cost
                             return self.send(dict(saved, cached=True, errors=[], usage={}))
                         r = websearch.suggest(search_picture(i, True), search_picture(i, False))
-                        r["when"] = time.strftime("%Y-%m-%d %H:%M")
+                        r["when"] = paths.utc_now()
                         if not r["errors"]:                       # keep only complete answers
                             with web_lock:
                                 web_saved[fid] = {k: r[k] for k in ("when", "suggestions", "checked", "details")}
@@ -567,6 +580,35 @@ def downloads():
     return out
 
 
+def db_state(db):
+    """The shared database for the Settings tab: {available, config (no password), device, sync}."""
+    sync = getattr(db, "sync", None)
+    if sync is None:
+        return {"available": False, "why": "This copy of the app can't use a shared database (psycopg isn't installed)."}
+    import facedb
+    return {"available": True, "config": facedb.config(), "device": facedb.device(), "sync": sync.status()}
+
+
+def start_sync(db):
+    """The shared database's sync (dbsync.py), when psycopg is installed; without a database configured it only
+    reports that. db.sync is None when it can't run here."""
+    import face_id as F
+    try:
+        import dbsync
+        import psycopg  # noqa: F401
+    except ImportError:
+        db.sync = None
+        return None
+    version = getattr(sys.modules.get("app"), "VERSION", "")
+
+    def save_web():
+        with db.web_lock:
+            F.save_json(WEB_SAVED, db.web_saved)
+    db.sync = dbsync.Sync(dbsync.Local(db, db.web_saved, save_web), version).start()
+    F.SAVED_HOOKS.append(db.sync.note)
+    return db.sync
+
+
 def attach(srv):
     """Load the faces and let srv (an HTTP server on 127.0.0.1) answer the labeling page; starts the
     background readers (photo dates and tags, webcam snapshots). Returns the LabelDB."""
@@ -574,8 +616,10 @@ def attach(srv):
     import labels as L
     F.require_models()
     db = L.LabelDB()
+    db.web_saved, db.web_lock = F.load_json(WEB_SAVED, {}), threading.Lock()
     importer = L.Importer(db)
     srv.RequestHandlerClass = make_handler(db, importer)
+    start_sync(db)
     def find_then_read():
         try:                               # photos that moved (e.g. a drive letter changed): find them first
             r = L.relocate(db.store, L.settings()["folders"], db.lock)

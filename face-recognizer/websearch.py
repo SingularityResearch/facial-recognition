@@ -89,7 +89,7 @@ def services():
 
 def usage(service="vision"):
     """{'month': 'YYYY-MM', 'used': n, 'cap': CAPS[service]} for this calendar month."""
-    month = time.strftime("%Y-%m")
+    month = time.strftime("%Y-%m", time.gmtime())     # billing months are UTC
     try:
         u = json.loads((HOME / f"{service}_usage.json").read_text("utf-8"))
     except (OSError, ValueError):

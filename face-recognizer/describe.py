@@ -352,7 +352,7 @@ def save(key, d, write=True):
     every 25 photos, not after each: the file grows to several MB)."""
     with _lock:
         s = _load()
-        s[key] = dict(d, when=time.strftime("%Y-%m-%d %H:%M"))
+        s[key] = dict(d, when=paths.utc_now())
         if write:
             _write(s)
         return s[key]

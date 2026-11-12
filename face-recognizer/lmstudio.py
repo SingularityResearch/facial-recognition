@@ -478,7 +478,7 @@ def publish():
             if hub_src.is_dir():
                 shutil.copytree(hub_src, hub_dst, dirs_exist_ok=True)
             index = _read_index(s)                            # another computer may have added to it meanwhile
-            index[variant] = {"hub": v["hub"], "files": files, "from": _host(), "added": time.strftime("%Y-%m-%d %H:%M")}
+            index[variant] = {"hub": v["hub"], "files": files, "from": _host(), "added": paths.utc_now()}
             paths.atomic_write(s / INDEX, json.dumps(index, indent=1).encode())
         STATE["share"] = None
     except OSError as e:

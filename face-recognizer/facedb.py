@@ -189,6 +189,7 @@ def connect(autocommit=True):
     conn = psycopg.connect(info, autocommit=True)
     try:
         conn.execute(f"SET search_path = {sch}, public")
+        conn.execute("SET TIME ZONE 'UTC'")       # times are kept and exchanged in UTC
         conn.execute("SELECT set_config('facerec.device', %s, false)", (device()["id"],))
         try:                                    # the vector type for numpy arrays, when pgvector's helper is there
             from pgvector.psycopg import register_vector
@@ -253,6 +254,34 @@ def open_ready(app_version=""):
     except Exception:
         conn.close()
         raise
+
+
+def setup(host, port, dbname, user, password, schema="facerec", app_version=""):
+    """Set up the shared database from the Settings tab: log in over an encrypted connection (sslmode=require; the
+    SCRAM login proves the server knows this password), take the server's certificate authority from its server_ca
+    table, then keep the settings with it so every later connection checks the server (verify-ca). Returns test()."""
+    import psycopg
+    if not host:
+        save_config("", 0, "", "", "", "")
+        return {"ok": True, "text": "The shared database is no longer used: data is kept on this device only."}
+    if not SCHEMA_RE.match(schema or ""):
+        raise ValueError("The schema name may have only lower-case letters, digits and _.")
+    from psycopg.conninfo import make_conninfo
+    info = make_conninfo(host=host.strip(), port=int(port or 5432), dbname=(dbname or "").strip(),
+                         user=(user or "").strip(), password=password or "", sslmode="require",
+                         connect_timeout=CONNECT_TIMEOUT, application_name="Face Recognizer")
+    try:
+        with psycopg.connect(info, autocommit=True) as conn:
+            conn.execute(f"SET search_path = {schema}, public")
+            ok = conn.execute("SELECT to_regclass('server_ca') IS NOT NULL").fetchone()[0]
+            row = conn.execute("SELECT pem FROM server_ca WHERE id = 1").fetchone() if ok else None
+    except psycopg.Error as e:
+        return {"ok": False, "text": f"Couldn't log in: {str(e).strip().splitlines()[0][:300]}"}
+    if not row:
+        return {"ok": False, "text": "The server has no certificate authority in its server_ca table: ask its "
+                                     "administrator to add it (tools/db_certs.py), so this device can check the server."}
+    save_config(host, port, dbname, user, password, row[0], schema)
+    return test(app_version)
 
 
 def test(app_version=""):

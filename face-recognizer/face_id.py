@@ -1061,6 +1061,31 @@ class Store:
         self.thumbs_changed = True
         return len(self.emb) - 1
 
+    def put(self, fid, photo, file, box, emb, picture, quality=float("nan")):
+        """Add or update a face by its permanent ID, as another device has it (dbsync): no new ID is made, the
+        picture is already JPEG (b"" for none) and emb is all zeros for a printless face. Returns its index."""
+        try:
+            i = self.fid.index(fid) if fid in self._fids else -1
+        except ValueError:
+            i = -1
+        box = np.asarray(box[:5], np.float32)
+        emb = np.asarray(emb, np.float32)
+        if i < 0:
+            self._fids.add(fid)
+            self.fid.append(fid)
+            self.photo.append(photo)
+            self.quality.append(quality)
+            self.emb.append(emb)
+            self.file.append(file)
+            self.box.append(box)
+            self.thumbs.append(picture or b"")
+            i = len(self.emb) - 1
+        else:
+            self.photo[i], self.file[i], self.box[i], self.quality[i], self.emb[i] = photo, file, box, quality, emb
+            self.thumbs[i] = picture or b""
+        self.thumbs_changed = True
+        return i
+
     def thumb(self, i):
         """Face i's picture (112x112 BGR), or None when there's none on this computer."""
         t = self.thumbs[i]
@@ -1122,8 +1147,15 @@ def load_json(name, default):
     return json.loads(p.read_text("utf-8")) if p.exists() else default
 
 
+# Called after anything in data/ was saved (Store.save ends with save_json): the shared database's sync
+# (dbsync.Sync.note) looks for what changed soon after. Hooks must be quick and never raise.
+SAVED_HOOKS = []
+
+
 def save_json(name, obj):
     paths.atomic_write(DATA / name, json.dumps(obj, indent=1))     # never leave a half-written file
+    for hook in SAVED_HOOKS:
+        hook()
 
 
 REBUILD_IOU = 0.6                 # a face found again must cover its saved box this well
