@@ -35,6 +35,7 @@ function drawPicker() {
 function layout() {
   // every ticked camera stays in the grid: one that stops streaming shows "offline" instead of disappearing
   const show = devices.filter(d => !hidden.has(d.id) && (d.streaming || tiles[d.id] || d.seen));
+  // a tile marked offline still asks for frames now and then: the first frame brings it back at once
   for (const id of Object.keys(tiles)) if (!show.some(d => d.id === id)) { stopTile(id); }
   if (!show.length) {
     $("grid").replaceChildren(el("div", { className: "empty", textContent: devices.length ? "No camera to show." : "Looking for cameras…" }));
@@ -54,7 +55,8 @@ function layout() {
 function offline(t, d) {
   if (!t) return;
   t.d = d;
-  if (d.streaming) {
+  // frames arriving win over the database's "last streamed" time, which a busy device may update late
+  if (d.streaming || (t.lastFrame && Date.now() - t.lastFrame < 10000)) {
     if (t.down) { t.down = false; t.msg.hidden = true; }   // back: its pump picks the frames up again
     return;
   }
@@ -85,7 +87,7 @@ function startTile(d) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function pump(t) {
   while (tiles[t.d.id] === t) {
-    if (t.down) { await sleep(1000); continue; }
+    if (t.down && t.lastFrame && Date.now() - t.lastFrame < 10000) t.down = false;
     try {
       const r = await fetch(`/api/cameras/${t.d.id}/frame?after=${t.seq}`, { cache: "no-store" });
       if (r.status === 200) {
@@ -94,7 +96,7 @@ async function pump(t) {
         t.img.src = url;
         if (t.url) URL.revokeObjectURL(t.url);
         t.url = url; t.lastFrame = Date.now(); t.frames++;
-        t.msg.hidden = true;
+        t.msg.hidden = true; t.down = false;
       } else if (r.status === 204) {
         // no new frame in 3 s: the readout says why ("paused") if the camera stopped
       } else {

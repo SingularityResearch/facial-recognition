@@ -103,6 +103,38 @@ def in_view(within=6.0):
         return {k: t for k, t in _in_view.items() if now - t <= within}
 
 
+_beat = {"thread": None}
+
+
+def start_heartbeat(every=3.0):
+    """Tell the shared database every few seconds that this device is here and whether its camera streams, on a
+    thread and connection of its own: a long sync step (many rows coming in) must not make the camera look offline
+    to the other devices. Started once by the labeling tool's sync."""
+    if _beat["thread"] is not None:
+        return
+
+    def run():
+        conn = None
+        while True:
+            try:
+                import facedb
+                if conn is None or conn.closed:
+                    conn = facedb.connect()
+                me = facedb.device()["id"]
+                conn.execute("UPDATE devices SET last_seen = now(), streaming_at = CASE WHEN %s THEN now() "
+                             "ELSE streaming_at END WHERE id = %s", (streaming(), me))
+            except Exception:
+                try:
+                    if conn is not None:
+                        conn.close()
+                except Exception:
+                    pass
+                conn = None
+            time.sleep(every)
+    _beat["thread"] = threading.Thread(target=run, daemon=True, name="camera heartbeat")
+    _beat["thread"].start()
+
+
 def reset():
     """Forget everything (tests)."""
     with _cv:

@@ -605,7 +605,11 @@ class Sync:
         fails = 0
         while not self.stopping.is_set():
             try:
+                t0 = time.time()
                 did = self.step()
+                took = time.time() - t0
+                if took > 2.0:
+                    self.log(f"Shared database: a sync step took {took:.1f} s ({did})")
                 fails = 0
                 if facedb.configured():
                     self.info.update(state="online", error=None, last=time.strftime("%H:%M:%S"),

@@ -130,7 +130,7 @@ def cameras():
         import facedb
         with facedb.connect() as conn:
             me = facedb.device()["id"]
-            rows = conn.execute("""SELECT id::text, name, peer_share, streaming_at > now() - interval '30 seconds',
+            rows = conn.execute("""SELECT id::text, name, peer_share, streaming_at > now() - interval '45 seconds',
                                           streaming_at FROM devices ORDER BY name""").fetchall()
         return {"devices": [{"id": i, "name": n, "me": i == me, "share": bool(sh), "streaming": bool(st),
                              "streamingAt": at.isoformat().replace("+00:00", "Z") if at else None}

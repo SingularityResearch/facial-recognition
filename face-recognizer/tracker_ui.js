@@ -1125,9 +1125,9 @@ async function streamFrame() {
     const blob = await new Promise(r => comp.toBlob(r, "image/jpeg", 0.72));
     const r = await fetch("/api/stream/frame", { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg", "X-Face-Tool": "1" } });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.stream === false) { streamOff = now + 30000; return; }
+    if (!r.ok || j.stream === false) { streamOff = now + 2000; return; }   // try again in 2 s: never pause for long
     streamNext = now + 100;                         // full rate all the time (about 10 frames a second)
-  } catch { streamOff = now + 30000; } finally { streamBusy = false; }
+  } catch { streamOff = now + 2000; } finally { streamBusy = false; }
 }
 // Each face as the live readout shows it: name, match, colour, expression, size and the labeled groups of cells
 function readoutData() {

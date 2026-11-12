@@ -535,8 +535,7 @@ class HomePart:
         import camstream
         import devicesettings
         me = facedb.device()["id"]
-        if camstream.streaming():
-            conn.execute("UPDATE devices SET streaming_at = now() WHERE id = %s", (me,))
+        camstream.start_heartbeat()                # streaming_at and last_seen, on their own thread
         now_seen = camstream.in_view()
         if now_seen:
             conn.cursor().executemany("""INSERT INTO sightings (device, name) VALUES (%s, %s)

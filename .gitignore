@@ -35,3 +35,5 @@ face-recognizer/data/
 
 # The Python environment setup.sh makes (macOS, Linux)
 face-recognizer/.venv/
+
+face-recognizer/FaceRecognizer.exe.*
