@@ -64,7 +64,8 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     sync with a database, by its `instance` id): dbimport, then everything pulled. A new place that keeps data must
     get a table (new `db/NNN_*.sql`) and a part.
   - `secretbox.py` — keys in the database encrypted on the device (scrypt + AES-256-GCM, name as associated data);
-    `secret_check` tells a right passphrase from a wrong one; the derived key in `HOME/secret.key` (protected).
+    `secret_check` tells a right passphrase from a wrong one; the derived key and the passphrase in `HOME/secret.key`
+    (protected; the passphrase kept so Settings can show it masked, the owner's choice). Neither goes to the database.
   - `devicesettings.py` + `page_store.js` — each page's settings (`HOME/settings.json`) and each person's usual look
     and signal normals (`HOME/person_signals.json`), kept by the page's own server (`/api/settings`,
     `/api/signals`); `page_store.js` restores them into localStorage first thing (one synchronous request) and sends
@@ -269,7 +270,7 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   (labeling tool; needs `X-Face-Tool: 1`, refused cross-site), for the Settings tab to show them masked, each with an
   eye button that shows it only while held (the owner's choice, 2026-11-11). Every other endpoint returns only
   whether one is saved. The Settings tab never stores them; nothing is written into page HTML or storage. In the
-  shared database they exist only encrypted (`secretbox.py`); the passphrase is never stored, only its derived key.
+  shared database they exist only encrypted (`secretbox.py`); the passphrase stays on each device (protected).
 - The shared database is reached only over TLS checked against its own CA (`verify-ca`); LAN connections without
   TLS are refused by its pg_hba. The app's role (`facerec`) is not a superuser and owns only its schema.
 - Only the two fixed folders may be opened (`/open?what=data|private`); photos are addressed by face index, never by path.

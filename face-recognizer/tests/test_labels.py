@@ -158,3 +158,32 @@ def test_problems_keep_the_last_files_and_why():
     assert st["errors"] == L.PROBLEMS_KEPT + 7 and len(st["problems"]) == L.PROBLEMS_KEPT
     assert st["problems"][-3] == {"file": "D:/Photos/24.jpg", "why": "OSError: broken 24"}
     assert st["problems"][-2]["why"] == "couldn't read the video" and st["problems"][-1]["why"] == "ValueError"
+
+
+def test_the_faceness_model_trains_in_the_background_without_holding_the_lock(data, monkeypatch):
+    """Training on thousands of faces takes seconds (minutes on a slow computer): the labeling page and the shared
+    database's sync must not wait for it. Until it's done, every possible face is shown."""
+    import threading
+    make_faces(data, 160)
+    photos = json.loads((data / "photos.json").read_text("utf-8"))
+    for k in range(40, 80):                              # half the photos: their faces are possible faces
+        photos[f"h{k}"]["maybe"] = {f"f{2 * k}": 0.5, f"f{2 * k + 1}": 0.5}
+    (data / "photos.json").write_text(json.dumps(photos), "utf-8")
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    started, release = threading.Event(), threading.Event()
+    real = L.LabelDB._fit
+
+    def slow_fit(E, pos, neg):
+        started.set()
+        release.wait(10)
+        return real(E, pos, neg)
+    monkeypatch.setattr(L.LabelDB, "_fit", staticmethod(slow_fit))
+    with db.lock:
+        assert db.face_cut() == 0.0                      # nothing yet: show every possible face
+    assert started.wait(5)
+    assert db.lock.acquire(timeout=2)                    # training runs without the lock
+    db.lock.release()
+    release.set()
+    db._fj_thread.join(20)
+    with db.lock:
+        assert db.face_cut() > 0.0 and db.faceness(np.asarray(db.store.emb[:2])) is not None

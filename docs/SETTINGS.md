@@ -16,7 +16,7 @@ How settings are kept:
 | Program settings | `%APPDATA%\FaceLabels\` (macOS `~/Library/Application Support/FaceLabels`, Linux `~/.local/share/FaceLabels`) | Describe photo (`describe.json`), Web search keys, the shared models folder (`lmstudio.json`), alerts |
 | Start-up choices | environment variables (end of this page) | `FACE_DEVICE`, `FACE_PORTS` |
 
-Keys and the shared database's password are shown in their fields masked (`*`); hold the eye button beside a field to see it. The passphrase for keys is never stored, so it can't be shown.
+Keys and the shared database's password are shown in their fields masked (`*`); hold the eye button beside a field to see it. The same goes for the passphrase for keys.
 
 ---
 
@@ -196,7 +196,7 @@ in each device's own files, as before. See the user guide's
 | **Shared database** (status) | Not set up | The server and database, whether it's reachable, when it last checked, how many changes made here wait to be sent (while the server can't be reached), and this device's name. |
 | **Connect** (server, port, database, user, password) | empty, 5432, `sentient` | Logs in over an encrypted connection, takes the server's own certificate authority from its `server_ca` table and from then on checks the server with it on every connection. The first time, this device's data is merged in and every other device's is taken (Joining). Leave the server empty and Connect to stop using it: this device keeps its copy. Kept in `%APPDATA%\FaceLabels\database.json`; the password is protected by Windows for your user (DPAPI; on macOS and Linux the file is readable by you only). |
 | **Copy settings from** | — | Takes another device's options for the Face tracking and Labeling pages, its describer choices and LM Studio shared folder (not its describe server address), in place of this device's. |
-| **Passphrase for keys** | not entered | The Web search keys and the describe server's API key are kept in the database encrypted with it (AES-256-GCM, key from the passphrase by scrypt), on the device before they're sent. The first device sets it; the others must enter the same. Each device keeps only the derived key (`secret.key`, protected like the password). Without it on a device, that device's keys stay on it alone. |
+| **Passphrase for keys** | not entered | The Web search keys and the describe server's API key are kept in the database encrypted with it (AES-256-GCM, key from the passphrase by scrypt), on the device before they're sent. The first device sets it; the others must enter the same. Each device keeps the passphrase and the key made from it (`secret.key`, protected like the password), so the field shows it masked. Without it on a device, that device's keys stay on it alone. |
 
 What is shared, and what stays each device's own:
 

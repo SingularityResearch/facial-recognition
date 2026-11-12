@@ -192,6 +192,7 @@ def test_private_data_keys_and_forgets_reach_the_other_device(shared, tmp_path, 
         with pytest.raises(ValueError):
             secretbox.set_passphrase(c, "short")
         assert secretbox.set_passphrase(c, "correct horse battery")["first"]
+    assert secretbox.saved_passphrase() == "correct horse battery"         # kept on the device, for Settings
     a.sync.note()
     a.step()
     with shared.connect() as c:

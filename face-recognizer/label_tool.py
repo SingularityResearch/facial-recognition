@@ -620,8 +620,7 @@ def app_version():
 
 def secrets():
     """Every saved key and password, for the Settings tab to show masked (each can be shown while its eye button is
-    held): the Web search keys, the describe server's key and the shared database's password. Not the passphrase for
-    keys: it is never stored (only a key made from it)."""
+    held): the Web search keys, the describe server's key, the shared database's password and the passphrase for keys."""
     import describe
     out = {"google": "", "aws": {"id": "", "secret": "", "region": ""}, "describe": describe.config().get("key") or "",
            "db": {}}
@@ -634,9 +633,11 @@ def secrets():
                   "region": a.get("region") or ""}
     try:
         import facedb
+        import secretbox
         out["db"] = facedb.saved_login() or {}
+        out["passphrase"] = secretbox.saved_passphrase()
     except ImportError:
-        pass
+        out["passphrase"] = ""
     return out
 
 

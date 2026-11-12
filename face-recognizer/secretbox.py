@@ -1,7 +1,8 @@
 """Keys kept in the shared database, encrypted on the device: AES-256-GCM with a key made from the owner's passphrase
 (scrypt). The database only ever holds the encrypted keys and, in secret_check, the scrypt settings with a known value
-encrypted, to tell a right passphrase from a wrong one. Each device keeps the derived key (never the passphrase) in
-HOME/secret.key, protected like the database password (facedb.protect: Windows DPAPI, else a mode-600 file).
+encrypted, to tell a right passphrase from a wrong one. Each device keeps the derived key and the passphrase itself
+(so the Settings tab can show it masked, the owner's choice 2026-11-11) in HOME/secret.key, protected like the
+database password (facedb.protect: Windows DPAPI, else a mode-600 file). Neither ever goes to the database.
 
 Without the passphrase entered on a device, its keys stay in its own files only and nothing about them is sent."""
 import base64
@@ -54,6 +55,15 @@ def local_key():
         return None
 
 
+def saved_passphrase():
+    """The passphrase as entered on this device ("" if none, or entered before it was kept)."""
+    try:
+        d = json.loads(KEY_FILE.read_text("utf-8"))
+        return facedb.unprotect(d["passphrase"]) if d.get("passphrase") else ""
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
+
+
 def forget_local():
     KEY_FILE.unlink(missing_ok=True)
 
@@ -88,7 +98,8 @@ def set_passphrase(conn, passphrase):
                         VALUES (1, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING""",
                      (salt, SCRYPT["n"], SCRYPT["r"], SCRYPT["p"], nonce, ct))
         first = True
-    facedb.write_private(KEY_FILE, {"key": facedb.protect(base64.b64encode(key).decode())})
+    facedb.write_private(KEY_FILE, {"key": facedb.protect(base64.b64encode(key).decode()),
+                                    "passphrase": facedb.protect(passphrase)})
     return {"ok": True, "first": first}
 
 

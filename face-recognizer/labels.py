@@ -74,6 +74,9 @@ class LabelDB:
         self._grouped = set()
         self._fp, self._fp_keys = None, []
         self.facts = PhotoFacts(self)    # camera dates and people tags; start() reads them in the background
+        self.version_faces = 0           # bumps when faces or their prints change (the faceness model trains again)
+        self._fj_thread = None
+        self.faceness_inline = False     # tests: train the faceness model in the calling thread
         if backup:
             self.backup()
         kept = [i for i in range(self.n) if self.name(i) == IGNORE and not self.store.printless(i)]
@@ -118,8 +121,9 @@ class LabelDB:
         return saved
 
     def _forgot(self):
-        for k in ("E", "E_n", "gone", "st", "st_n", "fm", "fm_n", "fc", "fc_n", "fs"):
+        for k in ("E", "E_n", "gone", "st", "st_n"):
             self._cache.pop(k, None)
+        self.version_faces += 1          # the faceness model trains again, in the background (kept meanwhile)
         self.groups = None
         self.changed()
 
@@ -133,7 +137,7 @@ class LabelDB:
         self.version += 1
         # kept: face prints, and the faceness model (retrained when faces are added, not on every label)
         self._cache = {k: v for k, v in self._cache.items()
-                       if k in ("E", "E_n", "fm", "fm_n", "fs", "fc", "fc_n", "st", "st_n")}
+                       if k in ("E", "E_n", "fm", "fs", "fc", "fj", "st", "st_n")}
 
     def by_photo(self):
         if self._cache.get("bp_n") != self.n:
@@ -349,18 +353,55 @@ class LabelDB:
 
     def _face_model(self):
         """Logistic regression on face prints, real faces against possible faces (_face_sets), for faces it
-        hasn't seen (the photo view's on-the-spot boxes). Retrained when the number of faces changes. None when
-        there's too little to learn from."""
-        if self._cache.get("fm_n") != self.n:
-            self._cache["fm_n"] = self.n
-            pos, neg = self._face_sets()
-            self._cache["fm"] = self._fit(self.E(), pos, neg) if len(pos) >= 50 and len(neg) >= 50 else None
-        return self._cache["fm"]
+        hasn't seen (the photo view's on-the-spot boxes). None when there's too little to learn from, or while it's
+        being trained (see _faceness_job)."""
+        self._faceness_job()
+        return self._cache.get("fm")
 
     def faceness(self, emb):
         """'Looks like a real face' score (0..1) for face prints (rows of emb), or None without a model."""
         m = self._face_model()
         return None if m is None else m.predict_proba(np.atleast_2d(emb))[:, 1]
+
+    def _faceness_job(self):
+        """Train the faceness model and the possible faces' scores in the background when the faces changed.
+        Training takes seconds on thousands of faces (minutes on a slow computer) and must not hold self.lock: the
+        labeling page and the shared database's sync wait on it. Until it's done, the previous model and scores
+        are used; with none yet, every possible face is shown. Call with self.lock held."""
+        want = (self.n, self.version_faces)
+        if self._cache.get("fj") == want or (self._fj_thread is not None and self._fj_thread.is_alive()):
+            return
+        self._cache["fj"] = want
+        E = self.E().copy()
+        pos, neg = self._face_sets()
+        idx = [i for i in range(self.n) if (self.maybe(i) or 0) > 0]
+
+        def train():
+            model, scores = None, {}
+            if len(pos) >= 50 and len(neg) >= 50:
+                model = self._fit(E, pos, neg)
+                if idx:
+                    negset = set(neg)
+                    folds = [neg[k::5] for k in range(5)]
+                    for k, fold in enumerate(folds):
+                        m = self._fit(E, pos, [j for kk, f in enumerate(folds) if kk != k for j in f])
+                        for j, v in zip(fold, m.predict_proba(E[fold])[:, 1].tolist()):
+                            scores[j] = v
+                    rest = [j for j in idx if j not in negset]        # possible faces you named: full model
+                    if rest:
+                        for j, v in zip(rest, model.predict_proba(E[rest])[:, 1].tolist()):
+                            scores[j] = v
+            with self.lock:
+                if self._cache.get("fj") == want:                     # still the faces it was trained on
+                    self._cache["fm"] = model
+                    self._cache["fs"] = scores
+                    self._cache["fc"] = float(np.quantile(list(scores.values()), 1 - FACE_SHOW)) if scores else 0.0
+                    self.changed()
+        if self.faceness_inline:                                       # tests: train right here
+            train()
+            return
+        self._fj_thread = threading.Thread(target=train, daemon=True, name="faceness")
+        self._fj_thread.start()
 
     def face_cut(self):
         """The faceness a possible face needs for its dashed box: the score of the top FACE_SHOW share of
@@ -368,32 +409,15 @@ class LabelDB:
         simply learned as junk. On 160 hand-sorted possible faces (24 real; AUC 0.84), showing the top 25%
         kept 17 of the 24 real faces and 21 of the other 136, about half of those drawings and game
         characters (to a face print, a drawn face is a face): about 9 in 10 non-face objects get no box.
-        Top 35% kept 18 real and 32 others, top 50% 21 and 47. 0 (show all) without enough to learn from."""
-        if self._cache.get("fc_n") != self.n:
-            self._cache["fc_n"] = self.n
-            pos, neg = self._face_sets()
-            idx = [i for i in range(self.n) if (self.maybe(i) or 0) > 0]
-            scores = {}
-            if len(pos) >= 50 and len(neg) >= 50 and idx:
-                E = self.E()
-                negset = set(neg)
-                folds = [neg[k::5] for k in range(5)]
-                for k, fold in enumerate(folds):
-                    m = self._fit(E, pos, [j for kk, f in enumerate(folds) if kk != k for j in f])
-                    for j, v in zip(fold, m.predict_proba(E[fold])[:, 1].tolist()):
-                        scores[j] = v
-                rest = [j for j in idx if j not in negset]        # possible faces you named: full model
-                if rest:
-                    for j, v in zip(rest, self.faceness(E[rest]).tolist()):
-                        scores[j] = v
-            self._cache["fs"] = scores
-            self._cache["fc"] = float(np.quantile(list(scores.values()), 1 - FACE_SHOW)) if scores else 0.0
-        return self._cache["fc"]
+        Top 35% kept 18 real and 32 others, top 50% 21 and 47. 0 (show all) without enough to learn from, or
+        until the first background training is done."""
+        self._faceness_job()
+        return self._cache.get("fc", 0.0)
 
     def face_score(self, i):
         """Faceness of possible face i (1.0 for faces drawn by hand and faces that aren't possible faces)."""
         self.face_cut()
-        return self._cache["fs"].get(i, 1.0)
+        return self._cache.get("fs", {}).get(i, 1.0)
 
     def shown(self, i):
         """Whether the photo view draws face i: every face except unnamed possible faces below face_cut."""
