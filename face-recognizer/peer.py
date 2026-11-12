@@ -41,6 +41,7 @@ TIMEOUT = 8                      # seconds to wait for another device
 MAX_PHOTO = 60_000_000           # bytes accepted from another device
 STREAM_FOR = 7 * 24 * 3600       # a /stream request lasts until the watching device closes it
 BOUNDARY = "facerecframe"
+READOUT_EVERY = 1.0              # s between the live readouts sent along a /stream (JSON parts between the frames)
 PHOTO_RE = re.compile(r"^/photo/([0-9a-f]{40}|path-[0-9a-f]{24}|nofile-[0-9a-f]{24})(?:\?frame=(\d{1,7}))?$")
 _key_cache = {}
 CURRENT_KEY = None               # the cluster key as of the last sync step (dbsync_home.HomePart.every_step)
@@ -231,13 +232,21 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY}")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        end, watcher = time.time() + STREAM_FOR, f"peer:{dev}:{id(self)}"
+        end, watcher, said = time.time() + STREAM_FOR, f"peer:{dev}:{id(self)}", 0.0
         while time.time() < end:
+            out = b""
             if jpg is not None:
-                self.wfile.write(f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpg)}\r\n\r\n"
-                                 .encode() + jpg + b"\r\n")
+                out += f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpg)}\r\n\r\n".encode() \
+                    + jpg + b"\r\n"
+            if time.time() - said >= READOUT_EVERY:  # the readout rides along: no request of its own per camera
+                ro = json.dumps(camstream.readout()).encode()
+                out += f"--{BOUNDARY}\r\nContent-Type: application/json\r\nContent-Length: {len(ro)}\r\n\r\n" \
+                    .encode() + ro + b"\r\n"
+                said = time.time()
+            if out:
+                self.wfile.write(out)
                 self.wfile.flush()
-            seq, jpg = camstream.wait_next(seq, watcher, timeout=5.0)
+            seq, jpg = camstream.wait_next(seq, watcher, timeout=READOUT_EVERY)
 
     def do_POST(self):
         self._deny(405, "only GET")

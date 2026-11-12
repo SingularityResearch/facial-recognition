@@ -368,6 +368,7 @@ def test_watching_another_devices_camera_and_moving_between_cameras(shared, tmp_
     """a streams its camera and readout; b watches through the peer service (TLS, signed). Ann seen on a, then on b:
     b raises "moved", which reaches a too."""
     import socket
+    import time
 
     import alerts
     import camstream
@@ -400,8 +401,15 @@ def test_watching_another_devices_camera_and_moving_between_cameras(shared, tmp_
             a_id = c.execute("SELECT id::text FROM devices WHERE name = 'a'").fetchone()[0]
         assert peer.fetch_readout(a_id)["faces"] == [{"name": "Ann", "sim": 70}]
         import camrelay                                            # the way the Cameras page gets it
+        camstream.put(frame)                                       # (the page sends ~10 a second: a fresh one)
+        camstream.set_readout([{"name": "Ann", "sim": 70}])
         relay = camrelay.get(a_id)
         assert relay.wait_next(0, timeout=10)[1] == frame, relay.error
+        for _ in range(50):                                        # the readout rides along the same stream
+            if relay.live_readout().get("faces"):
+                break
+            time.sleep(0.1)
+        assert relay.live_readout()["faces"] == [{"name": "Ann", "sim": 70}]
         camrelay.stop_all()
         sock, ctype, first = peer.open_stream(a_id)
         try:

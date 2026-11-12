@@ -31,7 +31,29 @@ def put(jpeg, size=None):
             print(f"Camera: no frame from the tracker page for {gap:.1f} s")
         _frame.update(seq=_frame["seq"] + 1, jpeg=bytes(jpeg), at=time.time(), size=size)
         _cv.notify_all()
+    news()
     return watching()
+
+
+# Any camera's new frame, this device's or a relayed one (camrelay.py): the Cameras page asks for every camera's
+# next frame in one request (tracker.py /api/cameras/frames), which waits on this.
+ANY = threading.Condition()
+
+
+def news():
+    """Wake whoever waits for any camera's next frame. Call without holding another camera lock."""
+    with ANY:
+        ANY.notify_all()
+
+
+def peek(after, watcher):
+    """(seq, jpeg) of this device's newest fresh frame when it's newer than `after`, else (after, None); never waits.
+    Notes the watcher like wait_next."""
+    with _cv:
+        _watchers[watcher] = time.time()
+        if _frame["seq"] > after and _frame["jpeg"] is not None and time.time() - _frame["at"] < FRESH:
+            return _frame["seq"], _frame["jpeg"]
+        return after, None
 
 
 def latest():

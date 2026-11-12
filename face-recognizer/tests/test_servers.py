@@ -453,10 +453,56 @@ def test_the_camera_stream_takes_frames_only_while_it_can_go_somewhere(track, mo
     assert request(url, "/api/inview", json.dumps({"names": [], "readout": "<b>x</b>"}).encode())[0] == 400
     code, _, body = request(url, "/cameras")
     assert code == 200 and b"cameras_ui.js" in body
-    import facedb                                         # this device's own camera, a frame at a time
+    import facedb                                         # every camera's next frame in one request
     me = facedb.device()["id"]
-    code, hdr, body = request(url, f"/api/cameras/{me}/frame?after=0")
-    assert code == 200 and body == jpg and hdr["X-Frame-Seq"] == str(camstream.latest()[0])
-    code, _, body = request(url, f"/api/cameras/{me}/frame?after={hdr['X-Frame-Seq']}")
-    assert code == 204                                    # nothing newer within 3 s
+
+    def frames(q):
+        code, hdr, body = request(url, f"/api/cameras/frames?after={q}")
+        n = int.from_bytes(body[:4], "big")
+        head = json.loads(body[4:4 + n])
+        return code, hdr, head, body[4 + n:]
+    code, hdr, head, rest = frames(f"{me}:0,not-an-id:3")
+    seq = camstream.latest()[0]
+    assert code == 200 and hdr["Content-Type"] == "application/octet-stream"
+    assert head["frames"] == [{"id": me, "seq": seq, "size": len(jpg)}] and rest == jpg
+    code, _, head, rest = frames(f"{me}:{seq}")
+    assert code == 200 and head["frames"] == [] and rest == b""          # nothing newer within 3 s
+    code, _, body = request(url, f"/api/cameras/readouts?ids={me}")
+    assert code == 200 and json.loads(body)[me]["faces"] == readout
     camstream.reset()
+
+
+def test_one_request_for_every_cameras_frames(monkeypatch):
+    """camera_frames: waits for the first new frame of any camera, then answers with every camera that has one;
+    the page's request count doesn't grow with the number of cameras."""
+    import threading
+    import time
+
+    import camrelay
+    import camstream
+    import facedb
+    import tracker
+    camstream.reset()
+    monkeypatch.setattr(facedb, "device", lambda: {"id": "00000000-0000-0000-0000-000000000000"})
+
+    class Fake:                                           # another device's relay, frames put in by the test
+        def __init__(self):
+            self.seq, self.jpeg, self.error = 0, None, ""
+
+        def peek(self, after):
+            return (self.seq, self.jpeg) if self.seq > after and self.jpeg else (after, None)
+    fakes = {f"{i:08d}-0000-0000-0000-000000000000": Fake() for i in range(1, 21)}
+    monkeypatch.setattr(camrelay, "get", lambda d: fakes[d])
+    after = {d: 0 for d in fakes}
+
+    def later():
+        time.sleep(0.3)
+        for i, f in enumerate(fakes.values()):
+            f.seq, f.jpeg = 1, b"\xff\xd8%d" % i
+        camstream.news()
+    threading.Thread(target=later).start()
+    t0 = time.time()
+    got, errors = tracker.camera_frames(after, "test", wait=3.0)
+    assert 0.25 < time.time() - t0 < 2.0                  # woken by the frames, not by the timeout
+    assert len(got) == 20 and not errors
+    assert tracker.camera_ids("x:1," + ",".join(f"{d}:7" for d in fakes)) == {d: 7 for d in fakes}

@@ -139,17 +139,57 @@ def cameras():
         return {"devices": [], "why": f"No shared database to find the other devices ({str(e)[:120]})"}
 
 
-def camera_readout(device):
-    """{faces, age} of one device's camera: this device's from memory, another's through the peer service."""
+MAX_CAMERAS = 64                                   # cameras one Cameras page request may ask about
+_DEVICE_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def camera_ids(text):
+    """{device id: number} from "id:n,id:n" (or bare ids), checked, at most MAX_CAMERAS."""
+    out = {}
+    for part in (text or "").split(",")[:MAX_CAMERAS]:
+        d, _, n = part.partition(":")
+        if _DEVICE_ID.fullmatch(d):
+            out[d] = int(n) if n.isdigit() else 0
+    return out
+
+
+def camera_readouts(ids):
+    """{device id: {faces, age, frameAge} or {faces: [], error}}: this device's from memory, the others' as their
+    relays last got them (camrelay.py: the readout rides along each device's stream). Never waits on the network."""
+    import camrelay
     import camstream
     import facedb
-    import peer
-    if device == facedb.device()["id"]:
-        return camstream.readout()
-    try:
-        return peer.fetch_readout(device)
-    except Exception as e:
-        return {"faces": [], "error": str(e)[:200]}
+    me = facedb.device()["id"]
+    return {d: camstream.readout() if d == me else camrelay.get(d).live_readout() for d in ids}
+
+
+def camera_frames(after, watcher, wait=3.0, gather=0.04):
+    """([(device id, seq, jpeg)], {device id: error}): each asked-for camera's newest frame after its number. Waits
+    up to `wait` s for the first, then `gather` s more so frames of several cameras go in one answer."""
+    import camrelay
+    import camstream
+    import facedb
+    me = facedb.device()["id"]
+    relays = {d: camrelay.get(d) for d in after if d != me}
+
+    def collect():
+        got = []
+        for d, n in after.items():
+            seq, jpg = camstream.peek(n, watcher) if d == me else relays[d].peek(n)
+            if jpg is not None:
+                got.append((d, seq, jpg))
+        return got
+    end = time.time() + wait
+    with camstream.ANY:                    # held while looking, so a frame arriving meanwhile still wakes the wait
+        got = collect()
+        while not got and time.time() < end:
+            camstream.ANY.wait(min(0.5, max(0.0, end - time.time())))
+            got = collect()
+        if got and gather > 0 and len(got) < len(after):
+            camstream.ANY.wait(gather)
+            got = collect()
+    errors = {d: r.error for d, r in relays.items() if r.error and not any(g[0] == d for g in got)}
+    return got, errors
 
 
 def _forgotten():
@@ -409,90 +449,26 @@ def make_handler(engine):
         # URL) and Open video (a file from this computer played through a blob: URL)
         policy = {"script-src": "'self' blob:", "media-src": "'self' blob:"}
 
-        def _frame(self, device):
-            """The next frame after ?after=N of one device's camera, as a JPEG with its number (X-Frame-Seq); 204
-            when none came within 3 s. This device's own from memory, another's through its relay (camrelay.py),
-            which keeps one connection to that device open while anyone watches."""
-            import camrelay
-            import camstream
-            import facedb
-            try:
-                after = int(dict(parse_qsl(self.path.partition("?")[2])).get("after") or 0)
-            except ValueError:
-                after = 0
-            if device == facedb.device()["id"]:
-                seq, jpg = camstream.wait_next(after, f"page:{self.client_address}", timeout=3.0)
-                why = ""
-            else:
-                relay = camrelay.get(device)
-                seq, jpg = relay.wait_next(after, timeout=3.0)
-                why = relay.error
-            if jpg is None:
-                body = json.dumps({"error": why}).encode() if why else b""
-                self.send_response(503 if why else 204)
-                self.send_header("Cache-Control", "no-store")
-                if body:
-                    self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                localguard.page_headers(self, self.frame_ancestors, self.policy)
-                self.end_headers()
-                if body:
-                    self.wfile.write(body)
-                return
+        def _frames(self):
+            """Every asked-for camera's next frame in one answer (?after=id:n,id:n): as soon as any has one newer
+            than n (or after 3 s with none). The body: a 4-byte big-endian length, that many bytes of JSON
+            {frames: [{id, seq, size}], errors: {id: why}}, then the frames' JPEGs one after another. One short
+            request for all cameras: the page's connections don't grow with the number of cameras."""
+            after = camera_ids(dict(parse_qsl(self.path.partition("?")[2])).get("after"))
+            got, errors = camera_frames(after, f"page:{self.client_address[0]}")
+            head = json.dumps({"frames": [{"id": d, "seq": s, "size": len(j)} for d, s, j in got],
+                               "errors": errors}).encode()
+            body = len(head).to_bytes(4, "big") + head + b"".join(j for _, _, j in got)
             self.send_response(200)
-            self.send_header("Content-Type", "image/jpeg")
-            self.send_header("Content-Length", str(len(jpg)))
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
-            self.send_header("X-Frame-Seq", str(seq))
             localguard.page_headers(self, self.frame_ancestors, self.policy)
             self.end_headers()
             try:
-                self.wfile.write(jpg)
+                self.wfile.write(body)
             except (BrokenPipeError, ConnectionResetError):
                 pass
-
-        def _camera(self, device):
-            """Pass one device's camera to the page as a multipart JPEG stream: this device's own from memory, another's
-            through the peer service (TLS, signed; peer.open_stream). Ends after peer.STREAM_FOR seconds; the page's
-            <img> asks again."""
-            import camstream
-            import facedb
-            import peer
-            me = facedb.device()["id"]
-            try:
-                sock, ctype, first = (None, f"multipart/x-mixed-replace; boundary={peer.BOUNDARY}", b"") \
-                    if device == me else peer.open_stream(device)
-            except Exception as e:
-                return self.send_json({"error": str(e)[:200]}, code=502)
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Cache-Control", "no-store")
-            localguard.page_headers(self, self.frame_ancestors, self.policy)
-            self.end_headers()
-            try:
-                if sock is None:                        # this device's own camera
-                    seq, jpg = camstream.latest()
-                    end = time.time() + peer.STREAM_FOR
-                    while time.time() < end:
-                        if jpg is not None:
-                            self.wfile.write(f"--{peer.BOUNDARY}\r\nContent-Type: image/jpeg\r\n"
-                                             f"Content-Length: {len(jpg)}\r\n\r\n".encode() + jpg + b"\r\n")
-                            self.wfile.flush()
-                        seq, jpg = camstream.wait_next(seq, f"page:{id(self)}", timeout=5.0)
-                    return
-                if first:
-                    self.wfile.write(first)
-                while True:
-                    chunk = sock.recv(65536)
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
-                    self.wfile.flush()
-            except (OSError, ValueError):
-                pass                                    # the page closed it, or the other device stopped
-            finally:
-                if sock is not None:
-                    sock.close()
 
         def _get(self):
             if self.refused(write=False):
@@ -506,15 +482,11 @@ def make_handler(engine):
                 return self.send(CAMERAS_PAGE.read_bytes(), "text/html; charset=utf-8")
             if path == "/api/cameras":                  # the devices whose cameras can be watched
                 return self.send_json(cameras())
-            m = re.fullmatch(r"/api/cameras/([0-9a-f-]{36})/stream", path)
-            if m:                                       # one device's live camera, as its tracker page shows it
-                return self._camera(m.group(1))
-            m = re.fullmatch(r"/api/cameras/([0-9a-f-]{36})/frame", path)
-            if m:                                       # the next frame of one device's camera (short request)
-                return self._frame(m.group(1))
-            m = re.fullmatch(r"/api/cameras/([0-9a-f-]{36})/readout", path)
-            if m:                                       # its live readout (faces, names, readings), as data
-                return self.send_json(camera_readout(m.group(1)))
+            if path == "/api/cameras/frames":           # every watched camera's next frame, in one request
+                return self._frames()
+            if path == "/api/cameras/readouts":         # their live readouts (faces, names, readings), as data
+                ids = camera_ids(dict(parse_qsl(self.path.partition("?")[2])).get("ids"))
+                return self.send_json(camera_readouts(ids))
             if path == "/api/presence":
                 try:
                     day = dict(parse_qsl(self.path.partition("?")[2])).get("day") or time.strftime("%Y-%m-%d")

@@ -78,43 +78,54 @@ function startTile(d) {
   const t = tiles[d.id] = { tile, img, st, msg, faces, seq: 0, url: null, lastFrame: 0, frames: 0, d };
   vid.ondblclick = () => { solo = solo === d.id ? null : d.id; layout(); };
   $("grid").append(tile);
-  pump(t);
 }
 
-// Frames one at a time: each request asks for the next frame after the last one shown and is answered as soon as
-// it exists (or after 3 s with none). Short requests only: a browser allows six connections at a time to one
-// address, and long-lived streams queued behind each other froze the picture.
+// Every camera's frames through one request at a time (tracker.py /api/cameras/frames): it asks for each tile's
+// next frame after the last one shown and is answered as soon as any camera has one (or after 3 s with none), with
+// every camera's new frame in one answer. A browser allows six connections at a time to one address, so the page's
+// requests must not grow with the number of cameras: frames take one, readouts another, now and then.
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function pump(t) {
-  while (tiles[t.d.id] === t) {
-    if (t.down && t.lastFrame && Date.now() - t.lastFrame < 10000) t.down = false;
-    try {
-      const r = await fetch(`/api/cameras/${t.d.id}/frame?after=${t.seq}`, { cache: "no-store" });
-      if (r.status === 200) {
-        t.seq = +r.headers.get("X-Frame-Seq") || t.seq + 1;
-        const url = URL.createObjectURL(await r.blob());
-        t.img.src = url;
-        if (t.url) URL.revokeObjectURL(t.url);
-        t.url = url; t.lastFrame = Date.now(); t.frames++;
-        t.msg.hidden = true; t.down = false;
-      } else if (r.status === 204) {
-        // no new frame in 3 s: the readout says why ("paused") if the camera stopped
-      } else {
-        const j = await r.json().catch(() => ({}));
-        t.st.className = "st off"; t.st.textContent = "can't reach it";
-        t.msg.hidden = false; t.msg.textContent = `Can't reach this camera now${j.error ? ` (${j.error})` : ""}; trying again…`;
-        await sleep(2000);
-      }
-    } catch { await sleep(2000); }
-  }
+function showFrame(t, seq, jpeg) {
+  t.seq = seq;
+  const url = URL.createObjectURL(jpeg);
+  t.img.src = url;
   if (t.url) URL.revokeObjectURL(t.url);
+  t.url = url; t.lastFrame = Date.now(); t.frames++;
+  t.msg.hidden = true; t.down = false;
 }
+async function pumpAll() {
+  for (;;) {
+    const ids = Object.keys(tiles);
+    if (!ids.length) { await sleep(500); continue; }
+    try {
+      const r = await fetch(`/api/cameras/frames?after=${ids.map(id => `${id}:${tiles[id].seq}`).join(",")}`,
+                            { cache: "no-store", signal: AbortSignal.timeout(15000) });
+      if (!r.ok) { await sleep(1000); continue; }
+      const buf = await r.arrayBuffer(), n = new DataView(buf).getUint32(0);
+      const head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, n)));
+      let off = 4 + n;
+      for (const f of head.frames || []) {
+        const t = tiles[f.id], part = buf.slice(off, off + f.size);
+        off += f.size;
+        if (t) showFrame(t, f.seq, new Blob([part], { type: "image/jpeg" }));
+      }
+      for (const [id, why] of Object.entries(head.errors || {})) {
+        const t = tiles[id];
+        if (!t || t.down || (t.lastFrame && Date.now() - t.lastFrame < 3000)) continue;
+        t.st.className = "st off"; t.st.textContent = "can't reach it";
+        t.msg.hidden = false; t.msg.textContent = `Can't reach this camera now (${why}); trying again…`;
+      }
+    } catch { await sleep(1000); }
+  }
+}
+pumpAll();
 
 function stopTile(id) {
   const t = tiles[id];
   if (!t) return;
   t.tile.remove();
-  delete tiles[id];                          // its pump stops by itself
+  if (t.url) URL.revokeObjectURL(t.url);
+  delete tiles[id];                          // the pump stops asking for it
   if (solo === id) solo = null;
 }
 
@@ -147,18 +158,24 @@ function faceBlock(f) {
   }
   return li;
 }
-async function loadReadouts() {
-  await Promise.all(Object.entries(tiles).map(async ([id, t]) => {
-    try {
-      const r = await (await fetch(`/api/cameras/${id}/readout`, { cache: "no-store" })).json();
+let readoutsBusy = false;
+async function loadReadouts() {                  // every camera's readout in one request
+  const ids = Object.keys(tiles);
+  if (!ids.length || readoutsBusy) return;
+  readoutsBusy = true;
+  try {
+    const all = await (await fetch(`/api/cameras/readouts?ids=${ids.join(",")}`, { cache: "no-store" })).json();
+    for (const [id, r] of Object.entries(all)) {
+      const t = tiles[id];
+      if (!t || !r) continue;
       const faces = Array.isArray(r.faces) ? r.faces : [];
       // frozen picture: the camera's device sent no new frame lately (its camera stopped, or its window was asleep)
-      const stale = typeof r.frameAge === "number" && r.frameAge > 5;
+      const stale = typeof r.frameAge === "number" && r.frameAge > 5 && !(t.lastFrame && Date.now() - t.lastFrame < 2000);
       if (stale) { t.st.className = "st off"; t.st.textContent = `paused · no new frame for ${Math.round(r.frameAge)} s`; t.paused = true; }
-      else if (!stale && t.paused) { t.paused = false; }                       // frames again
+      else if (t.paused) { t.paused = false; }                       // frames again
       t.faces.replaceChildren(...(faces.length ? faces.map(faceBlock) : [el("li", { className: "none", textContent: r.error ? "Readout unavailable" : "No faces in view" })]));
-    } catch {}
-  }));
+    }
+  } catch {} finally { readoutsBusy = false; }
 }
 setInterval(loadReadouts, 1000);
 

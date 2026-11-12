@@ -83,12 +83,15 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     on a timer while the page is hidden; the app window's browser runs unthrottled, `app.KEEP_RUNNING_FLAGS`;
     "Keep this camera running" restarts the camera within 10 s) and sends
     who's in view and its readout as data every second (`/api/inview`, `readoutData`). The peer service serves them
-    (`/stream` multipart, `/readout`); the tracker's `/cameras` page (the app's Cameras tab) shows every streaming
-    device in a grid with its readout, drawn with text only, through `/api/cameras/<id>/stream|readout` (this
-    device from memory, others via `peer.fetch_readout`). The page gets frames one at a time
-    (`/api/cameras/<id>/frame?after=N`, short requests: a browser allows six connections per address and long-lived
-    streams froze), fed by `camrelay.py`, one connection per watched device (`peer.open_stream`, never ending on a
-    timer, reconnecting at once). Frames stay in memory. `HomePart._cameras`
+    (`/stream` multipart: JPEG parts with a JSON readout part every `READOUT_EVERY` s between them; `/readout`); the
+    tracker's `/cameras` page (the app's Cameras tab) shows every streaming device in a grid with its readout, drawn
+    with text only. A browser allows six connections per address, so the page's requests never grow with the number
+    of cameras: one `/api/cameras/frames?after=id:n,...` at a time answers with every camera's new frames at once
+    (`camera_frames`: waits on `camstream.ANY` for the first, gathers 40 ms more; length-prefixed JSON head, then the
+    JPEGs), and one `/api/cameras/readouts?ids=...` a second answers every readout from memory (`camera_readouts`).
+    Both are fed by `camrelay.py`, one connection per watched device (`peer.open_stream`, never ending on a timer,
+    reconnecting at once), which keeps each device's newest frame and readout. Measured with a stub: 40 cameras at
+    9-10 fps each, at most 3 requests open. Frames stay in memory. `HomePart._cameras`
     keeps `sightings` and raises "moved" alerts (someone on this camera within `MOVE_WINDOW` of another's).
   - `devicesettings.py` + `page_store.js` — each page's settings (`HOME/settings.json`) and each person's usual look
     and signal normals (`HOME/person_signals.json`), kept by the page's own server (`/api/settings`,
