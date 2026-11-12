@@ -75,6 +75,13 @@ function alertNames() { return new Set($("alertWho").value.split(",").map(s => s
 const IN_APP = window.parent !== window;
 if (IN_APP) $("bellBtn").hidden = true;
 async function alertMe(text, kind = "arrived", name = "", track = null) {
+  announce(text);
+  let details = null;
+  try { details = track ? alertDetails(track) : null; } catch (e) { details = { error: String(e.message || e).slice(0, 200) }; }
+  return postAlert(text, kind, name, details, track);
+}
+// The banner, bell, sound and notification of an alert (alertMe stores it too; the app's own alerts are stored already)
+function announce(text) {
   let el = $("toast");
   if (IN_APP) el = { hidden: true, firstChild: {} };       // the app window's banner shows it instead
   else if (!el) {
@@ -91,8 +98,8 @@ async function alertMe(text, kind = "arrived", name = "", track = null) {
   if (!IN_APP) { $("bellBtn").classList.remove("ring"); void $("bellBtn").offsetWidth; $("bellBtn").classList.add("ring"); }
   if ($("optAlertSound").checked) beep();
   try { if (window.Notification && Notification.permission === "granted") new Notification("Face tracker", { body: text, silent: true }); } catch {}
-  let details = null;
-  try { details = track ? alertDetails(track) : null; } catch (e) { details = { error: String(e.message || e).slice(0, 200) }; }
+}
+async function postAlert(text, kind, name, details, track) {
   try {
     const r = await alertApi("/api/alerts", { kind, name, text, t: Date.now(), details });
     showAlertCounts(r.counts, text);
@@ -279,7 +286,7 @@ function renderAlerts(all) {
   const rows = all.filter(a => a.state === alertView);
   document.querySelectorAll("[data-astate]").forEach(b => b.setAttribute("aria-selected", b.dataset.astate === alertView));
   $("alertItems").innerHTML = rows.length
-    ? rows.map(a => `<li><span>${esc(a.text)}</span><span class="when">${esc(when(a.t))} · ${esc({ arrived: "arrived", left: "left", unusual: "unusual signals", unknown: "unknown face" }[a.kind] || a.kind)}</span>
+    ? rows.map(a => `<li><span>${esc(a.text)}</span><span class="when">${esc(when(a.t))} · ${esc({ arrived: "arrived", left: "left", unusual: "unusual signals", unknown: "unknown face", moved: "moved between cameras" }[a.kind] || a.kind)}</span>
         <span class="acts"><button data-detail="${esc(a.id)}" aria-expanded="${openDetail === a.id}">Details</button>${ROW_ACTS[alertView].map(([t, s]) => `<button data-id="${esc(a.id)}" data-to="${s}">${t}</button>`).join("")}</span>
         ${openDetail === a.id ? `<div class="details">${detailsHtml(a)}</div>` : ""}</li>`).join("")
     : `<li class="none">${{ new: "No new alerts", ack: "Nothing acknowledged", archived: "Nothing archived" }[alertView]}</li>`;
@@ -971,6 +978,7 @@ function draw() {
   }
   const now = performance.now();
   if (now - fpsT > 1000) { $("fps").textContent = Math.round(checks * 1000 / (now - fpsT)); checks = 0; fpsT = now; }
+  streamFrame();
   requestAnimationFrame(draw);
 }
 
@@ -1089,6 +1097,69 @@ function group(title, cells, note) {
     "</div></div>";
 }
 
+// ---- This camera for the other devices (camstream.py, peer.py): the video with every marker drawn on it, and the
+// live readout as data (drawn on the other side with text only). Sent only with a shared database and while
+// "Stream this camera" is on: about 10 frames a second while another device watches, else one every 2 s.
+const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
+let streamBusy = false, streamNext = 0, streamOff = 0;
+async function streamFrame() {
+  const now = performance.now();
+  if (!running || !$("optStream").checked || streamBusy || now < streamNext || now < streamOff || !video.videoWidth) return;
+  streamBusy = true;
+  try {
+    const s = Math.min(1, 960 / video.videoWidth);
+    comp.width = Math.round(video.videoWidth * s); comp.height = Math.round(video.videoHeight * s);
+    cctx.save();
+    if ($("optMirror").checked) { cctx.translate(comp.width, 0); cctx.scale(-1, 1); }   // as this page shows it
+    cctx.drawImage(video, 0, 0, comp.width, comp.height);
+    cctx.drawImage(canvas, 0, 0, comp.width, comp.height);                              // names, boxes, markers
+    cctx.restore();
+    const blob = await new Promise(r => comp.toBlob(r, "image/jpeg", 0.72));
+    const r = await fetch("/api/stream/frame", { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg", "X-Face-Tool": "1" } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.stream === false) { streamOff = now + 30000; return; }
+    streamNext = now + (j.watchers ? 100 : 2000);
+  } catch { streamOff = now + 30000; } finally { streamBusy = false; }
+}
+// Each face as the live readout shows it: name, match, colour, expression, size and the labeled groups of cells
+function readoutData() {
+  const showEv = $("optEvidence").checked && $("optExpr").checked, now = performance.now();
+  return tracks.map(t => {
+    const xt = exprText(t), unk = t.name === "Unknown";
+    const f = { name: t.name, sim: unk ? null : Math.round(t.sim * 100), color: colorFor(t.name), lost: !!t.missed,
+                expr: xt || "", exprState: xt ? t.expr.state : "", size: Math.round(t.tw || t.w), groups: [] };
+    if (showEv) {
+      const sig = Signals.fields(t.fs, now, voiceFor(t, now), t.talking);
+      f.groups.push(["Expression", !t.expr && t.xt.skip ? `no reading: ${t.xt.skip}` : "", Expression.fields(t.expr)], ["Face", "", sig.face]);
+      if ($("optVoice").checked) f.groups.push(["Voice", "", sig.voice]);
+      if ($("optPose").checked) f.groups.push(["Body", "", Signals.bodyFields(t.fs, now)]);
+      if ($("optCalib").checked) f.groups.push(["Their normal", "", Signals.normalFields(baselines, t.name, t.snap, t.ctx)]);
+    }
+    return f;
+  });
+}
+setInterval(() => {                       // who this camera sees, and its readout: every second while it runs
+  if (!running) return;
+  const names = tracks.filter(t => !t.missed && t.name !== "Unknown").map(t => t.name);
+  let readout = [];
+  try { readout = $("optStream").checked ? readoutData() : []; } catch {}
+  fetch("/api/inview", { method: "POST", headers: { "Content-Type": "application/json", "X-Face-Tool": "1" },
+                         body: JSON.stringify({ names, readout }) }).catch(() => {});
+}, 1000);
+// Alerts the app raised itself (someone moved between cameras, from any device): shown like this page's own
+let alertsSeenT = Date.now();
+setInterval(async () => {
+  try {
+    const r = await alertApi("/api/alerts");
+    const fresh = r.alerts.filter(a => a.kind === "moved" && a.state === "new" && a.t > alertsSeenT);
+    if (!fresh.length) return;
+    alertsSeenT = Math.max(...fresh.map(a => a.t));
+    for (const a of fresh) announce(a.text);
+    showAlertCounts(r.counts, fresh[0].text);
+    if (!$("alertsPanel").hidden) loadAlerts();
+  } catch {}
+}, 5000);
+
 function applyMirror() { $("stage").classList.toggle("mirror", $("optMirror").checked); }
 
 $("camBtn").onclick = () => { if (stream) remember("autostart", "0"); startCamera(); };
@@ -1165,7 +1236,7 @@ function recall(k) { try { return localStorage.getItem("ft-" + k); } catch { ret
 // The other options are remembered between visits too (the camera's mirror view follows the source instead)
 const KEEP = ["optPoints", "optTrail", "optUnknown", "optBlur", "optExpr", "optCalib", "optEvidence", "optVoice", "optPulse",
               "optTalkGate", "optState", "optPose", "optHandGate", "optSkeleton", "optFingers", "optSmooth", "optThresh", "optMeshStrength",
-              "optAlertArrive", "optAlertLeave", "optAlertUnusual", "optArriveGap", "optLeaveGap", "optUnknownStay",
+              "optAlertArrive", "optAlertLeave", "optAlertMove", "optStream", "optAlertUnusual", "optArriveGap", "optLeaveGap", "optUnknownStay",
               "optUnusualZ", "optUnusualFor", "optUnusualRepeat", "optDetailsAfter", "optBannerFor"];
 for (const id of KEEP) {
   const el = $(id), v = recall("o-" + id);
@@ -1198,6 +1269,7 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
     c("optPose", S, { hint: "Head height, shoulders, lean, body movement, breathing, hand on face and crossed arms." }),
     c("optThresh", R, { hint: "Higher strictness means fewer wrong names but more \"Unknown\". The default is the measured best for the active model." }),
     c("optCollect", R, { hint: $("collectHint").textContent }),
+    c("optStream", R, { label: "Stream this camera to my other devices", hint: "Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on here), with its live readout. Sent over your local network, encrypted, only to your own devices, and only while one watches (otherwise a frame every 2 s); never stored. Needs a shared database and Share my photos with my other devices." }),
     { section: A, id: "alertList", label: "Alert me about these people", type: "multi",
       hint: "Pick the people to be told about (their arrive, leave and unusual-signal events, as switched on below). Unknown: a face the recognizer can't name stays the set time.",
       options: () => {
@@ -1216,7 +1288,7 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
         $("optAlertUnknown").checked = v.includes("Unknown");
         $("optAlertUnknown").dispatchEvent(new Event("change"));
       } },
-    c("optAlertArrive", A), c("optAlertLeave", A), c("optAlertUnusual", A), c("optAlertUnknown", A, { label: "An unknown face stays" }),
+    c("optAlertArrive", A), c("optAlertLeave", A), c("optAlertMove", A, { label: "They move between cameras", hint: "Someone this camera sees was on another device's camera in the last 10 minutes (with a shared database). Every device shows the alert." }), c("optAlertUnusual", A), c("optAlertUnknown", A, { label: "An unknown face stays" }),
     c("optArriveGap", A), c("optLeaveGap", A), c("optUnknownStay", A), c("optUnusualZ", A), c("optUnusualFor", A),
     c("optUnusualRepeat", A), c("optDetailsAfter", A, { label: "Alert details: measure again after" }), c("optBannerFor", A),
     c("optAlertSound", A, { hint: $("alertHint").textContent }),

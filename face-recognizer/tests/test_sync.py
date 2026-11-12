@@ -362,3 +362,60 @@ def test_a_device_shows_another_its_original_photos(shared, tmp_path, monkeypatc
         assert peer.fetch("cd" * 20)[0] is None                 # a's records don't have that photo
     finally:
         svc.stop()
+
+
+def test_watching_another_devices_camera_and_moving_between_cameras(shared, tmp_path, monkeypatch):
+    """a streams its camera and readout; b watches through the peer service (TLS, signed). Ann seen on a, then on b:
+    b raises "moved", which reaches a too."""
+    import socket
+
+    import alerts
+    import camstream
+    import peer
+    camstream.reset()
+    a = Device(tmp_path / "a", monkeypatch, 2)
+    a.step()
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port_a = s.getsockname()[1]
+    monkeypatch.setattr(peer, "port", lambda: port_a)
+    monkeypatch.setattr(peer, "addresses", lambda: ["127.0.0.1"])
+    a.switch()
+    svc = peer.Service(lambda h, f: None, lambda: peer.CURRENT_KEY, bind="127.0.0.1", listen_port=port_a).start()
+    try:
+        with shared.connect() as c:
+            peer.CURRENT_KEY = peer.cluster_key(c)
+            peer.register(c, True)
+        frame = bytes([0xFF, 0xD8]) + b"a's camera" + bytes([0xFF, 0xD9])
+        camstream.put(frame)
+        camstream.set_in_view(["Ann"])
+        camstream.set_readout([{"name": "Ann", "sim": 70}])
+        a.step()                                                   # a: Ann on its camera (sightings)
+        with shared.connect() as c:                                # (a's own step marks it not sharing: the
+            peer.register(c, True)                                 #  test runs its service apart)
+        b = Device(tmp_path / "b", monkeypatch, 2)
+        b.step()
+        b.switch()
+        with shared.connect() as c:
+            a_id = c.execute("SELECT id::text FROM devices WHERE name = 'a'").fetchone()[0]
+        assert peer.fetch_readout(a_id)["faces"] == [{"name": "Ann", "sim": 70}]
+        sock, ctype, first = peer.open_stream(a_id)
+        try:
+            assert ctype.startswith("multipart/x-mixed-replace")
+            data = first
+            while frame not in data:
+                data += sock.recv(65536)
+        finally:
+            sock.close()
+        # Ann now on b's camera (same process here: b's step sees the names; the page sends them every second)
+        camstream.set_in_view(["Ann"])
+        b.step()
+        assert any(x["kind"] == "moved" and x["text"] == "Ann moved from a's camera to b's"
+                   for x in alerts.listing()["alerts"])
+        b.step()
+        a.step()
+        a.switch()
+        assert any(x["kind"] == "moved" for x in alerts.listing()["alerts"])          # the alert reached a too
+    finally:
+        svc.stop()
+        camstream.reset()

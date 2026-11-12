@@ -365,6 +365,9 @@ def flush():
 
 def _write(s):
     paths.atomic_write(STORE, json.dumps(s, ensure_ascii=False, indent=0))
+    import face_id as F
+    for hook in F.SAVED_HOOKS:                   # the shared database's sync sends it within seconds
+        hook()
 
 
 def count():

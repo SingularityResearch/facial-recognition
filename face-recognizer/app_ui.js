@@ -4,8 +4,8 @@
 let current = "track";
 function show(k) {
   current = k;
-  for (const t of ["track", "label", "set"]) document.getElementById("tab-" + t).setAttribute("aria-selected", t === k);
-  for (const t of ["track", "label"])
+  for (const t of ["track", "label", "cams", "set"]) document.getElementById("tab-" + t).setAttribute("aria-selected", t === k);
+  for (const t of ["track", "label", "cams"])
     document.getElementById("f-" + t).classList.toggle("on", t === k && !!document.getElementById("f-" + t).src);
   const f = document.getElementById("f-" + k);
   document.getElementById("settings").hidden = k !== "set";
@@ -13,7 +13,7 @@ function show(k) {
   if (k === "set") askAll(); else if (f.src) f.focus();
   try { localStorage.setItem("tab", k); } catch {}
 }
-try { const t = localStorage.getItem("tab"); if (t === "label" || t === "set") current = t; } catch {}
+try { const t = localStorage.getItem("tab"); if (t === "label" || t === "set" || t === "cams") current = t; } catch {}
 const errors = {};
 async function poll() {                          // each program's URL once it's serving, or why it failed
   let st = {};
@@ -21,6 +21,8 @@ async function poll() {                          // each program's URL once it's
   for (const k of ["track", "label"]) {
     const f = document.getElementById("f-" + k), s = st[k] || {};
     if (s.url && !f.src) { f.src = s.url; document.getElementById("st-" + k).textContent = ""; }
+    // the Cameras tab: the tracker's page of every device's camera
+    if (k === "track" && s.url && !document.getElementById("f-cams").src) document.getElementById("f-cams").src = new URL("cameras", s.url).href;
     if (s.error) { errors[k] = s.error; document.getElementById("st-" + k).textContent = "failed"; }
   }
   show(current);

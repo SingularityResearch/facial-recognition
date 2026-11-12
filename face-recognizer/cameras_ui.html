@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cameras</title>
+<style>
+  :root {
+    --bg: #eef1f0; --panel: #ffffff; --fg: #18211f; --muted: #5d6b67;
+    --line: #d3dbd8; --accent: #0e9f6e; --warn: #c2410c; --unknown: #e0574a;
+    --sans: system-ui, "Segoe UI", sans-serif; --mono: ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1413; --panel: #171e1c; --fg: #e4ebe8; --muted: #8b9a95;
+            --line: #2a3431; --accent: #34d399; --warn: #fb923c; --unknown: #ff7b6e; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); display: flex; flex-direction: column; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font: 600 15px var(--sans); margin: 0; }
+  .label { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  #pick { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  #pick label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  #pick label.off { color: var(--muted); }
+  #why { color: var(--muted); }
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } #events { max-height: 30vh; } }
+  #grid { display: grid; gap: 10px; padding: 10px; align-content: start; overflow: auto; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; display: grid;
+          grid-template-columns: minmax(0, 1fr) 230px; min-height: 0; overflow: hidden; }
+  .tile.solo { grid-column: 1 / -1; }
+  @media (max-width: 1300px) { .tile { grid-template-columns: 1fr; } }
+  .vid { position: relative; background: #000; aspect-ratio: 16 / 9; }
+  .vid img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .vid .bar { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; gap: 8px;
+              padding: 6px 10px; background: linear-gradient(#000a, #0000); color: #fff; font: 600 12px var(--sans); }
+  .vid .st { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+  .vid .st::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #888; margin-right: 6px; }
+  .vid .st.live::before { background: #34d399; } .vid .st.off::before { background: #fb923c; }
+  .vid .msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #ccc; text-align: center; padding: 20px; }
+  .faces { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 8px; overflow: auto; max-height: 420px; }
+  .faces li.none { color: var(--muted); padding: 4px; }
+  .face { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--bg); }
+  .face.lost { opacity: .55; }
+  .fhead { display: flex; align-items: center; gap: 6px; }
+  .sw { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+  .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .who.unk { color: var(--unknown); }
+  .match { font: 600 15px var(--mono); font-variant-numeric: tabular-nums; }
+  .meter { height: 3px; border-radius: 2px; background: var(--line); margin: 3px 0 4px; overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--accent); }
+  .fsub { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+  .fsub .change { color: var(--accent); font-weight: 600; }
+  .grp { margin-top: 6px; padding-top: 4px; border-top: 1px dashed var(--line); }
+  .gl { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 2px; }
+  .gl em { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--warn); }
+  .cells { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
+  .cell { min-width: 0; display: flex; flex-direction: column; }
+  .cell.wide { grid-column: 1 / -1; }
+  .cell span { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell b { font: 600 12px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell b.na { color: var(--muted); font-weight: 400; } .cell b.hot { color: var(--warn); }
+  #events { border-left: 1px solid var(--line); padding: 10px 12px; overflow: auto; background: var(--panel); }
+  #events ol { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #events li { border-left: 3px solid var(--line); padding: 2px 8px; }
+  #events li.moved { border-left-color: var(--accent); }
+  #events li.new { font-weight: 600; }
+  #events .t { display: block; font: 11px var(--mono); color: var(--muted); font-weight: 400; }
+  .empty { color: var(--muted); padding: 30px; text-align: center; grid-column: 1 / -1; }
+</style></head><body>
+<header>
+  <h1>Cameras</h1>
+  <span class="label">Show</span><div id="pick" role="group" aria-label="Cameras to show"></div>
+  <span id="why"></span>
+</header>
+<main>
+  <div id="grid" aria-live="polite"></div>
+  <aside id="events" aria-label="Events from every camera"><span class="label">Events, every camera</span><ol id="evlist"></ol></aside>
+</main>
+<script src="/cameras_ui.js"></script>
+</body></html>

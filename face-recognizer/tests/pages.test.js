@@ -9,7 +9,7 @@ const vm = require("node:vm");
 const dir = path.join(__dirname, "..");
 const read = f => fs.readFileSync(path.join(dir, f), "utf8");
 
-const SCRIPTS = ["tracker_ui.js", "label_ui.js", "app_ui.js", "expression.js", "signals.js", "settings_bridge.js", "page_store.js"];
+const SCRIPTS = ["tracker_ui.js", "label_ui.js", "app_ui.js", "expression.js", "signals.js", "settings_bridge.js", "page_store.js", "cameras_ui.js"];
 for (const file of SCRIPTS) {
   test(`${file} parses`, () => assert.doesNotThrow(() => new vm.Script(read(file), { filename: file })));
 }

@@ -431,3 +431,26 @@ def test_saved_keys_go_only_to_the_tools_own_page(label_url, home):
                                                                     "region": "us-west-2"}
     assert r["describe"] == "" and r["db"] == {}
     assert "G" * 39 not in request(label_url, "/api/websearch/key")[2].decode()   # the other answers still say only "saved"
+
+
+def test_the_camera_stream_takes_frames_only_while_it_can_go_somewhere(track, monkeypatch):
+    import camstream
+    import peer
+    camstream.reset()
+    url, _ = track
+    jpg = bytes([0xFF, 0xD8]) + b"frame"
+    monkeypatch.setattr(peer, "RUNNING", False)
+    code, _, body = request(url, "/api/stream/frame", jpg)
+    assert code == 200 and json.loads(body) == {"stream": False} and camstream.latest()[1] is None   # nowhere to go
+    monkeypatch.setattr(peer, "RUNNING", True)
+    monkeypatch.setattr(peer, "sharing", lambda: True)
+    code, _, body = request(url, "/api/stream/frame", jpg)
+    assert code == 200 and json.loads(body) == {"stream": True, "watchers": 0} and camstream.latest()[1] == jpg
+    assert request(url, "/api/stream/frame", b"not a jpeg")[0] == 400
+    readout = [{"name": "Ann", "sim": 71, "color": "#34d399", "groups": [["Face", "", [["Smile", "0.4", False, False]]]]}]
+    assert request(url, "/api/inview", json.dumps({"names": ["Ann", "Unknown"], "readout": readout}).encode())[0] == 200
+    assert set(camstream.in_view()) == {"Ann"} and camstream.readout()["faces"] == readout
+    assert request(url, "/api/inview", json.dumps({"names": [], "readout": "<b>x</b>"}).encode())[0] == 400
+    code, _, body = request(url, "/cameras")
+    assert code == 200 and b"cameras_ui.js" in body
+    camstream.reset()

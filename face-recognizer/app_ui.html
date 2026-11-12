@@ -89,6 +89,7 @@ iframe.on { visibility: visible; }
 <nav role="tablist">
   <button role="tab" id="tab-track" aria-selected="true" data-tab="track">Face tracking<small id="st-track">starting…</small></button>
   <button role="tab" id="tab-label" aria-selected="false" data-tab="label">Labeling<small id="st-label">starting…</small></button>
+  <button role="tab" id="tab-cams" aria-selected="false" data-tab="cams">Cameras</button>
   <button role="tab" id="tab-set" aria-selected="false" data-tab="set">Settings</button>
   <button class="bell" id="bell" type="button" aria-label="Alerts" title="Alerts: see, acknowledge or archive (Ctrl+4)"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 22a2.4 2.4 0 0 0 2.4-2.2H9.6A2.4 2.4 0 0 0 12 22Zm7-5.6V11a7 7 0 0 0-5.3-6.8V3.6a1.7 1.7 0 0 0-3.4 0v.6A7 7 0 0 0 5 11v5.4L3 18.5v.8h18v-.8Z"/></svg><span>Alerts</span><b id="bellN" hidden>0</b></button>
   <span class="ver"><span id="ver">v{{VERSION}}</span><button id="upd" title="Asks GitHub for the latest release (only when you click)">Check for updates</button></span>
@@ -100,6 +101,7 @@ iframe.on { visibility: visible; }
   <!-- visibility, not display:none, so the hidden tab keeps tracking and collecting faces -->
   <iframe id="f-track" title="Face tracking" allow="camera; microphone; autoplay; fullscreen"></iframe>
   <iframe id="f-label" title="Labeling" allow="clipboard-read; clipboard-write; fullscreen"></iframe>
+  <iframe id="f-cams" title="Cameras" allow="fullscreen"></iframe>
   <div id="settings" hidden><div class="sets" id="sets">
     <div><h1>Settings</h1><p>Everything you can set in the app, in one place. Changes apply at once and are remembered;
       the same options stay on the Face tracking and Labeling tabs too.</p></div>

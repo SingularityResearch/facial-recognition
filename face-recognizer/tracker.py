@@ -38,7 +38,9 @@ import paths
 HERE = Path(__file__).resolve().parent
 PAGE = HERE / "tracker_ui.html"
 SCRIPTS = {"/expression.js": HERE / "expression.js", "/signals.js": HERE / "signals.js",
-           "/settings_bridge.js": HERE / "settings_bridge.js", "/page_store.js": HERE / "page_store.js", "/tracker_ui.js": HERE / "tracker_ui.js"}
+           "/settings_bridge.js": HERE / "settings_bridge.js", "/page_store.js": HERE / "page_store.js", "/tracker_ui.js": HERE / "tracker_ui.js",
+           "/cameras_ui.js": HERE / "cameras_ui.js"}
+CAMERAS_PAGE = HERE / "cameras_ui.html"            # the other devices' live cameras, in a grid (camstream.py, peer.py)
 PEOPLE = F.DATA / "people.npz"
 CALIBRATION = F.DATA / "expr_calibration.json"   # written by tools/expr_eval.py
 VA_FIT = F.DATA / "va_fit.json"                   # written by tools/expr_eval.py from your feeling reports
@@ -121,6 +123,34 @@ def save_capture(jpeg, faces, others=()):
 PRESENCE = F.PRESENCE                              # opt-in presence log: private, outside data/
 
 
+def cameras():
+    """{devices: [{id, name, me, streaming, share}], why}: every device of the shared database, and whether its
+    camera streams now (a frame within the last half minute)."""
+    try:
+        import facedb
+        with facedb.connect() as conn:
+            me = facedb.device()["id"]
+            rows = conn.execute("""SELECT id::text, name, peer_share, streaming_at > now() - interval '30 seconds'
+                                   FROM devices ORDER BY name""").fetchall()
+        return {"devices": [{"id": i, "name": n, "me": i == me, "share": bool(sh), "streaming": bool(st)}
+                            for i, n, sh, st in rows], "why": ""}
+    except Exception as e:
+        return {"devices": [], "why": f"No shared database to find the other devices ({str(e)[:120]})"}
+
+
+def camera_readout(device):
+    """{faces, age} of one device's camera: this device's from memory, another's through the peer service."""
+    import camstream
+    import facedb
+    import peer
+    if device == facedb.device()["id"]:
+        return camstream.readout()
+    try:
+        return peer.fetch_readout(device)
+    except Exception as e:
+        return {"faces": [], "error": str(e)[:200]}
+
+
 def _forgotten():
     """People forgotten on any device (with a shared database): the page forgets what it learned about them."""
     try:
@@ -142,6 +172,8 @@ def log_visit(v):
     day = time.strftime("%Y-%m-%d", time.localtime(start / 1000))
     with open(PRESENCE / f"{day}.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps({"name": name, "start": start, "end": end}) + "\n")
+    for hook in F.SAVED_HOOKS:                   # the shared database's sync sends it within seconds
+        hook()
 
 
 def visits(day):
@@ -376,6 +408,49 @@ def make_handler(engine):
         # URL) and Open video (a file from this computer played through a blob: URL)
         policy = {"script-src": "'self' blob:", "media-src": "'self' blob:"}
 
+        def _camera(self, device):
+            """Pass one device's camera to the page as a multipart JPEG stream: this device's own from memory, another's
+            through the peer service (TLS, signed; peer.open_stream). Ends after peer.STREAM_FOR seconds; the page's
+            <img> asks again."""
+            import camstream
+            import facedb
+            import peer
+            me = facedb.device()["id"]
+            try:
+                sock, ctype, first = (None, f"multipart/x-mixed-replace; boundary={peer.BOUNDARY}", b"") \
+                    if device == me else peer.open_stream(device)
+            except Exception as e:
+                return self.send_json({"error": str(e)[:200]}, code=502)
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-store")
+            localguard.page_headers(self, self.frame_ancestors, self.policy)
+            self.end_headers()
+            try:
+                if sock is None:                        # this device's own camera
+                    seq, jpg = camstream.latest()
+                    end = time.time() + peer.STREAM_FOR
+                    while time.time() < end:
+                        if jpg is not None:
+                            self.wfile.write(f"--{peer.BOUNDARY}\r\nContent-Type: image/jpeg\r\n"
+                                             f"Content-Length: {len(jpg)}\r\n\r\n".encode() + jpg + b"\r\n")
+                            self.wfile.flush()
+                        seq, jpg = camstream.wait_next(seq, f"page:{id(self)}", timeout=5.0)
+                    return
+                if first:
+                    self.wfile.write(first)
+                while True:
+                    chunk = sock.recv(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+            except (OSError, ValueError):
+                pass                                    # the page closed it, or the other device stopped
+            finally:
+                if sock is not None:
+                    sock.close()
+
         def _get(self):
             if self.refused(write=False):
                 return
@@ -384,6 +459,16 @@ def make_handler(engine):
                 return self.send(PAGE.read_bytes(), "text/html; charset=utf-8")   # re-read so edits show on refresh
             if path in SCRIPTS:
                 return self.send(SCRIPTS[path].read_bytes(), "text/javascript; charset=utf-8")
+            if path == "/cameras":
+                return self.send(CAMERAS_PAGE.read_bytes(), "text/html; charset=utf-8")
+            if path == "/api/cameras":                  # the devices whose cameras can be watched
+                return self.send_json(cameras())
+            m = re.fullmatch(r"/api/cameras/([0-9a-f-]{36})/stream", path)
+            if m:                                       # one device's live camera, as its tracker page shows it
+                return self._camera(m.group(1))
+            m = re.fullmatch(r"/api/cameras/([0-9a-f-]{36})/readout", path)
+            if m:                                       # its live readout (faces, names, readings), as data
+                return self.send_json(camera_readout(m.group(1)))
             if path == "/api/presence":
                 try:
                     day = dict(parse_qsl(self.path.partition("?")[2])).get("day") or time.strftime("%Y-%m-%d")
@@ -416,6 +501,19 @@ def make_handler(engine):
                 return
             path, _, query = self.path.partition("?")
             try:
+                if path == "/api/stream/frame":         # this camera as the page shows it, for the other devices
+                    import camstream
+                    import peer
+                    if not peer.RUNNING or not peer.sharing():
+                        return self.send_json({"stream": False})
+                    return self.send_json({"stream": True, "watchers": camstream.put(self.body(camstream.MAX_FRAME))})
+                if path == "/api/inview":               # who this camera sees now (moved-between-cameras alerts)
+                    import camstream
+                    b = json.loads(self.body(camstream.MAX_READOUT + 30_000) or b"{}")
+                    camstream.set_in_view(b.get("names") or [])
+                    if b.get("readout") is not None:
+                        camstream.set_readout(b["readout"])
+                    return self.send_json({"ok": True})
                 if path == "/api/settings":             # page_store.js: changed settings of this page
                     import devicesettings
                     body = json.loads(self.body(200_000) or b"{}")

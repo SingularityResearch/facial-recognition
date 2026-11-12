@@ -25,7 +25,8 @@ The labeling tool's person view (**Their data…**) uses it through label_tool.p
            the app window's tab after a forget, and at the page's next load or people check for a forget that came
            from another device)
   private\settings.json        their name in the tracker's alert list (ft-alertWho; the page clears it itself too)
-  the shared database (facedb.py), when one is set up: every table above's copy. A forget here is sent to it and
+  the shared database (facedb.py), when one is set up: every table above's copy, and the sightings (who each
+           device's camera saw: names and times). A forget here is sent to it and
            to every other device (dbsync_home: the forgotten table), and clears what only the server holds.
 
 Forgetting keeps their faces as Ignored faces without print or picture (only where each face is in its photo,

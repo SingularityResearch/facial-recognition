@@ -19,7 +19,7 @@ import uuid
 import face_id as F
 import paths
 
-KINDS = ("arrived", "left", "unusual", "unknown")
+KINDS = ("arrived", "left", "unusual", "unknown", "moved")   # moved: from one device's camera to another's
 STATES = ("new", "ack", "archived")
 KEEP = 500
 DETAIL_SETS = ("first", "later")
@@ -61,6 +61,8 @@ def _load():
 def _save(rows):
     F.ALERTS.parent.mkdir(parents=True, exist_ok=True)
     paths.atomic_write(F.ALERTS, json.dumps(rows, indent=1, ensure_ascii=False))
+    for hook in F.SAVED_HOOKS:                   # the shared database's sync sends it within seconds
+        hook()
 
 
 def counts(rows=None):

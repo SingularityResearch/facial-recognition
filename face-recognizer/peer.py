@@ -13,6 +13,8 @@ that listens beyond this computer, so it answers one thing only, a photo by its 
   device derives from the shared database's password and the database's own id: only your devices can sign, and a
   signature older than CLOCK_SKEW seconds is refused (no replay);
 - for photos this device's own records have (photos.json), never by path.
+It also streams this device's live camera, as its tracker page shows it (camstream.py): GET /stream, the same
+TLS and signature, a multipart JPEG stream for up to STREAM_FOR seconds (the watching device asks again).
 Each device records its addresses, port and certificate fingerprint in the devices table (every sync step).
 Off with FACE_PEER=off, or the Settings switch "Share my photos with my other devices"."""
 import datetime
@@ -37,9 +39,12 @@ CONF = paths.HOME / "peer.json"
 CLOCK_SKEW = 120                 # seconds a signed request stays valid
 TIMEOUT = 8                      # seconds to wait for another device
 MAX_PHOTO = 60_000_000           # bytes accepted from another device
+STREAM_FOR = 120                 # seconds one /stream request lasts
+BOUNDARY = "facerecframe"
 PHOTO_RE = re.compile(r"^/photo/([0-9a-f]{40}|path-[0-9a-f]{24}|nofile-[0-9a-f]{24})(?:\?frame=(\d{1,7}))?$")
 _key_cache = {}
 CURRENT_KEY = None               # the cluster key as of the last sync step (dbsync_home.HomePart.every_step)
+RUNNING = False                  # the peer service is up (frames from the tracker page have somewhere to go)
 
 
 # --- settings ------------------------------------------------------------------------------------------------------
@@ -181,7 +186,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             m = PHOTO_RE.match(self.path)
-            if not m:
+            if not m and self.path not in ("/stream", "/readout"):
                 return self._deny(404, "not found")
             dev = self.headers.get("X-Peer-Device", "")
             when = self.headers.get("X-Peer-Time", "")
@@ -191,6 +196,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             key = self.service.key_source()
             if key is None or not hmac.compare_digest(sign(key, "GET", self.path, when, dev), sig):
                 return self._deny(403, "not signed by a device of this cluster")
+            if self.path == "/stream":
+                return self._stream(dev)
+            if self.path == "/readout":
+                import camstream
+                body = json.dumps(camstream.readout()).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             jpg = self.service.provider(m.group(1), int(m.group(2)) if m.group(2) else None)
             if jpg is None:
                 return self._deny(404, "this device doesn't have that photo")
@@ -204,6 +220,24 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._deny(500, f"{type(e).__name__}: {str(e)[:200]}")
             except Exception:
                 pass
+
+    def _stream(self, dev):
+        """This device's camera as its tracker page shows it, frame by frame (multipart JPEG)."""
+        import camstream
+        seq, jpg = camstream.latest()
+        if jpg is None:
+            return self._deny(404, "this device's camera isn't streaming")
+        self.send_response(200)
+        self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        end, watcher = time.time() + STREAM_FOR, f"peer:{dev}:{id(self)}"
+        while time.time() < end:
+            if jpg is not None:
+                self.wfile.write(f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpg)}\r\n\r\n"
+                                 .encode() + jpg + b"\r\n")
+                self.wfile.flush()
+            seq, jpg = camstream.wait_next(seq, watcher, timeout=5.0)
 
     def do_POST(self):
         self._deny(405, "only GET")
@@ -281,6 +315,79 @@ def _get(addr, port_, fp, path, key):
     if m and len(body) != int(m.group(1)):
         return None
     return body or None
+
+
+def device_peer(conn, device_id):
+    """(name, addresses, port, cert sha256) of a sharing device, or None."""
+    return conn.execute("""SELECT name, peer_addresses, peer_port, peer_cert_sha256 FROM devices
+                           WHERE id = %s AND peer_share AND peer_port IS NOT NULL AND peer_cert_sha256 IS NOT NULL""",
+                        (device_id,)).fetchone()
+
+
+def fetch_readout(device_id):
+    """Another device's live readout ({faces, age}) through the peer service."""
+    conn = facedb.connect()
+    try:
+        found = device_peer(conn, device_id)
+        key = cluster_key(conn)
+    finally:
+        conn.close()
+    if not found:
+        raise OSError("that device doesn't share its camera")
+    name, addrs, port_, fp = found
+    last = "no address"
+    for a in addrs or []:
+        try:
+            body = _get(a, port_, fp, "/readout", key)
+            if body:
+                return json.loads(body)
+        except (OSError, ssl.SSLError, ValueError) as e:
+            last = f"{a}:{port_}: {e}"
+    raise OSError(f"{name} can't be reached ({last})")
+
+
+def open_stream(device_id):
+    """Start watching another device's camera: (TLS socket, content type, first bytes of the body) for the caller
+    to pass on, or raise OSError with why."""
+    conn = facedb.connect()
+    try:
+        found = device_peer(conn, device_id)
+        key = cluster_key(conn)
+    finally:
+        conn.close()
+    if not found:
+        raise OSError("that device doesn't share its camera")
+    name, addrs, port_, fp = found
+    last = "no address"
+    for a in addrs or []:
+        try:
+            ctx = _context(ssl.PROTOCOL_TLS_CLIENT, ssl.CERT_NONE)
+            raw = socket.create_connection((a, port_), timeout=TIMEOUT)
+            s = ctx.wrap_socket(raw, server_hostname=a)
+            der = s.getpeercert(binary_form=True)
+            if not der or hashlib.sha256(der).hexdigest() != fp:
+                s.close()
+                raise ssl.SSLError("that device's certificate isn't the one in the database")
+            when, me = str(int(time.time())), facedb.device()["id"]
+            s.sendall((f"GET /stream HTTP/1.1\r\nHost: {a}\r\nConnection: close\r\nX-Peer-Device: {me}\r\n"
+                       f"X-Peer-Time: {when}\r\nX-Peer-Sig: {sign(key, 'GET', '/stream', when, me)}\r\n\r\n").encode())
+            head = b""
+            while b"\r\n\r\n" not in head and len(head) < 65536:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                head += chunk
+            head, _, rest = head.partition(b"\r\n\r\n")
+            status = head.split(b"\r\n", 1)[0].split()
+            if len(status) < 2 or status[1] != b"200":
+                s.close()
+                raise OSError(f"{name} answered {status[1].decode() if len(status) > 1 else '?'}")
+            m = re.search(rb"\r\ncontent-type:\s*([^\r\n]+)", head, re.I)
+            s.settimeout(30)
+            return s, (m.group(1).decode() if m else "multipart/x-mixed-replace"), rest
+        except (OSError, ssl.SSLError) as e:
+            last = f"{a}:{port_}: {e}"
+    raise OSError(f"{name} can't be reached ({last})")
 
 
 def fetch(photo, frame=None):

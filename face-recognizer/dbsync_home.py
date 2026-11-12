@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import threading
+import time
 from datetime import datetime, timezone
 
 import facedb
@@ -18,6 +19,7 @@ import paths
 SHARED_DOCS = ("expr_calibration", "va_fit")      # data/<name>.json, fitted from everyone's reports
 DEVICE_DOCS = ("model_eval", "hw_bench", "webcam_eval")
 LOG_KEEP_DAYS = 90
+MOVE_WINDOW = 600            # seconds: seen on another camera this recently counts as moving between cameras
 FORGOTTEN = "forgotten.json"                      # HOME: names forgotten here or applied from other devices
 _forgot_lock = threading.Lock()
 
@@ -68,6 +70,7 @@ class HomePart:
         self.forget = forget
         self.peer_provider = peer_provider  # (hash, frame) -> JPEG: this device's photos for the others (peer.py)
         self.peer_service = None
+        self.seen_before = set()            # names this device's camera saw at the last step (camera moves)
         self.key_current = False          # this device has the current passphrase (secretbox.catch_up): keys sync
 
     def keycol(self, tbl):
@@ -519,9 +522,45 @@ class HomePart:
         inst = conn.execute("SELECT id FROM instance").fetchone()[0]
         secretbox.register(conn, login.get("password"), inst)
         self._peer(conn)
+        self._cameras(conn)
         if took:
             keys = self.all_keys(conn, "secrets")
             state.set_digests("secrets", self.apply("secrets", self.fetch(conn, "secrets", keys)))
+
+    def _cameras(self, conn):
+        """This device's camera: whether it streams, who it sees (sightings), and a "moved" alert when someone it
+        sees now was on another device's camera within MOVE_WINDOW (only this device raises it: the one they
+        arrived at). The alert syncs to every device like the others."""
+        import alerts
+        import camstream
+        import devicesettings
+        me = facedb.device()["id"]
+        if camstream.streaming():
+            conn.execute("UPDATE devices SET streaming_at = now() WHERE id = %s", (me,))
+        now_seen = camstream.in_view()
+        if now_seen:
+            conn.cursor().executemany("""INSERT INTO sightings (device, name) VALUES (%s, %s)
+                                         ON CONFLICT (device, name) DO UPDATE SET last_seen = now(),
+                                         first_seen = CASE WHEN sightings.last_seen < now() - interval '1 minute'
+                                                           THEN now() ELSE sightings.first_seen END""",
+                                      [(me, n) for n in now_seen])
+        arrived = set(now_seen) - self.seen_before
+        self.seen_before = set(now_seen)
+        on = (devicesettings.settings("track").get("ft-o-optAlertMove") or "1") == "1"
+        for name in sorted(arrived) if on else []:
+            row = conn.execute("""SELECT d.name, s.last_seen FROM sightings s JOIN devices d ON d.id = s.device
+                                  WHERE s.name = %s AND s.device <> %s
+                                    AND s.last_seen > now() - make_interval(secs => %s)
+                                  ORDER BY s.last_seen DESC LIMIT 1""", (name, me, MOVE_WINDOW)).fetchone()
+            if row:
+                here = facedb.device()["name"]
+                try:
+                    alerts.add({"kind": "moved", "name": name, "t": int(time.time() * 1000),
+                                "text": f"{name} moved from {row[0]}'s camera to {here}'s",
+                                "details": {"from": row[0], "to": here,
+                                            "secondsBetween": round(max(0.0, time.time() - row[1].timestamp()))}})
+                except ValueError:
+                    pass
 
     def _peer(self, conn):
         """The peer service: on while this device shares its photos (peer.sharing), its address in the database."""
@@ -538,7 +577,8 @@ class HomePart:
         elif not want and self.peer_service is not None:
             self.peer_service.stop()
             self.peer_service = None
-        peer.register(conn, self.peer_service is not None)
+        peer.RUNNING = self.peer_service is not None
+        peer.register(conn, peer.RUNNING)
 
     def after_push(self, conn, state):
         import face_id as F
@@ -638,4 +678,5 @@ def _forget_on_server(cur, name):
     cur.execute("DELETE FROM person_signals WHERE name = %s", (name,))
     cur.execute("DELETE FROM presence WHERE name = %s", (name,))
     cur.execute("DELETE FROM alerts WHERE name = %s", (name,))
+    cur.execute("DELETE FROM sightings WHERE name = %s", (name,))
 
