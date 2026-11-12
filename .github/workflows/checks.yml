@@ -36,11 +36,39 @@ jobs:
           python-version: "3.12"
       - name: Install test requirements
         # headless OpenCV here; the app itself uses opencv-contrib-python (requirements.txt)
-        run: pip install -r requirements-dev.txt numpy==2.5.4 opencv-contrib-python-headless==5.0.0.93 truststore==0.10.5
+        run: pip install -r requirements-dev.txt numpy==2.5.4 opencv-contrib-python-headless==5.0.0.93 truststore==0.10.5 "psycopg[binary]==3.3.8" pgvector==0.5.1 cryptography==50.0.2
       - name: "Python checker (ruff, with the pyflakes rules; ruff.toml)"
         run: python -m ruff check .
       - name: Python tests
         run: python -m pytest tests -q
+
+  # The shared-database tests (tests/test_facedb.py and others that need FACE_TEST_PG) against PostgreSQL with
+  # pgvector in a service container. Service containers run on Linux only, so this is its own job.
+  database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      FACE_TEST_PG: "host=127.0.0.1 port=5432 dbname=postgres user=postgres password=test sslmode=disable"
+    defaults:
+      run:
+        working-directory: face-recognizer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+        with:
+          lfs: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install test requirements
+        run: pip install -r requirements-dev.txt numpy==2.5.4 opencv-contrib-python-headless==5.0.0.93 truststore==0.10.5 "psycopg[binary]==3.3.8" pgvector==0.5.1 cryptography==50.0.2
+      - name: Shared-database tests
+        run: python -m pytest tests -q -k "facedb or sync"
 
   # The app, built on each system with build_exe.py (as build_app.bat does on Windows), once every system's checks
   # pass. Kept 14 days as build artifacts for testing; releases are still made by hand.

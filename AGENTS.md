@@ -41,6 +41,14 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     `%APPDATA%\FaceLabels\lmstudio.json`). Stopping `lms get` doesn't stop LM Studio's own download: it keeps a paused
     job that hides the model until cancelled in LM Studio. The Labeling header's second bar (`#dlprogress`,
     `/api/downloads`) shows model and CUDA downloads.
+  - `facedb.py` + `db/NNN_*.sql` — the optional shared database (PostgreSQL + pgvector on a server the devices
+    share; in progress, 2026-11-11): connection settings in `HOME/database.json` (password DPAPI-protected on
+    Windows, mode 600 elsewhere; TLS `verify-ca` against the server's own CA from `tools/db_certs.py`), this device's
+    id in `HOME/device.json`, migrations under an advisory lock, `changes` log by trigger (deletes as tombstones).
+    Connections are autocommit: group writes in `with conn.transaction():`. Without `database.json` (or `FACE_DB`)
+    nothing changes: files only. `tools/db_import.py` copies a device's `data/` and HOME in (reads only; merges by
+    face ID and photo hash; a hand label beats an automatic one; Ignored stays Ignored). Tests: `test_facedb.py`,
+    with `FACE_TEST_PG` (CI job `database`, pgvector service).
   - `hardware.py` — what the computer has (`describe`: processor, memory, GPUs, NPU, ONNX Runtime providers; from
     the registry, /proc and /sys, sysctl) and how the programs use it (`uses`: `face_id.LAST_DEVICES`,
     `GPU_DECISIONS`, `import_workers`), `ai_apps` (AI model apps for Describe photo: the usual local ports, the

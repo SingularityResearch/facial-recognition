@@ -16,7 +16,7 @@ from pathlib import Path
 _TMP = Path(tempfile.mkdtemp(prefix="face-tests-"))
 os.environ["FACE_ROOT"] = str(_TMP)
 os.environ["FACE_HOME"] = str(_TMP / "home")
-for var in ("FACE_MODEL", "FACE_LLM_URL", "GOOGLE_VISION_API_KEY"):
+for var in ("FACE_MODEL", "FACE_LLM_URL", "GOOGLE_VISION_API_KEY", "FACE_DB", "FACE_DB_SCHEMA"):
     os.environ.pop(var, None)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

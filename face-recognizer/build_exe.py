@@ -52,8 +52,9 @@ def command(platform=sys.platform):
         cmd += ["--osx-bundle-identifier", BUNDLE_ID]
     for f in PAGES:
         cmd += ["--add-data", f"{HERE / f}{sep}."]
+    cmd += ["--add-data", f"{HERE / 'db'}{sep}db"]          # the shared database's schema (facedb.migrate)
     cmd += ["--collect-all", "mediapipe", "--collect-all", "onnxruntime", "--collect-submodules", "webview",
-            "--hidden-import", "sklearn.cluster"]
+            "--hidden-import", "sklearn.cluster", "--collect-all", "psycopg_binary", "--hidden-import", "pgvector.psycopg"]
     if platform.startswith("linux"):
         cmd += ["--hidden-import", "qtpy", "--collect-submodules", "qtpy"]
     for m in EXCLUDE:
