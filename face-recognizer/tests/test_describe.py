@@ -59,6 +59,14 @@ def test_key_stays_with_its_server(home):
     assert D.config()["key"] == "NEW"
 
 
+def test_key_kept_protected_and_an_old_plain_one_converted(home):
+    D.set_config(key="SECRET-1")
+    assert "SECRET-1" not in (home / "describe.json").read_text("utf-8") and D.config()["key"] == "SECRET-1"
+    (home / "describe.json").write_text(json.dumps({"url": D.URL, "key": "OLD-KEY"}), "utf-8")   # an older version's
+    assert D.config()["key"] == "OLD-KEY"
+    assert "OLD-KEY" not in (home / "describe.json").read_text("utf-8") and D.config()["key"] == "OLD-KEY"
+
+
 def test_status_never_contains_the_key(home, monkeypatch):
     D.set_config(key="SECRET")
     monkeypatch.setattr(D, "server_models", lambda *a, **k: (_ for _ in ()).throw(D.Unavailable("down")))

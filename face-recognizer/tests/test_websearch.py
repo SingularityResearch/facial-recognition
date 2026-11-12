@@ -18,6 +18,20 @@ def test_google_key(home):
     assert W.key() is None and not (home / "google_vision_key.txt").exists()
 
 
+def test_keys_kept_protected_and_old_plain_ones_converted(home):
+    W.save_key("B" * 39)
+    W.save_aws(AWS_ID, AWS_SECRET, "us-east-1")
+    assert "B" * 39 not in (home / "google_vision_key.txt").read_text("utf-8")
+    assert AWS_SECRET not in (home / "aws_rekognition.json").read_text("utf-8")
+    assert W.key() == "B" * 39 and W.aws()["secret_access_key"] == AWS_SECRET
+    (home / "google_vision_key.txt").write_text("C" * 39, "utf-8")             # saved plain by an older version
+    (home / "aws_rekognition.json").write_text(json.dumps({"access_key_id": AWS_ID, "secret_access_key": "b" * 40,
+                                                           "region": "us-east-1"}), "utf-8")
+    assert W.key() == "C" * 39 and W.aws()["secret_access_key"] == "b" * 40   # still read...
+    assert "C" * 39 not in (home / "google_vision_key.txt").read_text("utf-8")  # ...and now kept protected
+    assert "b" * 40 not in (home / "aws_rekognition.json").read_text("utf-8")
+
+
 @pytest.mark.parametrize("key_id, secret, region", [
     ("BADKEY", AWS_SECRET, "us-east-1"), (AWS_ID, "short", "us-east-1"), (AWS_ID, AWS_SECRET, "mars"),
 ])

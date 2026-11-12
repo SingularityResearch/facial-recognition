@@ -12,7 +12,6 @@ the file; tests use them.
 
 The password is protected with Windows DPAPI (only this Windows user on this computer can read it back); on macOS
 and Linux the file is readable by its owner only."""
-import base64
 import json
 import os
 import platform
@@ -38,40 +37,7 @@ class NotConfigured(Exception):
 
 # --- protecting the password on disk ---------------------------------------------------------------------------
 
-def _dpapi(data, protect):
-    import ctypes
-    from ctypes import wintypes
-
-    class Blob(ctypes.Structure):
-        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
-
-    buf = ctypes.create_string_buffer(data, len(data))
-    src, out = Blob(len(data), buf), Blob()
-    fn = ctypes.windll.crypt32.CryptProtectData if protect else ctypes.windll.crypt32.CryptUnprotectData
-    if not fn(ctypes.byref(src), None, None, None, None, 0x1, ctypes.byref(out)):   # 0x1: no UI
-        raise OSError("Windows couldn't " + ("protect" if protect else "read") + " the saved database password")
-    try:
-        return ctypes.string_at(out.pbData, out.cbData)
-    finally:
-        ctypes.windll.kernel32.LocalFree(out.pbData)
-
-
-def protect(text):
-    """A string safe to keep in a file for this user: DPAPI on Windows, plain elsewhere (the file is mode 600)."""
-    raw = text.encode()
-    if sys.platform == "win32":
-        return "dpapi:" + base64.b64encode(_dpapi(raw, True)).decode()
-    return "plain:" + base64.b64encode(raw).decode()
-
-
-def unprotect(stored):
-    kind, _, b64 = (stored or "").partition(":")
-    raw = base64.b64decode(b64)
-    if kind == "dpapi":
-        return _dpapi(raw, False).decode()
-    if kind == "plain":
-        return raw.decode()
-    raise ValueError("unknown password format")
+protect, unprotect = paths.protect, paths.unprotect       # DPAPI on Windows, plain in a mode-600 file elsewhere
 
 
 def write_private(path, obj):

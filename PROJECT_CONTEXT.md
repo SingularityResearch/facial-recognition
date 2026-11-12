@@ -914,10 +914,10 @@ Done the same day (in v1.8, before release), all checked in the running app:
 - **Requirements:** pinned to the versions in use; only `opencv-contrib-python` (setup.bat removes a plain
   `opencv-python`); pywebview added; `requirements-build.txt` for the build.
 
-Still open (security, low): the Web search keys and the describe server's API key are still plain files in
-`%APPDATA%\FaceLabels` (`aws_rekognition.json`, `google_vision_key.txt`, `describe.json`), while the database
-password, the passphrase for keys and the device key pair have been DPAPI-protected on Windows since v1.16-v1.17
-(`facedb.protect`; mode 600 elsewhere) and the keys exist in the shared database only encrypted (`secretbox.py`).
+Done in 1.20.1: the Web search keys and the describe server's API key are protected like the database password
+(`paths.protect`: DPAPI on Windows, mode 600 elsewhere; `google_vision_key.txt`, the secret in
+`aws_rekognition.json`, the key in `describe.json`); plain ones from older versions are read and re-saved
+protected (`paths.reveal`). In the shared database the keys exist only encrypted (`secretbox.py`).
 Done: the PyInstaller spec file is no longer committed (`build_exe.py` writes it under `build/`, `--specpath`).
 (Refusing `Sec-Fetch-Site: cross-site` was done in v1.9, see below.)
 

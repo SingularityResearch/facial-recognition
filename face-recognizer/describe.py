@@ -66,9 +66,26 @@ def config():
             c = json.loads(CONFIG.read_text("utf-8"))
     except (OSError, ValueError):
         c = {}
+    stored = c.get("key") if isinstance(c.get("key"), str) else ""
+    try:
+        key = paths.reveal(stored)                 # kept protected (paths.protect); an older plain one as it is
+    except (OSError, ValueError) as e:
+        print(f"Describe photo: the saved API key can't be read here ({e})")
+        key = ""
     c = {"use": c.get("use") if c.get("use") in USES else "auto", "url": c.get("url") or URL,
-         "model": c.get("model") or "", "key": c.get("key") or "", "spread": c.get("spread") is True}
+         "model": c.get("model") or "", "key": key, "spread": c.get("spread") is True}
+    if key and not paths.is_protected(stored):     # saved plain by an older version: protect it now
+        try:
+            _write_config(c)
+        except OSError:
+            pass
     return c
+
+
+def _write_config(c):
+    """describe.json, with the API key protected for this user."""
+    with _cfg_lock:
+        paths.write_private(CONFIG, json.dumps(dict(c, key=paths.protect(c["key"]) if c["key"] else ""), indent=1))
 
 
 def clean_url(url):
@@ -107,8 +124,7 @@ def set_config(**kw):
         c["key"] = str(kw["key"] or "").strip()[:500]
     if "spread" in kw:
         c["spread"] = kw["spread"] is True
-    with _cfg_lock:
-        paths.atomic_write(CONFIG, json.dumps(c, indent=1))
+    _write_config(c)
     return c
 
 

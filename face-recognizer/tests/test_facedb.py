@@ -27,16 +27,16 @@ def test_no_database_means_files_only():
 
 
 def test_the_password_is_protected_and_bad_settings_refused():
-    c = facedb.save_config("db.example", 5432, "sentient", "facerec", "s3cret-pw", CA)
+    c = facedb.save_config("db.example", 5432, "facerec", "facerec", "s3cret-pw", CA)
     assert c["host"] == "db.example" and c["ca"] is True and "password" not in c
     raw = facedb.CONFIG.read_text("utf-8")
     if sys.platform == "win32":
         assert "s3cret-pw" not in raw and json.loads(raw)["password"].startswith("dpapi:")
     assert facedb.unprotect(json.loads(raw)["password"]) == "s3cret-pw"
     with pytest.raises(ValueError):
-        facedb.save_config("db.example", 5432, "sentient", "facerec", "pw", CA, schema="x; drop table")
+        facedb.save_config("db.example", 5432, "facerec", "facerec", "pw", CA, schema="x; drop table")
     with pytest.raises(ValueError):
-        facedb.save_config("db.example", 5432, "sentient", "facerec", "pw", "not a certificate")
+        facedb.save_config("db.example", 5432, "facerec", "facerec", "pw", "not a certificate")
     assert facedb.save_config("", 0, "", "", "", "") is None and facedb.config() is None
 
 

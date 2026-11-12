@@ -8,11 +8,11 @@ Two US services, English results only (owner's rule), each optional and each cap
                       the names those pages give. Only English text and US-style domains are kept.
 suggest() combines them into suggestions with a confidence level, or none.
 
-The face goes to Amazon and the photo to Google; both may keep them. Nothing else in this project sends
-anything off the computer. Keys live outside the project (it is public), in %APPDATA%\\FaceLabels\\:
+The face goes to Amazon and the photo to Google; both may keep them. Keys live outside the project (it is public),
+in %APPDATA%\\FaceLabels\\, protected for this user (paths.protect: DPAPI on Windows, mode 600 elsewhere):
   google_vision_key.txt     (or the GOOGLE_VISION_API_KEY environment variable)
-  aws_rekognition.json      {"access_key_id", "secret_access_key", "region"} of an AWS user that may only
-                            call rekognition:RecognizeCelebrities
+  aws_rekognition.json      {"access_key_id", "secret_access_key" (protected), "region"} of an AWS user that may
+                            only call rekognition:RecognizeCelebrities
 """
 import base64
 import http.client
@@ -39,11 +39,28 @@ PERSON = re.compile(r"^[A-Z][a-z'.]+(?:[ -](?:[A-Z][a-z'.]+|[A-Z]\.)){1,3}$")   
 
 
 # --------------------------------------------------------------------------- keys and limits
+def saved_key():
+    """The Google key saved on this device ("" when none), kept protected (paths.protect: DPAPI on Windows, a
+    mode-600 file elsewhere); a key saved plain by an older version is read and saved protected."""
+    try:
+        stored = KEY_FILE.read_text("utf-8").strip()
+    except OSError:
+        return ""
+    try:
+        k = paths.reveal(stored)
+    except (OSError, ValueError) as e:
+        print(f"Web search: the saved Google key can't be read here ({e})")
+        return ""
+    if k and not paths.is_protected(stored):
+        try:
+            save_key(k)
+        except (OSError, ValueError):
+            pass
+    return k
+
+
 def key():
-    k = os.environ.get("GOOGLE_VISION_API_KEY", "").strip()
-    if not k and KEY_FILE.exists():
-        k = KEY_FILE.read_text("utf-8").strip()
-    return k or None
+    return os.environ.get("GOOGLE_VISION_API_KEY", "").strip() or saved_key() or None
 
 
 def save_key(k):
@@ -51,18 +68,30 @@ def save_key(k):
     if k and not re.fullmatch(r"[A-Za-z0-9_\-]{20,80}", k):
         raise ValueError("That doesn't look like a Google API key")
     if k:
-        KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        paths.atomic_write(KEY_FILE, k)
+        paths.write_private(KEY_FILE, paths.protect(k))
     elif KEY_FILE.exists():
         KEY_FILE.unlink()
 
 
 def aws():
+    """The Amazon key ({access_key_id, secret_access_key, region}) or None; the secret is kept protected, and one
+    saved plain by an older version is saved protected."""
     try:
         c = json.loads(AWS_FILE.read_text("utf-8-sig"))
-        return c if c.get("access_key_id") and c.get("secret_access_key") else None
-    except (OSError, ValueError):
+        if not (c.get("access_key_id") and c.get("secret_access_key")):
+            return None
+        stored = c["secret_access_key"]
+        c["secret_access_key"] = paths.reveal(stored)
+    except (OSError, ValueError, AttributeError) as e:
+        if AWS_FILE.exists():
+            print(f"Web search: the saved Amazon key can't be read here ({e})")
         return None
+    if not paths.is_protected(stored):
+        try:
+            save_aws(c["access_key_id"], c["secret_access_key"], c.get("region"))
+        except (OSError, ValueError):
+            pass
+    return c
 
 
 def save_aws(key_id, secret, region="us-east-1"):
@@ -79,8 +108,8 @@ def save_aws(key_id, secret, region="us-east-1"):
         raise ValueError("That doesn't look like an AWS secret access key (40 characters)")
     if not re.fullmatch(r"[a-z]{2}(-[a-z]+)+-\d", region):
         raise ValueError("That doesn't look like an AWS region (for example us-east-1)")
-    AWS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    paths.atomic_write(AWS_FILE, json.dumps({"access_key_id": key_id, "secret_access_key": secret, "region": region}))
+    paths.write_private(AWS_FILE, json.dumps({"access_key_id": key_id, "secret_access_key": paths.protect(secret),
+                                              "region": region}))
 
 
 def services():

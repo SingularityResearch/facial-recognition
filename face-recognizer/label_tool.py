@@ -540,7 +540,7 @@ def make_handler(db, importer):
                 if path == "/api/db/setup":             # set up (or stop using) the shared database
                     import facedb
                     r = facedb.setup(str(body.get("host") or ""), body.get("port") or 5432,
-                                     str(body.get("dbname") or "sentient"), str(body.get("user") or ""),
+                                     str(body.get("dbname") or "facerec"), str(body.get("user") or ""),
                                      str(body.get("password") or ""), str(body.get("schema") or "facerec"),
                                      app_version())
                     if getattr(db, "sync", None):
@@ -662,10 +662,7 @@ def secrets():
     import describe
     out = {"google": "", "aws": {"id": "", "secret": "", "region": ""}, "describe": describe.config().get("key") or "",
            "db": {}}
-    try:
-        out["google"] = websearch.KEY_FILE.read_text("utf-8").strip()
-    except OSError:
-        pass
+    out["google"] = websearch.saved_key()
     a = websearch.aws() or {}
     out["aws"] = {"id": a.get("access_key_id") or "", "secret": a.get("secret_access_key") or "",
                   "region": a.get("region") or ""}

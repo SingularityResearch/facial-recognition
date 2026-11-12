@@ -116,3 +116,61 @@ def atomic_write(path, data):
     else:
         tmp.write_bytes(data)
     replace_file(tmp, path)
+
+
+# --- secrets on disk: protected for this user ---------------------------------------------------------------------
+
+def _dpapi(data, protect):
+    import ctypes
+    from ctypes import wintypes
+
+    class Blob(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    buf = ctypes.create_string_buffer(data, len(data))
+    src, out = Blob(len(data), buf), Blob()
+    fn = ctypes.windll.crypt32.CryptProtectData if protect else ctypes.windll.crypt32.CryptUnprotectData
+    if not fn(ctypes.byref(src), None, None, None, None, 0x1, ctypes.byref(out)):   # 0x1: no UI
+        raise OSError("Windows couldn't " + ("protect" if protect else "read") + " a saved key or password")
+    try:
+        return ctypes.string_at(out.pbData, out.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(out.pbData)
+
+
+def protect(text):
+    """A key or password as a string safe to keep in a file for this user: "dpapi:..." on Windows (only this Windows
+    user can read it back), "plain:<base64>" elsewhere (the file is mode 600: write_private)."""
+    import base64
+    raw = text.encode()
+    if sys.platform == "win32":
+        return "dpapi:" + base64.b64encode(_dpapi(raw, True)).decode()
+    return "plain:" + base64.b64encode(raw).decode()
+
+
+def unprotect(stored):
+    """The text protect() kept. ValueError for anything else."""
+    import base64
+    kind, _, b64 = (stored or "").partition(":")
+    if kind == "dpapi":
+        return _dpapi(base64.b64decode(b64), False).decode()
+    if kind == "plain":
+        return base64.b64decode(b64).decode()
+    raise ValueError("unknown saved-key format")
+
+
+def is_protected(stored):
+    return isinstance(stored, str) and stored.partition(":")[0] in ("dpapi", "plain") and ":" in stored
+
+
+def reveal(stored):
+    """A saved key: protect()'s form read back; an older plain one as it is (keys saved before 1.20.1)."""
+    stored = (stored or "").strip()
+    return unprotect(stored) if is_protected(stored) else stored
+
+
+def write_private(path, data):
+    """atomic_write, readable only by this user (mode 600 outside Windows; HOME is per user on Windows)."""
+    atomic_write(path, data)
+    if sys.platform != "win32":
+        os.chmod(path, 0o600)

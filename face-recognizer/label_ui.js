@@ -1262,7 +1262,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       hint: "Keeps this device's faces, names, labels, Web search answers and photo descriptions in a PostgreSQL database (with pgvector) that your other devices share, and takes theirs. The data goes to that server over an encrypted connection; the password is kept on this device only (protected by Windows for your user). While the server can't be reached the app works from this device's copy and sends changes later. Leave the server empty and Connect to stop using it (this device keeps its copy).",
       fields: () => [{ name: "host", label: "Server", placeholder: "e.g. nas.local", value: sec.db?.host || "" },
                      { name: "port", label: "Port", placeholder: "5432", size: 5, value: sec.db?.port || "" },
-                     { name: "dbname", label: "Database", placeholder: "sentient", size: 10, value: sec.db?.dbname || "" },
+                     { name: "dbname", label: "Database", placeholder: "facerec", size: 10, value: sec.db?.dbname || "" },
                      { name: "user", label: "User", placeholder: "facerec", size: 9, value: sec.db?.user || "" },
                      { name: "password", label: "Password", placeholder: "Password", secret: true, value: sec.db?.password || "" }] },
     { section: D, id: "dbshare", label: "Share my photos with my other devices", type: "toggle", def: true,
@@ -1310,7 +1310,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       hint: "Lets this app run its models on the NVIDIA card. Downloads NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA from PyPI (the public Python package index), for this app's Python 3.12, each checked by size and SHA-256, into the app's data folder (about 3.5 GB unpacked). Used from the next start; the app checks each model gives the same answers on the card before using it." },
   ], {
     dbpass: saved(a => post("/api/db/passphrase", { passphrase: a.passphrase || "", again: a.again || "" })),
-    dbsetup: saved(a => post("/api/db/setup", { host: a.host || "", port: +a.port || 5432, dbname: a.dbname || "sentient",
+    dbsetup: saved(a => post("/api/db/setup", { host: a.host || "", port: +a.port || 5432, dbname: a.dbname || "facerec",
                                                user: a.user || "", password: a.password || "" })),
     wsgoogle: saved(a => post("/api/websearch/key", { key: a.key || "" })),
     wsaws: saved(a => post("/api/websearch/aws", { id: a.id || "", secret: a.secret || "", region: a.region || "us-east-1" })),

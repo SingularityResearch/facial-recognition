@@ -309,7 +309,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     via `/api/who`), `websearch_check.py`;
   - making models: `get_adaface.py`, `get_wav2small.py`, `get_yunet_dynamic.py` (YuNet with free input sizes, for
     GPU face finding; published in models-v1);
-  - shared database: `db_certs.py` (the server's CA and certificate), `db_import.py`.
+  - shared database: `db_certs.py` (the server's CA and certificate), `db_setup.py` (once per new server: the
+    tables and `server_ca`, over verify-ca with that CA), `db_import.py`.
 - `tests/` — `conftest.py` points `FACE_ROOT`/`FACE_HOME` at a temp folder before anything is imported: no models, no
   real data.
   - Node (`*.test.js`): `expression.js`, `signals.js`, `settings_bridge.js`; `pages.test.js`: every page script
@@ -413,6 +414,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   port) and wrap handlers in `localguard.answer_errors` (an uncaught error still gets a JSON 500).
 - Anything put into `innerHTML` goes through `esc()` (names, paths, descriptions, web results, tags, errors).
   The Settings tab and the Cameras page's readouts are built with `textContent`/DOM properties only.
+- On disk, keys and passwords are kept with `paths.protect` (DPAPI on Windows, mode 600 elsewhere: `write_private`);
+  read them through their module (`websearch.saved_key`/`aws`, `describe.config`, `facedb.saved_login`), never
+  the file.
 - Keys (Web search, describe API key) and the shared database's password reach a page only through `/api/secrets`
   (labeling tool; needs `X-Face-Tool: 1`, refused cross-site), for the Settings tab to show them masked, each with an
   eye button that shows it only while held (the owner's choice, 2026-11-11). Every other endpoint returns only

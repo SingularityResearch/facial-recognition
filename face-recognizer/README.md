@@ -540,13 +540,12 @@ Once, on the computer that keeps the database:
    `server.key` in PostgreSQL's data folder, set `ssl = on`, and in `pg_hba.conf` let your network in with
    `hostssl ... scram-sha-256` only. Keep `ca.key` somewhere safe (it's needed only to make a new server
    certificate later).
-3. Make the tables, from `face-recognizer` with the code's Python (`requirements.txt` has the database libraries):
-   `FACE_DB="host=<server> dbname=<db> user=facerec password=<its password> sslmode=require" python -c "import facedb; facedb.migrate(facedb.connect())"`
-   (in Windows' command prompt: `set FACE_DB=host=... sslmode=require` first, then the `python -c ...` part).
-   Settings' **Connect** can't do this step: it needs step 4 done first.
-4. Give the devices the certificate authority (public), as `facerec` or the administrator:
-   `INSERT INTO facerec.server_ca VALUES (1, '<the text of ca.crt>');`. Each device reads it once when it connects
-   and from then on checks, every time, that it's talking to this server.
+3. Make the tables and give the devices the certificate authority, from `face-recognizer` with the code's Python
+   (`requirements.txt` has the database libraries):
+   `python tools/db_setup.py --host <server> --dbname <db> --ca <that folder>/ca.crt` (it asks for `facerec`'s
+   password). It checks the server against `ca.crt`, makes the tables and stores `ca.crt` in the `server_ca` table.
+   Each device reads it once when it connects and from then on checks, every time, that it's talking to this server.
+   Settings' **Connect** can't do this step itself. Running it again later is safe: it only adds what's missing.
 
 ### On each device
 
@@ -628,7 +627,10 @@ Times are stored in UTC everywhere (files, file names and the database) and show
   - `webview\`: the app window's browser storage (each page's quick copy of its options and per-person baselines and usual looks); `app.log`: the app's messages and errors, each line with its time in UTC; `restarted.json`: when the app last started itself again (at most once an hour for a camera that won't start)
   - `settings.json`: each page's options; `person_signals.json`: each person's usual look and signal normals (the tracker's); `alerts.json`: the alert inbox; `lmstudio.json`: the shared LM Studio models folder
   - with a shared database: `database.json` (its settings, the password protected), `database-ca.pem` (the server's certificate authority), `device.json` (this device's id and name), `sync.sqlite` (what was last synced), `secret.key` (the passphrase for keys and the key made from it, protected), `device-key.json` (this device's own key pair, to which the passphrase is sealed; the private half protected), `forgotten.json` (people forgotten, to tell the other devices), `peer-cert.pem` and `peer-key.pem` (this device's certificate for showing its photos and camera to your other devices), `peer.json` (whether it shares them)
-- The keys and `describe.json` are plain files readable by your Windows account; anyone who can sign in as you can read them.
+- The keys (Web search, the describe server's API key in `describe.json`) are kept protected for your user: by
+  Windows (DPAPI: only your Windows account on this computer can read them back; a copied file is useless
+  elsewhere), or on macOS and Linux in files only you can read. Keys saved by a version before 1.20.1 are
+  protected the first time they're used.
 - `websearch.py`: the Web search (Amazon + Google, combined); `tools\websearch_check.py`: the same search on picture files
 - If an import or **Describe all** couldn't read some files, **Why?** beside the progress bar lists the last 20 and the reason for each (nothing is saved).
 - `data/expr_eval/`: expression test sessions (`<date>-<time>.jsonl`) and feeling reports (`feel-<date>.jsonl`), only if you've run the Expression test or reported how you feel (numbers only: no pictures, no audio). **Delete test data** on the tracker page removes them.

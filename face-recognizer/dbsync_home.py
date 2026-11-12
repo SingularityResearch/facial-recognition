@@ -218,12 +218,9 @@ class HomePart:
         import describe
         import websearch
         out = {}
-        try:
-            k = websearch.KEY_FILE.read_text("utf-8").strip()
-            if k:
-                out["google_vision"] = k
-        except OSError:
-            pass
+        k = websearch.saved_key()
+        if k:
+            out["google_vision"] = k
         a = websearch.aws()
         if a:
             out["aws_rekognition"] = json.dumps({k: a.get(k) for k in ("access_key_id", "secret_access_key", "region")},
