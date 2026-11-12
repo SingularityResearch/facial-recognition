@@ -5,9 +5,16 @@ phone used as a webcam) and reads facial expression, voice and other signals liv
 are recognized the same way: the same face prints and matching, with faces named in the labeling tool. The expression side is also a small, honest research testbed: it measures what each
 signal is actually worth on your own face before letting it influence anything.
 
-Everything runs on one computer: Windows, macOS (14+, Apple Silicon) or Linux (Ubuntu 22.04+). It identifies that computer's processor, graphics processors and NPU at start and runs each job the fastest way that gives the same answers (Settings, **This computer**). No photos, video, audio or face data leave the machine unless you send them
-on purpose: to a shared database of your own, if you set one up so your devices share names and labels (PostgreSQL with pgvector, over TLS; optional, off by default); the labeling tool's **Web search** (one face or photo, when you click it) and **Describe photo** if
-you point it at a model server on another device.
+Everything runs on your own computers: Windows, macOS (14+, Apple Silicon) or Linux (Ubuntu 22.04+). One computer
+is enough; it identifies its processor, graphics processors and NPU at start and runs each job the fastest way that
+gives the same answers (Settings, **This computer**). No photos, video, audio or face data leave the machine unless
+you send them on purpose:
+- to a **shared database** of your own, if you set one up so several of your devices share names, labels and the
+  rest (PostgreSQL with pgvector on a computer of yours, over TLS; optional, off for a new copy). With one, your
+  devices also show each other original photos and their live cameras (the **Cameras** tab) directly over your
+  local network: encrypted, signed so only your devices can ask, and never stored;
+- the labeling tool's **Web search** (one face or photo, when you click it);
+- **Describe photo**, if you point it at a model server on another device.
 
 ## Goals
 
@@ -23,9 +30,10 @@ you point it at a model server on another device.
 | Part | What it does | Start it |
 |---|---|---|
 | [face-recognizer/](face-recognizer/README.md) | The Python project: photo import, face recognition, labeling, live tracker, measurement tools | `face-recognizer\setup.bat` once (macOS, Linux: `./setup.sh`), then the two apps below |
-| FaceRecognizer app (`app.py`) | Both apps in one window, with **Face tracking**, **Labeling** and **Settings** tabs and the **Alerts** bell; downloads the models on first start. `FaceRecognizer.exe` (Windows), `FaceRecognizer.app` (macOS), `FaceRecognizer` (Linux) | Download from Releases, or build it: [Building the app](face-recognizer/README.md#building-the-app-windows-macos-linux) (`build_app.bat` on Windows, `build_exe.py` on macOS and Linux); from the code, `./start.sh` on macOS and Linux |
+| FaceRecognizer app (`app.py`) | Both apps in one window, with **Face tracking**, **Labeling**, **Cameras** (every device's live camera, with a shared database) and **Settings** tabs and the **Alerts** bell; downloads the models on first start. `FaceRecognizer.exe` (Windows), `FaceRecognizer.app` (macOS), `FaceRecognizer` (Linux) | Download from Releases, or build it: [Building the app](face-recognizer/README.md#building-the-app-windows-macos-linux) (`build_app.bat` on Windows, `build_exe.py` on macOS and Linux); from the code, `./start.sh` on macOS and Linux |
 | Labeling tool (`label_tool.py`) | Add photos and videos, confirm suggested names, name new people, fix mistakes; clues for unknown faces (closest people, photo tags, same occasion), one-click **Web search** and **Describe photo** (a local vision model) | `face-recognizer\label.bat` (macOS, Linux: `./label.sh`) → http://127.0.0.1:8765 |
 | Live tracker (`tracker.py`) | Names, match confidence, expression and other signals on each face | `face-recognizer\recognize.bat` (macOS, Linux: `./recognize.sh`) → http://127.0.0.1:8766 |
+| Shared database (`facedb.py`, `dbsync.py`, `peer.py`; optional) | Several devices share names, labels, faces and private data through your own PostgreSQL + pgvector server; original photos and live cameras go device to device | Set up the server once ([Sharing between your devices](face-recognizer/README.md#sharing-between-your-devices-shared-database)), then Settings → **Shared database** → **Connect** on each device |
 | Measurement (`tools/expr_eval.py`, `tools/eval_models.py`, `tools/hw_bench.py`) | Accuracy, calibration, talking, per-condition breakdowns, valence/arousal fit, model and hardware comparisons | `python tools\expr_eval.py` from `face-recognizer\` |
 | [face-tracker/](face-tracker/README.md) | The original standalone browser face tracker (MediaPipe), no install | Double-click `index.html` |
 
@@ -33,7 +41,10 @@ you point it at a model server on another device.
 
 | Decision | Why |
 |---|---|
-| **Local only**: two tiny servers on 127.0.0.1, with request checks (`localguard.py`) | Faces and voices are personal data. Nothing is uploaded, the pages load nothing from the internet (a Content-Security-Policy allows only their own server), and other websites can't reach the servers. The one exception is opt-in per click: the labeling tool's **Web search** sends that face to Amazon and that photo to Google (US services, English results) to suggest who it is. |
+| **Local only**: small servers on 127.0.0.1 (the tracker, the labeling tool and the app window's tab page), with request checks (`localguard.py`) | Faces and voices are personal data. Nothing is uploaded, the pages load nothing from the internet (a Content-Security-Policy allows only their own server), and other websites can't reach the servers. The one exception to the internet rule is opt-in per click: the labeling tool's **Web search** sends that face to Amazon and that photo to Google (US services, English results) to suggest who it is. The one server that listens beyond the computer is the peer service below, and only with a shared database. |
+| **Several devices, one shared database (optional)** | The owner uses more than one computer, and names given on one should reach the others within seconds. Each device keeps working from its own files (fast, and fine while the server is away); changes go both ways through PostgreSQL with pgvector (face prints are vectors) on a computer of the owner's. The connection is TLS checked against the server's own certificate authority, the app's database role is not a superuser, and keys are stored there only encrypted with a passphrase that stays on the devices. A name given by hand beats an automatic one, Ignored stays Ignored, and forgetting a person is carried out on every device. |
+| **Devices talk to each other directly, for photos and cameras only** | Original photos stay on the device that has them, and live video doesn't belong in a database. So, with a shared database, each device runs a peer service on the local network: TLS with the device's own certificate (its fingerprint is in the database, so no other machine can pose as it), every request signed with a key only your devices can derive, photos asked for by content hash only, never by path. What it sends is shown and never stored: a photo, or the camera as its tracker page shows it (names and markers drawn on), with its readout. That also allows a "moved between cameras" alert when someone seen on one device's camera appears on another's. Off with one Settings switch. |
+| **Times stored in UTC** | Devices sync with each other and can be in different time zones or cross a daylight-saving change. Every stored time (files, file names, the database) is UTC; pages show local time. |
 | **Thresholds are measured values**, never guesses | Each matching, quality and voting threshold was measured on the owner's labeled photos, for example ArcFace match 0.35: 100% of labeled faces correct, 0% of strangers named. Changing one means re-measuring. |
 | **ArcFace for recognition**, with SFace as a fallback; AdaFace evaluated and rejected | ArcFace named 76% of blurry webcam-like faces correctly vs 44% for SFace. AdaFace was slower and less accurate on these photos (95.5% vs 99.4%). |
 | **The hardware decides, after a check** | Each model runs on the graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) only after a start-up check shows it gives the processor's answers (within 1%), faster; photos are read and decoded on several processor threads at once. Measured on a Ryzen 7 7840HS + RTX 4060: importing 412 files went from 89.5 s to 43.5 s, with the same faces found. The NPU isn't picked by itself: it was slower for one face at a time. |
@@ -42,7 +53,7 @@ you point it at a model server on another device.
 | **"Looks", not "feels"** | Research shows facial expression is a weak, context-dependent indicator of felt emotion. The wording follows the evidence. |
 | **Layered expression reading** | A quality gate, then voting over time, then a per-person "usual look", then evidence. Each layer fixes a specific failure of single-frame emotion detection. |
 | **New signals are evidence only until measured** | Face-shape cues, talking, motion, blinks, gaze, pulse, body posture, voice and the state model are shown but don't change the label. The options that would change it (skip while talking, skip when a hand is on the face, state model) are off by default. |
-| **Every signal is read against the person's own normal** | People differ more from each other than from their own good and bad days, so a population norm says little about one person (the idiographic view, Molenaar 2004). Each named person's usual level of every signal is learned, separately alone and in company, and the tracker shows departures ("head -2.3 SD for Chris"). Kept in the browser only, and forgettable per person. |
+| **Every signal is read against the person's own normal** | People differ more from each other than from their own good and bad days, so a population norm says little about one person (the idiographic view, Molenaar 2004). Each named person's usual level of every signal is learned, separately alone and in company, and the tracker shows departures ("head -2.3 SD for Sam"). Kept on this computer (by the tracker, with a copy in the page's browser storage) and in your shared database if you set one up; forgettable per person. |
 | **Self-report is the only ground truth for feelings** | An opt-in "feeling check" asks how you feel on two 1–7 scales. Without it, accuracy can only be measured against posed expressions, never against feelings. |
 | **Only numbers are stored for research** | Posed tests and feeling reports save scores and signals (including body points): no pictures, no audio. Live expression, voice, pulse and posture are never written down. |
 | **Two separate apps** (labeling and tracking) | Owner preference. Each stays simple, and both can run at once. Since 2026-11-08 FaceRecognizer.exe shows both in one window as tabs, but each keeps its own server and page. |
@@ -213,19 +224,34 @@ from audEERING.
 - The newer signals (talking gate, hand-on-face gate, state model, pulse, body posture and breathing,
   voice model) work in the page but haven't been validated on enough real sessions. Their thresholds are first guesses, marked as such in the code.
 - The valence/arousal fit needs about 15–20 feeling reports per person before it exists at all.
+- The shared database, photos between devices and the Cameras tab are new (versions 1.16 to 1.20) and run on a
+  few devices so far; the Cameras page was measured with a stand-in for 40 cameras (9–10 frames a second each).
 - Web search names well-known people reliably (two tests, 99.4% and 100%) but never private people, and its confidence bands haven't been measured on this project's faces.
 - This is a single-user personal system, not a product. Expression and feeling readings must not be used
   to make decisions about people. The EU AI Act bans emotion recognition in workplaces and schools.
 
-## Your data stays on your computer
+## Your data stays on your own devices
 
 The repository and the releases contain the programs only, no photos, faces, names or labels. Everything
 the tools learn from your photos lives in `face-recognizer/data/` (beside `FaceRecognizer.exe` for the
 .exe; in `~/Library/Application Support/FaceRecognizer/data` or `~/.local/share/FaceRecognizer/data` for the macOS
 and Linux apps), which is created on first start, starts empty, and is in `.gitignore`: face prints, face pictures,
 labels, photo dates and people tags, saved Web search answers and benchmark results. Web search keys,
-photo descriptions and their settings, Collect faces pictures, alerts and the presence log are in `%APPDATA%\FaceLabels\` (macOS:
-`~/Library/Application Support/FaceLabels`, Linux: `~/.local/share/FaceLabels`), also only on your computer.
+photo descriptions and their settings, Collect faces pictures, alerts, the presence log, each page's settings, what
+the tracker learned about each person (usual look, signal normals) and, with a shared database, its connection
+settings and this device's keys are in `%APPDATA%\FaceLabels\` (macOS: `~/Library/Application Support/FaceLabels`,
+Linux: `~/.local/share/FaceLabels`), also only on your computer.
+
+With a **shared database** (optional; see [Sharing between your devices](face-recognizer/README.md#sharing-between-your-devices-shared-database)),
+the same data also goes to your own PostgreSQL server, over TLS, so your other devices get it: faces, prints and
+pictures, labels, photos by content, tags, descriptions, alerts, presence visits, each person's learned signals, each
+device's settings, and the Web search and describe keys encrypted with your passphrase (the server never sees them
+in plain text). Where each photo file is on a device is kept there under that device, so the others know whom to
+ask for the original; they never open it by that path. Devices then also answer each other directly on
+the local network (port 8767): an original photo another device asks for, and this device's live camera while
+**Stream this camera to my other devices** is on (on by default once a shared database is set up). Both are
+encrypted, need a request signed with a key only your devices have, and are only shown, never stored. **Share my
+photos with my other devices** (Settings → Shared database) turns both off; the database sync goes on.
 
 Each person can be exported or forgotten from the labeling tool (a person's page, **Their data…**): the export
 writes everything held about them into a folder (`data.json` and their face pictures); forgetting removes their
@@ -252,6 +278,7 @@ personal data about the people in your photos.
 | eDifFIQA (tiny) | Face quality | See its upstream repository |
 | MediaPipe Face Landmarker | Blendshape cues | Apache 2.0 |
 | MediaPipe Pose Landmarker lite | Body posture | Apache 2.0 |
+| MediaPipe Hand Landmarker | Hand skeleton (display only) | Apache 2.0 |
 | Microsoft Florence-2 large (ONNX, optional download) | Built-in photo describer | MIT |
 | Amazon Rekognition, Google Cloud Vision (online services, optional) | Web search in the labeling tool | Paid per use under each provider's terms; your own keys |
 

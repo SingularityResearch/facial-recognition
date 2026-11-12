@@ -39,14 +39,14 @@ independent measurements, each checked for quality, combined over time and compa
 
 | Layer | In this project | Why it's there |
 |---|---|---|
-| 1. Detect and track | YuNet + per-track identity ([tracker.py](../face-recognizer/tracker.py)) | Emotion is a process over time, so you need the same subject across frames to build up evidence. Tracking also gives **kinematics** (speed, acceleration, approach or retreat) for any object, not only faces. |
+| 1. Detect and track | YuNet face finding and naming ([tracker.py](../face-recognizer/tracker.py)), then per-face tracks in the page ([tracker_ui.js](../face-recognizer/tracker_ui.js)) | Emotion is a process over time, so you need the same subject across frames to build up evidence. Tracking also gives **kinematics** (speed, acceleration, approach or retreat) for any object, not only faces. |
 | 2. Quality gate | `Q_EXPR` 0.25 and `MAX_TURN` about 35° ([face_id.py](../face-recognizer/face_id.py)) | Blurry or turned faces make the model *confidently wrong* (usually "sad" or "neutral"), not unsure. In signal-detection terms, abstaining beats emitting noise that looks like signal. |
 | 3. Appearance | 7-class expression model + MediaPipe blendshape cues | Blendshapes are close to **FACS action units** (Ekman & Friesen 1978): anatomical muscle movements that are fairly objective. Labels like "happy" are interpretations on top of them. The two are kept separate, so cues are evidence only. |
 | 4. Time voting | Last 10 scored frames, at least 3 votes, at least 45% share and a lead (`X_MIN_VOTES`, `X_SURE`, `X_MARGIN` in [expression.js](../face-recognizer/expression.js)) | A real expression has an onset, a peak and a fade, typically over 0.5 to 4 s. Collecting votes over time is evidence accumulation (the drift-diffusion idea): commit once the evidence crosses a threshold. |
-| 5. Personal baseline | Each person's "usual look", learned in the browser | Resting faces differ: one person's neutral reads as "sad" or "angry" to a model. A **departure from someone's own baseline** says more than an absolute score. Psychophysiology baselines for this reason, and it also cancels some face-specific model bias. |
+| 5. Personal baseline | Each person's "usual look" ([expression.js](../face-recognizer/expression.js) `UsualLooks`), learned by the tracker page from sharp frames and trusted after about 100 checks; kept on the computer (and in the shared database, if there is one) | Resting faces differ: one person's neutral reads as "sad" or "angry" to a model. A **departure from someone's own baseline** says more than an absolute score. Psychophysiology baselines for this reason, and it also cancels some face-specific model bias. |
 | 6. Dimensions | Rough valence and arousal in the evidence panel | Russell's circumplex (1980): pleasant↔unpleasant × calm↔activated holds up better than 7 categories. Arousal also tracks motion energy, which links layers 1 and 3. |
-| 7. Fusion | Measured before it is used ([tools/expr_eval.py](../face-recognizer/tools/expr_eval.py)) | See the next section. |
-| 8. Prediction | Short horizon only | Predicting where something moves next is physics (Kalman-style filtering) and works well. Predicting intent relies on theory of mind and is far weaker. |
+| 7. Fusion | Not used yet: measured first ([tools/expr_eval.py](../face-recognizer/tools/expr_eval.py)); cues, motion, voice and body are shown as evidence only | See the next section. |
+| 8. Prediction | Not built; if it is, short horizon only | Predicting where something moves next is physics (Kalman-style filtering) and works well. Predicting intent relies on theory of mind and is far weaker. |
 
 ## Why fusing several cues works, and when it doesn't
 
@@ -107,22 +107,26 @@ show.
 The EU AI Act bans emotion recognition in workplaces and schools. That doesn't affect personal, local use
 like this project, but it matters if the project is ever used elsewhere.
 
-## What is implemented (2026-10-31)
+## What is implemented
 
 The suggestions from this document are built into the live tracker. Each one is evidence only until it is
-measured. The [README](../face-recognizer/README.md) ("Other signals") has the details.
+measured: the options that would let one change the expression label (**Skip expression while talking**, **Skip
+expression when a hand is on the face**, **Use state model for expression**) are off by default, and every
+`signals.js` threshold and the state model's `H_STAY` are first guesses, marked as such in the code. Only the
+quality gate (`Q_EXPR`, `MAX_TURN`) and the voting values (`X_SURE`, `X_MARGIN`, `X_MIN_VOTES`) are measured. The
+[README](../face-recognizer/README.md) ("Other signals") has the details.
 
 | Suggestion | Where |
 |---|---|
 | Self-report ground truth ("feeling check") | Tracker page → Expression test card; `data/expr_eval/feel-*.jsonl` |
 | Calibrated confidence | `tools/expr_eval.py` → `data/expr_calibration.json`; "cal NN%" in the evidence |
-| Talking detection and an optional talking gate | `signals.js` (jaw movement plus microphone voice activity); talking steps in the Expression test |
+| Talking detection and an optional talking gate (off by default) | `signals.js` (jaw movement plus microphone voice activity); talking steps in the Expression test |
 | Timing: smile rise, symmetry, how long a reading held | `signals.js` |
 | Independent channels: motion, blinks, gaze, webcam pulse, voice | `signals.js`; voice model Wav2Small in `face_id.Voice` |
-| Body posture: head height, shoulders, lean, movement, breathing, hand on face | `signals.js`; MediaPipe pose in `face_id.Faces.poses` |
-| Every signal against the person's own normal, alone and in company (layer 5 extended beyond expression) | `signals.js` `Baselines`; "unusual for ..." in the evidence |
+| Body posture: head height, shoulders, lean, movement, breathing, hand on face, and an optional hand-on-face gate (off by default) | `signals.js`; MediaPipe pose in `face_id.Faces.poses`; "chin on your hand" step in the Expression test |
+| Every signal against the person's own normal, alone and in company (layer 5 extended beyond expression) | `signals.js` `Baselines`; "unusual for ..." in the evidence; kept by the tracker in `person_signals.json` (not `data/`), shared between devices with a shared database, and forgotten with the person |
 | Valence and arousal fitted to the person | `tools/expr_eval.py` → `data/va_fit.json`; "fit" in the evidence |
-| State model instead of voting | `expression.js` (optional; compared with the vote by `expr_eval.py`) |
+| State model instead of voting | `expression.js` (optional, off by default; compared with the vote by `expr_eval.py`) |
 | Accuracy per condition | `tools/expr_eval.py` (person, quality, size, head turn, brightness) |
 
 The first real test session shows why measurement comes first. The model was strongly overconfident (fitted

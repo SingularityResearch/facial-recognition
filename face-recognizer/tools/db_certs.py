@@ -1,7 +1,7 @@
 """Make TLS certificates for a PostgreSQL server that Face Recognizer devices share (see docs/SETTINGS.md, "Shared
 database"): a small certificate authority and a server certificate it signs, for the server's names and addresses.
 
-    python tools/db_certs.py OUTDIR sentient-nas 10.0.0.12 10.0.0.7
+    python tools/db_certs.py OUTDIR nas.local 192.168.1.20
 
 writes OUTDIR/ca.crt (give this to every device: it checks the server with it), OUTDIR/ca.key (keep it safe, only to
 make a new server certificate later), OUTDIR/server.crt and OUTDIR/server.key (copy both into the server's data

@@ -1,4 +1,6 @@
-# Versions known to work together (FaceRecognizer 1.9, Python 3.12: Windows 11, macOS 14+ on Apple Silicon, Ubuntu 24.04). setup.bat installs these.
+# Versions known to work together (FaceRecognizer 1.20, Python 3.12: Windows 11, macOS 14+ on Apple Silicon, Ubuntu 24.04).
+# setup.bat (Windows) and setup.sh (macOS, Linux) install these; on Linux with an NVIDIA card (nvidia-smi works)
+# setup.sh puts onnxruntime-gpu of the same version in place of onnxruntime.
 # OpenCV: only opencv-contrib-python. mediapipe needs it, and it contains everything opencv-python has; having
 # both installed at different versions breaks cv2 (they install the same files).
 opencv-contrib-python==5.0.0.93
@@ -14,4 +16,4 @@ pywebview==6.2.1         # FaceRecognizer's window (python app.py, and the .exe)
 truststore==0.10.5       # HTTPS certificates checked by the operating system (a fresh Windows has few roots for Python)
 psycopg[binary]==3.3.8   # optional shared database (PostgreSQL + pgvector on a server the devices share): facedb.py
 pgvector==0.5.1          # face prints to and from the database's vector type
-cryptography==50.0.2     # keys in the shared database, encrypted with the owner's passphrase; tools/db_certs.py
+cryptography==50.0.2     # keys in the shared database, encrypted with the owner's passphrase; peer.py's certificate; tools/db_certs.py

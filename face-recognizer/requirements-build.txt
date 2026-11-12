@@ -1,3 +1,3 @@
-# Building FaceRecognizer.exe (build_app.bat): the app's own requirements plus PyInstaller.
+# Building the app (build_exe.py; build_app.bat on Windows): the app's own requirements plus PyInstaller.
 -r requirements.txt
 pyinstaller==6.22.3

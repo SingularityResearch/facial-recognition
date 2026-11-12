@@ -1239,7 +1239,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         const job = (name, k) => d[k] ? `${name}: ${d[k]}` : null;
         const lines = [job("Face finding", "detection"), job("Recognition (face prints)", "recognition"),
                        job("Photo quality", "quality"), job("Expression", "expression"),
-                       job("Face shape cues", "cues"), job("Body posture", "pose")].filter(Boolean);
+                       job("Face shape cues", "cues"), job("Body posture", "pose"), job("Hand skeleton", "hands")].filter(Boolean);
         if (!lines.length) lines.push("Decided when the models first load (adding photos, or the face tracker).");
         if (u.gpu_note) lines.push(u.gpu_note);
         if (u.cuda) { lines.push(u.cuda); if (/downloading/.test(u.cuda)) setTimeout(SettingsBridge.changed, 3000); }
@@ -1260,7 +1260,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       } },
     { section: D, id: "dbsetup", label: "Connect", type: "form", button: "Connect",
       hint: "Keeps this device's faces, names, labels, Web search answers and photo descriptions in a PostgreSQL database (with pgvector) that your other devices share, and takes theirs. The data goes to that server over an encrypted connection; the password is kept on this device only (protected by Windows for your user). While the server can't be reached the app works from this device's copy and sends changes later. Leave the server empty and Connect to stop using it (this device keeps its copy).",
-      fields: () => [{ name: "host", label: "Server", placeholder: "e.g. sentient-nas", value: sec.db?.host || "" },
+      fields: () => [{ name: "host", label: "Server", placeholder: "e.g. nas.local", value: sec.db?.host || "" },
                      { name: "port", label: "Port", placeholder: "5432", size: 5, value: sec.db?.port || "" },
                      { name: "dbname", label: "Database", placeholder: "sentient", size: 10, value: sec.db?.dbname || "" },
                      { name: "user", label: "User", placeholder: "facerec", size: 9, value: sec.db?.user || "" },

@@ -2,8 +2,8 @@
 devices to watch (peer.py's /stream), and who the camera sees now (for "moved between cameras" alerts,
 dbsync_home.HomePart).
 
-The tracker page sends a JPEG frame now and then: about every 2 s while nobody watches, ~10 a second while someone
-does (put() answers how many watch). Frames are kept in memory only, never on disk: the newest one, for the watchers.
+The tracker page sends a JPEG frame about 10 times a second all the time (the owner's choice), whether anyone watches
+or not (put() answers how many watch). Frames are kept in memory only, never on disk: the newest one, for the watchers.
 Shared by the tracker's server (which takes the page's frames) and the peer service (which serves them); both run in
 the app window's one process."""
 import threading

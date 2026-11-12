@@ -1,12 +1,14 @@
 # Face Tracker
 
 Real-time face tracking in the browser with a webcam (USB or built-in) or a video file.
-Uses Google's MediaPipe face detector; all processing runs locally.
+Uses Google's MediaPipe face detector (BlazeFace short-range, made for faces within about 2 m of the camera); all
+processing runs in the browser. It finds faces only: it doesn't recognize who they are or read expression.
 
 ## Run
 
 Double-click `index.html` to open it in Chrome or Edge, click **Start camera**, and allow camera access.
-Pick your USB webcam from the **Camera** dropdown if the wrong camera shows.
+Pick your USB webcam from the **Camera** dropdown if the wrong camera shows, or click **Open video** to track faces
+in a video file.
 
 This is the project's original demo, and **it uses the internet**: each time it opens it loads the detector from
 `cdn.jsdelivr.net`, the face model from `storage.googleapis.com` and its fonts from Google Fonts. The video stays in
@@ -19,7 +21,7 @@ that way.
 
 - Tracks multiple faces with stable IDs, boxes, keypoints and motion trails
 - Live face count, FPS and per-face position
-- Mirror view, smoothing, minimum confidence and face blur controls
+- Mirror view, keypoints, motion trail, face blur, smoothing and minimum confidence controls
 
 ## See also
 

@@ -3,7 +3,7 @@
 // The recognizer scores each sharp, camera-facing face with 7 expression probabilities. Here they are
 // averaged over the last ten checks (about a second), weighted by face quality, and only a clear
 // winner is reported. For a named person the tracker also learns their usual look (a slow running
-// average, kept in this browser) so that a face that always reads a bit "sad" or always smiles isn't
+// average, kept by the tracker on this computer) so that a face that always reads a bit "sad" or always smiles isn't
 // reported as news: a reading is highlighted when it departs from that person's usual, and tagged
 // "usual" when it matches it.
 //

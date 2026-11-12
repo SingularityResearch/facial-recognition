@@ -19,7 +19,7 @@ Recognizes specific people (by name) on a webcam or in photos and videos, traine
 - **Voice (optional):** audEERING's Wav2Small (`models/wav2small.onnx`, 17K parameters, made by `python tools\get_wav2small.py` from the official weights) reads arousal, dominance and valence from speech when you turn on the microphone. Licensed CC BY-NC-SA 4.0: non-commercial use only, like the ArcFace weights.
 - **Security:** the labeling tool and tracker only accept requests from their own pages (see `localguard.py`), so other websites can't change your labels or load your face pictures. Their pages load nothing from the internet: no fonts, scripts or pictures from elsewhere (a Content-Security-Policy allows only their own server).
 
-Everything runs locally. No photos leave your computer, with one exception you start yourself: **Web search** in the photo view (see below) sends that face to Amazon and that photo to Google to suggest who it is. (Describe photo pointed at another computer's server, or **Describe all** shared with your other LM Studio computers, sends them the photos they describe.) On the local network the app finds LM Studio servers while Settings is open and announces this computer's LM Studio while it runs; downloads happen only when you click. The full list: [docs/SETTINGS.md](../docs/SETTINGS.md#what-reaches-the-network).
+Everything runs locally. No photos leave your computer, with one exception you start yourself: **Web search** in the photo view (see below) sends that face to Amazon and that photo to Google to suggest who it is. (Describe photo pointed at another computer's server, or **Describe all** shared with your other LM Studio computers, sends them the photos they describe.) If you set up a **shared database** for your own devices (off until you do; see [Sharing between your devices](#sharing-between-your-devices-shared-database)), your faces, names, labels and other private data go to that server, encrypted on the way, and your devices show each other their original photos and live cameras over your local network, encrypted and only to each other. On the local network the app finds LM Studio servers while Settings is open and announces this computer's LM Studio while it runs; downloads happen only when you click. The full list: [docs/SETTINGS.md](../docs/SETTINGS.md#what-reaches-the-network).
 
 ## Getting it
 
@@ -64,12 +64,14 @@ Mac builds) and on **Linux** (built and tested on Ubuntu; x86_64, and ARM from s
 
 ## One window: FaceRecognizer.exe (FaceRecognizer.app, FaceRecognizer on Linux)
 
-**FaceRecognizer.exe** opens the face tracker and the labeling tool in one window, with a **Face tracking** tab, a **Labeling** tab and a **Settings** tab at the top (**Ctrl+1** / **Ctrl+2** / **Ctrl+3** also switch). Inside, the two are still separate programs on their usual ports (8766 and 8765) with the same pages as `recognize.bat` and `label.bat`. The tracker keeps running while you're on the Labeling tab, so **Collect faces for labeling** goes on collecting. If either is already open from its .bat, the tab says so and asks you to close that copy (a copy started on its own doesn't let other pages show it, so the window can't), rather than starting a second one on the same data. Both tabs are ready about 10 seconds after starting; closing the window stops everything.
+**FaceRecognizer.exe** opens the face tracker and the labeling tool in one window, with a **Face tracking** tab, a **Labeling** tab, a **Cameras** tab and a **Settings** tab at the top, and the **Alerts** bell beside them (**Ctrl+1** Face tracking, **Ctrl+2** Labeling, **Ctrl+3** Settings, **Ctrl+4** Alerts; the Cameras tab has no shortcut). The Cameras tab shows the live cameras of all your devices and needs a shared database (see [Every camera in one place](#every-camera-in-one-place-cameras-tab)). Inside, the two are still separate programs on their usual ports (8766 and 8765) with the same pages as `recognize.bat` and `label.bat`. The tracker keeps running while you're on the Labeling tab, so **Collect faces for labeling** goes on collecting. If either is already open from its .bat, the tab says so and asks you to close that copy (a copy started on its own doesn't let other pages show it, so the window can't), rather than starting a second one on the same data. Both tabs are ready about 10 seconds after starting; closing the window stops everything.
 
 - **Build it** with **build_app.bat**; see **Building the app** below for the full steps on Windows, macOS and Linux. Or download a ready-made one from GitHub **Releases**.
 - **Keep it in this folder.** The .exe carries only the code and pages. It uses the `models\` and `data\` folders beside it, so it shares labels with the .bat launchers and git. Rebuild it after changing any `.py`, `.html` or `.js` file.
-- **The window** is Edge WebView2 (part of Windows 11), WebKit on macOS, and Qt's web view on Linux. On Windows the camera and microphone are allowed for the app's own pages without a prompt; macOS asks once for the app. The window remembers each page's options and the per-person baselines in `%APPDATA%\FaceLabels\webview\`, separately from your browser's. Messages and errors go to `%APPDATA%\FaceLabels\app.log`. If a tab couldn't start (for example the first-start model download failed) or stopped answering, its **Start again** button starts that program again inside the window, without closing the app.
-- **Settings** gathers every option in sections: App (version, Check for updates, and buttons that open the `data` folder and `%APPDATA%\FaceLabels`), Face tracking (camera, display, expression, voice/pulse/posture, recognition, alerts: tick who to be alerted about in a list of everyone known, plus Unknown; and the presence log), Labeling (the face lists), Labeling: Web search (enter or remove your own keys), Labeling: Describe photo (which model describes photos, sharing Describe all with your other computers; download the built-in one), LM Studio (this computer's and the network's LM Studio servers, getting the same models, the shared models folder, the AI model apps found) and This computer (the processor, memory, graphics processors and NPU the app found, and where each job runs: see **Your hardware: what the app uses**). Changes apply at once and are remembered between runs; sections have **Reset to defaults**. Every setting, what it is for and its default: [docs/SETTINGS.md](../docs/SETTINGS.md). The same options stay on the Face tracking and Labeling tabs too, and the two always agree. Every Face tracking option is now remembered between runs (before, only some were).
+- **The window** is Edge WebView2 (part of Windows 11), WebKit on macOS, and Qt's web view on Linux. On Windows the camera and microphone are allowed for the app's own pages without a prompt; macOS asks once for the app. The window remembers each page's options and the per-person baselines in `%APPDATA%\FaceLabels\webview\`, separately from your browser's. Messages and errors go to `%APPDATA%\FaceLabels\app.log`, each line starting with its time in UTC (hours, minutes, seconds), so you can match a freeze or a restart with what else happened then. If a tab couldn't start (for example the first-start model download failed) or stopped answering, its **Start again** button starts that program again inside the window, without closing the app.
+- **The window doesn't stay frozen.** The window's page tells the app every 2 seconds that it's running. If it says nothing for 30 seconds, the app brings it back by itself: on macOS and Linux it first stops the page's renderer so the page loads again; if the page is still silent 30 seconds later (on Windows, 30 seconds after the first 30), the whole app starts again in place. If the page's renderer crashes, the page is loaded again at once. A computer waking from sleep doesn't count as a freeze. Each of these is noted in `app.log`.
+- **A camera that won't start** with **Keep this camera running** on: after two tries that hang for 30 seconds each, the Face tracking page loads again; if the camera still hangs, the app starts again (at most once an hour, so a camera that is really broken can't keep restarting it).
+- **Settings** gathers every option in sections: App (version, Check for updates, and buttons that open the `data` folder and `%APPDATA%\FaceLabels`), Face tracking (camera, display, expression, voice/pulse/posture, recognition, which also has **Keep this camera running** and **Stream this camera to my other devices**, alerts: tick who to be alerted about in a list of everyone known, plus Unknown; and the presence log), Labeling (the face lists), Labeling: Web search (enter or remove your own keys), Labeling: Describe photo (which model describes photos, sharing Describe all with your other computers; download the built-in one), LM Studio (this computer's and the network's LM Studio servers, getting the same models, the shared models folder, the AI model apps found), This computer (the processor, memory, graphics processors and NPU the app found, and where each job runs: see **Your hardware: what the app uses**; on Linux with an NVIDIA card, **Download CUDA support**) and Shared database (connecting to it, sharing photos with your other devices, copying settings from another device, the passphrase for keys: see **Sharing between your devices**). Changes apply at once and are remembered between runs; sections with switches and choices have **Reset to defaults**. Saved keys and the database password show masked; hold the eye button beside one to see it. Every setting, what it is for and its default: [docs/SETTINGS.md](../docs/SETTINGS.md). The same options stay on the Face tracking and Labeling tabs too, and the two always agree.
 - **Check for updates** (top right of the window) asks GitHub for the latest release, only when you click it, and offers to open its download page if it's newer.
 - **If the camera is "busy" or missing**, another app has it, often the tracker still open in a browser tab, which starts the camera by itself. Close that tab (or the other app) and press **Start camera** again.
 
@@ -165,12 +167,12 @@ Every push builds the app on GitHub's Windows, macOS and Linux machines once the
 `gh api repos/SingularityResearch/facial-recognition/actions/artifacts/<artifact id>/zip > build.zip`.
 
 To make a release:
-1. Raise `VERSION` in `app.py` (for example `"1.10"`), commit, push, and wait for the run to pass. Test its builds.
+1. Raise `VERSION` in `app.py` (for example `"1.21.0"`), commit, push, and wait for the run to pass. Test its builds.
 2. From that run's artifacts: zip `FaceRecognizer.exe` with a short `README.txt` for new users as
    `FaceRecognizer-win64.zip`; take `FaceRecognizer-macos-arm64.zip` and `FaceRecognizer-linux-x64.tar.gz` as they
    are; list their SHA-256 in `SHA256SUMS.txt`. **Never include `data`**: it holds your faces, names and labels. A new
    user's copy starts empty.
-3. Attach the four files to a release tagged `v1.10` at that commit, with notes saying how to start it on each system.
+3. Attach the four files to a release tagged `v1.21.0` (`v` and the version) at that commit, with notes saying how to start it on each system.
 
 Leave out the models: the app downloads them on first start (`fetch_models.py`): YuNet, eDifFIQA and the expression
 model from OpenCV Zoo on Hugging Face, the face, pose and hand landmarkers from Google's MediaPipe storage (the hand landmarker only from there; it's optional), ArcFace from
@@ -198,9 +200,9 @@ The tracker and the labeling tool are ordinary local web apps; the .exe only put
 - Each .bat (or .sh) opens its page in your browser. Leave its console or terminal window open while you use it, and close the window to stop it. Run both at once to have both pages; they're separate programs.
 - Options: `--port 9000` uses another port, and `--no-browser` doesn't open the page (for example to bookmark it, or to start it from a script).
 - The browser asks once for the camera and microphone. (In FaceRecognizer.exe's window only the Face tracking tab gets them without asking.) It remembers each page's options and per-person baselines itself, separately from the .exe window's.
-- Both servers listen only on this computer (`127.0.0.1`). Other devices on your network can't reach them, and pages from other websites can't use them. (Devices share data only through a shared database, if you set one up: see [Sharing between your devices](#sharing-between-your-devices-shared-database).)
+- Both servers listen only on this computer (`127.0.0.1`). Other devices on your network can't reach them, and pages from other websites can't use them. (Devices share data only through a shared database, if you set one up: see [Sharing between your devices](#sharing-between-your-devices-shared-database). With one, the app also runs a small encrypted service on your local network, port 8767, through which your own devices fetch each other's original photos and live cameras; nothing else answers there.)
 - If FaceRecognizer.exe starts while one is already running from its .bat, that tab says so: close the .bat copy and start the app again. A page started from its .bat can be shown only by itself, never inside another page (only the app window's own tab page may show the programs it started).
-- The **Settings** tab exists only in FaceRecognizer.exe's window (or `python app.py`). In the browser, the same options are on each page: the tracker's **Controls** panel, the labeling tool's toolbar and photo view, and **Settings and other ways to search** in the Web search dialog. The Describe photo server, model and API key can be set only in the Settings tab (or the default address with `FACE_LLM_URL`).
+- The **Settings** tab exists only in the app (FaceRecognizer.exe's window, `python app.py`, or the app opened in the browser with `--browser`); the Cameras tab's page is also at http://127.0.0.1:8766/cameras. On a page started from its .bat or .sh, the same options are on the page itself: the tracker's **Controls** panel, the labeling tool's toolbar and photo view, and **Settings and other ways to search** in the Web search dialog. The Describe photo server, model and API key, the LM Studio and This computer sections and everything under Shared database can be set only in the Settings tab (or the default describe address with `FACE_LLM_URL`).
 
 ## Step by step
 
@@ -254,7 +256,7 @@ Normal labeling needs no recompute: every change rebuilds `data/people.npz` (wha
 ### 4. Start the face tracker
 
 1. Double-click **recognize.bat** (macOS, Linux: `./recognize.sh`). A black **Face Tracker** window (a terminal on macOS and Linux) opens, loads the models (it lists which processor runs each one), and opens http://127.0.0.1:8766/ in your browser.
-2. Pick your webcam in **Camera** and click **Start camera**. The first time, allow camera access in the browser. Next time the same camera starts automatically, unless you last stopped it with **Stop camera**.
+2. Pick your webcam in **Camera** and click **Start camera**. The first time, allow camera access in the browser. Next time the same camera starts automatically, unless you last stopped it with **Stop camera**. With **Keep this camera running** (on by default) the camera is also started again within 10 seconds whenever it stops (unplugged, busy, an error); clicking **Stop camera** turns that option off.
 3. Named people show their name and match percentage on their face; everyone else shows **Unknown**. Names you add in Face Labels appear without restarting.
 4. To stop, close the black window (or press Ctrl+C in it). To keep it running but turn the camera off, click **Stop camera**.
 
@@ -281,15 +283,17 @@ Double-click **recognize.bat** (macOS, Linux: `./recognize.sh`). Your browser op
 - **Hand skeleton (fingers)** (off by default; remembered): the joints of every finger, 21 points a hand, from MediaPipe's hand model, drawn in the colour of the person each hand belongs to (the one whose body's wrist it is at, or else the nearest face). Up to 4 hands a frame. It runs a second model, about 10-20 ms more a frame on the CPU, only while this is on. Drawing only: nothing is kept, and no reading changes. Needs `models/hand_landmarker.task` (downloaded with the other models); the option is greyed out without it.
 - **Match strictness**: raise it if wrong names appear, lower it if known people show as Unknown.
 - **Collect faces for labeling** (off by default; remembered): while a face stays in view, the tracker saves a picture of that face every 5 seconds, up to 12 per face per visit. It only saves a face after 3 checks in a row and only when the face is sharp enough to learn from (the same quality setting as photos). Known and Unknown faces are both saved: collecting Unknown faces is how new people get named. **Only the face is saved, never the whole frame**: the face with room around it of 0.6 face widths on each side (what the labeling tool's import needs to find the face again; enlarged to 160 px when smaller), with every other face in that room greyed out, so people in the background and the room itself aren't kept. Each picture goes to `%APPDATA%\FaceLabels\webcam\` with a `.json` beside it saying who the tracker thought the face was and its match percentage. The labeling tool imports new pictures by itself (see **Label people**). They stay outside the project; once imported, their faces (prints, pictures, labels) are in `data/` like faces from photos. Ignore a face you don't want kept: its print and picture are then deleted (see **Label people**).
+- **Keep this camera running** (on by default; remembered): starts the camera when the page starts, and again within 10 seconds whenever it stops (unplugged, busy, an error), so this device's camera stays on for your other devices' Cameras tab. Not while a video file plays. **Stop camera** turns it off; turn it on again here or in Settings.
+- **Stream this camera to my other devices** (on by default; remembered; does something only with a shared database and **Share my photos with my other devices** on): your other devices can watch this camera in their **Cameras** tab, as this page shows it (the video with every box, name and marker that's on here, mirrored as shown), with its live readout. Sent all the time while the camera runs, about 10 frames a second, watched or not, also while the window is minimized or behind others; over your local network, encrypted, only to your own devices; never stored anywhere. See [Every camera in one place](#every-camera-in-one-place-cameras-tab).
 - **Show expression** / **Calibrate to each person** / **Show expression evidence** / **Expression test**: see below.
 - **Listen to voice** / **Webcam pulse** / **Body posture** / **Skip expression while talking** / **Skip expression when a hand is on the face** / **Use state model** / **Feeling check**: see **Other signals** below.
-- **Alerts and presence log** (closed panel; everything off until you set it, all remembered):
+- **Alerts and presence log** (closed panel; all remembered): nothing alerts until you pick people, except **They move between cameras** with a shared database, which is about everyone a camera names; the presence log is off until you turn it on.
   - **Alert me about these people**: type names, separated by commas (or tick them in the Settings tab).
-  - **Events that raise an alert**: **They arrive** (recognized after being out of view at least the set time, 10 minutes by default), **They leave** (out of view for the set time), **Their signals are unusual for them** (any signal at least the set number of spreads from their own normal for the set time, at most one alert a person per set period; needs **Calibrate to each person**; these thresholds are guesses, not yet measured), and **An unknown face stays** (the set time).
+  - **Events that raise an alert**: **They arrive** (recognized after being out of view at least the set time, 10 minutes by default), **They leave** (out of view for the set time), **Their signals are unusual for them** (any signal at least the set number of spreads from their own normal for the set time, at most one alert a person per set period; needs **Calibrate to each person**; these thresholds are guesses, not yet measured), **They move between cameras** (on by default; with a shared database: someone this camera sees was on another device's camera in the last 10 minutes; every device shows the alert), and **An unknown face stays** (the set time).
   - **Timing**: each of those times, how long after an alert it measures again (15 s by default), and how long the banner stays (or until dismissed).
   - An alert shows as a banner on the video (in the app window, over whichever tab is open), rings the **Alerts** bell (with how many are new, on the tracker page and in the app's tab bar, Ctrl+4), puts the count in the window's title, flashes its taskbar button when the window is behind others, plays a short sound (**Play a sound with alerts**) and shows a Windows notification if allowed.
   - **The Alerts panel** keeps every alert (the newest 500) until you act on it: **New**, **Acknowledged** and **Archived** lists, with Acknowledge, Archive, Mark new, Restore and Delete, one at a time or all at once. **Details** shows what was measured when the alert was raised and again after the set time: the readings **Show expression evidence** shows, as text lines (expression, signals, body, unusual for them, what it runs on), the expression reading (share, lead, valence/arousal, the latest frame's scores beside their usual look, face-shape cues), recognition, each signal against their normal, 30-second averages and which sensors were on. Numbers and text only, never a picture or sound. Kept in `%APPDATA%\FaceLabels\alerts.json`; a person's **Their data…** exports and forgets their alerts.
-  - **Keep a presence log**: notes each visit, meaning who was in view, from when to when, once they've been out of view for a minute. Only names and times are kept, no pictures. A visit counts once a person has been named over 3 checks, so a passing misread isn't logged. The log is kept in `%APPDATA%\FaceLabels\presence\` (one file per day), on this computer only and never in the published `data\`. **Show today** lists today's visits, including people in view now.
+  - **Keep a presence log**: notes each visit, meaning who was in view, from when to when, once they've been out of view for a minute. Only names and times are kept, no pictures. A visit counts once a person has been named over 3 checks, so a passing misread isn't logged. The log is kept in `%APPDATA%\FaceLabels\presence\` (one file per day), on this computer (and in your shared database, if you set one up) and never in the published `data\`. **Show today** lists today's visits, including people in view now.
 - Names you save in the labeling tool are picked up automatically.
 
 ### Expression
@@ -299,7 +303,7 @@ The model reads the *expression on the face*, not what the person feels: a polit
 - **Only readable faces are scored.** The recognizer skips frames whose quality is below 0.25 or whose head is turned more than about 35 degrees (`Q_EXPR` and `MAX_TURN` in `face_id.py`). Blur and profile views don't make the model unsure, they make it wrong (usually "sad" or "neutral"), so those frames cast no vote rather than a weak one.
 - **Each face is scored twice**, as is and mirrored, and the two are averaged. This is a standard accuracy gain for expression models; measured on your stored faces, the two views give the same label 93% of the time. Both runs together take 0.7 ms per face on the GPU.
 - **Frames vote.** The page averages the last ten scored frames (about a second), weighted by face quality, and only reports a label that has at least 45% of the vote and leads the runner-up by 12 points. Anything less is shown dimmed with a question mark. On your stored faces 95% give a clear winner.
-- **Calibrate to each person** (on by default) learns each named person's usual look: a slow running average of their scored frames, kept in this browser (**Forget what's learned** clears it, for everyone or for one person). It's trusted after about 100 frames of that person. Then a reading that departs from their usual look is shown bright, and one that matches it is tagged **usual**. This is what stops someone whose resting face reads a bit "sad", or who smiles most of the time, from being reported as news every second. Turn it off to see the raw reading. While a person's usual look is still being learned, the evidence's **usual look** cell says how far along it is ("34% learned").
+- **Calibrate to each person** (on by default) learns each named person's usual look: a slow running average of their scored frames, kept by the tracker in `%APPDATA%\FaceLabels\person_signals.json` with a copy in the page's browser storage, and in the shared database if you have one (**Forget what's learned** clears it, for everyone or for one person). It's trusted after about 100 frames of that person. Then a reading that departs from their usual look is shown bright, and one that matches it is tagged **usual**. This is what stops someone whose resting face reads a bit "sad", or who smiles most of the time, from being reported as news every second. Turn it off to see the raw reading. While a person's usual look is still being learned, the evidence's **usual look** cell says how far along it is ("34% learned").
 - **Show expression evidence** (on by default) shows, in each face's block in the live readout, labeled cells explaining the reading, grouped as Expression, Face, Voice (with the microphone on), Body (with body posture on) and Their normal (with calibration on). Each cell keeps its place while the numbers change, and shows a dash when there's no reading; values worth a look (talking, hand on face, unusual signals) are highlighted. Expression has how many frames voted (votes), the winner's share and its lead over the runner-up, a rough valence (unpleasant to pleasant) and arousal (calm to excited), and the face-shape cues that usually go with that label (smile, cheek...). When the reading is unclear it says why: `few-votes`, `low-share`, `low-lead`, or `blurry` / `turned` when the latest frame couldn't be read. Valence/arousal are rough textbook placements of the 7 labels, not measurements. The cues cost about 10 ms per face on the CPU, so they're only computed while this is on. A line under the readout shows which processor runs each model, so a silent fall-back to the CPU is visible.
 
 What to expect: "happy", "surprised" and "neutral" are the reliable labels. "Fearful" and "disgust" are the rarest in the model's training data and the ones it confuses most; "angry" and "sad" are often a resting face. On your photo library the readings are 40-45% neutral, 40-45% happy and the rest spread thinly, which matches what the photos are.
@@ -335,7 +339,7 @@ Microphone tips:
 
 More on the voice measures, the model and its limits: [Voice](../README.md#voice) in the repository README.
 
-**Each person's normal** (with **Calibrate to each person** on): what counts as a low head, fast speech or a high pulse differs a lot between people. A naturally soft-spoken person isn't sad, and a habitual slouch isn't dejection. So the tracker also learns, for each named person, the usual level and spread of every signal: head height, neck, shoulder tilt, body and head movement, smile, jaw, blinks, gaze, pitch and its variability, loudness, speaking rate, voice arousal and valence, pulse and breathing. It takes one sample a second, and a person's normal is trusted after about 2 minutes of them in view; after that it keeps adjusting slowly (about 10 minutes' memory). It learns separately for when the person is **alone** in view and **in company**, because people sit, move and speak differently with others, and uses their overall normal until the one for the situation is learned. With evidence on, the **Their normal** group in each face's block then shows what stands out: now "unusual (alone)", with the most unusual signals ("head -2.3 SD", "pitch +2.1 SD"; SD: spreads away from their normal; 2 or more is shown), "usual", or "learning 40%" at first. All of it stays in this browser. **Forget what's learned** clears it for everyone, or for the person picked next to it. Feeling reports also note whether others were in view.
+**Each person's normal** (with **Calibrate to each person** on): what counts as a low head, fast speech or a high pulse differs a lot between people. A naturally soft-spoken person isn't sad, and a habitual slouch isn't dejection. So the tracker also learns, for each named person, the usual level and spread of every signal: head height, neck, shoulder tilt, body and head movement, smile, jaw, blinks, gaze, pitch and its variability, loudness, speaking rate, voice arousal and valence, pulse and breathing. It takes one sample a second, and a person's normal is trusted after about 2 minutes of them in view; after that it keeps adjusting slowly (about 10 minutes' memory). It learns separately for when the person is **alone** in view and **in company**, because people sit, move and speak differently with others, and uses their overall normal until the one for the situation is learned. With evidence on, the **Their normal** group in each face's block then shows what stands out: now "unusual (alone)", with the most unusual signals ("head -2.3 SD", "pitch +2.1 SD"; SD: spreads away from their normal; 2 or more is shown), "usual", or "learning 40%" at first. It's kept like the usual looks: in `%APPDATA%\FaceLabels\person_signals.json`, a copy in the page's browser storage, and the shared database if you have one, so every device knows each person's normal. **Forget what's learned** clears it for everyone, or for the person picked next to it. Feeling reports also note whether others were in view.
 
 These signals are evidence only. They never change the expression label, with three exceptions that are off by default because they aren't measured yet:
 
@@ -374,7 +378,7 @@ Also:
 - **Named automatically**: check the automatic names, if you like, least certain first.
 - **Checks**: named faces that look more like someone else, people with fewer than 5 clear faces, and the duplicate photos that were skipped.
 - **People**: click a person to see all their faces, least typical first, so mistakes are at the top. **Rename or merge** fixes a name or combines two people. **Photos…** lists every photo the person is named in, newest first. Type more names under **Together with** to find photos where they're all named. Click a photo to open it, or type a folder and **Copy photos** to copy them there, keeping their file dates. Photos already in that folder are skipped, and photos whose originals aren't on this computer are counted but can't be copied.
-  **Their data…** shows what's held about the person and does two things. **Export** writes all of it into a new folder inside the one you type: `data.json` (their faces with photo, box, label and face print; faces marked "not them"; the labeling history about them; saved Web search answers; photo tags; descriptions that name them; their presence log visits, Expression test frames and feeling reports; per-person fitted numbers), their face pictures (`faces\`) and their Collect faces pictures (`webcam\`). **Forget** (type their name, then confirm) deletes all of it and removes their name everywhere: labels and the "not this person" lists, face prints and pictures (`faces.npz`, `thumbs.npz`, `people.npz`), `history.jsonl`, the `labels.json` copies in `data\backups\`, `web_suggestions.json`, `photo_facts.json`, `expr_eval\`, `expr_calibration.json`/`va_fit.json`/`webcam_eval.json`, the contact sheets in `data\sheets\` (made again by `cluster`), and in `%APPDATA%\FaceLabels\` the presence log, Collect faces pictures, descriptions that name them and `app.log`. Their faces stay as Ignored faces without print or picture, so their photos aren't read again. Undo is cleared and it can't be undone. What the tracker page learned about them (usual look, normal signals) is kept by the tracker in `%APPDATA%\FaceLabels\person_signals.json` and forgotten with the rest; the page's own copy in its browser storage is forgotten at the same time in FaceRecognizer.exe's window, else the next time the page loads. With a shared database, the forget goes to every other device too and is carried out there (and what only the server holds about them, such as the app log, is deleted).
+  **Their data…** shows what's held about the person and does two things. **Export** writes all of it into a new folder inside the one you type: `data.json` (their faces with photo, box, label and face print; faces marked "not them"; the labeling history about them; saved Web search answers; photo tags; descriptions that name them; their presence log visits, Expression test frames and feeling reports; per-person fitted numbers), their face pictures (`faces\`) and their Collect faces pictures (`webcam\`). **Forget** (type their name, then confirm) deletes all of it and removes their name everywhere: labels and the "not this person" lists, face prints and pictures (`faces.npz`, `thumbs.npz`, `people.npz`), `history.jsonl`, the `labels.json` copies in `data\backups\`, `web_suggestions.json`, `photo_facts.json`, `expr_eval\`, `expr_calibration.json`/`va_fit.json`/`webcam_eval.json`, the contact sheets in `data\sheets\` (made again by `cluster`), and in `%APPDATA%\FaceLabels\` the presence log, alerts about them, their name in the tracker's alert list, Collect faces pictures, descriptions that name them and `app.log`. Their faces stay as Ignored faces without print or picture, so their photos aren't read again. Undo is cleared and it can't be undone. What the tracker page learned about them (usual look, normal signals) is kept by the tracker in `%APPDATA%\FaceLabels\person_signals.json` and forgotten with the rest; the page's own copy in its browser storage is forgotten at the same time in FaceRecognizer.exe's window, else the next time the page loads. With a shared database, the forget goes to every other device too and is carried out there (a device that is off does it when it's back), and what only the server holds about them, such as the app log and when each camera last saw them, is deleted.
 - Double-click a face (or press Space) to see the whole photo with everyone in it boxed and named; ← → step through faces. Click a box to switch to that face.
 - **Same picture, one tile**: a face that's the same picture as faces in other photos (an avatar in many screenshots, burst shots, re-saved copies; face prints at least 0.95 alike) shows as one tile with a **×N** badge, in every list. Selecting, naming, ignoring, accepting or rejecting it does the same to all N. Different photos of one real person are rarely that alike (0.06% of pairs), so different photos still get their own tiles. In this library 1,722 faces fall into 783 such stacks.
 - **Possible faces**: every photo is looked at twice. Faces the detector is at least 85% sure of are kept as before; faces it's 45% to 85% sure of, or finds only at other sizes, are kept too, as **possible faces**: blurry, turned, small or partly hidden faces, and some things that only look like faces. They have their own list under **To review**, so **New faces** isn't buried in them. Most of them aren't faces (in a hand-sorted sample of 160, only 24 were real faces), so the list is sorted by how much each looks like a real face: a small model learns that from your library each time faces are added (faces the normal detector found count as real, possible faces as mostly not; possible faces you name teach it too; ignored ones can't any more, since an ignored face's print is deleted). Only the most face-like quarter, under **Look like faces**, get **dashed yellow boxes** in the photo view, labelled with how sure the detector is ("Face? 73%"); the rest are under **Less likely to be faces**, without boxes. On the hand-sorted sample this kept boxes on 17 of the 24 real faces and took them off about 9 in 10 non-face objects (food, tyres, hands, screens). Drawings, paintings and game characters mostly keep their boxes: to the recognition model a drawn face is a face. Name them now or later; once one looks like someone you've named it moves to **Suggestions**, and **Ignore** anything that isn't a face. Possible faces named automatically don't teach the recognizer until you confirm them (like webcam snapshots). Photos added before possible faces were kept: **Look in N photos added before** in the Possible faces list (about 6 photos a second, so roughly 25 minutes for 8,000; progress at the top; videos and online-only cloud photos are skipped). In a sample of 1,378 photos this found 732 possible faces. In an earlier sample of 400, about half of those scored 0.55-0.85 were real faces and half food, tyres, drawings and pets. The photo view also looks at the photo you're viewing on the spot (dashed boxes not saved yet; click one to add it, **Add all possible faces** adds every one; **Show possible faces** turns them off). A face hidden too much (behind someone else, or a hand over most of it) may still not be found: the detector scores those like junk.
@@ -418,11 +422,11 @@ The bands are for reading, not measured on this project's faces. Tested 2026-11-
 
 **Settings and other ways to search** (in the dialog): **Copy face, open Google Lens** copies the face and opens Google Images; click the camera icon and press Ctrl+V. (Google only accepts pictures from its own page.) **Save face picture** keeps a copy.
 
-**Each face is searched once.** The answer (suggestions or none, with the date) is saved in `data/web_suggestions.json` by face ID, shown under the face's clues from then on, and returned again without sending anything when you click **Web search** on that face. **Search again** asks anew (and counts toward the limits). Only complete answers are saved: if a service failed, the next click tries again. Like the rest of `data/`, it stays on this computer.
+**Each face is searched once.** The answer (suggestions or none, with the date) is saved in `data/web_suggestions.json` by face ID, shown under the face's clues from then on, and returned again without sending anything when you click **Web search** on that face. **Search again** asks anew (and counts toward the limits). Only complete answers are saved: if a service failed, the next click tries again. Like the rest of `data/`, it stays on this computer (and your shared database, if you set one up, so a face searched on one device isn't searched again on another).
 
 To try it without the page: `python tools\websearch_check.py picture.jpg [--face x0,y0,x1,y1]`.
 
-**This is the only feature that sends anything off your computer**: the face goes to Amazon and the photo to Google, which may keep them, and only when you click **Web search**. Tried and dropped: Yandex (named people well, but it's non-US and returns mixed languages), Bing (only describes a picture), and TinEye (robot check).
+**This is the only feature that sends anything to an outside company**: the face goes to Amazon and the photo to Google, which may keep them, and only when you click **Web search**. Tried and dropped: Yandex (named people well, but it's non-US and returns mixed languages), Bing (only describes a picture), and TinEye (robot check).
 - Keys: **A** accept, **N** name, **R** not this person, **X** ignore, **Z** undo, **Esc** clear the selection. Shift-click selects a range.
 - Faces too blurry or small to learn from are hidden from the lists; **Show blurry faces** brings them back.
 
@@ -500,60 +504,113 @@ Face prints from different models can't be mixed. After changing models, run `py
 
 Several computers with Face Recognizer (say a desktop, a laptop and a NAS) can share one set of names, labels and
 private data through a PostgreSQL database with the pgvector extension, on a computer they can all reach on your
-network. Each keeps working from its own copy, so the tracker is as fast as before and nothing stops while the server
-is away (a laptop out of the house): changes made meanwhile wait and are sent when it's back.
+network. It's optional and off until you set it up; without it each device keeps everything in its own files. Each
+device keeps working from its own copy, so the tracker is as fast as before and nothing stops while the server is
+away (a laptop out of the house): changes made meanwhile wait and are sent when it's back (**Settings → Shared
+database** says how many wait).
 
 - **What's shared:** every face found (its print, picture and place), every label, the photos by content (a photo
-  imported on two devices is the same photo), photo tags and dates, Web search answers, descriptions, Collect faces
-  pictures, alerts, presence visits, each person's usual look and signal normals, and (encrypted, see below) the
-  keys. A name given on one device reaches the others within a few seconds; their trackers know the person at once.
+  imported on two devices is the same photo), photo tags and dates, Web search answers and this month's Web search
+  counts (so the monthly limits hold across devices), descriptions, Collect faces pictures, alerts, presence visits,
+  each person's usual look and signal normals, the fitted expression numbers, forgotten people, and (encrypted, see
+  below) the keys. A name given on one device reaches the others within a few seconds; their trackers know the
+  person at once.
 - **What stays each device's own:** where each photo is on it, its page options and other settings (kept in the
   database under that device; **Copy settings from** takes another device's), its hardware.
+- **Sent to the database but never taken by the other devices:** each device's `app.log` (kept there 90 days), its
+  undo history and its Expression test sessions.
+- **Who each camera saw:** with a shared database, each device notes in it which named people its camera sees and
+  when each was last seen there (names and times only), to raise **They move between cameras** alerts. Forgetting a
+  person deletes these too.
 - **Rules when two devices disagree:** a name given by hand beats an automatic one; otherwise the last change wins.
   A face Ignored on one device is Ignored everywhere. Forgetting a person (**Their data…** → **Forget**) is carried
   out on every device.
-- **Photos from another device** come without their file: their faces show with their pictures, and the photo view
-  says the original isn't on this computer until you import the same photo here.
+- **Photos from another device** come without their file; see **Original photos on every device** below for how
+  they're still shown.
 
-**Setting up the server** (once; this is for the computer that keeps the database):
-1. Install PostgreSQL (16 or later) and the pgvector extension; in the database, as its administrator:
+### Setting up the server
+
+Once, on the computer that keeps the database:
+1. Install PostgreSQL (16 or later) and the pgvector extension. In the database you'll use, as its administrator:
    `CREATE EXTENSION vector; CREATE ROLE facerec LOGIN PASSWORD '<a long random one>';
    CREATE SCHEMA facerec AUTHORIZATION facerec; GRANT CONNECT ON DATABASE <db> TO facerec;`
-2. Make its certificates: `python tools/db_certs.py <a folder outside the project> <server name> <its addresses>`.
-   Put `server.crt` and `server.key` in PostgreSQL's data folder, set `ssl = on`, and in `pg_hba.conf` let your
-   network in with `hostssl ... scram-sha-256` only. Keep `ca.key` somewhere safe.
-3. Give the devices the certificate authority (public): connect once as `facerec` (Settings → Shared database →
-   Connect makes the tables), then `INSERT INTO facerec.server_ca VALUES (1, '<the text of ca.crt>');`.
+   The `facerec` role isn't a superuser and owns only its schema.
+2. Make its certificates, on any computer with the code (never inside the project folder: the tool refuses):
+   `python tools/db_certs.py <a folder outside the project> <server name> <its addresses>`. Put `server.crt` and
+   `server.key` in PostgreSQL's data folder, set `ssl = on`, and in `pg_hba.conf` let your network in with
+   `hostssl ... scram-sha-256` only. Keep `ca.key` somewhere safe (it's needed only to make a new server
+   certificate later).
+3. Make the tables, from `face-recognizer` with the code's Python (`requirements.txt` has the database libraries):
+   `FACE_DB="host=<server> dbname=<db> user=facerec password=<its password> sslmode=require" python -c "import facedb; facedb.migrate(facedb.connect())"`
+   (in Windows' command prompt: `set FACE_DB=host=... sslmode=require` first, then the `python -c ...` part).
+   Settings' **Connect** can't do this step: it needs step 4 done first.
+4. Give the devices the certificate authority (public), as `facerec` or the administrator:
+   `INSERT INTO facerec.server_ca VALUES (1, '<the text of ca.crt>');`. Each device reads it once when it connects
+   and from then on checks, every time, that it's talking to this server.
 
-**On each device:** Settings → **Shared database** → server, port, database, `facerec` and its password →
-**Connect**. The first time, the device's data is merged in and everyone else's comes in (a minute or two).
+### On each device
 
-**Sharing the keys:** set a **Passphrase for keys** once, on any device (typed twice). The Web search and describe
-keys go to the database encrypted with it, and the passphrase reaches every other device by itself (sealed to each
-device's own key, so only that device can open it). To change it, type a new one twice on any device: every key is
-encrypted again and every device takes the new one. **Passphrase on each device** shows each device's fingerprint
-of it (the same fingerprint, the same passphrase). If a change was a mistake, **Restore an earlier passphrase**
-brings back any earlier one, everywhere.
+**Settings → Shared database → Connect**: the server (name or address), port (5432), database, `facerec` and its
+password, then **Connect**. The first time, the device's data is merged in and everyone else's comes in (a minute or
+two; the status line says so meanwhile). The password stays on this device (protected by Windows for your user; on
+macOS and Linux in a file only you can read). Leave the server empty and **Connect** to stop using the database: the
+device keeps its copy. The status line shows the server, whether it's reachable, changes waiting to be sent and this
+device's name.
 
-**Original photos on every device:** a photo or video one device has can be opened on any other: the photo view
-asks a device that has it and shows it (it says where it came from) without keeping a copy. Each device answers for
-its own files, so it doesn't matter how each one sees your shared drives. They talk over your local network on port
-8767, encrypted, and only your own devices can ask (Settings → Shared database → **Share my photos with my other
-devices**, on by default). On Windows, allow the app through the firewall for private networks when asked.
+**Copy settings from** takes another device's options for the Face tracking and Labeling pages (and its photo
+describer choices and LM Studio shared folder, not its describe server address) in place of this device's.
 
-**Every camera in one place (Cameras tab):** each device's live camera, as its Face tracking tab shows it (names,
-match, boxes and every marker that's on there), in a grid, each with its live readout of the faces it sees; tick
-which cameras to show, double-click one to see it alone. Beside the grid, one list of events from every camera;
-**Hide events** (or its ×) closes it so the cameras take the whole width, and the **Events** button then counts new
-ones (remembered).
-**They move between cameras** (an alert, on by default) tells you when someone seen on one device's camera appears
-on another's within 10 minutes. Every camera runs and streams all the time at full rate (**Keep this camera running** and **Stream this
-camera to my other devices**, both on by default), also while the app's window is minimized or behind others;
-frames are never stored.
+### Passphrase for keys
 
-Times are kept in UTC everywhere (files and database) and shown in your local time.
+The Web search keys and the describe server's API key are shared only once you set a **Passphrase for keys**
+(Settings → Shared database; at least 10 characters, typed twice), on any one device. The keys then go to the
+database encrypted with it, on the device before they're sent: the server never sees the passphrase or the keys.
+The passphrase reaches every other device by itself, sealed to each device's own key so only that device can open
+it. Until it's set, each device's keys stay on that device. Each device keeps it (protected), so the field shows it
+masked; hold the eye button to see it.
+- **To change it,** type a new one twice on any device: every key is encrypted again and every device takes the new
+  one (a device that was off takes it when it's back).
+- **Passphrase on each device** shows each device's fingerprint of it: the same fingerprint means the same
+  passphrase, and a fingerprint can't be turned back into it. It also shows a fingerprint of each device's saved
+  database password.
+- **Restore an earlier passphrase** brings back any earlier one (the list says who set each and when), everywhere,
+  for undoing a wrong change.
+
+### Original photos on every device
+
+A photo or video one device has can be opened on any other: the photo view asks a device that has it and shows it,
+saying which device it came from, without keeping a copy. If that device can't be reached, the photo view says so
+and shows only the face. Each device answers for its own files, so it doesn't matter how each one sees your shared
+drives. They talk over your local network on port 8767 (the app's ports + 3; `FACE_PEER_PORT` changes it),
+encrypted with each device's own certificate (checked against the one it put in the database), and only your own
+devices can ask: each request is signed with a key made from the database password. Photos are asked for by their
+content only, never by folder or file name. **Share my photos with my other devices** (Settings → Shared database, on
+by default) turns this device's side off; it also lists the devices sharing now and their addresses. On Windows,
+allow the app through the firewall for private networks when asked.
+
+### Every camera in one place (Cameras tab)
+
+The **Cameras** tab shows each device's live camera, as its Face tracking tab shows it (names, match, boxes and every
+marker that's on there), in a grid, each with its live readout of the faces it sees, in text. It needs a shared
+database; a device's camera appears while that device has **Stream this camera to my other devices** on (and
+**Share my photos with my other devices**) and its camera running.
+- **Show** (at the top): tick which cameras to show. Double-click a camera to see it alone; double-click again for
+  all of them.
+- **Events, every camera:** one list beside the grid of the alerts from every camera. **Hide events** (or its ×)
+  closes it so the cameras take the whole width; the **Events** button then counts new ones and opens it again
+  (remembered).
+- A camera whose device stops streaming stays in the grid marked **offline** (with how long ago) and comes back by
+  itself; one whose picture stops arriving is marked **paused** with how long since its last new frame.
+- **They move between cameras** (an alert, on by default, under Face tracking: alerts) tells you when someone seen on
+  one device's camera appears on another's within 10 minutes. Every device shows it.
+- Every camera runs and streams all the time at full rate, about 10 frames a second (**Keep this camera running**
+  and **Stream this camera to my other devices**, both on by default), also while the app's window is minimized or
+  behind others. Frames are only passed on, never stored. The tab fetches every camera's new frames in one request
+  and every readout in another, so many cameras fit on one page.
 
 ## Files
+
+Times are stored in UTC everywhere (files, file names and the database) and shown in your local time on the pages.
 
 - `data/faces.npz`: every face found, with its permanent ID, face print and quality (an ignored face keeps only its ID, photo and box: no print)
 - `data/thumbs.npz`: a small picture of each face (if it's missing, the labeling tool makes each picture again from the original photo, or shows a grey placeholder)
@@ -568,15 +625,15 @@ Times are kept in UTC everywhere (files and database) and shown in your local ti
   - the Web search keys (`google_vision_key.txt`, `aws_rekognition.json`) and this month's search counts (`vision_usage.json`, `rekognition_usage.json`). Never put the keys in the repository.
   - `describe.json`: the Describe photo settings (which describer, server address, model, optional API key); `descriptions.json`: the saved photo descriptions
   - `webcam\`: face pictures from **Collect faces for labeling** (each face alone, never the whole frame); `presence\`: the presence log, if you turned it on
-  - `webview\`: the app window's browser storage (each page's quick copy of its options and per-person baselines and usual looks); `app.log`: the app's messages and errors
-  - `settings.json`: each page's options; `person_signals.json`: each person's usual look and signal normals (the tracker's)
-  - with a shared database: `database.json` (its settings, the password protected), `database-ca.pem` (the server's certificate authority), `device.json` (this device's id and name), `sync.sqlite` (what was last synced), `secret.key` (the key from your passphrase, protected), `forgotten.json` (people forgotten, to tell the other devices)
+  - `webview\`: the app window's browser storage (each page's quick copy of its options and per-person baselines and usual looks); `app.log`: the app's messages and errors, each line with its time in UTC; `restarted.json`: when the app last started itself again (at most once an hour for a camera that won't start)
+  - `settings.json`: each page's options; `person_signals.json`: each person's usual look and signal normals (the tracker's); `alerts.json`: the alert inbox; `lmstudio.json`: the shared LM Studio models folder
+  - with a shared database: `database.json` (its settings, the password protected), `database-ca.pem` (the server's certificate authority), `device.json` (this device's id and name), `sync.sqlite` (what was last synced), `secret.key` (the passphrase for keys and the key made from it, protected), `device-key.json` (this device's own key pair, to which the passphrase is sealed; the private half protected), `forgotten.json` (people forgotten, to tell the other devices), `peer-cert.pem` and `peer-key.pem` (this device's certificate for showing its photos and camera to your other devices), `peer.json` (whether it shares them)
 - The keys and `describe.json` are plain files readable by your Windows account; anyone who can sign in as you can read them.
 - `websearch.py`: the Web search (Amazon + Google, combined); `tools\websearch_check.py`: the same search on picture files
 - If an import or **Describe all** couldn't read some files, **Why?** beside the progress bar lists the last 20 and the reason for each (nothing is saved).
 - `data/expr_eval/`: expression test sessions (`<date>-<time>.jsonl`) and feeling reports (`feel-<date>.jsonl`), only if you've run the Expression test or reported how you feel (numbers only: no pictures, no audio). **Delete test data** on the tracker page removes them.
 - `data/expr_calibration.json`, `data/va_fit.json`: fitted by `tools\expr_eval.py` from those (a few numbers each; delete them to go back to the defaults)
-- Live expression readings, voice and pulse aren't written to `data`. The expression model, MediaPipe and the voice model are optional (the tracker says so at startup if one is missing). The usual looks live in the browser's storage for the tracker page.
+- Live expression readings, voice and pulse aren't written to `data`. The expression model, MediaPipe and the voice model are optional (the tracker says so at startup if one is missing). The usual looks and signal normals are kept in `%APPDATA%\FaceLabels\person_signals.json`, with a copy in the tracker page's browser storage.
 
 All of `data/` stays on this computer (and, if you set one up, your shared database): it's in `.gitignore` and not in the releases, and a new copy of the project starts with an empty one.
 
@@ -586,9 +643,11 @@ All of `data/` stays on this computer (and, if you set one up, your shared datab
 |---|---|
 | Face tracking options, alert names, Labeling view options (picture size, order, blurry, possible faces, describe every photo) | `%APPDATA%\FaceLabels\settings.json` (and a copy in the page's browser storage); with a shared database, also this device's rows there |
 | Photo folders added | `data/settings.json` |
-| Web search keys | `%APPDATA%\FaceLabels\google_vision_key.txt`, `aws_rekognition.json` |
+| Web search keys | `%APPDATA%\FaceLabels\google_vision_key.txt`, `aws_rekognition.json`; with a shared database and a passphrase for keys, also there, encrypted |
 | Describe photo: describer, server, model, API key | `%APPDATA%\FaceLabels\describe.json` |
-| Environment variables (optional) | `FACE_DEVICE` (auto, gpu, npu, cpu), `FACE_MODEL` (recognition model), `FACE_LLM_URL` (default describe server), `GOOGLE_VISION_API_KEY`, `FACE_ROOT` (another folder with `models\` and `data\`), `FACE_HOME` (another folder instead of `%APPDATA%\FaceLabels`), `FACE_PORTS` (the app window's ports, n to n+2 instead of 8764-8766, so a second copy with other folders runs beside the usual one) |
+| Shared models folder (LM Studio) | `%APPDATA%\FaceLabels\lmstudio.json` |
+| Shared database: server, user, password; Share my photos | `%APPDATA%\FaceLabels\database.json` (password protected), `peer.json` |
+| Environment variables (optional) | `FACE_DEVICE` (auto, gpu, npu, cpu), `FACE_MODEL` (recognition model), `FACE_LLM_URL` (default describe server), `GOOGLE_VISION_API_KEY`, `FACE_ROOT` (another folder with `models\` and `data\`), `FACE_HOME` (another folder instead of `%APPDATA%\FaceLabels`), `FACE_PORTS` (the app window's ports, n to n+2 instead of 8764-8766, so a second copy with other folders runs beside the usual one), `FACE_IMPORT_WORKERS` (photos an import works on at once), `FACE_UI` (`browser`: the web browser instead of the app window; `none`: no window, servers only), `FACE_LMSTUDIO=off` (leave LM Studio's settings alone and don't announce it), `FACE_CUDA=off` (Linux app: don't use or offer the downloaded CUDA), `FACE_PEER=off` (no photo and camera sharing with your other devices), `FACE_PEER_PORT` (its port instead of 8767), `FACE_DB` (a database connection string instead of the Settings one). All of them: [docs/SETTINGS.md](../docs/SETTINGS.md#environment-variables) |
 
 Databases from before per-face labels are upgraded automatically the first time Face Labels starts (or with `python face_id.py migrate "<photo folder>"`). The old group files are moved to `data/backups/legacy-<date>/`.
 
