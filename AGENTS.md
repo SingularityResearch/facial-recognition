@@ -79,7 +79,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     `ssl.SSLContext` app-wide, so peer.py uses the original class (`_context`). Started by `HomePart._peer`.
   - `camstream.py` + `cameras_ui.html`/`cameras_ui.js` — every device's live camera (db/008): the tracker page
     composes the video with its overlay canvas (every marker, mirrored as shown) into JPEG frames (`streamFrame`,
-    ~10/s while watched, else every 2 s; only while "Stream this camera" is on and the peer service runs) and sends
+    ~10/s all the time, the owner's choice; only while "Stream this camera" is on and the peer service runs; drawn
+    on a timer while the page is hidden; the app window's browser runs unthrottled, `app.KEEP_RUNNING_FLAGS`;
+    "Keep this camera running" restarts the camera within 10 s) and sends
     who's in view and its readout as data every second (`/api/inview`, `readoutData`). The peer service serves them
     (`/stream` multipart, `/readout`); the tracker's `/cameras` page (the app's Cameras tab) shows every streaming
     device in a grid with its readout, drawn with text only, through `/api/cameras/<id>/stream|readout` (this

@@ -343,6 +343,7 @@
       </div>
       <p class="hint">Higher strictness means fewer wrong names but more "Unknown". 0.35 is the measured best for your photos with the ArcFace model.</p>
       <label class="toggle" for="optCollect" title="Save pictures of the faces in view for the labeling tool">Collect faces for labeling <input type="checkbox" id="optCollect"></label>
+      <label class="toggle" for="optKeepCam" title="Starts the camera when the app starts, and again within 10 s if it stops. Stop camera turns this off.">Keep this camera running <input type="checkbox" id="optKeepCam" checked></label>
       <label class="toggle" for="optStream" title="Your other devices can watch this camera, with everything drawn on it, in their Cameras tab (with a shared database)">Stream this camera to my other devices <input type="checkbox" id="optStream" checked></label>
       <p class="hint" id="collectHint">While a face stays in view, a sharp picture of that face is saved every few seconds (up to 12 per face) with who the tracker thinks it is and how sure: just the face with a little room around it, never the whole frame, and any other face in that room greyed out. The labeling tool picks them up by itself: it names the ones it's sure of and asks you about the rest.</p>
     </div>

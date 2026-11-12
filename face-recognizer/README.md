@@ -545,8 +545,9 @@ devices**, on by default). On Windows, allow the app through the firewall for pr
 match, boxes and every marker that's on there), in a grid, each with its live readout of the faces it sees; tick
 which cameras to show, double-click one to see it alone. Beside the grid, one list of events from every camera.
 **They move between cameras** (an alert, on by default) tells you when someone seen on one device's camera appears
-on another's within 10 minutes. A device streams while its camera runs and **Stream this camera to my other
-devices** is on; frames are sent quickly only while someone watches and are never stored.
+on another's within 10 minutes. Every camera runs and streams all the time at full rate (**Keep this camera running** and **Stream this
+camera to my other devices**, both on by default), also while the app's window is minimized or behind others;
+frames are never stored.
 
 Times are kept in UTC everywhere (files and database) and shown in your local time.
 

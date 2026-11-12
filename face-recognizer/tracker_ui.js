@@ -442,6 +442,8 @@ async function startCamera() {
     const activeId = stream.getVideoTracks()[0]?.getSettings().deviceId;
     listCameras(activeId);
     remember("camera", activeId || ""); remember("autostart", "1");
+    // unplugged, or taken by another program: stopped, so "Keep this camera running" starts it again
+    stream.getVideoTracks()[0]?.addEventListener("ended", () => { if (stream) stopCamera(); });
     $("camBtn").textContent = "Stop camera";
     begin();
   } catch (e) {
@@ -1104,8 +1106,8 @@ function group(title, cells, note) {
 }
 
 // ---- This camera for the other devices (camstream.py, peer.py): the video with every marker drawn on it, and the
-// live readout as data (drawn on the other side with text only). Sent only with a shared database and while
-// "Stream this camera" is on: about 10 frames a second while another device watches, else one every 2 s.
+// live readout as data (drawn on the other side with text only). Sent with a shared database while "Stream this
+// camera" is on, at full rate (about 10 frames a second) all the time, watched or not.
 const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
 let streamBusy = false, streamNext = 0, streamOff = 0;
 async function streamFrame() {
@@ -1124,7 +1126,7 @@ async function streamFrame() {
     const r = await fetch("/api/stream/frame", { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg", "X-Face-Tool": "1" } });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.stream === false) { streamOff = now + 30000; return; }
-    streamNext = now + (j.watchers ? 100 : 2000);
+    streamNext = now + 100;                         // full rate all the time (about 10 frames a second)
   } catch { streamOff = now + 30000; } finally { streamBusy = false; }
 }
 // Each face as the live readout shows it: name, match, colour, expression, size and the labeled groups of cells
@@ -1166,9 +1168,23 @@ setInterval(async () => {
   } catch {}
 }, 5000);
 
+// "Keep this camera running": start it again within 10 s whenever it isn't running (not while a video file plays)
+let keepStarting = false;
+setInterval(async () => {
+  if (!$("optKeepCam").checked || stream || keepStarting || video.src) return;
+  keepStarting = true;
+  try { await startCamera(); } catch {} finally { keepStarting = false; }
+}, 10000);
+
 function applyMirror() { $("stage").classList.toggle("mirror", $("optMirror").checked); }
 
-$("camBtn").onclick = () => { if (stream) remember("autostart", "0"); startCamera(); };
+$("camBtn").onclick = () => {
+  if (stream && $("optKeepCam").checked) {           // stopping by hand: no longer kept running (Settings turns it on)
+    $("optKeepCam").checked = false; $("optKeepCam").dispatchEvent(new Event("change"));
+  }
+  if (stream) remember("autostart", "0");
+  startCamera();
+};
 $("fileBtn").onclick = () => $("fileInput").click();
 $("fileInput").onchange = e => openFile(e.target.files[0]);
 $("camSelect").onchange = async () => { if (stream) { stopCamera(); await startCamera(); } };
@@ -1242,7 +1258,7 @@ function recall(k) { try { return localStorage.getItem("ft-" + k); } catch { ret
 // The other options are remembered between visits too (the camera's mirror view follows the source instead)
 const KEEP = ["optPoints", "optTrail", "optUnknown", "optBlur", "optExpr", "optCalib", "optEvidence", "optVoice", "optPulse",
               "optTalkGate", "optState", "optPose", "optHandGate", "optSkeleton", "optFingers", "optSmooth", "optThresh", "optMeshStrength",
-              "optAlertArrive", "optAlertLeave", "optAlertMove", "optStream", "optAlertUnusual", "optArriveGap", "optLeaveGap", "optUnknownStay",
+              "optAlertArrive", "optAlertLeave", "optAlertMove", "optStream", "optKeepCam", "optAlertUnusual", "optArriveGap", "optLeaveGap", "optUnknownStay",
               "optUnusualZ", "optUnusualFor", "optUnusualRepeat", "optDetailsAfter", "optBannerFor"];
 for (const id of KEEP) {
   const el = $(id), v = recall("o-" + id);
@@ -1275,7 +1291,8 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
     c("optPose", S, { hint: "Head height, shoulders, lean, body movement, breathing, hand on face and crossed arms." }),
     c("optThresh", R, { hint: "Higher strictness means fewer wrong names but more \"Unknown\". The default is the measured best for the active model." }),
     c("optCollect", R, { hint: $("collectHint").textContent }),
-    c("optStream", R, { label: "Stream this camera to my other devices", hint: "Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on here), with its live readout. Sent over your local network, encrypted, only to your own devices, and only while one watches (otherwise a frame every 2 s); never stored. Needs a shared database and Share my photos with my other devices." }),
+    c("optKeepCam", R, { label: "Keep this camera running", hint: "Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. Stop camera turns this off." }),
+    c("optStream", R, { label: "Stream this camera to my other devices", hint: "Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on here), with its live readout. Sent all the time at full rate (about 10 frames a second), over your local network, encrypted, only to your own devices; never stored. Needs a shared database and Share my photos with my other devices." }),
     { section: A, id: "alertList", label: "Alert me about these people", type: "multi",
       hint: "Pick the people to be told about (their arrive, leave and unusual-signal events, as switched on below). Unknown: a face the recognizer can't name stays the set time.",
       options: () => {
@@ -1316,7 +1333,7 @@ function forgetPerson({ name } = {}) {
 }
 (async () => {
   await listCameras(recall("camera"));
-  if (recall("autostart") !== "0") startCamera();
+  if (recall("autostart") !== "0" || $("optKeepCam").checked) startCamera();
 })();
 // People forgotten on any device (shared database): forget what this page learned about them, once each
 function forgetForgotten(names) {
