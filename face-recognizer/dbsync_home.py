@@ -59,9 +59,10 @@ def count_use(service, month, cap):
 
 class HomePart:
     """forget(name): what to run when another device forgot someone (label_tool gives persondata.forget)."""
-    TABLES = ("descriptions", "webcam_snapshots", "alerts", "presence", "documents", "secrets", "forgotten")
+    TABLES = ("descriptions", "webcam_snapshots", "alerts", "presence", "documents", "secrets", "forgotten",
+              "device_settings", "person_signals")
     KEYS = {"descriptions": "key", "webcam_snapshots": "name", "alerts": "id", "presence": "id", "documents": "id",
-            "secrets": "name", "forgotten": "name"}
+            "secrets": "name", "forgotten": "name", "device_settings": "device,app,key", "person_signals": "name,kind"}
 
     def __init__(self, forget=None):
         self.forget = forget
@@ -81,6 +82,8 @@ class HomePart:
         key = secretbox.local_key()
         out["secrets"] = None if key is None else {n: secretbox.digest(key, n, p) for n, p in self._secrets().items()}
         out["forgotten"] = {n: _h(n) for n in forgotten_names()}
+        out["device_settings"] = {k: _h(v) for k, v in self._settings().items()}
+        out["person_signals"] = {k: _h(v) for k, v in self._signals().items()}
         return out
 
     def _snap_digests(self):
@@ -119,7 +122,36 @@ class HomePart:
             return {k: v for k, v in self._documents().items() if k in keys}
         if tbl == "secrets":
             return {k: v for k, v in self._secrets().items() if k in keys}
+        if tbl == "device_settings":
+            return {k: v for k, v in self._settings().items() if k in keys}
+        if tbl == "person_signals":
+            return {k: v for k, v in self._signals().items() if k in keys}
         return {n: {} for n in forgotten_names() if n in keys}
+
+    @staticmethod
+    def _settings():
+        """{device|app|key: {app, key, value}}: the pages' settings, the photo describer's (but its key: a secret)
+        and the LM Studio share folder, as this device has them."""
+        import describe
+        import devicesettings
+        import lmstudio
+        me = facedb.device()["id"]
+        out = {}
+        for app, kv in devicesettings.settings().items():
+            for k, v in (kv or {}).items():
+                out[f"{me}|{app}|{k}"] = {"app": app, "key": k, "value": v}
+        c = describe.config()
+        for k in ("use", "url", "model", "spread"):
+            out[f"{me}|describe|{k}"] = {"app": "describe", "key": k, "value": c.get(k)}
+        share = lmstudio.share()
+        out[f"{me}|lmstudio|share"] = {"app": "lmstudio", "key": "share", "value": str(share) if share else ""}
+        return out
+
+    @staticmethod
+    def _signals():
+        import devicesettings
+        return {f"{name}|{kind}": {"name": name, "kind": kind, "data": d}
+                for kind, m in devicesettings.signals().items() for name, d in m.items()}
 
     # ---- readers of this device's files
     @staticmethod
@@ -232,6 +264,23 @@ class HomePart:
                                    ciphertext = excluded.ciphertext""", enc)
                 # a describe key leaves this device when its server address changes: that's not a removal
                 deletes = [k for k in deletes if not k.startswith("describe_key:")]
+            elif tbl == "device_settings":
+                cur.executemany("""INSERT INTO device_settings (device, app, key, value) VALUES (%s, %s, %s, %s)
+                                   ON CONFLICT (device, app, key) DO UPDATE SET value = excluded.value""",
+                                [(me, v["app"], v["key"], json.dumps(v["value"])) for _k, v in items])
+                for k in deletes:
+                    _dev, app, key = k.split("|", 2)
+                    cur.execute("DELETE FROM device_settings WHERE device = %s AND app = %s AND key = %s",
+                                (me, app, key))
+                deletes = []
+            elif tbl == "person_signals":
+                cur.executemany("""INSERT INTO person_signals (name, kind, data) VALUES (%s, %s, %s)
+                                   ON CONFLICT (name, kind) DO UPDATE SET data = excluded.data""",
+                                [(v["name"], v["kind"], json.dumps(v["data"])) for _k, v in items])
+                for k in deletes:
+                    name, kind = k.rsplit("|", 1)
+                    cur.execute("DELETE FROM person_signals WHERE name = %s AND kind = %s", (name, kind))
+                deletes = []
             elif tbl == "forgotten":
                 cur.executemany("INSERT INTO forgotten (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
                                 [(k,) for k, _v in items])
@@ -272,12 +321,31 @@ class HomePart:
                 for k, nonce, ct in conn.execute(
                         "SELECT name, nonce, ciphertext FROM secrets WHERE name = ANY(%s)", (part,)):
                     out[k] = {"nonce": bytes(nonce), "ciphertext": bytes(ct)}
+            elif tbl == "device_settings":
+                for k in part:
+                    dev, app, key = k.split("|", 2)
+                    if dev != me:                      # other devices' settings stay theirs
+                        out.pop(k, None)
+                        continue
+                    row = conn.execute("SELECT value FROM device_settings WHERE device = %s AND app = %s AND key = %s",
+                                       (me, app, key)).fetchone()
+                    out[k] = {"app": app, "key": key, "value": row[0]} if row else None
+            elif tbl == "person_signals":
+                for name, kind, data in conn.execute(
+                        "SELECT name, kind, data FROM person_signals WHERE name || '|' || kind = ANY(%s)", (part,)):
+                    out[f"{name}|{kind}"] = {"name": name, "kind": kind, "data": data}
             else:
                 for (k,) in conn.execute("SELECT name FROM forgotten WHERE name = ANY(%s)", (part,)):
                     out[k] = {}
         return out
 
     def all_keys(self, conn, tbl):
+        if tbl == "device_settings":
+            me = facedb.device()["id"]
+            return [f"{me}|{a}|{k}" for a, k in conn.execute(
+                "SELECT app, key FROM device_settings WHERE device = %s", (me,))]
+        if tbl == "person_signals":
+            return [f"{n}|{k}" for n, k in conn.execute("SELECT name, kind FROM person_signals")]
         if tbl == "documents":
             me = facedb.device()["id"]
             return [r[0] for r in conn.execute("SELECT id FROM documents WHERE device IS NULL OR device = %s", (me,))]
@@ -385,6 +453,41 @@ class HomePart:
                     describe.set_config(key=plain or "")
             now = self._secrets()
             return {k: secretbox.digest(key, k, now[k]) if k in now else None for k in rows}
+        if tbl == "device_settings":
+            import describe
+            import devicesettings
+            import lmstudio
+            pages = {}
+            for k, v in rows.items():
+                _dev, app, key = k.split("|", 2)
+                value = None if v is None else v["value"]
+                if app in devicesettings.APPS:
+                    pages.setdefault(app, {})[key] = None if value is None else str(value)
+                elif app == "describe" and value is not None and key in ("use", "url", "model", "spread"):
+                    try:
+                        describe.set_config(**{key: value})
+                    except ValueError as e:
+                        log(f"Shared database: describe setting {key}: {e}")
+                elif app == "lmstudio" and key == "share" and value is not None:
+                    try:
+                        lmstudio.set_share(value)
+                    except ValueError as e:
+                        log(f"Shared database: {e}")
+            for app, changes in pages.items():
+                try:
+                    devicesettings.update(app, changes)
+                except ValueError as e:
+                    log(f"Shared database: settings: {e}")
+            now = self._settings()
+            return {k: _h(now[k]) if k in now else None for k in rows}
+        if tbl == "person_signals":
+            import devicesettings
+            for k, v in rows.items():
+                name, kind = k.rsplit("|", 1)
+                if kind in devicesettings.KINDS:
+                    devicesettings.put_signal(kind, name, None if v is None else v["data"])
+            now = self._signals()
+            return {k: _h(now[k]) if k in now else None for k in rows}
         # forgotten on another device: forget here too, once
         done = forgotten_names()
         for name, v in rows.items():
@@ -452,6 +555,32 @@ class HomePart:
         ev = F.DATA / "expr_eval"
         for f in sorted(ev.glob("*.jsonl")) if ev.is_dir() else []:
             state.put(f"expr:{f.name}", len(f.read_text("utf-8").splitlines()))
+
+
+def copy_settings(conn, from_id, part):
+    """This device takes another device's page settings (and the describe choices, but its server address, and
+    the LM Studio share folder): replaced in the database, then applied here through part (a HomePart).
+    Returns how many settings were copied."""
+    import uuid
+    me = facedb.device()["id"]
+    src = str(uuid.UUID(str(from_id)))
+    if src == me:
+        raise ValueError("That's this device.")
+    with conn.transaction():
+        n = conn.execute("""SELECT count(*) FROM device_settings WHERE device = %s
+                            AND NOT (app = 'describe' AND key = 'url')""", (src,)).fetchone()[0]
+        if not n:
+            raise ValueError("That device has no settings in the shared database.")
+        conn.execute("DELETE FROM device_settings WHERE device = %s AND app IN ('track', 'label')", (me,))
+        conn.execute("""INSERT INTO device_settings (device, app, key, value)
+                        SELECT %s, app, key, value FROM device_settings
+                        WHERE device = %s AND NOT (app = 'describe' AND key = 'url')
+                        ON CONFLICT (device, app, key) DO UPDATE SET value = excluded.value""", (me, src))
+    keys = part.all_keys(conn, "device_settings")
+    gone = [k for k in part._settings() if k.split("|", 2)[1] in ("track", "label") and k not in keys]
+    got = part.fetch(conn, "device_settings", keys + gone)
+    part.apply("device_settings", got)
+    return n
 
 
 def _utc(v):

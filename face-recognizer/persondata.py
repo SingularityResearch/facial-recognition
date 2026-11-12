@@ -20,8 +20,13 @@ The labeling tool's person view (**Their data…**) uses it through label_tool.p
   private\webcam\              Collect faces pictures of them, and the tracker's verdicts naming them
   private\descriptions.json    photo descriptions whose text names them
   private\app.log              FaceRecognizer.exe's messages (the tracker's "Known people" line before v1.9)
-  the tracker page's browser storage: their usual look, their normal for each signal and the alert list. Only
-           the page can reach it: forgetPerson in tracker_ui.js (the app window's tab sends it after a forget).
+  private\person_signals.json  their usual look and their normal for each signal (devicesettings.py; the tracker
+           page keeps a copy in its browser storage and forgets it itself: forgetPerson in tracker_ui.js, sent by
+           the app window's tab after a forget, and at the page's next load or people check for a forget that came
+           from another device)
+  private\settings.json        their name in the tracker's alert list (ft-alertWho; the page clears it itself too)
+  the shared database (facedb.py), when one is set up: every table above's copy. A forget here is sent to it and
+           to every other device (dbsync_home: the forgotten table), and clears what only the server holds.
 
 Forgetting keeps their faces as Ignored faces without print or picture (only where each face is in its photo,
 so the photos aren't read again and the faces don't come back as new faces), removes their name everywhere
@@ -37,6 +42,7 @@ import numpy as np
 
 import alerts
 import describe
+import devicesettings
 import face_id as F
 import labels as L
 import paths
@@ -189,6 +195,8 @@ def export(db, name, folder, web_saved=None):
         "alerts": alerts.about(name),
         "descriptions": describe.find(lambda d: mentions(d.get("text"), name)),
         "webcam": [s.name for s in snaps],
+        "personSignals": devicesettings.of(name),
+        "inAlertList": name in [x.strip() for x in (devicesettings.settings("track").get("ft-alertWho") or "").split(",")],
     }
     out["expressionTests"] = {k: v for k, v in out["expressionTests"].items() if v}
     out["presence"] = {k: v for k, v in out["presence"].items() if v}
@@ -295,6 +303,12 @@ def forget(db, name, web_saved=None, web_lock=None, known=False):
     done["webcam"] = len(snaps)
     done["descriptions"] = describe.drop(lambda d: mentions(d.get("text"), name))
     done["appLog"] = _forget_log(paths.HOME / "app.log", name)
+    done["personSignals"] = devicesettings.forget(name)
+    who = devicesettings.settings("track").get("ft-alertWho") or ""
+    left = ", ".join(x.strip() for x in who.split(",") if x.strip() and x.strip() != name)
+    if left != ", ".join(x.strip() for x in who.split(",") if x.strip()):
+        devicesettings.update("track", {"ft-alertWho": left})
+        done["alertList"] = 1
     try:                                     # the other devices forget them too (only with a shared database)
         import facedb
         if facedb.configured():

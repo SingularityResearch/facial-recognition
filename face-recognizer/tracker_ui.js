@@ -1,4 +1,6 @@
 // tracker_ui.js - the script of the live tracker's page (tracker_ui.html, served by tracker.py).
+// First: this device's settings and the people's learned signals from the server into localStorage (page_store.js).
+const PAGE = window.PageStore ? PageStore.restore("track", "ft-") : null;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
@@ -36,6 +38,7 @@ async function loadPeople() {
     setExpressions(r.expressions || null);
     cuesOn = !!r.cues; showDevices(r.devices, r.warmup_ms);
     calibration = r.calibration || null; vaFit = r.vaFit || null; voiceModel = !!r.voice;
+    forgetForgotten(r.forgotten);
     poseOn = !!r.pose; $("optPose").disabled = $("optHandGate").disabled = $("optSkeleton").disabled = !poseOn;
     handsOn = !!r.hands; $("optFingers").disabled = !handsOn;
     meshTris = r.meshTriangles || null; $("optMesh").disabled = !meshTris;
@@ -679,7 +682,7 @@ function updateTracks(dets) {
 // ---------------------------------------------------------------- expression
 // Voting, confidence and each person's usual look are in expression.js (with tests); this part
 // connects them to the page.
-const store = (() => { try { return localStorage; } catch { return null; } })();
+const store = window.PageStore ? PageStore.signals : (() => { try { return localStorage; } catch { return null; } })();
 const usualLooks = new Expression.UsualLooks(store);
 const baselines = new Signals.Baselines(store);     // each person's normal for every signal (signals.js)
 
@@ -1157,7 +1160,7 @@ $("optSmooth").oninput = e => $("smoothVal").textContent = (+e.target.value).toF
 $("optThresh").oninput = e => { threshTouched = true; $("threshVal").textContent = (+e.target.value).toFixed(2); };
 navigator.mediaDevices?.addEventListener?.("devicechange", () => listCameras());
 // Remember the camera and start it automatically next time (unless you pressed Stop camera)
-function remember(k, v) { try { localStorage.setItem("ft-" + k, v); } catch {} }
+function remember(k, v) { if (window.PageStore) PageStore.set("ft-" + k, String(v)); else try { localStorage.setItem("ft-" + k, v); } catch {} }
 function recall(k) { try { return localStorage.getItem("ft-" + k); } catch { return null; } }
 // The other options are remembered between visits too (the camera's mirror view follows the source instead)
 const KEEP = ["optPoints", "optTrail", "optUnknown", "optBlur", "optExpr", "optCalib", "optEvidence", "optVoice", "optPulse",
@@ -1237,6 +1240,15 @@ function forgetPerson({ name } = {}) {
   await listCameras(recall("camera"));
   if (recall("autostart") !== "0") startCamera();
 })();
+// People forgotten on any device (shared database): forget what this page learned about them, once each
+function forgetForgotten(names) {
+  let done;
+  try { done = new Set(JSON.parse(localStorage.getItem("ft-forgot-done") || "[]")); } catch { done = new Set(); }
+  let any = false;
+  for (const n of names || []) if (!done.has(n)) { try { forgetPerson({ name: n }); } catch {} done.add(n); any = true; }
+  if (any) try { localStorage.setItem("ft-forgot-done", JSON.stringify([...done])); } catch {}
+}
+forgetForgotten(PAGE?.forgotten);
 loadPeople();
 loadAlerts();                              // the bell's count from the inbox, and the app window's tab bar told
 setInterval(() => { if (!running) loadPeople(); }, 10000);   // pick up names saved in the labeling tool

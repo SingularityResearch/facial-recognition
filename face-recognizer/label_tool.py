@@ -312,7 +312,7 @@ def make_handler(db, importer):
             try:
                 if path in ("/", "/index.html"):
                     return self.send(PAGE.read_bytes(), "text/html; charset=utf-8")
-                if path in ("/label_ui.js", "/settings_bridge.js"):   # the page's script; the Settings tab's bridge
+                if path in ("/label_ui.js", "/settings_bridge.js", "/page_store.js"):   # the page's script; the Settings tab's bridge
                     return self.send((HERE / path[1:]).read_bytes(), "text/javascript; charset=utf-8")
                 if path.startswith("/thumb/"):
                     i = int(path[7:].split(".")[0])
@@ -394,6 +394,9 @@ def make_handler(db, importer):
                                           "hints": dict(db.hints(i), web=web_saved.get(db.store.fid[i]))})
                     if path == "/api/websearch/key":
                         return self.send({"set": bool(websearch.key()), "services": websearch.services()})
+                    if path == "/api/settings":              # this page's settings (page_store.js)
+                        import devicesettings
+                        return self.send(devicesettings.page_state("label"))
                     if path == "/api/db":                    # the shared database: settings (never the password), state
                         return self.send(db_state(db))
                     if path == "/api/photos":                # photos with all of these people: ?with=A&with=B
@@ -511,6 +514,17 @@ def make_handler(db, importer):
                     if getattr(db, "sync", None):
                         db.sync.note()
                     return self.send(dict(r, **db_state(db)))
+                if path == "/api/settings":             # page_store.js: changed settings of this page
+                    import devicesettings
+                    if body.get("app") != "label":
+                        raise ValueError("bad settings")
+                    return self.send({"settings": devicesettings.update("label", body.get("settings") or {})})
+                if path == "/api/db/copy":              # this device takes another device's settings
+                    import dbsync_home
+                    import facedb
+                    with facedb.connect() as conn:
+                        n = dbsync_home.copy_settings(conn, str(body.get("from") or ""), db.sync.parts[-1])
+                    return self.send({"ok": True, "copied": n})
                 if path == "/api/db/passphrase":        # the owner's passphrase for keys in the shared database
                     import facedb
                     import secretbox
@@ -603,8 +617,17 @@ def db_state(db):
         return {"available": False, "why": "This copy of the app can't use a shared database (psycopg isn't installed)."}
     import facedb
     import secretbox
-    return {"available": True, "config": facedb.config(), "device": facedb.device(), "sync": sync.status(),
-            "passphrase": secretbox.status()["here"]}
+    out = {"available": True, "config": facedb.config(), "device": facedb.device(), "sync": sync.status(),
+           "passphrase": secretbox.status()["here"], "devices": []}
+    if out["config"] and out["sync"].get("state") == "online":
+        try:                                 # the other devices, for "Copy settings from"
+            with facedb.connect() as conn:
+                out["devices"] = [{"id": str(i), "name": n, "seen": s.isoformat().replace("+00:00", "Z")}
+                                  for i, n, s in conn.execute("SELECT id, name, last_seen FROM devices "
+                                                              "WHERE id <> %s ORDER BY name", (out["device"]["id"],))]
+        except Exception:
+            pass
+    return out
 
 
 def start_sync(db):

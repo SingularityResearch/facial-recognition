@@ -155,7 +155,8 @@ def test_offline_changes_wait_and_are_sent_later(shared, tmp_path, monkeypatch):
 
 def test_nothing_is_sent_twice(shared, tmp_path, monkeypatch):
     a = Device(tmp_path / "a", monkeypatch, 4)
-    a.step()
+    a.step()                                                      # joins
+    a.step()                                                      # sends what joining didn't (this device's settings)
     a.sync.note()
     assert a.step().get("pushed") == 0
     with shared.connect() as c:
@@ -236,3 +237,32 @@ def test_private_data_keys_and_forgets_reach_the_other_device(shared, tmp_path, 
     with shared.connect() as c:
         assert c.execute("SELECT count(*) FROM alerts").fetchone()[0] == 0
         assert c.execute("SELECT count(*) FROM presence").fetchone()[0] == 0
+
+
+def test_settings_stay_each_devices_own_and_signals_are_shared(shared, tmp_path, monkeypatch):
+    import dbsync_home
+    import devicesettings
+    a = Device(tmp_path / "a", monkeypatch, 2)
+    a.step()
+    b = Device(tmp_path / "b", monkeypatch, 2)
+    b.step()
+    a.switch()
+    devicesettings.update("track", {"ft-o-optMesh": "1", "ft-camera": "cam-a"})
+    devicesettings.set_signals("usual", {"Ann": {"p": [0.1] * 7, "n": 150}})
+    a.sync.note()
+    a.step()
+    b.step()
+    b.switch()
+    assert devicesettings.settings("track") == {}                         # a's settings stay a's
+    assert devicesettings.signals()["usual"]["Ann"]["n"] == 150             # what was learned about Ann is shared
+    with shared.connect() as c:
+        rows = c.execute("SELECT key, value FROM device_settings WHERE device = %s AND app = 'track'", (a.id,)).fetchall()
+        assert dict(rows) == {"ft-o-optMesh": "1", "ft-camera": "cam-a"}
+        assert c.execute("SELECT count(*) FROM device_settings WHERE device = %s AND app = 'describe'", (b.id,)).fetchone()[0] == 4
+        # b takes a's settings
+        assert dbsync_home.copy_settings(c, a.id, b.sync.parts[-1]) >= 2
+    b.switch()
+    assert devicesettings.settings("track") == {"ft-o-optMesh": "1", "ft-camera": "cam-a"}
+    with pytest.raises(ValueError):
+        with shared.connect() as c:
+            dbsync_home.copy_settings(c, b.id, b.sync.parts[-1])            # not from itself

@@ -38,7 +38,7 @@ import paths
 HERE = Path(__file__).resolve().parent
 PAGE = HERE / "tracker_ui.html"
 SCRIPTS = {"/expression.js": HERE / "expression.js", "/signals.js": HERE / "signals.js",
-           "/settings_bridge.js": HERE / "settings_bridge.js", "/tracker_ui.js": HERE / "tracker_ui.js"}
+           "/settings_bridge.js": HERE / "settings_bridge.js", "/page_store.js": HERE / "page_store.js", "/tracker_ui.js": HERE / "tracker_ui.js"}
 PEOPLE = F.DATA / "people.npz"
 CALIBRATION = F.DATA / "expr_calibration.json"   # written by tools/expr_eval.py
 VA_FIT = F.DATA / "va_fit.json"                   # written by tools/expr_eval.py from your feeling reports
@@ -119,6 +119,15 @@ def save_capture(jpeg, faces, others=()):
 
 
 PRESENCE = F.PRESENCE                              # opt-in presence log: private, outside data/
+
+
+def _forgotten():
+    """People forgotten on any device (with a shared database): the page forgets what it learned about them."""
+    try:
+        import dbsync_home
+        return sorted(dbsync_home.forgotten_names())
+    except ImportError:
+        return []
 
 
 def log_visit(v):
@@ -379,6 +388,9 @@ def make_handler(engine):
                     return self.send_json({"error": str(e)}, 400)
             if path == "/api/alerts":                   # the alert inbox (alerts.py)
                 return self.send_json(alerts.listing())
+            if path == "/api/settings":                 # this page's settings and person signals (page_store.js)
+                import devicesettings
+                return self.send_json(devicesettings.page_state("track"))
             if path == "/api/people":
                 devices = {**engine.faces.devices, "voice": engine.voice.device}
                 return self.send_json({"people": engine.people(), "threshold": F.MATCH,
@@ -392,7 +404,7 @@ def make_handler(engine):
                                        "hands": engine.faces.hands_available,
                                        "calibration": _read_json(CALIBRATION), "vaFit": _read_json(VA_FIT),
                                        "sessions": len(engine.recorder.sessions()),
-                                       "reports": engine.recorder.reports()})
+                                       "reports": engine.recorder.reports(), "forgotten": _forgotten()})
             self.send(b"not found", "text/plain", 404)
 
         def _post(self):
@@ -400,6 +412,20 @@ def make_handler(engine):
                 return
             path, _, query = self.path.partition("?")
             try:
+                if path == "/api/settings":             # page_store.js: changed settings of this page
+                    import devicesettings
+                    body = json.loads(self.body(200_000) or b"{}")
+                    if body.get("app") != "track":
+                        raise ValueError("bad settings")
+                    return self.send_json({"settings": devicesettings.update("track", body.get("settings") or {})})
+                if path == "/api/signals":              # what was learned about each person (usual look, baselines)
+                    import devicesettings
+                    body = json.loads(self.body(devicesettings.MAX_SIGNALS + 1000) or b"{}")
+                    kind = {v: k for k, v in devicesettings.KINDS.items()}.get(body.get("key"))
+                    if kind is None:
+                        raise ValueError("bad signals")
+                    devicesettings.set_signals(kind, body.get("people") or {})
+                    return self.send_json({"ok": True})
                 if path == "/api/expr-eval/delete":
                     return self.send_json({"deleted": engine.recorder.delete_all()})
                 if path == "/api/expr-eval/report":     # feeling report: see Recorder

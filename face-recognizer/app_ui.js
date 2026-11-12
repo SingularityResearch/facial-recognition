@@ -102,6 +102,8 @@ addEventListener("message", e => {
   if (k === "label" && m.fs === "forgot" && typeof m.name === "string" && m.name) act("track", "forgetPerson", { name: m.name });
   if (m.fs === "result" && waiting[m.rid]) { waiting[m.rid](m); delete waiting[m.rid]; }
   if (m.fs === "restart") startAgain(k);                                  // the page's own Start again button
+  // another device's settings were copied to this one: the tracker page loads them again (the labeling page itself)
+  if (k === "label" && m.fs === "reload" && frame("track").src) frame("track").src = frame("track").src;
 });
 const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids.filter(x => x != null)); return n; };
 // One row per setting; rows are made once and then only updated, so typing and dragging aren't interrupted

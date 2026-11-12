@@ -1,5 +1,7 @@
 // label_ui.js - the script of the labeling tool's page (label_ui.html, served by label_tool.py).
 "use strict";
+// First: this device's settings from the server into localStorage (page_store.js)
+if (window.PageStore) PageStore.restore("label", "fl-");
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const IGN = "#ignore";
@@ -85,7 +87,7 @@ addEventListener("popstate", () => { const v = viewOf(location.hash); if (v) { v
 
 // Sidebar fly-out, people search, face size: remembered in this browser
 const store = { get: k => { try { return localStorage.getItem("fl-" + k); } catch { return null; } },
-                set: (k, v) => { try { localStorage.setItem("fl-" + k, v); } catch {} } };
+                set: (k, v) => { if (window.PageStore) PageStore.set("fl-" + k, String(v)); else try { localStorage.setItem("fl-" + k, v); } catch {} } };
 const narrowNav = matchMedia("(max-width: 760px)");
 function setNav(open, save = true) {
   $("#shell").classList.toggle("closed", !open);
@@ -1246,6 +1248,14 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       fields: [{ name: "host", placeholder: "Server (e.g. sentient-nas)" }, { name: "port", placeholder: "5432", size: 5 },
                { name: "dbname", placeholder: "Database (sentient)", size: 10 }, { name: "user", placeholder: "User", size: 9 },
                { name: "password", placeholder: "Password", secret: true }] },
+    { section: D, id: "dbcopy", label: "Copy settings from", type: "select", def: "",
+      hidden: () => !sdb.available || !sdb.config || !(sdb.devices || []).length,
+      hint: "Takes another device's options for the Face tracking and Labeling pages (and its photo describer choices and LM Studio shared folder; not its describe server address) in place of this device's. The pages load them again.",
+      options: () => [["", "Choose a device"], ...(sdb.devices || []).map(d => [d.id, `${d.name} (last seen ${localTime(d.seen)})`])],
+      get: () => "",
+      set: async v => { if (!v) return; const r = await post("/api/db/copy", { from: v });
+        if (r.error) throw new Error(r.error);
+        SettingsBridge.notify({ fs: "reload" }); setTimeout(() => location.reload(), 300); } },
     { section: D, id: "dbpass", label: "Passphrase for keys", type: "form", button: "Enter",
       hidden: () => !sdb.available || !sdb.config,
       hint: () => (sdb.passphrase ? "Entered on this device: the Web search and describe keys are shared with your other devices, encrypted. " : "Not entered on this device: its keys stay on it alone. ") +

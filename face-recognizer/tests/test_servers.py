@@ -393,3 +393,27 @@ def test_start_again_leaves_a_program_that_answers(monkeypatch):
     monkeypatch.setattr(app, "answering", lambda url, which: url.endswith("8765/"))
     assert app.restart("label") == "running" and not started
     assert app.restart("track") == "starting" and started == [("track",)]          # stopped answering: started again
+
+
+def test_page_settings_and_person_signals_are_kept_by_the_server(track, tmp_path, monkeypatch):
+    import devicesettings
+    import paths
+    monkeypatch.setattr(paths, "HOME", tmp_path / "h")
+    url, _ = track
+    post = lambda path, body: request(url, path, json.dumps(body).encode())[0]       # noqa: E731
+    assert post("/api/settings", {"app": "track", "settings": {"ft-o-optMesh": "1", "ft-camera": "abc"}}) == 200
+    state = json.loads(request(url, "/api/settings?app=track")[2])
+    assert state["settings"] == {"ft-o-optMesh": "1", "ft-camera": "abc"} and state["forgotten"] == []
+    for bad in ({"app": "label", "settings": {"fl-tile": "88"}},           # the tracker keeps only its own page's
+                {"app": "track", "settings": {"fl-tile": "88"}}, {"app": "track", "settings": {"ft-usual": "{}"}},
+                {"app": "track", "settings": {"ft-x": "y" * 30_000}}, {"app": "track", "settings": {"ft-x": 5}},
+                {"app": "track", "settings": ["ft-x"]}):
+        assert post("/api/settings", bad) == 400, bad
+    assert post("/api/settings", {"app": "track", "settings": {"ft-camera": None}}) == 200      # None removes
+    assert devicesettings.settings("track") == {"ft-o-optMesh": "1"}
+    assert post("/api/signals", {"key": "ft-baselines", "people": {"Ann": {"all": {"blink": {"n": 3, "m": 1, "v": 0}}}}}) == 200
+    assert post("/api/signals", {"key": "ft-other", "people": {}}) == 400
+    state = json.loads(request(url, "/api/settings?app=track")[2])
+    assert state["signals"]["ft-baselines"]["Ann"]["all"]["blink"]["n"] == 3 and state["signals"]["ft-usual"] == {}
+    assert devicesettings.of("Ann") == {"baseline": {"all": {"blink": {"n": 3, "m": 1, "v": 0}}}}
+    assert devicesettings.forget("Ann") == 1 and devicesettings.of("Ann") == {}
