@@ -272,6 +272,8 @@ def _get(addr, port_, fp, path, key):
     head, _, body = data.partition(b"\r\n\r\n")
     status = head.split(b"\r\n", 1)[0].split()
     if len(status) < 2 or status[1] != b"200":
+        if len(status) > 1 and status[1] == b"403":
+            raise PermissionError("refused: " + body.decode("utf-8", "replace")[:100])
         return None
     m = re.search(rb"\r\ncontent-length:\s*(\d+)", head, re.I)
     if m and len(body) != int(m.group(1)):
@@ -294,17 +296,18 @@ def fetch(photo, frame=None):
     if not found:
         return None, "no other device that shares its photos has it"
     path = f"/photo/{photo}" + (f"?frame={int(frame)}" if frame is not None else "")
-    tried = []
+    tried, last = [], ""
     for name, addrs, port_, fp in found:
         for a in addrs or []:
             try:
                 jpg = _get(a, port_, fp, path, key)
                 if jpg:
                     return jpg, name
-            except (OSError, ssl.SSLError):
-                continue
+                last = f"{a}:{port_} didn't send it"
+            except (OSError, ssl.SSLError) as e:
+                last = f"{a}:{port_}: {e}"
         tried.append(name)
-    return None, "it's on " + ", ".join(tried) + ", which can't be reached now"
+    return None, "it's on " + ", ".join(tried) + f", which can't be reached now ({last})"
 
 
 def own_photo(store, photo, frame):

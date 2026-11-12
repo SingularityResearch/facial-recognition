@@ -348,13 +348,15 @@ def test_a_device_shows_another_its_original_photos(shared, tmp_path, monkeypatc
         b.step()                                                  # joins: knows h0 is on a
         b.switch()
         jpg, who = peer.fetch(H)
-        assert who == "a" and jpg[:2] == bytes([0xFF, 0xD8])
+        assert who == "a", who
+        assert jpg[:2] == bytes([0xFF, 0xD8])
         got = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
         assert got.shape == img.shape and abs(int(got[25, 25, 2]) - 255) < 40      # the red square came through
         assert not list((tmp_path / "b").rglob("photo*.jpg"))                      # shown, never kept on b
         with shared.connect() as c:
             fp = c.execute("SELECT peer_cert_sha256 FROM devices WHERE name = 'a'").fetchone()[0]
-        assert peer._get("127.0.0.1", port_a, fp, "/photo/" + H, b"x" * 32) is None   # wrong key: refused (403)
+        with pytest.raises(PermissionError):
+            peer._get("127.0.0.1", port_a, fp, "/photo/" + H, b"x" * 32)              # wrong key: refused (403)
         with pytest.raises(ssl.SSLError):
             peer._get("127.0.0.1", port_a, "0" * 64, "/photo/" + H, peer.CURRENT_KEY)  # not a's certificate
         assert peer.fetch("cd" * 20)[0] is None                 # a's records don't have that photo
