@@ -135,7 +135,9 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
   - `app.py` / `build_app.bat` → `FaceRecognizer.exe` (ports 8764-8766, or `FACE_PORTS`=n for n to n+2: a second copy) — one window (pywebview, WebView2) with Face tracking,
     Labeling and Settings tabs; starts both servers in one process (`tracker.bind/attach`, `label_tool.attach`), each
     still on its own port and page. The tab page itself (`app_ui.html` + `app_ui.js`, `{{VERSION}}` filled in) is
-    served on `127.0.0.1:8764` (`/status`, `/update`, `/open-release`, `/paths`, `/open`, `/restart`: Start again for a program that failed or stopped). Before the window opens, `clear_graphics_caches` removes the window's
+    served on `127.0.0.1:8764` (`/status`, `/update`, `/open-release`, `/paths`, `/open`, `/restart`: Start again for a program that failed or stopped; `/alive`: the tab page's every-2-s sign of life,
+    and `watch_window` stops a page renderer silent for `HUNG_AFTER` s, then restarts the app in place if it stays
+    silent). Before the window opens, `clear_graphics_caches` removes the window's
     compiled graphics caches once per new version (a stale one froze a newer Qt WebEngine: white window), never Local Storage. PyInstaller one-file build; uses
     `models\` and `data\` beside the .exe (`face_id.ROOT`); `VERSION` in `app.py` is the release number.
   - `websearch.py` — the labeling tool's **Web search**: Amazon Rekognition celebrity recognition + Google Cloud Vision web detection, combined into suggestions with a confidence level (on click only; US services, English results, each capped under $10/month; keys in `%APPDATA%\FaceLabels`, never in the repo).

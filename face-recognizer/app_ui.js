@@ -43,6 +43,8 @@ async function poll() {                          // each program's URL once it's
   if (!["track", "label"].every(k => document.getElementById("f-" + k).src || errors[k])) setTimeout(poll, 400);
 }
 poll();
+// This page runs: app.py's watchdog brings the window back when these stop (a frozen page renderer)
+setInterval(() => { fetch("/alive", { cache: "no-store" }).catch(() => {}); }, 2000);
 // Start again: a program that failed to start (the model download, say) or whose page says it stopped answering
 // (its "Start again" button asks this page, over postMessage). app.py starts it again, with any other program that
 // failed; one that still answers is left alone. Its frame is emptied until /status gives its (maybe new) address.

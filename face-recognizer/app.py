@@ -32,7 +32,7 @@ import localguard
 import paths
 
 TITLE = "Face Recognizer"
-VERSION = "1.19.6"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.19.7"                                    # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -168,6 +168,9 @@ def shell_handler():
                 q = dict(parse_qsl(self.path.partition("?")[2]))
                 attention(int(q.get("unread", "0") or 0), q.get("flash") == "1")
                 return self.send({})
+            if path == "/alive":                         # the window's page runs (watch_window)
+                ALIVE["at"] = time.monotonic()
+                return self.send({})
             if path == "/restart":                       # a program that failed or stopped: Start again
                 what = dict(parse_qsl(self.path.partition("?")[2])).get("what")
                 if what not in NAMES:
@@ -212,6 +215,125 @@ def shell_server():
 
 
 WINDOW = None                               # the app window, once made (main)
+
+# ---- the window's page must never stay frozen ----------------------------------------------------------------------
+# The tab page asks /alive every 2 s. Seen on the Linux laptop (Qt WebEngine): the page's renderer stopped running
+# its scripts for hours while the process lived on, idle (no camera, no stream, nothing drawn). After HUNG_AFTER s
+# without a word the page's renderer is stopped (Linux, macOS: Qt loads the page again, recover_renderer); if the
+# page still says nothing RESTART_AFTER s later, or on Windows, the whole app starts again in place.
+ALIVE = {"at": None}
+HUNG_AFTER = 30
+RESTART_AFTER = 30
+
+
+def watch_step(st, now, alive_at):
+    """The watchdog's decision at monotonic time now: None, "kill" (the renderer) or "restart" (the app). st keeps
+    {"tick", "killed"} between calls."""
+    slept = st.get("tick") is not None and now - st["tick"] > 20     # the computer slept: start counting again
+    st["tick"] = now
+    if slept:
+        st["killed"] = None
+        return "reset"
+    if alive_at is None or now - alive_at < HUNG_AFTER:
+        st["killed"] = None
+        return None
+    if st.get("killed") is None:
+        st["killed"] = now
+        return "kill" if sys.platform != "win32" else None
+    if now - st["killed"] >= RESTART_AFTER:
+        st["killed"] = None
+        return "restart"
+    return None
+
+
+def _parent(pid):
+    try:
+        if sys.platform.startswith("linux"):
+            for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+                if line.startswith("PPid:"):
+                    return int(line.split()[1])
+        else:
+            import subprocess
+            return int(subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True, text=True,
+                                      timeout=5).stdout.strip() or 0)
+    except Exception:
+        return 0
+    return 0
+
+
+def renderer_pids():
+    """This app's page renderers (QtWebEngineProcess --type=renderer started by this process), Linux and macOS."""
+    me, out = os.getpid(), []
+    try:
+        if sys.platform.startswith("linux"):
+            cands = []
+            for d in Path("/proc").iterdir():
+                if d.name.isdigit():
+                    try:
+                        cmd = (d / "cmdline").read_bytes()
+                    except OSError:
+                        continue
+                    if b"QtWebEngineProcess" in cmd.split(b"\0")[0] and b"--type=renderer" in cmd:
+                        cands.append(int(d.name))
+        else:
+            import subprocess
+            r = subprocess.run(["pgrep", "-f", "QtWebEngineProcess.*--type=renderer"], capture_output=True,
+                               text=True, timeout=5)
+            cands = [int(p) for p in r.stdout.split()]
+    except Exception:
+        return []
+    for pid in cands:
+        p = pid
+        for _ in range(6):                       # renderer -> (zygote ->) ... -> this app
+            p = _parent(p)
+            if p in (0, 1):
+                break
+            if p == me:
+                out.append(pid)
+                break
+    return out
+
+
+def restart_app():
+    """Start this app again in place (same process id on Linux and macOS): its ports are freed by the exec."""
+    exe = sys.executable
+    args = [exe] + ([] if getattr(sys, "frozen", False) else [str(Path(__file__).resolve())]) + sys.argv[1:]
+    env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")       # a fresh start for a PyInstaller build
+    try:
+        sys.stdout.flush()
+    except Exception:
+        pass
+    os.execve(exe, args, env)
+
+
+def watch_window():
+    """Watch the window's page (ALIVE) and bring it back when it stops (watch_step)."""
+    import signal
+
+    def run():
+        st = {}
+        while True:
+            time.sleep(5)
+            now = time.monotonic()
+            what = watch_step(st, now, ALIVE["at"])
+            if what == "reset" and ALIVE["at"] is not None:
+                ALIVE["at"] = now
+            elif what == "kill":
+                pids = renderer_pids()
+                print(f"The window's page hasn't answered for {now - ALIVE['at']:.0f} s: stopping its renderer "
+                      f"{pids} so it loads again.")
+                for p in pids:
+                    try:
+                        os.kill(p, signal.SIGKILL)
+                    except OSError as e:
+                        print(f"Couldn't stop {p}: {e}")
+            elif what == "restart":
+                print(f"The window's page hasn't answered for {now - ALIVE['at']:.0f} s: starting the app again.")
+                try:
+                    restart_app()
+                except Exception:
+                    traceback.print_exc()
+    threading.Thread(target=run, daemon=True, name="window watchdog").start()
 
 
 def attention(unread, flash):
@@ -552,6 +674,7 @@ def main(argv=None):
         # private_mode=False keeps each page's remembered options and per-person baselines between runs
         clear_graphics_caches(HOME / "webview")
         keep_running_in_background()
+        watch_window()                              # a page that stops answering is brought back
         webview.start(private_mode=False, storage_path=str(HOME / "webview"))
     except Exception:                               # no window toolkit here (e.g. Linux without GTK or Qt)
         traceback.print_exc()
