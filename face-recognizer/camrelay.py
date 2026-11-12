@@ -70,12 +70,17 @@ class Relay:
                 self.error = ""
                 for jpg in self._frames(self.sock, first):
                     with self.cv:
+                        gap = time.time() - self.at if self.at else 0
+                        if 2.0 < gap < 600:          # nothing came from that device for a while: in the log
+                            print(f"Camera relay {self.device[:8]}: no frame for {gap:.1f} s")
                         self.seq += 1
                         self.jpeg, self.at = jpg, time.time()
                         self.cv.notify_all()
                     if time.time() - self.used > IDLE or self.stopped:
                         break
             except Exception as e:                    # unreachable, refused, dropped: try again shortly
+                if str(e)[:200] != self.error:
+                    print(f"Camera relay {self.device[:8]}: {e}")
                 self.error = str(e)[:200]
                 time.sleep(1.0)
             finally:

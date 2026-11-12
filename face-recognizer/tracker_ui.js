@@ -1109,7 +1109,7 @@ function group(title, cells, note) {
 // live readout as data (drawn on the other side with text only). Sent with a shared database while "Stream this
 // camera" is on, at full rate (about 10 frames a second) all the time, watched or not.
 const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
-let streamBusy = false, streamNext = 0, streamOff = 0;
+let streamBusy = false, streamNext = 0, streamOff = 0, streamWhy = "";
 async function streamFrame() {
   const now = performance.now();
   if (!running || !$("optStream").checked || streamBusy || now < streamNext || now < streamOff || !video.videoWidth) return;
@@ -1123,11 +1123,17 @@ async function streamFrame() {
     cctx.drawImage(canvas, 0, 0, comp.width, comp.height);                              // names, boxes, markers
     cctx.restore();
     const blob = await new Promise(r => comp.toBlob(r, "image/jpeg", 0.72));
-    const r = await fetch("/api/stream/frame", { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg", "X-Face-Tool": "1" } });
+    if (!blob) throw new Error("couldn't make the JPEG");
+    const headers = { "Content-Type": "image/jpeg", "X-Face-Tool": "1" };
+    if (streamWhy) headers["X-Stream-Failed"] = streamWhy.replace(/[^\x20-\x7e]/g, "?").slice(0, 200);  // logged
+    // never wait long: a request that doesn't come back must not stop the stream
+    const r = await fetch("/api/stream/frame", { method: "POST", body: blob, headers, signal: AbortSignal.timeout(5000) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || j.stream === false) { streamOff = now + 2000; return; }   // try again in 2 s: never pause for long
+    streamWhy = "";
+    if (j.stream === false) { streamOff = now + 2000; return; }       // not shared now: ask again in 2 s
+    if (!r.ok) { streamWhy = `HTTP ${r.status} ${j.error || ""}`; streamOff = now + 500; return; }
     streamNext = now + 100;                         // full rate all the time (about 10 frames a second)
-  } catch { streamOff = now + 2000; } finally { streamBusy = false; }
+  } catch (e) { streamWhy = `${e.name}: ${e.message}`; streamOff = now + 500; } finally { streamBusy = false; }
 }
 // Each face as the live readout shows it: name, match, colour, expression, size and the labeled groups of cells
 function readoutData() {

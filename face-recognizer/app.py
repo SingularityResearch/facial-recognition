@@ -32,7 +32,7 @@ import localguard
 import paths
 
 TITLE = "Face Recognizer"
-VERSION = "1.19.5"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.19.6"                                    # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -280,8 +280,13 @@ def recover_renderer(window):
 
             def on_failed(_, e):
                 kind = str(e.ProcessFailedKind)
-                print(f"The window's {kind} stopped (exit {getattr(e, 'ExitCode', '?')}): loading the page again.")
-                if "Render" in kind or "Frame" in kind or "Browser" not in kind:
+                why = f"exit {getattr(e, 'ExitCode', '?')}, {getattr(e, 'Reason', '?')}, " \
+                      f"{getattr(e, 'ProcessDescription', '') or 'no description'}"
+                # only a page's own renderer needs the page loaded again; the GPU and utility processes (video
+                # capture, audio, network) restart by themselves, and a reload would restart every camera
+                again = "Render" in kind or "Frame" in kind
+                print(f"The window's {kind} stopped ({why}){': loading the page again' if again else ''}.")
+                if again:
                     view.Reload()
 
             def hook():
@@ -494,13 +499,33 @@ def keep_running_in_background(env=os.environ):
             env[var] = (have + " " + KEEP_RUNNING_FLAGS).strip()
 
 
+class Stamped:
+    """The log file, each line starting with the time in UTC (HH:MM:SS), so a freeze or a restart can be matched
+    with what else happened then."""
+    def __init__(self, f):
+        self.f, self.fresh, self.lock = f, True, threading.Lock()
+
+    def write(self, s):
+        with self.lock:
+            out = []
+            for part in s.splitlines(keepends=True):
+                if self.fresh and part.strip():
+                    out.append(time.strftime("%H:%M:%S ", time.gmtime()))
+                out.append(part)
+                self.fresh = part.endswith("\n")
+            return self.f.write("".join(out))
+
+    def __getattr__(self, name):
+        return getattr(self.f, name)
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if "--probe-window" in args:
         probe_window()
     HOME.mkdir(parents=True, exist_ok=True)
     if getattr(sys, "frozen", False) or sys.stdout is None:      # no console: keep the messages in a log
-        log = open(HOME / "app.log", "a", encoding="utf-8", buffering=1)
+        log = Stamped(open(HOME / "app.log", "a", encoding="utf-8", buffering=1))
         sys.stdout = sys.stderr = log
         print(f"\n--- {paths.utc_now()} {TITLE} starting")
     import cudasupport                              # Linux app + NVIDIA: its downloaded CUDA, before onnxruntime loads

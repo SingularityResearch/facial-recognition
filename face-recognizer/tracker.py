@@ -552,6 +552,9 @@ def make_handler(engine):
                     import peer
                     if not peer.RUNNING or not peer.sharing():
                         return self.send_json({"stream": False})
+                    why = self.headers.get("X-Stream-Failed")
+                    if why:                             # the page's last frame didn't get here: why, in the log
+                        print(f"Camera: a frame from the tracker page failed ({why[:200]})")
                     return self.send_json({"stream": True, "watchers": camstream.put(self.body(camstream.MAX_FRAME))})
                 if path == "/api/inview":               # who this camera sees now (moved-between-cameras alerts)
                     import camstream

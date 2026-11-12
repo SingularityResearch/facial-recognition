@@ -26,6 +26,9 @@ def put(jpeg, size=None):
     if not isinstance(jpeg, (bytes, bytearray)) or not jpeg.startswith(b"\xff\xd8") or len(jpeg) > MAX_FRAME:
         raise ValueError("expected a JPEG frame")
     with _cv:
+        gap = time.time() - _frame["at"] if _frame["at"] else 0
+        if 2.0 < gap < 600:                     # the page stopped handing frames over for a while: say so in the log
+            print(f"Camera: no frame from the tracker page for {gap:.1f} s")
         _frame.update(seq=_frame["seq"] + 1, jpeg=bytes(jpeg), at=time.time(), size=size)
         _cv.notify_all()
     return watching()
