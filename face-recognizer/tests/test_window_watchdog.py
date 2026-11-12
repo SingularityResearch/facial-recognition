@@ -44,6 +44,25 @@ def test_sleep_is_not_a_freeze(monkeypatch):
     assert app.watch_step(st, 3610, 3605) is None
 
 
+def test_camera_restart_at_most_hourly_and_only_in_the_window(monkeypatch, tmp_path):
+    started = []
+    monkeypatch.setattr(app, "HOME", tmp_path)
+    monkeypatch.setattr(app, "restart_app", lambda: started.append(1))
+
+    class Now:                                      # threading.Timer, at once
+        def __init__(self, _s, fn):
+            self.fn = fn
+
+        def start(self):
+            self.fn()
+    monkeypatch.setattr(app.threading, "Timer", Now)
+    monkeypatch.setattr(app, "WINDOW", None)
+    assert app.restart_soon("test") is False and not started          # browser or test copy: never
+    monkeypatch.setattr(app, "WINDOW", object())
+    assert app.restart_soon("test") is True and started == [1]
+    assert app.restart_soon("test") is False and started == [1]       # again within the hour: no
+
+
 def test_restart_keeps_program_and_arguments(monkeypatch):
     seen = {}
     monkeypatch.setattr(app.os, "execve", lambda exe, args, env: seen.update(exe=exe, args=args, env=env))

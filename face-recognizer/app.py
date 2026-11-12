@@ -32,7 +32,7 @@ import localguard
 import paths
 
 TITLE = "Face Recognizer"
-VERSION = "1.19.8"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.19.9"                                    # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -149,7 +149,7 @@ def shell_handler():
     """The tab page's request handler. The same request checks as the two programs (localguard): the right
     Host; and for anything that does something (contacts GitHub, opens a browser or a folder) the X-Face-Tool
     header, which only this page sends."""
-    acts = ("/update", "/open-release", "/open", "/attention", "/restart")
+    acts = ("/update", "/open-release", "/open", "/attention", "/restart", "/restart-app")
 
     class Handler(localguard.Handler):
         frame_ancestors = "'none'"                       # the window's own page: never inside another page
@@ -171,6 +171,8 @@ def shell_handler():
             if path == "/alive":                         # the window's page runs (watch_window)
                 ALIVE["at"] = time.monotonic()
                 return self.send({})
+            if path == "/restart-app":                   # the camera won't start even after a page reload
+                return self.send({"restarting": restart_soon("the camera wouldn't start")})
             if path == "/restart":                       # a program that failed or stopped: Start again
                 what = dict(parse_qsl(self.path.partition("?")[2])).get("what")
                 if what not in NAMES:
@@ -304,6 +306,31 @@ def restart_app():
     except Exception:
         pass
     os.execve(exe, args, env)
+
+
+RESTART_EVERY = 3600                        # restart_soon: at most once an hour (HOME/restarted.json)
+
+
+def restart_soon(why):
+    """Start the app again in a moment (the answer goes out first): only in the app window, and at most once every
+    RESTART_EVERY s, so a camera that's really broken can't keep the app restarting. True when it will."""
+    if WINDOW is None:
+        return False
+    f = HOME / "restarted.json"
+    try:
+        last = float(json.loads(f.read_text("utf-8")).get("at", 0))
+    except (OSError, ValueError, AttributeError):
+        last = 0.0
+    if time.time() - last < RESTART_EVERY:
+        print(f"Not starting the app again ({why}): it did so less than an hour ago.")
+        return False
+    try:
+        paths.atomic_write(f, json.dumps({"at": time.time(), "why": why}).encode())
+    except OSError:
+        return False
+    print(f"Starting the app again: {why}.")
+    threading.Timer(1.0, restart_app).start()
+    return True
 
 
 def watch_window():

@@ -105,6 +105,8 @@ addEventListener("message", e => {
   // a person forgotten in the labeling tool: the tracker page forgets what it learned about them (its browser storage)
   if (k === "label" && m.fs === "forgot" && typeof m.name === "string" && m.name) act("track", "forgetPerson", { name: m.name });
   if (m.fs === "result" && waiting[m.rid]) { waiting[m.rid](m); delete waiting[m.rid]; }
+  // the camera won't start even after the tracker page loaded again: the app starts again (app.py, at most hourly)
+  if (k === "track" && m.fs === "camstuck") fetch("/restart-app?why=camera", { cache: "no-store", headers: { "X-Face-Tool": "1" } }).catch(() => {});
   if (m.fs === "restart") startAgain(k);                                  // the page's own Start again button
   // another device's settings were copied to this one: the tracker page loads them again (the labeling page itself)
   if (k === "label" && m.fs === "reload" && frame("track").src) frame("track").src = frame("track").src;

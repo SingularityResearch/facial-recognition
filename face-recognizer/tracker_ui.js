@@ -1174,12 +1174,23 @@ setInterval(async () => {
   } catch {}
 }, 5000);
 
-// "Keep this camera running": start it again within 10 s whenever it isn't running (not while a video file plays)
-let keepStarting = false;
+// "Keep this camera running": start it again within 10 s whenever it isn't running (not while a video file plays).
+// A start that never finishes (seen on Linux: the window's camera service didn't start) counts as failed after 30 s;
+// after two, the page loads again, and if the camera still hangs after that, the app starts again (app.py).
+let keepStarting = false, keepHung = 0;
 setInterval(async () => {
+  if (stream) { keepHung = 0; try { sessionStorage.removeItem("camHung"); } catch {} }
   if (!$("optKeepCam").checked || stream || keepStarting || video.src) return;
   keepStarting = true;
-  try { await startCamera(); } catch {} finally { keepStarting = false; }
+  let hung = false;
+  try {
+    await Promise.race([startCamera(), new Promise((_, no) => setTimeout(() => { hung = true; no(new Error("hung")); }, 30000))]);
+  } catch {} finally { keepStarting = false; }
+  if (!hung || stream || ++keepHung < 2) return;
+  let reloads = 0;
+  try { reloads = +sessionStorage.getItem("camHung") || 0; sessionStorage.setItem("camHung", String(reloads + 1)); } catch {}
+  if (reloads >= 1) SettingsBridge.notify({ fs: "camstuck" });     // the app window starts the app again
+  else location.reload();
 }, 10000);
 
 function applyMirror() { $("stage").classList.toggle("mirror", $("optMirror").checked); }
