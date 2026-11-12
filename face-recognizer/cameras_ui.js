@@ -163,10 +163,32 @@ async function loadReadouts() {
 setInterval(loadReadouts, 1000);
 
 // events from every camera (the alert inbox, which every device shares through the database)
+// The events panel is a fly-out: closed, the cameras take the whole width and its button counts what came since.
+let evOpen = true, evSeenT = 0, evNewest = 0;
+try { evOpen = localStorage.getItem("cams-events") !== "0"; } catch {}
+function setEvents(open) {
+  evOpen = open;
+  document.querySelector("main").classList.toggle("noev", !open);
+  $("events").hidden = !open;
+  $("evBtn").setAttribute("aria-expanded", open);
+  $("evBtnText").textContent = open ? "Hide events" : "Events";
+  if (open) evSeenT = evNewest;
+  evCount(0);
+  try { localStorage.setItem("cams-events", open ? "1" : "0"); } catch {}
+}
+function evCount(n) { $("evN").textContent = n; $("evN").hidden = evOpen || !n; }
+$("evBtn").onclick = () => setEvents(!evOpen);
+$("evClose").onclick = () => { setEvents(false); $("evBtn").focus(); };
+setEvents(evOpen);
+
 async function loadEvents() {
   try {
     const r = await (await fetch("/api/alerts", { cache: "no-store" })).json();
-    $("evlist").replaceChildren(...(r.alerts || []).slice(0, 60).map(a =>
+    const all = r.alerts || [];
+    evNewest = Math.max(evNewest, ...all.map(a => +a.t || 0));
+    if (evOpen || !evSeenT) evSeenT = evNewest;
+    evCount(all.filter(a => +a.t > evSeenT).length);
+    $("evlist").replaceChildren(...all.slice(0, 60).map(a =>
       el("li", { className: `${a.kind} ${a.state === "new" ? "new" : ""}` },
          el("span", { className: "t", textContent: `${localTime(a.t)} · ${KIND[a.kind] || a.kind}` }), String(a.text || ""))));
   } catch {}

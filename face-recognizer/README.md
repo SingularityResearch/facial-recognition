@@ -543,7 +543,9 @@ devices**, on by default). On Windows, allow the app through the firewall for pr
 
 **Every camera in one place (Cameras tab):** each device's live camera, as its Face tracking tab shows it (names,
 match, boxes and every marker that's on there), in a grid, each with its live readout of the faces it sees; tick
-which cameras to show, double-click one to see it alone. Beside the grid, one list of events from every camera.
+which cameras to show, double-click one to see it alone. Beside the grid, one list of events from every camera;
+**Hide events** (or its ×) closes it so the cameras take the whole width, and the **Events** button then counts new
+ones (remembered).
 **They move between cameras** (an alert, on by default) tells you when someone seen on one device's camera appears
 on another's within 10 minutes. Every camera runs and streams all the time at full rate (**Keep this camera running** and **Stream this
 camera to my other devices**, both on by default), also while the app's window is minimized or behind others;
