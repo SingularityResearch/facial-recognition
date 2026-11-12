@@ -57,10 +57,12 @@ def _h(*parts):
 
 
 def _f(v):
-    """A float or None (NaN means 'not scored')."""
+    """A float or None (NaN means 'not scored'), always as the nearest float32: the files keep these as float32 and
+    the database as real, and a value read back from either must hash the same (else every face is sent again
+    after each restart, and the devices send each other the same faces over and over)."""
     if v is None:
         return None
-    v = float(v)
+    v = float(np.float32(v))
     return None if v != v else v
 
 
@@ -126,7 +128,14 @@ class Local:
         push(conn, tbl, rows, deletes)
 
     def fetch(self, conn, tbl, keys):
-        return fetch(conn, tbl, keys)
+        pictures = None
+        if tbl == "faces":
+            s = self.db.store
+            with self.db.lock:
+                idx = {f: i for i, f in enumerate(s.fid)}
+                pictures = {k: hashlib.sha256(s.thumbs[idx[k]]).digest() for k in keys
+                            if k in idx and s.thumbs[idx[k]]}
+        return fetch(conn, tbl, keys, pictures)
 
     def all_keys(self, conn, tbl):
         return [r[0] for r in conn.execute(f"SELECT {self.KEYS[tbl]} FROM {tbl}")]
@@ -299,7 +308,10 @@ class Local:
                     continue
                 emb = np.zeros(dim, np.float32) if r.get("print") is None else np.asarray(r["print"], np.float32)
                 q = float("nan") if r.get("quality") is None else float(r["quality"])
-                i = s.put(fid, r["photo"], r.get("file") or "", r["box"], emb, r.get("picture") or b"", q)
+                pic = r.get("picture")
+                if pic == SAME:                         # the server has this device's own picture
+                    pic = s.thumbs[idx[fid]] if fid in idx else b""
+                i = s.put(fid, r["photo"], r.get("file") or "", r["box"], emb, pic or b"", q)
                 idx[fid] = i
                 rec = s.photos.setdefault(r["photo"], {})
                 if r.get("possible") is not None:
@@ -361,6 +373,11 @@ def push(conn, tbl, rows, deletes):
                 if no_path:
                     cur.execute("DELETE FROM photo_paths WHERE device = %s AND hash = ANY(%s)", (me, no_path))
             else:   # faces: an Ignored face's print and picture don't come back from another device
+                # a picture the server already has (same SHA-256) isn't sent again
+                have = dict(cur.execute("SELECT fid, picture_sha FROM faces WHERE fid = ANY(%s)",
+                                        ([k for k, _r in part],)).fetchall())
+                same = {k for k, r in part if r["picture"] and have.get(k) is not None
+                        and bytes(have[k]) == hashlib.sha256(r["picture"]).digest()}
                 cur.executemany("""
                     INSERT INTO faces (fid, photo, file, box, quality, model, print, picture, possible, frame)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -369,10 +386,12 @@ def push(conn, tbl, rows, deletes):
                         print = CASE WHEN faces.print IS NULL AND excluded.print IS NOT NULL
                                      AND faces.updated_by IS DISTINCT FROM %s::uuid THEN NULL ELSE excluded.print END,
                         picture = CASE WHEN faces.print IS NULL AND excluded.print IS NOT NULL
-                                       AND faces.updated_by IS DISTINCT FROM %s::uuid THEN NULL ELSE excluded.picture END,
+                                       AND faces.updated_by IS DISTINCT FROM %s::uuid THEN NULL
+                                       WHEN %s THEN faces.picture ELSE excluded.picture END,
                         possible = excluded.possible, frame = excluded.frame""",
-                    [(k, r["photo"], r["file"], r["box"], r["quality"], r["model"], r["print"], r["picture"],
-                      r["possible"], r["frame"], me, me) for k, r in part])
+                    [(k, r["photo"], r["file"], r["box"], r["quality"], r["model"], r["print"],
+                      None if k in same else r["picture"], r["possible"], r["frame"], me, me, k in same)
+                     for k, r in part])
         if deletes:
             key = {"labels": "fid", "web_suggestions": "fid", "faces": "fid", "photos": "hash"}[tbl]
             if tbl in ("labels", "web_suggestions"):        # photos and faces are never deleted from here
@@ -383,8 +402,12 @@ def _hexok(v):
     return isinstance(v, str) and len(v) % 2 == 0 and all(c in "0123456789abcdef" for c in v)
 
 
-def fetch(conn, tbl, keys):
-    """Current server rows {key: row or None} in the shape Local.apply takes."""
+SAME = "same"     # fetch(): the server's picture is the one this device has (not fetched again)
+
+
+def fetch(conn, tbl, keys, pictures=None):
+    """Current server rows {key: row or None} in the shape Local.apply takes. pictures: {fid: SHA-256 of this
+    device's picture}; a face picture the server has the same of isn't fetched (its row says SAME)."""
     out = {k: None for k in keys}
     keys = list(keys)
     for b in range(0, len(keys), BATCH * 3):
@@ -405,14 +428,21 @@ def fetch(conn, tbl, keys):
                           "dup_of": dup_of, "video": True if video else None, "fps": fps, "maybe_read": maybe_read,
                           "extra": extra or {}, "facts": facts}
         else:
-            for row in conn.execute("""SELECT fid, photo, file, box, quality, model, print, picture, possible, frame
-                                       FROM faces WHERE fid = ANY(%s)""", (part,)):
-                fid, photo, file, box, q, model, pr, pic, possible, frame = row
+            want = []
+            for row in conn.execute("""SELECT fid, photo, file, box, quality, model, print, picture_sha, possible,
+                                              frame FROM faces WHERE fid = ANY(%s)""", (part,)):
+                fid, photo, file, box, q, model, pr, sha, possible, frame = row
                 if pr is not None and hasattr(pr, "to_numpy"):
                     pr = pr.to_numpy()
+                mine = (pictures or {}).get(fid)
+                pic = None if sha is None else SAME if mine is not None and mine == bytes(sha) else None
+                if sha is not None and pic is None:
+                    want.append(fid)
                 out[fid] = {"photo": photo, "file": file, "box": list(box), "quality": q, "model": model,
-                            "print": pr, "picture": bytes(pic) if pic else None, "possible": possible,
-                            "frame": frame}
+                            "print": pr, "picture": pic, "possible": possible, "frame": frame}
+            for fid, pic in (conn.execute("SELECT fid, picture FROM faces WHERE fid = ANY(%s)", (want,))
+                             if want else []):
+                out[fid]["picture"] = bytes(pic) if pic else None
     return out
 
 

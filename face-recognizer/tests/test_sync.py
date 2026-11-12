@@ -266,3 +266,19 @@ def test_settings_stay_each_devices_own_and_signals_are_shared(shared, tmp_path,
     with pytest.raises(ValueError):
         with shared.connect() as c:
             dbsync_home.copy_settings(c, b.id, b.sync.parts[-1])            # not from itself
+
+
+def test_a_restart_sends_nothing_again(shared, tmp_path, monkeypatch):
+    """What a device took from the database hashes the same after the program reads its files again: floats come
+    back from the database's real columns as short decimals (0.9) and from the files as float32 (0.8999999762)."""
+    import dbsync
+    a = Device(tmp_path / "a", monkeypatch, 4)
+    a.step()
+    b = Device(tmp_path / "b", monkeypatch, 2, seed=7)
+    b.step()
+    b.step()
+    b.switch()
+    again = dbsync.Local(L.LabelDB(folders=[], backup=False, log=lambda *a: None)).digests()
+    for tbl in ("photos", "faces", "labels"):
+        synced = b.sync.state.digests(tbl)
+        assert {k: d for k, d in again[tbl].items() if synced.get(k) != d} == {}, tbl
