@@ -188,8 +188,12 @@ class Engine:
         mtime = PEOPLE.stat().st_mtime if PEOPLE.exists() else None
         if mtime == self.people_mtime:
             return
-        self.people_mtime = mtime
-        self.ident = F.Identifier.load() if mtime is not None else None
+        try:
+            self.ident = F.Identifier.load() if mtime is not None else None
+        except (OSError, ValueError, KeyError) as e:   # being replaced right now (Windows locks it): next request
+            print(f"Couldn't read people.npz yet ({e}); trying again.")
+            return
+        self.people_mtime = mtime                  # only once it's loaded, so a failed read is tried again
         names = self.ident.names if self.ident else []
         # names on a console only: in FaceRecognizer.exe this goes to app.log, which would then hold them
         shown = ", ".join(names) if sys.stdout and sys.stdout.isatty() else f"{len(names)} named"
