@@ -347,8 +347,12 @@ class LabelDB:
 
     @staticmethod
     def _fit(E, pos, neg):
+        """liblinear, not the default L-BFGS: the same L2 logistic regression (scores correlate 1.0 on 7,966 faces,
+        99.7% the same possible faces shown), single-threaded C that lets the other threads run. In the built app on
+        the Linux laptop, L-BFGS (SciPy and OpenBLAS threads competing with the live tracker's) held Python's lock
+        for minutes, and the whole window stopped responding (2026-11-12)."""
         from sklearn.linear_model import LogisticRegression
-        return LogisticRegression(C=0.1, max_iter=5000, class_weight="balanced").fit(
+        return LogisticRegression(C=0.1, max_iter=5000, class_weight="balanced", solver="liblinear").fit(
             E[pos + neg], [1] * len(pos) + [0] * len(neg))
 
     def _face_model(self):
