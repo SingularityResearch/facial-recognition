@@ -70,6 +70,13 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     on one device reaches all; `HomePart.every_step` takes the current one (`catch_up`) and registers fingerprints. A
     device not on the current version neither sends nor reads keys (`push` returns False: not marked sent). The
     passphrase and its key are kept in `HOME/secret.key` (protected) so Settings shows it masked.
+  - `peer.py` — devices show each other their original photos (with a shared database; db/007): a device that lacks an
+    original asks one that has it (`photo_paths`), which answers with the photo view's JPEG; shown, never stored.
+    The peer service listens on the LAN (port = tab page port + 3, 8767; `FACE_PEER_PORT`; `FACE_PEER=off`): TLS with
+    the device's own certificate (`HOME/peer-cert.pem`), whose SHA-256 is in `devices.peer_cert_sha256` and checked by
+    the asker; requests signed (HMAC) with the cluster key, HKDF of the database password and its instance id, valid
+    `CLOCK_SKEW` s; photos by hash only (`PHOTO_RE`), from the device's own records. truststore replaces
+    `ssl.SSLContext` app-wide, so peer.py uses the original class (`_context`). Started by `HomePart._peer`.
   - `devicesettings.py` + `page_store.js` — each page's settings (`HOME/settings.json`) and each person's usual look
     and signal normals (`HOME/person_signals.json`), kept by the page's own server (`/api/settings`,
     `/api/signals`); `page_store.js` restores them into localStorage first thing (one synchronous request) and sends
@@ -251,6 +258,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 
 ## Security rules
 
+- The programs' servers listen on 127.0.0.1 only. The one exception is the peer service (`peer.py`, with a shared
+  database, on by default there, Settings switch): LAN, TLS with the device's pinned certificate, HMAC-signed
+  requests from the cluster key, original photos by content hash only, never a path or anything else.
 - Every endpoint goes through `localguard.refuse_reason` (exact Host and port; POST needs `X-Face-Tool: 1` and its
   own Origin). The `app.py` shell uses it too: its GETs that do something (`/update`, `/open-release`, `/open`, `/restart`) need
   the header.

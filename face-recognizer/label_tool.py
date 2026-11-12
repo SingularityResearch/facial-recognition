@@ -66,17 +66,44 @@ def make_handler(db, importer):
                 return photo_cache[key]
         p = rec.get("path")
         if not (p and Path(p).exists()):
-            return None
-        # same scale as the stored face boxes
-        img = F.load_image(p) if frame is None else F.video_frame(p, frame)
-        if img is None:
-            return None
-        jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
+            jpg = from_peer(h, frame)                # another device that has it shows it to this one (peer.py)
+            if jpg is None:
+                return None
+        else:
+            # same scale as the stored face boxes
+            img = F.load_image(p) if frame is None else F.video_frame(p, frame)
+            if img is None:
+                return None
+            jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
         with cache_lock:
             photo_cache[key] = jpg
             while len(photo_cache) > 12:
                 photo_cache.popitem(last=False)
         return jpg
+
+    def from_peer(h, frame):
+        """The original from another device of the shared database (shown, kept only in photo_cache), or None."""
+        if not peer_ready():
+            return None
+        import peer
+        jpg, _who = peer.fetch(h, frame)
+        return jpg
+
+    def peer_ready():
+        sync = getattr(db, "sync", None)
+        return sync is not None and sync.info.get("state") == "online"
+
+    def remote_holders(h):
+        """Names of the other sharing devices that have photo h (for the photo view), [] when it can't be asked."""
+        if not peer_ready():
+            return []
+        try:
+            import facedb
+            import peer
+            with facedb.connect() as conn:
+                return [r[0] for r in peer.holders(conn, h)]
+        except Exception:
+            return []
 
     def describe_key(i):
         """Descriptions are per photo (per frame for a video): every face in it shares one."""
@@ -387,9 +414,10 @@ def make_handler(db, importer):
                                    "q": db.q(j), "maybe": db.maybe(j), "shown": db.shown(j)} for j in db.by_photo().get(h, [])]
                         path_ = p.get("path")
                         others = [f for f in others if db.video_at(f["i"]) == db.video_at(i)]   # same video frame
+                        here = bool(path_ and Path(path_).exists())
                         return self.send({"i": i, "path": path_ or p.get("name") or db.store.file[i],
                                           "video": db.video_at(i),
-                                          "exists": bool(path_ and Path(path_).exists()),
+                                          "exists": here, "remote": [] if here else remote_holders(h),
                                           "date": L.photo_date(path_) if path_ else "", "faces": others,
                                           "hints": dict(db.hints(i), web=web_saved.get(db.store.fid[i]))})
                     if path == "/api/websearch/key":
@@ -523,6 +551,12 @@ def make_handler(db, importer):
                     if body.get("app") != "label":
                         raise ValueError("bad settings")
                     return self.send({"settings": devicesettings.update("label", body.get("settings") or {})})
+                if path == "/api/peer":                 # share this device's photos with the other devices
+                    import peer
+                    peer.set_sharing(bool(body.get("share")))
+                    if getattr(db, "sync", None):
+                        db.sync.note()
+                    return self.send({"ok": True, "share": peer.sharing()})
                 if path == "/api/db/copy":              # this device takes another device's settings
                     import dbsync_home
                     import facedb
@@ -657,7 +691,9 @@ def db_state(db):
         return {"available": False, "why": "This copy of the app can't use a shared database (psycopg isn't installed)."}
     import facedb
     import secretbox
+    import peer
     out = {"available": True, "config": facedb.config(), "device": facedb.device(), "sync": sync.status(),
+           "share": peer.sharing(),
            "passphrase": secretbox.status()["here"], "devices": []}
     if out["config"] and out["sync"].get("state") == "online":
         try:                                 # the other devices, for "Copy settings from"
@@ -666,6 +702,9 @@ def db_state(db):
                                   for i, n, s in conn.execute("SELECT id, name, last_seen FROM devices "
                                                               "WHERE id <> %s ORDER BY name", (out["device"]["id"],))]
                 out["keys"] = secretbox.overview(conn)
+                out["peers"] = [{"name": n, "share": bool(s), "addresses": a or [], "port": p}
+                                for n, s, a, p in conn.execute("SELECT name, peer_share, peer_addresses, peer_port "
+                                                               "FROM devices ORDER BY name")]
         except Exception:
             pass
     return out
@@ -692,7 +731,8 @@ def start_sync(db):
 
     def forget(name):                      # another device forgot someone: here too
         persondata.forget(db, name, db.web_saved, db.web_lock, known=True)
-    home = dbsync_home.HomePart(forget=forget)
+    import peer
+    home = dbsync_home.HomePart(forget=forget, peer_provider=lambda h, frame: peer.own_photo(db.store, h, frame))
     db.sync = dbsync.Sync(dbsync.Local(db, db.web_saved, save_web), version, home=home).start()
     websearch.shared_count = lambda service, month, cap: (
         dbsync_home.count_use(service, month, cap) if facedb_configured() else None)

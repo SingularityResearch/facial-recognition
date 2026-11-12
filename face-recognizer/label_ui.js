@@ -611,9 +611,14 @@ async function openPhoto(i) {
   if (vIndex !== i) return;
   const me = info?.faces.find(f => f.i === i);
   const nm = me?.name;
-  $("#vwrap").innerHTML = info?.exists
-    ? `<img id="vimg" src="/photo/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}" alt="Photo">`
-    : `<div class="nofile"><img src="${thumb(i)}" alt="" style="width:224px;height:224px;border-radius:12px"><p>The original ${info?.video != null ? "video" : "photo"} isn't on this computer any more,<br>so only the face is shown.</p></div>`;
+  const what = info?.video != null ? "video" : "photo", remote = info?.remote || [];
+  const noFile = why => `<div class="nofile"><img src="${thumb(i)}" alt="" style="width:224px;height:224px;border-radius:12px"><p>${why}</p></div>`;
+  $("#vwrap").innerHTML = info?.exists || remote.length
+    ? `<img id="vimg" src="/photo/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}" alt="Photo">` +
+      (info?.exists ? "" : `<div class="from">The original is on ${esc(remote.join(", "))}: shown from there, not kept here.</div>`)
+    : noFile(`The original ${what} isn't on this computer any more,<br>so only the face is shown.`);
+  if (!info?.exists && remote.length) $("#vimg").onerror = () => {
+    $("#vwrap").innerHTML = noFile(`The original ${what} is on ${esc(remote.join(", "))},<br>which can't be reached now, so only the face is shown.`); };
   const img = $("#vimg");
   if (img) img.onload = () => {
     const s = img.clientWidth / img.naturalWidth;
@@ -1260,6 +1265,12 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                      { name: "dbname", label: "Database", placeholder: "sentient", size: 10, value: sec.db?.dbname || "" },
                      { name: "user", label: "User", placeholder: "facerec", size: 9, value: sec.db?.user || "" },
                      { name: "password", label: "Password", placeholder: "Password", secret: true, value: sec.db?.password || "" }] },
+    { section: D, id: "dbshare", label: "Share my photos with my other devices", type: "toggle", def: true,
+      hidden: () => !sdb.available || !sdb.config,
+      hint: () => "Lets your other devices show the original photos and videos this device has (by their content, never by folder): they ask over your local network, encrypted, and only your own devices can ask. They show them without keeping them. " +
+        ((sdb.peers || []).length ? "Sharing now: " + sdb.peers.filter(p => p.share).map(p => `${p.name} (${p.addresses.join(", ")}:${p.port})`).join("; ") + "." : ""),
+      get: () => sdb.share !== false,
+      set: async v => { await post("/api/peer", { share: !!v }); } },
     { section: D, id: "dbcopy", label: "Copy settings from", type: "select", def: "",
       hidden: () => !sdb.available || !sdb.config || !(sdb.devices || []).length,
       hint: "Takes another device's options for the Face tracking and Labeling pages (and its photo describer choices and LM Studio shared folder; not its describe server address) in place of this device's. The pages load them again.",

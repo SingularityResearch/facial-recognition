@@ -61,7 +61,9 @@ class Device:
                                (describe, "_saved", None), (websearch, "HOME", h),
                                (websearch, "KEY_FILE", h / "google_vision_key.txt"),
                                (websearch, "AWS_FILE", h / "aws_rekognition.json"), (secretbox, "KEY_FILE", h / "secret.key"),
-                               (secretbox, "DEVICE_KEY", h / "device-key.json")):
+                               (secretbox, "DEVICE_KEY", h / "device-key.json"),
+                               (__import__("peer"), "CERT", h / "peer-cert.pem"), (__import__("peer"), "KEY", h / "peer-key.pem"),
+                               (__import__("peer"), "CONF", h / "peer.json")):
             self.mp.setattr(mod, attr, val)
         import tracker
         self.mp.setattr(tracker, "PRESENCE", h / "presence")
@@ -310,3 +312,51 @@ def test_a_restart_sends_nothing_again(shared, tmp_path, monkeypatch):
     for tbl in ("photos", "faces", "labels"):
         synced = b.sync.state.digests(tbl)
         assert {k: d for k, d in again[tbl].items() if synced.get(k) != d} == {}, tbl
+
+
+def test_a_device_shows_another_its_original_photos(shared, tmp_path, monkeypatch):
+    """b doesn't have a photo; a does: b gets its JPEG from a over TLS with a signed request, checked against a's
+    certificate in the database. Unsigned requests, wrong certificates and photos a doesn't have get nothing."""
+    import socket
+    import ssl
+
+    import cv2
+
+    import peer
+    H = "ab" * 20                                                 # a photo's content hash (SHA-1)
+    a = Device(tmp_path / "a", monkeypatch, 2)
+    pic = tmp_path / "a" / "photo.jpg"
+    img = np.full((60, 80, 3), 120, np.uint8)
+    cv2.rectangle(img, (10, 10), (40, 40), (0, 0, 255), -1)
+    cv2.imwrite(str(pic), img)
+    a.switch()
+    a.db.store.photos[H] = {"path": str(pic), "size": pic.stat().st_size, "name": "photo.jpg"}
+    a.db.store.save()
+    a.step()
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port_a = s.getsockname()[1]
+    monkeypatch.setattr(peer, "port", lambda: port_a)
+    monkeypatch.setattr(peer, "addresses", lambda: ["127.0.0.1"])
+    svc = peer.Service(lambda h, f: peer.own_photo(a.db.store, h, f), lambda: peer.CURRENT_KEY,
+                       bind="127.0.0.1", listen_port=port_a).start()
+    try:
+        with shared.connect() as c:
+            peer.CURRENT_KEY = peer.cluster_key(c)
+            peer.register(c, True)
+        b = Device(tmp_path / "b", monkeypatch, 2)
+        b.step()                                                  # joins: knows h0 is on a
+        b.switch()
+        jpg, who = peer.fetch(H)
+        assert who == "a" and jpg[:2] == bytes([0xFF, 0xD8])
+        got = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+        assert got.shape == img.shape and abs(int(got[25, 25, 2]) - 255) < 40      # the red square came through
+        assert not list((tmp_path / "b").rglob("photo*.jpg"))                      # shown, never kept on b
+        with shared.connect() as c:
+            fp = c.execute("SELECT peer_cert_sha256 FROM devices WHERE name = 'a'").fetchone()[0]
+        assert peer._get("127.0.0.1", port_a, fp, "/photo/" + H, b"x" * 32) is None   # wrong key: refused (403)
+        with pytest.raises(ssl.SSLError):
+            peer._get("127.0.0.1", port_a, "0" * 64, "/photo/" + H, peer.CURRENT_KEY)  # not a's certificate
+        assert peer.fetch("cd" * 20)[0] is None                 # a's records don't have that photo
+    finally:
+        svc.stop()

@@ -64,8 +64,10 @@ class HomePart:
     KEYS = {"descriptions": "key", "webcam_snapshots": "name", "alerts": "id", "presence": "id", "documents": "id",
             "secrets": "name", "forgotten": "name", "device_settings": "device,app,key", "person_signals": "name,kind"}
 
-    def __init__(self, forget=None):
+    def __init__(self, forget=None, peer_provider=None):
         self.forget = forget
+        self.peer_provider = peer_provider  # (hash, frame) -> JPEG: this device's photos for the others (peer.py)
+        self.peer_service = None
         self.key_current = False          # this device has the current passphrase (secretbox.catch_up): keys sync
 
     def keycol(self, tbl):
@@ -516,9 +518,27 @@ class HomePart:
         login = facedb.saved_login() or {}
         inst = conn.execute("SELECT id FROM instance").fetchone()[0]
         secretbox.register(conn, login.get("password"), inst)
+        self._peer(conn)
         if took:
             keys = self.all_keys(conn, "secrets")
             state.set_digests("secrets", self.apply("secrets", self.fetch(conn, "secrets", keys)))
+
+    def _peer(self, conn):
+        """The peer service: on while this device shares its photos (peer.sharing), its address in the database."""
+        import peer
+        peer.CURRENT_KEY = peer.cluster_key(conn)
+        want = self.peer_provider is not None and peer.sharing()
+        if want and self.peer_service is None:
+            try:
+                self.peer_service = peer.Service(self.peer_provider, lambda: peer.CURRENT_KEY).start()
+                print(f"Sharing photos with the other devices on port {peer.port()}.")
+            except OSError as e:
+                print(f"Couldn't share photos with the other devices (port {peer.port()}): {e}")
+                self.peer_provider = None              # don't try every few seconds
+        elif not want and self.peer_service is not None:
+            self.peer_service.stop()
+            self.peer_service = None
+        peer.register(conn, self.peer_service is not None)
 
     def after_push(self, conn, state):
         import face_id as F

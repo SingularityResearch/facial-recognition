@@ -535,6 +535,12 @@ encrypted again and every device takes the new one. **Passphrase on each device*
 of it (the same fingerprint, the same passphrase). If a change was a mistake, **Restore an earlier passphrase**
 brings back any earlier one, everywhere.
 
+**Original photos on every device:** a photo or video one device has can be opened on any other: the photo view
+asks a device that has it and shows it (it says where it came from) without keeping a copy. Each device answers for
+its own files, so it doesn't matter how each one sees your shared drives. They talk over your local network on port
+8767, encrypted, and only your own devices can ask (Settings → Shared database → **Share my photos with my other
+devices**, on by default). On Windows, allow the app through the firewall for private networks when asked.
+
 Times are kept in UTC everywhere (files and database) and shown in your local time.
 
 ## Files

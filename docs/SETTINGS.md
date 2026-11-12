@@ -195,6 +195,7 @@ in each device's own files, as before. See the user guide's
 |---|---|---|
 | **Shared database** (status) | Not set up | The server and database, whether it's reachable, when it last checked, how many changes made here wait to be sent (while the server can't be reached), and this device's name. |
 | **Connect** (server, port, database, user, password) | empty, 5432, `sentient` | Logs in over an encrypted connection, takes the server's own certificate authority from its `server_ca` table and from then on checks the server with it on every connection. The first time, this device's data is merged in and every other device's is taken (Joining). Leave the server empty and Connect to stop using it: this device keeps its copy. Kept in `%APPDATA%\FaceLabels\database.json`; the password is protected by Windows for your user (DPAPI; on macOS and Linux the file is readable by you only). |
+| **Share my photos with my other devices** | on (with a shared database) | Lets your other devices show the original photos and videos this device has, fetched when opened and never kept there. They ask this device over your local network on port 8767 (the app's ports + 3), encrypted (TLS, this device's own certificate, checked against the database), and only your devices can ask (requests signed with a key made from the database password). Photos by their content only, nothing else. Also lists the devices sharing now and their addresses. |
 | **Copy settings from** | — | Takes another device's options for the Face tracking and Labeling pages, its describer choices and LM Studio shared folder (not its describe server address), in place of this device's. |
 | **Passphrase for keys** (typed twice) | not set | The Web search keys and the describe server's API key are kept in the database encrypted with it (AES-256-GCM, key from the passphrase by scrypt), on the device before they're sent. Set it once, on any device: it reaches every other device by itself, sealed to each device's own key pair so only that device can open it. Typing a new one (twice) changes it: every key is encrypted again and every device takes the new one. Each device keeps it (`secret.key`, protected like the password), so the field shows it masked with the eye button. |
 | **Passphrase on each device** | — | Each device's fingerprint of the passphrase it has, and whether it's the current one (one-way: a fingerprint can't be turned back into it); also each device's database password fingerprint. |
@@ -227,6 +228,8 @@ Set before starting the app (or a program) to change how it starts.
 | `FACE_HOME` | a folder | Another folder instead of the private `FaceLabels` folder. |
 | `FACE_DB` | a PostgreSQL connection string | Use this shared database instead of the one set in Settings (tests and test copies). |
 | `FACE_DB_SCHEMA` | a schema name | The schema in it (default `facerec`). |
+| `FACE_PEER` | `off` | Don't share this device's photos with the other devices (no peer service). |
+| `FACE_PEER_PORT` | a port | The peer service's port instead of the app's ports + 3 (8767). |
 
 ---
 
@@ -245,4 +248,5 @@ Nothing is sent anywhere by itself except as listed here.
 | **LM Studio → LM Studio on the network** | While Settings is open: a connection attempt to LM Studio's port on each address of this computer's local networks, each server's model list, each computer's name (mDNS or NetBIOS), and an mDNS question for announced servers. Local network only. |
 | **LM Studio on this computer** | While the app runs: announces this computer's LM Studio on the local network (mDNS). |
 | **Shared models folder** | Copies vision models to and from that folder (your own NAS or share). |
+| **Share my photos with my other devices** | While on: this device answers your other devices' requests for its original photos (by content hash), on the local network, TLS. Opening a photo another device has asks that device for it. |
 | **Shared database** | Once connected: every face, name, label, photo record, description, Collect faces picture, alert, presence visit, per-person signal and this device's settings go to that PostgreSQL server, and come from it, over TLS checked against the server's own certificate authority. Keys go only encrypted, and only once the passphrase is entered. |
