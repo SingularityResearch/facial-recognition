@@ -9,7 +9,7 @@ const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.crea
 const localTime = s => new Date(s).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const KIND = { arrived: "arrived", left: "left", unusual: "unusual signals", unknown: "unknown face", moved: "moved between cameras" };
 let devices = [], hidden = new Set(), solo = null;
-const tiles = {};                          // device id -> {tile, img, st, msg, faces, lastFrame, retryAt, d}
+const tiles = {};                          // device id -> {tile, img, st, msg, faces, seq, url, lastFrame, frames, d}
 try { hidden = new Set(JSON.parse(localStorage.getItem("cams-hidden") || "[]")); } catch {}
 const saveHidden = () => { try { localStorage.setItem("cams-hidden", JSON.stringify([...hidden])); } catch {} };
 
@@ -55,10 +55,10 @@ function offline(t, d) {
   if (!t) return;
   t.d = d;
   if (d.streaming) {
-    if (t.down) { t.down = false; connect(t); }            // back: pick the stream up again
+    if (t.down) { t.down = false; t.msg.hidden = true; }   // back: its pump picks the frames up again
     return;
   }
-  t.down = true; t.retryAt = 0;
+  t.down = true;
   t.st.className = "st off";
   const ago = d.streamingAt ? ` since ${new Date(d.streamingAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
   t.st.textContent = `offline${ago}`;
@@ -73,39 +73,56 @@ function startTile(d) {
   const vid = el("div", { className: "vid", title: "Double-click: this camera alone (again: all cameras)" }, img,
                  el("div", { className: "bar" }, el("span", { textContent: `${d.name}${d.me ? " (this device)" : ""}` }), st), msg);
   const tile = el("section", { className: "tile", ariaLabel: `${d.name}'s camera` }, vid, faces);
-  const t = tiles[d.id] = { tile, img, st, msg, faces, lastFrame: 0, retryAt: 0, d };
+  const t = tiles[d.id] = { tile, img, st, msg, faces, seq: 0, url: null, lastFrame: 0, frames: 0, d };
   vid.ondblclick = () => { solo = solo === d.id ? null : d.id; layout(); };
-  img.onload = () => { t.lastFrame = Date.now(); msg.hidden = true; };
-  img.onerror = () => { st.className = "st off"; st.textContent = "offline"; msg.hidden = false;
-                        msg.textContent = "Can't reach this camera now; trying again…"; t.retryAt = Date.now() + 5000; };
-  connect(t);
   $("grid").append(tile);
+  pump(t);
 }
 
-function connect(t) {
-  t.st.className = "st"; t.st.textContent = "connecting";
-  t.img.src = `/api/cameras/${t.d.id}/stream?n=${Date.now()}`;                 // each answer lasts 2 minutes
-  t.connectedAt = Date.now();
+// Frames one at a time: each request asks for the next frame after the last one shown and is answered as soon as
+// it exists (or after 3 s with none). Short requests only: a browser allows six connections at a time to one
+// address, and long-lived streams queued behind each other froze the picture.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function pump(t) {
+  while (tiles[t.d.id] === t) {
+    if (t.down) { await sleep(1000); continue; }
+    try {
+      const r = await fetch(`/api/cameras/${t.d.id}/frame?after=${t.seq}`, { cache: "no-store" });
+      if (r.status === 200) {
+        t.seq = +r.headers.get("X-Frame-Seq") || t.seq + 1;
+        const url = URL.createObjectURL(await r.blob());
+        t.img.src = url;
+        if (t.url) URL.revokeObjectURL(t.url);
+        t.url = url; t.lastFrame = Date.now(); t.frames++;
+        t.msg.hidden = true;
+      } else if (r.status === 204) {
+        // no new frame in 3 s: the readout says why ("paused") if the camera stopped
+      } else {
+        const j = await r.json().catch(() => ({}));
+        t.st.className = "st off"; t.st.textContent = "can't reach it";
+        t.msg.hidden = false; t.msg.textContent = `Can't reach this camera now${j.error ? ` (${j.error})` : ""}; trying again…`;
+        await sleep(2000);
+      }
+    } catch { await sleep(2000); }
+  }
+  if (t.url) URL.revokeObjectURL(t.url);
 }
 
 function stopTile(id) {
   const t = tiles[id];
   if (!t) return;
-  t.img.removeAttribute("src");
   t.tile.remove();
-  delete tiles[id];
+  delete tiles[id];                          // its pump stops by itself
   if (solo === id) solo = null;
 }
 
-// status and reconnecting: a stream answer lasts 2 minutes (peer.STREAM_FOR), so each tile asks again a little
-// before; an <img> fires "load" for a multipart stream's first frame only, so "live" means it started and hasn't failed
+// status: live with frames per second, or why not
 setInterval(() => {
   const now = Date.now();
   for (const t of Object.values(tiles)) {
-    if (t.down) continue;                                    // offline: shown as such until it streams again
-    if (t.retryAt && now > t.retryAt) { t.retryAt = 0; connect(t); continue; }
-    if (!t.retryAt && now - (t.connectedAt || 0) > 110000) connect(t);
-    else if (t.lastFrame && !t.retryAt && !t.paused) { t.st.className = "st live"; t.st.textContent = "live"; }
+    const fps = t.frames; t.frames = 0;
+    if (t.down || t.paused) continue;
+    if (t.lastFrame && now - t.lastFrame < 4000) { t.st.className = "st live"; t.st.textContent = `live · ${fps} fps`; }
   }
 }, 1000);
 
@@ -135,8 +152,8 @@ async function loadReadouts() {
       const faces = Array.isArray(r.faces) ? r.faces : [];
       // frozen picture: the camera's device sent no new frame lately (its camera stopped, or its window was asleep)
       const stale = typeof r.frameAge === "number" && r.frameAge > 5;
-      if (stale && !t.retryAt) { t.st.className = "st off"; t.st.textContent = `paused · no new frame for ${Math.round(r.frameAge)} s`; t.paused = true; }
-      else if (!stale && t.paused) { t.paused = false; connect(t); }          // frames again: pick the stream up
+      if (stale) { t.st.className = "st off"; t.st.textContent = `paused · no new frame for ${Math.round(r.frameAge)} s`; t.paused = true; }
+      else if (!stale && t.paused) { t.paused = false; }                       // frames again
       t.faces.replaceChildren(...(faces.length ? faces.map(faceBlock) : [el("li", { className: "none", textContent: r.error ? "Readout unavailable" : "No faces in view" })]));
     } catch {}
   }));

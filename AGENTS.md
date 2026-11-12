@@ -85,7 +85,10 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     who's in view and its readout as data every second (`/api/inview`, `readoutData`). The peer service serves them
     (`/stream` multipart, `/readout`); the tracker's `/cameras` page (the app's Cameras tab) shows every streaming
     device in a grid with its readout, drawn with text only, through `/api/cameras/<id>/stream|readout` (this
-    device from memory, others via `peer.open_stream`/`fetch_readout`). Frames stay in memory. `HomePart._cameras`
+    device from memory, others via `peer.fetch_readout`). The page gets frames one at a time
+    (`/api/cameras/<id>/frame?after=N`, short requests: a browser allows six connections per address and long-lived
+    streams froze), fed by `camrelay.py`, one connection per watched device (`peer.open_stream`, never ending on a
+    timer, reconnecting at once). Frames stay in memory. `HomePart._cameras`
     keeps `sightings` and raises "moved" alerts (someone on this camera within `MOVE_WINDOW` of another's).
   - `devicesettings.py` + `page_store.js` — each page's settings (`HOME/settings.json`) and each person's usual look
     and signal normals (`HOME/person_signals.json`), kept by the page's own server (`/api/settings`,

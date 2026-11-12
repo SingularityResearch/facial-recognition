@@ -14,7 +14,7 @@ that listens beyond this computer, so it answers one thing only, a photo by its 
   signature older than CLOCK_SKEW seconds is refused (no replay);
 - for photos this device's own records have (photos.json), never by path.
 It also streams this device's live camera, as its tracker page shows it (camstream.py): GET /stream, the same
-TLS and signature, a multipart JPEG stream for up to STREAM_FOR seconds (the watching device asks again).
+TLS and signature, a multipart JPEG stream that lasts until the watching device closes it (camrelay.py).
 Each device records its addresses, port and certificate fingerprint in the devices table (every sync step).
 Off with FACE_PEER=off, or the Settings switch "Share my photos with my other devices"."""
 import datetime
@@ -39,7 +39,7 @@ CONF = paths.HOME / "peer.json"
 CLOCK_SKEW = 120                 # seconds a signed request stays valid
 TIMEOUT = 8                      # seconds to wait for another device
 MAX_PHOTO = 60_000_000           # bytes accepted from another device
-STREAM_FOR = 120                 # seconds one /stream request lasts
+STREAM_FOR = 7 * 24 * 3600       # a /stream request lasts until the watching device closes it
 BOUNDARY = "facerecframe"
 PHOTO_RE = re.compile(r"^/photo/([0-9a-f]{40}|path-[0-9a-f]{24}|nofile-[0-9a-f]{24})(?:\?frame=(\d{1,7}))?$")
 _key_cache = {}

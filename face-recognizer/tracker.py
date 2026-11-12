@@ -409,6 +409,48 @@ def make_handler(engine):
         # URL) and Open video (a file from this computer played through a blob: URL)
         policy = {"script-src": "'self' blob:", "media-src": "'self' blob:"}
 
+        def _frame(self, device):
+            """The next frame after ?after=N of one device's camera, as a JPEG with its number (X-Frame-Seq); 204
+            when none came within 3 s. This device's own from memory, another's through its relay (camrelay.py),
+            which keeps one connection to that device open while anyone watches."""
+            import camrelay
+            import camstream
+            import facedb
+            try:
+                after = int(dict(parse_qsl(self.path.partition("?")[2])).get("after") or 0)
+            except ValueError:
+                after = 0
+            if device == facedb.device()["id"]:
+                seq, jpg = camstream.wait_next(after, f"page:{self.client_address}", timeout=3.0)
+                why = ""
+            else:
+                relay = camrelay.get(device)
+                seq, jpg = relay.wait_next(after, timeout=3.0)
+                why = relay.error
+            if jpg is None:
+                body = json.dumps({"error": why}).encode() if why else b""
+                self.send_response(503 if why else 204)
+                self.send_header("Cache-Control", "no-store")
+                if body:
+                    self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                localguard.page_headers(self, self.frame_ancestors, self.policy)
+                self.end_headers()
+                if body:
+                    self.wfile.write(body)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(jpg)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Frame-Seq", str(seq))
+            localguard.page_headers(self, self.frame_ancestors, self.policy)
+            self.end_headers()
+            try:
+                self.wfile.write(jpg)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
         def _camera(self, device):
             """Pass one device's camera to the page as a multipart JPEG stream: this device's own from memory, another's
             through the peer service (TLS, signed; peer.open_stream). Ends after peer.STREAM_FOR seconds; the page's
@@ -467,6 +509,9 @@ def make_handler(engine):
             m = re.fullmatch(r"/api/cameras/([0-9a-f-]{36})/stream", path)
             if m:                                       # one device's live camera, as its tracker page shows it
                 return self._camera(m.group(1))
+            m = re.fullmatch(r"/api/cameras/([0-9a-f-]{36})/frame", path)
+            if m:                                       # the next frame of one device's camera (short request)
+                return self._frame(m.group(1))
             m = re.fullmatch(r"/api/cameras/([0-9a-f-]{36})/readout", path)
             if m:                                       # its live readout (faces, names, readings), as data
                 return self.send_json(camera_readout(m.group(1)))

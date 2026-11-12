@@ -453,4 +453,10 @@ def test_the_camera_stream_takes_frames_only_while_it_can_go_somewhere(track, mo
     assert request(url, "/api/inview", json.dumps({"names": [], "readout": "<b>x</b>"}).encode())[0] == 400
     code, _, body = request(url, "/cameras")
     assert code == 200 and b"cameras_ui.js" in body
+    import facedb                                         # this device's own camera, a frame at a time
+    me = facedb.device()["id"]
+    code, hdr, body = request(url, f"/api/cameras/{me}/frame?after=0")
+    assert code == 200 and body == jpg and hdr["X-Frame-Seq"] == str(camstream.latest()[0])
+    code, _, body = request(url, f"/api/cameras/{me}/frame?after={hdr['X-Frame-Seq']}")
+    assert code == 204                                    # nothing newer within 3 s
     camstream.reset()

@@ -399,6 +399,10 @@ def test_watching_another_devices_camera_and_moving_between_cameras(shared, tmp_
         with shared.connect() as c:
             a_id = c.execute("SELECT id::text FROM devices WHERE name = 'a'").fetchone()[0]
         assert peer.fetch_readout(a_id)["faces"] == [{"name": "Ann", "sim": 70}]
+        import camrelay                                            # the way the Cameras page gets it
+        relay = camrelay.get(a_id)
+        assert relay.wait_next(0, timeout=10)[1] == frame, relay.error
+        camrelay.stop_all()
         sock, ctype, first = peer.open_stream(a_id)
         try:
             assert ctype.startswith("multipart/x-mixed-replace")
