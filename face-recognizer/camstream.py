@@ -86,10 +86,12 @@ def set_readout(faces):
 
 
 def readout():
-    """{faces, age}: the newest readout, or no faces when it's older than FRESH seconds."""
+    """{faces, age, frameAge}: the newest readout (no faces when it's older than FRESH seconds), and how old the
+    newest camera frame is (the watching page shows "paused" when it's old)."""
     with _cv:
         age = time.time() - _readout["at"]
-        return {"faces": _readout["faces"] if age < FRESH else [], "age": round(age, 1)}
+        frame_age = round(time.time() - _frame["at"], 1) if _frame["jpeg"] is not None else None
+        return {"faces": _readout["faces"] if age < FRESH else [], "age": round(age, 1), "frameAge": frame_age}
 
 
 def in_view(within=6.0):

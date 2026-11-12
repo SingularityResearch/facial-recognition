@@ -32,7 +32,7 @@ import localguard
 import paths
 
 TITLE = "Face Recognizer"
-VERSION = "1.19"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.19.1"                                    # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -440,6 +440,22 @@ def clear_graphics_caches(folder, version=None):
     return removed
 
 
+# The window keeps tracking and streaming its camera when it's minimized, covered or not in front: Chromium (WebView2,
+# Qt WebEngine) otherwise slows timers to once a second and stops drawing in background windows, and the tracker's
+# names and boxes froze, on its own screen and in other devices' Cameras tab.
+KEEP_RUNNING_FLAGS = ("--disable-background-timer-throttling --disable-renderer-backgrounding "
+                      "--disable-backgrounding-occluded-windows "
+                      "--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling")
+
+
+def keep_running_in_background(env=os.environ):
+    """Add KEEP_RUNNING_FLAGS to the window's browser (before it starts), keeping any flags already set."""
+    for var in ("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "QTWEBENGINE_CHROMIUM_FLAGS"):
+        have = env.get(var, "")
+        if "--disable-background-timer-throttling" not in have:
+            env[var] = (have + " " + KEEP_RUNNING_FLAGS).strip()
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if "--probe-window" in args:
@@ -471,6 +487,7 @@ def main(argv=None):
         window.events.loaded += lambda: allow_camera(window)
         # private_mode=False keeps each page's remembered options and per-person baselines between runs
         clear_graphics_caches(HOME / "webview")
+        keep_running_in_background()
         webview.start(private_mode=False, storage_path=str(HOME / "webview"))
     except Exception:                               # no window toolkit here (e.g. Linux without GTK or Qt)
         traceback.print_exc()

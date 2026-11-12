@@ -86,7 +86,7 @@ setInterval(() => {
   for (const t of Object.values(tiles)) {
     if (t.retryAt && now > t.retryAt) { t.retryAt = 0; connect(t); continue; }
     if (!t.retryAt && now - (t.connectedAt || 0) > 110000) connect(t);
-    else if (t.lastFrame && !t.retryAt) { t.st.className = "st live"; t.st.textContent = "live"; }
+    else if (t.lastFrame && !t.retryAt && !t.paused) { t.st.className = "st live"; t.st.textContent = "live"; }
   }
 }, 1000);
 
@@ -114,6 +114,10 @@ async function loadReadouts() {
     try {
       const r = await (await fetch(`/api/cameras/${id}/readout`, { cache: "no-store" })).json();
       const faces = Array.isArray(r.faces) ? r.faces : [];
+      // frozen picture: the camera's device sent no new frame lately (its camera stopped, or its window was asleep)
+      const stale = typeof r.frameAge === "number" && r.frameAge > 5;
+      if (stale && !t.retryAt) { t.st.className = "st off"; t.st.textContent = `paused · no new frame for ${Math.round(r.frameAge)} s`; t.paused = true; }
+      else if (!stale && t.paused) { t.paused = false; connect(t); }          // frames again: pick the stream up
       t.faces.replaceChildren(...(faces.length ? faces.map(faceBlock) : [el("li", { className: "none", textContent: r.error ? "Readout unavailable" : "No faces in view" })]));
     } catch {}
   }));

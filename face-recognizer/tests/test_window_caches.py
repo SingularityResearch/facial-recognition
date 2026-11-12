@@ -31,3 +31,15 @@ def test_the_same_version_leaves_everything_alone(tmp_path):
     gpu = make(w, "GPUCache")
     assert app.clear_graphics_caches(w, "9.9") == [] and gpu.exists()
     assert app.clear_graphics_caches(w, "10.0") == [gpu] and not gpu.exists()
+
+
+def test_the_window_keeps_running_in_the_background():
+    """Minimized or covered, the window's browser must not slow its timers or stop drawing: the tracker (and the
+    camera other devices watch) froze. Flags already set are kept, and nothing is added twice."""
+    env = {"QTWEBENGINE_CHROMIUM_FLAGS": "--ignore-gpu-blocklist"}
+    app.keep_running_in_background(env)
+    app.keep_running_in_background(env)
+    for var in ("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "QTWEBENGINE_CHROMIUM_FLAGS"):
+        assert env[var].count("--disable-background-timer-throttling") == 1
+        assert "--disable-backgrounding-occluded-windows" in env[var]
+    assert env["QTWEBENGINE_CHROMIUM_FLAGS"].startswith("--ignore-gpu-blocklist ")

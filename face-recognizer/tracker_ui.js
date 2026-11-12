@@ -893,6 +893,13 @@ async function runTest() {
 // ---------------------------------------------------------------- drawing (every animation frame)
 function draw() {
   if (!running) return;
+  render();
+  requestAnimationFrame(draw);
+}
+// While the page is hidden (window minimized, covered, or another tab of the app shown), the browser stops calling
+// requestAnimationFrame: draw (and stream this camera) on a timer instead, so the names and boxes keep up.
+setInterval(() => { if (running && document.hidden) render(); }, 100);
+function render() {
   if (video.videoWidth && canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
   if (shown && !$("optMesh").checked) shown = null;
   // Easing toward the latest detection; none while showing the analysed frame, whose results fit it exactly
@@ -979,7 +986,6 @@ function draw() {
   const now = performance.now();
   if (now - fpsT > 1000) { $("fps").textContent = Math.round(checks * 1000 / (now - fpsT)); checks = 0; fpsT = now; }
   streamFrame();
-  requestAnimationFrame(draw);
 }
 
 // Face mesh: MediaPipe's points joined into triangles. Each triangle is shaded by the angle it

@@ -383,7 +383,7 @@ def open_stream(device_id):
                 s.close()
                 raise OSError(f"{name} answered {status[1].decode() if len(status) > 1 else '?'}")
             m = re.search(rb"\r\ncontent-type:\s*([^\r\n]+)", head, re.I)
-            s.settimeout(30)
+            s.settimeout(STREAM_FOR + 15)              # a paused camera sends nothing for a while: not an error
             return s, (m.group(1).decode() if m else "multipart/x-mixed-replace"), rest
         except (OSError, ssl.SSLError) as e:
             last = f"{a}:{port_}: {e}"
