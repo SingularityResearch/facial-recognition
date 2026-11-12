@@ -164,6 +164,7 @@ def test_the_faceness_model_trains_in_the_background_without_holding_the_lock(da
     """Training on thousands of faces takes seconds (minutes on a slow computer): the labeling page and the shared
     database's sync must not wait for it. Until it's done, every possible face is shown."""
     import threading
+    pytest.importorskip("sklearn")                       # the app's own requirement; not installed in CI's checks
     make_faces(data, 160)
     photos = json.loads((data / "photos.json").read_text("utf-8"))
     for k in range(40, 80):                              # half the photos: their faces are possible faces

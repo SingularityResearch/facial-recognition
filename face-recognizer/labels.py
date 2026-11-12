@@ -377,6 +377,12 @@ class LabelDB:
         idx = [i for i in range(self.n) if (self.maybe(i) or 0) > 0]
 
         def train():
+            try:
+                fit()
+            except Exception as e:                                    # keep the previous model; say why once
+                print(f"Couldn't train the faceness model: {e}")
+
+        def fit():
             model, scores = None, {}
             if len(pos) >= 50 and len(neg) >= 50:
                 model = self._fit(E, pos, neg)
