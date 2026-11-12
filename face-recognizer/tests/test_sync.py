@@ -36,14 +36,34 @@ class Device:
             (self.data / "labels.json").write_text(json.dumps(labels))
         self.db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
         self.web = {}
+        import dbsync_home
+        import persondata
+        self.forgot = []
+
+        def forget(name):
+            self.switch()
+            self.forgot.append(name)
+            persondata.forget(self.db, name, self.web, None, known=True)
         self.sync = dbsync.Sync(dbsync.Local(self.db, self.web, lambda: None), "test", log=lambda *a: None,
-                                state_path=self.home / "sync.sqlite")
+                                state_path=self.home / "sync.sqlite", home=dbsync_home.HomePart(forget=forget))
         F.SAVED_HOOKS.append(self.sync.note)          # as label_tool.start_sync does
 
     def switch(self):
+        import alerts  # noqa: F401
+        import describe
+        import secretbox
+        import websearch
+        h = self.home
         self.mp.setattr(F, "DATA", self.data)
-        self.mp.setattr(self.paths, "HOME", self.home)
-        self.mp.setattr(self.facedb, "DEVICE", self.home / "device.json")
+        for mod, attr, val in ((self.paths, "HOME", h), (self.facedb, "DEVICE", h / "device.json"),
+                               (F, "WEBCAM", h / "webcam"), (F, "PRESENCE", h / "presence"), (F, "ALERTS", h / "alerts.json"),
+                               (describe, "STORE", h / "descriptions.json"), (describe, "CONFIG", h / "describe.json"),
+                               (describe, "_saved", None), (websearch, "HOME", h),
+                               (websearch, "KEY_FILE", h / "google_vision_key.txt"),
+                               (websearch, "AWS_FILE", h / "aws_rekognition.json"), (secretbox, "KEY_FILE", h / "secret.key")):
+            self.mp.setattr(mod, attr, val)
+        import tracker
+        self.mp.setattr(tracker, "PRESENCE", h / "presence")
         return self
 
     def step(self):
@@ -144,3 +164,75 @@ def test_nothing_is_sent_twice(shared, tmp_path, monkeypatch):
     a.step()
     with shared.connect() as c:
         assert c.execute("SELECT max(seq) FROM changes").fetchone()[0] == before
+
+
+def test_private_data_keys_and_forgets_reach_the_other_device(shared, tmp_path, monkeypatch):
+    import alerts
+    import describe
+    import persondata
+    import secretbox
+    import tracker
+    import websearch
+    a = Device(tmp_path / "a", monkeypatch, 4, labels={"f0": {"n": "Ann", "by": "me"}})
+    a.step()
+    b = Device(tmp_path / "b", monkeypatch, 4)
+    b.step()
+
+    # on a: a description, an alert, a visit, a Collect faces snapshot and a Web search key
+    a.switch()
+    describe.save("h0", {"text": "Ann at the beach", "model": "m", "secs": 1})
+    alerts.add({"kind": "arrived", "name": "Ann", "text": "Ann arrived", "t": int(tracker.time.time() * 1000)})
+    tracker.log_visit({"name": "Ann", "start": 1_700_000_000_000, "end": 1_700_000_060_000})
+    (a.home / "webcam").mkdir(exist_ok=True)
+    (a.home / "webcam" / "webcam-20261112-010000-000.json").write_text(json.dumps({"when": "2026-11-12T01:00:00Z", "faces": []}))
+    (a.home / "webcam" / "webcam-20261112-010000-000.jpg").write_bytes(b"JPGsnap")
+    websearch.save_key("A" * 39)
+    with shared.connect() as c:
+        with pytest.raises(ValueError):
+            secretbox.set_passphrase(c, "short")
+        assert secretbox.set_passphrase(c, "correct horse battery")["first"]
+    a.sync.note()
+    a.step()
+    with shared.connect() as c:
+        row = c.execute("SELECT ciphertext FROM secrets WHERE name = 'google_vision'").fetchone()
+        assert row and b"AAAA" not in bytes(row[0])                       # encrypted on the device
+
+    b.switch()
+    with shared.connect() as c:
+        with pytest.raises(secretbox.WrongPassphrase):
+            secretbox.set_passphrase(c, "wrong passphrase here")
+        secretbox.set_passphrase(c, "correct horse battery")
+    b.sync.note()
+    b.step()
+    b.step()
+    b.switch()
+    assert describe.saved("h0")["text"] == "Ann at the beach"
+    assert [x["text"] for x in alerts.listing()["alerts"]] == ["Ann arrived"]
+    day = tracker.time.strftime("%Y-%m-%d", tracker.time.localtime(1_700_000_000))
+    assert [v["name"] for v in tracker.visits(day)] == ["Ann"]
+    assert (b.home / "webcam" / "webcam-20261112-010000-000.jpg").read_bytes() == b"JPGsnap"
+    assert websearch.key() == "A" * 39                                       # decrypted with b's own passphrase key
+
+    # the Web search cap counts every device's searches
+    monkeypatch.setattr(websearch, "shared_count", __import__("dbsync_home").count_use)
+    monkeypatch.setitem(websearch.CAPS, "vision", 2)
+    websearch._count("vision")
+    a.switch()
+    websearch._count("vision")
+    with pytest.raises(ValueError):
+        websearch._count("vision")
+
+    # forgetting Ann on a reaches b's files too
+    a.switch()
+    persondata.forget(a.db, "Ann", a.web, None)
+    a.sync.note()
+    a.step()
+    b.step()
+    b.step()
+    b.switch()
+    assert b.forgot == ["Ann"]
+    assert alerts.listing()["alerts"] == [] and tracker.visits(day) == [] and describe.saved("h0") is None
+    assert b.name("f0") == "#ignore"
+    with shared.connect() as c:
+        assert c.execute("SELECT count(*) FROM alerts").fetchone()[0] == 0
+        assert c.execute("SELECT count(*) FROM presence").fetchone()[0] == 0

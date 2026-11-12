@@ -1,0 +1,473 @@
+"""The private folder's part of the shared database's sync (dbsync.py runs it next to the labeling data's part):
+photo descriptions, Collect faces snapshots, the alert inbox, the presence log, shared fitted documents, keys
+(encrypted, secretbox.py) and people forgotten on another device. Plus three things only ever sent: the app log, the
+posed expression tests and the Web search use counts (count_use, which also holds each service's cap across devices).
+
+Each table is read from and written to the same files the programs use, through their own modules and locks, so the
+programs don't change: they keep reading their files. A device's own presence visits and snapshots keep their device;
+those from other devices are written into this device's files too, so its pages show everyone's."""
+import hashlib
+import json
+import re
+import threading
+from datetime import datetime, timezone
+
+import facedb
+import paths
+
+SHARED_DOCS = ("expr_calibration", "va_fit")      # data/<name>.json, fitted from everyone's reports
+DEVICE_DOCS = ("model_eval", "hw_bench", "webcam_eval")
+LOG_KEEP_DAYS = 90
+FORGOTTEN = "forgotten.json"                      # HOME: names forgotten here or applied from other devices
+_forgot_lock = threading.Lock()
+
+
+def _h(obj):
+    return hashlib.sha1(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def forgotten_names():
+    try:
+        return set(json.loads((paths.HOME / FORGOTTEN).read_text("utf-8")))
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def note_forgotten(name):
+    """persondata.forget calls this: the forget goes to the other devices with the next sync."""
+    with _forgot_lock:
+        names = forgotten_names() | {name}
+        paths.atomic_write(paths.HOME / FORGOTTEN, json.dumps(sorted(names)))
+
+
+class LimitReached(ValueError):
+    pass
+
+
+def count_use(service, month, cap):
+    """Count one Web search in the shared database before it's sent; LimitReached past the cap (every device's
+    searches count). Returns the number used this month. Raises facedb.NotConfigured / psycopg errors when the
+    database can't be used (websearch then counts on this device alone)."""
+    with facedb.connect() as conn:
+        row = conn.execute("""INSERT INTO usage AS u (service, month, used) VALUES (%s, %s, 1)
+                              ON CONFLICT (service, month) DO UPDATE SET used = u.used + 1 WHERE u.used < %s
+                              RETURNING used""", (service, month, cap)).fetchone()
+    if row is None:
+        raise LimitReached(f"{service} limit reached: {cap} searches this month (keeps the bill under $10)")
+    return row[0]
+
+
+class HomePart:
+    """forget(name): what to run when another device forgot someone (label_tool gives persondata.forget)."""
+    TABLES = ("descriptions", "webcam_snapshots", "alerts", "presence", "documents", "secrets", "forgotten")
+    KEYS = {"descriptions": "key", "webcam_snapshots": "name", "alerts": "id", "presence": "id", "documents": "id",
+            "secrets": "name", "forgotten": "name"}
+
+    def __init__(self, forget=None):
+        self.forget = forget
+
+    def keycol(self, tbl):
+        return self.KEYS[tbl]
+
+    # ---- local rows
+    def digests(self):
+        import secretbox
+        out = {t: {} for t in self.TABLES}
+        out["descriptions"] = {k: _h(v) for k, v in self._descriptions().items()}
+        out["webcam_snapshots"] = self._snap_digests()
+        out["alerts"] = {a["id"]: _h(a) for a in self._alerts()}
+        out["presence"] = {k: _h(v) for k, v in self._presence().items()}
+        out["documents"] = {k: _h(v) for k, v in self._documents().items()}
+        key = secretbox.local_key()
+        out["secrets"] = None if key is None else {n: secretbox.digest(key, n, p) for n, p in self._secrets().items()}
+        out["forgotten"] = {n: _h(n) for n in forgotten_names()}
+        return out
+
+    def _snap_digests(self):
+        out = {}
+        for jp in self._snapshots():
+            try:
+                st, js = jp.stat(), jp.with_suffix(".json")
+                sj = js.stat() if js.exists() else None
+                out[jp.stem] = _h([st.st_size, st.st_mtime_ns, sj and sj.st_size, sj and sj.st_mtime_ns])
+            except OSError:
+                continue
+        return out
+
+    def rows(self, tbl, keys):
+        keys = set(keys)
+        if tbl == "descriptions":
+            return {k: v for k, v in self._descriptions().items() if k in keys}
+        if tbl == "webcam_snapshots":
+            out = {}
+            for jp in self._snapshots():
+                if jp.stem in keys:
+                    try:
+                        v = json.loads(jp.with_suffix(".json").read_text("utf-8"))
+                    except (OSError, ValueError):
+                        v = None
+                    try:
+                        out[jp.stem] = {"jpeg": jp.read_bytes(), "verdict": v}
+                    except OSError:
+                        continue
+            return out
+        if tbl == "alerts":
+            return {a["id"]: a for a in self._alerts() if a["id"] in keys}
+        if tbl == "presence":
+            return {k: v for k, v in self._presence().items() if k in keys}
+        if tbl == "documents":
+            return {k: v for k, v in self._documents().items() if k in keys}
+        if tbl == "secrets":
+            return {k: v for k, v in self._secrets().items() if k in keys}
+        return {n: {} for n in forgotten_names() if n in keys}
+
+    # ---- readers of this device's files
+    @staticmethod
+    def _descriptions():
+        import describe
+        with describe._lock:
+            return {k: dict(v) for k, v in describe._load().items()}
+
+    @staticmethod
+    def _snapshots():
+        import face_id as F
+        return sorted(F.WEBCAM.glob("webcam-*.jpg")) if F.WEBCAM.is_dir() else []
+
+    @staticmethod
+    def _alerts():
+        import alerts
+        with alerts._lock:
+            return alerts._load()
+
+    @staticmethod
+    def _presence():
+        """{device:start:name: {name, start, end, device}} from every presence file."""
+        import face_id as F
+        me = facedb.device()["id"]
+        out = {}
+        if F.PRESENCE.is_dir():
+            for f in sorted(F.PRESENCE.glob("*.jsonl")):
+                for line in f.read_text("utf-8").splitlines():
+                    try:
+                        v = json.loads(line)
+                        dev = v.get("device") or me
+                        out[f"{dev}:{int(v['start'])}:{v['name']}"] = {"name": v["name"], "start": int(v["start"]),
+                                                                        "end": int(v["end"]), "device": dev}
+                    except (ValueError, KeyError, TypeError):
+                        continue
+        return out
+
+    @staticmethod
+    def _documents():
+        import face_id as F
+        me = facedb.device()["id"]
+        out = {}
+        for name in SHARED_DOCS + DEVICE_DOCS:
+            p = F.DATA / f"{name}.json"
+            try:
+                body = json.loads(p.read_text("utf-8"))
+            except (OSError, ValueError):
+                continue
+            out[name if name in SHARED_DOCS else f"{me}:{name}"] = {"name": name, "body": body,
+                                                                   "device": None if name in SHARED_DOCS else me}
+        return out
+
+    @staticmethod
+    def _secrets():
+        """{name: plain text} of the keys saved on this device (files only, not environment variables)."""
+        import describe
+        import websearch
+        out = {}
+        try:
+            k = websearch.KEY_FILE.read_text("utf-8").strip()
+            if k:
+                out["google_vision"] = k
+        except OSError:
+            pass
+        a = websearch.aws()
+        if a:
+            out["aws_rekognition"] = json.dumps({k: a.get(k) for k in ("access_key_id", "secret_access_key", "region")},
+                                                sort_keys=True)
+        c = describe.config()
+        if c.get("key"):
+            out[f"describe_key:{c['url']}"] = c["key"]
+        return out
+
+    # ---- to the server
+    def push(self, conn, tbl, rows, deletes):
+        import secretbox
+        me = facedb.device()["id"]
+        cur = conn.cursor()
+        items = list(rows.items())
+        with conn.transaction():
+            if tbl == "descriptions":
+                cur.executemany("""INSERT INTO descriptions (key, data) VALUES (%s, %s)
+                                   ON CONFLICT (key) DO UPDATE SET data = excluded.data""",
+                                [(k, json.dumps(_utc(v))) for k, v in items])
+            elif tbl == "webcam_snapshots":
+                cur.executemany("""INSERT INTO webcam_snapshots (name, device, taken, jpeg, verdict)
+                                   VALUES (%s, %s, %s, %s, %s)
+                                   ON CONFLICT (name) DO UPDATE SET jpeg = excluded.jpeg, verdict = excluded.verdict,
+                                   taken = excluded.taken, device = coalesce(webcam_snapshots.device, excluded.device)""",
+                                [(k, me, paths.parse_time((v["verdict"] or {}).get("when")), v["jpeg"],
+                                  json.dumps(_utc(v["verdict"])) if v["verdict"] is not None else None)
+                                 for k, v in items])
+            elif tbl == "alerts":
+                cur.executemany("""INSERT INTO alerts (id, device, data) VALUES (%s, %s, %s)
+                                   ON CONFLICT (id) DO UPDATE SET data = excluded.data""",
+                                [(k, me, json.dumps(v)) for k, v in items])
+            elif tbl == "presence":
+                cur.executemany("""INSERT INTO presence (id, device, name, start_ms, end_ms) VALUES (%s, %s, %s, %s, %s)
+                                   ON CONFLICT (id) DO UPDATE SET end_ms = excluded.end_ms""",
+                                [(k, v["device"], v["name"], v["start"], v["end"]) for k, v in items])
+            elif tbl == "documents":
+                cur.executemany("""INSERT INTO documents (id, device, name, body) VALUES (%s, %s, %s, %s)
+                                   ON CONFLICT (id) DO UPDATE SET body = excluded.body""",
+                                [(k, v["device"], v["name"], json.dumps(v["body"])) for k, v in items])
+            elif tbl == "secrets":
+                key = secretbox.local_key()
+                enc = [(k, *secretbox.encrypt(key, k, v)) for k, v in items]
+                cur.executemany("""INSERT INTO secrets (name, nonce, ciphertext) VALUES (%s, %s, %s)
+                                   ON CONFLICT (name) DO UPDATE SET nonce = excluded.nonce,
+                                   ciphertext = excluded.ciphertext""", enc)
+                # a describe key leaves this device when its server address changes: that's not a removal
+                deletes = [k for k in deletes if not k.startswith("describe_key:")]
+            elif tbl == "forgotten":
+                cur.executemany("INSERT INTO forgotten (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
+                                [(k,) for k, _v in items])
+                deletes = []
+                for name, _v in items:              # what the server holds about them goes at once
+                    _forget_on_server(cur, name)
+            if deletes and tbl in ("descriptions", "webcam_snapshots", "alerts", "presence", "secrets"):
+                cur.execute(f"DELETE FROM {tbl} WHERE {self.KEYS[tbl]} = ANY(%s)", (list(deletes),))
+
+    def fetch(self, conn, tbl, keys):
+        out = {k: None for k in keys}
+        keys = list(keys)
+        me = facedb.device()["id"]
+        for b in range(0, len(keys), 500):
+            part = keys[b:b + 500]
+            if tbl == "descriptions":
+                for k, d in conn.execute("SELECT key, data FROM descriptions WHERE key = ANY(%s)", (part,)):
+                    out[k] = d
+            elif tbl == "webcam_snapshots":
+                for k, jpeg, verdict in conn.execute(
+                        "SELECT name, jpeg, verdict FROM webcam_snapshots WHERE name = ANY(%s)", (part,)):
+                    out[k] = {"jpeg": bytes(jpeg), "verdict": verdict}
+            elif tbl == "alerts":
+                for k, d in conn.execute("SELECT id, data FROM alerts WHERE id = ANY(%s)", (part,)):
+                    out[k] = d
+            elif tbl == "presence":
+                for k, dev, name, s, e in conn.execute(
+                        "SELECT id, device::text, name, start_ms, end_ms FROM presence WHERE id = ANY(%s)", (part,)):
+                    out[k] = {"name": name, "start": s, "end": e, "device": dev}
+            elif tbl == "documents":
+                for k, dev, name, body in conn.execute(
+                        "SELECT id, device::text, name, body FROM documents WHERE id = ANY(%s)", (part,)):
+                    if dev is None or dev == me:          # other devices' measurements stay theirs
+                        out[k] = {"name": name, "body": body, "device": dev}
+                    else:
+                        out.pop(k, None)
+            elif tbl == "secrets":
+                for k, nonce, ct in conn.execute(
+                        "SELECT name, nonce, ciphertext FROM secrets WHERE name = ANY(%s)", (part,)):
+                    out[k] = {"nonce": bytes(nonce), "ciphertext": bytes(ct)}
+            else:
+                for (k,) in conn.execute("SELECT name FROM forgotten WHERE name = ANY(%s)", (part,)):
+                    out[k] = {}
+        return out
+
+    def all_keys(self, conn, tbl):
+        if tbl == "documents":
+            me = facedb.device()["id"]
+            return [r[0] for r in conn.execute("SELECT id FROM documents WHERE device IS NULL OR device = %s", (me,))]
+        return [r[0] for r in conn.execute(f"SELECT {self.KEYS[tbl]} FROM {tbl}")]
+
+    # ---- from the server
+    def apply(self, tbl, rows, log=print):
+        import secretbox
+        if tbl == "descriptions":
+            import describe
+            with describe._lock:
+                s = describe._load()
+                for k, v in rows.items():
+                    if v is None:
+                        s.pop(k, None)
+                    else:
+                        s[k] = v
+                describe._write(s)
+                return {k: _h(s[k]) if k in s else None for k in rows}
+        if tbl == "webcam_snapshots":
+            import face_id as F
+            F.WEBCAM.mkdir(parents=True, exist_ok=True)
+            out = {}
+            for k, v in rows.items():
+                jp = F.WEBCAM / f"{k}.jpg"
+                if not re.fullmatch(r"webcam-[\w-]+", k):
+                    continue
+                if v is None:
+                    jp.unlink(missing_ok=True)
+                    jp.with_suffix(".json").unlink(missing_ok=True)
+                    out[k] = None
+                    continue
+                if v.get("verdict") is not None:     # the verdict first: the labeling tool reads it with the picture
+                    paths.atomic_write(jp.with_suffix(".json"), json.dumps(v["verdict"]))
+                paths.atomic_write(jp, v["jpeg"])
+                out[k] = None
+            d = self._snap_digests()
+            return {k: d.get(k) for k in out}
+        if tbl == "alerts":
+            import alerts
+            with alerts._lock:
+                have = {a["id"]: a for a in alerts._load()}
+                for k, v in rows.items():
+                    if v is None:
+                        have.pop(k, None)
+                    else:
+                        have[k] = v
+                alerts._save(sorted(have.values(), key=lambda a: a.get("t", 0)))
+            return {k: _h(have[k]) if k in have else None for k in rows}
+        if tbl == "presence":
+            import face_id as F
+            import time
+            F.PRESENCE.mkdir(parents=True, exist_ok=True)
+            me = facedb.device()["id"]
+            have = self._presence()
+            gone = {k for k, v in rows.items() if v is None and k in have}
+            for k, v in rows.items():
+                if v is None or k in have:
+                    continue
+                line = {"name": v["name"], "start": v["start"], "end": v["end"]}
+                if v["device"] != me:
+                    line["device"] = v["device"]
+                day = time.strftime("%Y-%m-%d", time.localtime(v["start"] / 1000))   # the tracker's day files
+                with open(F.PRESENCE / f"{day}.jsonl", "a", encoding="utf-8") as f:
+                    f.write(json.dumps(line) + "\n")
+            if gone:
+                for f in F.PRESENCE.glob("*.jsonl"):
+                    keep = []
+                    for ln in f.read_text("utf-8").splitlines():
+                        try:
+                            v = json.loads(ln)
+                            if f"{v.get('device') or me}:{int(v['start'])}:{v['name']}" in gone:
+                                continue
+                        except (ValueError, KeyError, TypeError):
+                            pass
+                        keep.append(ln)
+                    paths.atomic_write(f, "".join(x + "\n" for x in keep))
+            now = self._presence()
+            return {k: _h(now[k]) if k in now else None for k in rows}
+        if tbl == "documents":
+            import face_id as F
+            for v in rows.values():
+                if v is not None and v["name"] in SHARED_DOCS:
+                    paths.atomic_write(F.DATA / f"{v['name']}.json", json.dumps(v["body"], indent=1))
+            now = self._documents()
+            return {k: _h(now[k]) if k in now else None for k in rows}
+        if tbl == "secrets":
+            key = secretbox.local_key()
+            if key is None:
+                return {}
+            import describe
+            import websearch
+            for k, v in rows.items():
+                try:
+                    plain = None if v is None else secretbox.decrypt(key, k, v["nonce"], v["ciphertext"]).decode()
+                except secretbox.WrongPassphrase as e:
+                    log(f"Shared database: key {k}: {e}")
+                    continue
+                if k == "google_vision":
+                    websearch.save_key(plain or "")
+                elif k == "aws_rekognition":
+                    a = json.loads(plain) if plain else {}
+                    websearch.save_aws(a.get("access_key_id") or "", a.get("secret_access_key"), a.get("region"))
+                elif k.startswith("describe_key:") and describe.config()["url"] == k.partition(":")[2]:
+                    describe.set_config(key=plain or "")
+            now = self._secrets()
+            return {k: secretbox.digest(key, k, now[k]) if k in now else None for k in rows}
+        # forgotten on another device: forget here too, once
+        done = forgotten_names()
+        for name, v in rows.items():
+            if v is not None and name not in done and self.forget:
+                try:
+                    self.forget(name)
+                    log(f"Shared database: forgot {name}, as another device did.")
+                except Exception as e:                # never stop the sync over one person
+                    log(f"Shared database: couldn't forget {name} here: {e}")
+                note_forgotten(name)
+        return {n: _h(n) for n in rows if n in forgotten_names()}
+
+    # ---- only sent: the app log and posed expression tests, new lines since the last time
+    def after_push(self, conn, state):
+        import face_id as F
+        me = facedb.device()["id"]
+        lp = paths.HOME / "app.log"
+        try:
+            size = lp.stat().st_size
+        except OSError:
+            size = 0
+        done = int(state.get("log_offset", 0))
+        if size < done:                        # rewritten (a person forgotten) or replaced
+            done = size
+        if size > done:
+            with open(lp, "rb") as f:
+                f.seek(done)
+                chunk = f.read(size - done)
+            end = chunk.rfind(b"\n") + 1      # whole lines only; the rest goes next time
+            lines = [ln for ln in chunk[:end].decode("utf-8", "replace").splitlines() if ln.strip()]
+            if lines:
+                now = datetime.now(timezone.utc)
+                with conn.transaction():
+                    conn.cursor().executemany("INSERT INTO app_log (device, at, line) VALUES (%s, %s, %s)",
+                                              [(me, now, ln) for ln in lines])
+            state.put("log_offset", done + end)
+        if int(state.get("log_pruned_day", 0)) != datetime.now(timezone.utc).toordinal():
+            conn.execute("DELETE FROM app_log WHERE device = %s AND at < now() - make_interval(days => %s)",
+                         (me, LOG_KEEP_DAYS))
+            state.put("log_pruned_day", datetime.now(timezone.utc).toordinal())
+        ev = F.DATA / "expr_eval"
+        if ev.is_dir():
+            rows = []
+            for f in sorted(ev.glob("*.jsonl")):
+                lines = f.read_text("utf-8").splitlines()
+                k0 = int(state.get(f"expr:{f.name}", 0))
+                for k in range(min(k0, len(lines)), len(lines)):
+                    try:
+                        rows.append((f"{f.name}:{k}", me, f.name, json.dumps(json.loads(lines[k]))))
+                    except ValueError:
+                        continue
+                state.put(f"expr:{f.name}", len(lines))
+            if rows:
+                with conn.transaction():
+                    conn.cursor().executemany("INSERT INTO expr_eval (id, device, file, data) VALUES (%s, %s, %s, %s) "
+                                              "ON CONFLICT DO NOTHING", rows)
+
+    def on_join(self, state):
+        """After dbimport sent this device's log and tests: only lines written from now on are sent."""
+        import face_id as F
+        try:
+            state.put("log_offset", (paths.HOME / "app.log").stat().st_size)
+        except OSError:
+            state.put("log_offset", 0)
+        ev = F.DATA / "expr_eval"
+        for f in sorted(ev.glob("*.jsonl")) if ev.is_dir() else []:
+            state.put(f"expr:{f.name}", len(f.read_text("utf-8").splitlines()))
+
+
+def _utc(v):
+    if isinstance(v, dict) and isinstance(v.get("when"), str):
+        return dict(v, when=paths.utc_text(v["when"]))
+    return v
+
+
+def _forget_on_server(cur, name):
+    """Delete what the server holds about name that no device's files hold (the change log can't carry it)."""
+    like = re.escape(name)
+    cur.execute("DELETE FROM app_log WHERE line ~* %s", (r"(^|\W)" + like + r"(\W|$)",))
+    cur.execute("DELETE FROM label_history WHERE what ~* %s OR faces::text ~ %s",
+                (r"(^|\W)" + like + r"(\W|$)", '"n": ' + json.dumps(name)))
+    cur.execute("DELETE FROM expr_eval WHERE name = %s", (name,))
+    cur.execute("DELETE FROM person_signals WHERE name = %s", (name,))
+    cur.execute("DELETE FROM presence WHERE name = %s", (name,))
+    cur.execute("DELETE FROM alerts WHERE name = %s", (name,))
+

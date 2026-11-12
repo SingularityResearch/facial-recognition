@@ -1246,11 +1246,17 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       fields: [{ name: "host", placeholder: "Server (e.g. sentient-nas)" }, { name: "port", placeholder: "5432", size: 5 },
                { name: "dbname", placeholder: "Database (sentient)", size: 10 }, { name: "user", placeholder: "User", size: 9 },
                { name: "password", placeholder: "Password", secret: true }] },
+    { section: D, id: "dbpass", label: "Passphrase for keys", type: "form", button: "Enter",
+      hidden: () => !sdb.available || !sdb.config,
+      hint: () => (sdb.passphrase ? "Entered on this device: the Web search and describe keys are shared with your other devices, encrypted. " : "Not entered on this device: its keys stay on it alone. ") +
+        "The Web search keys and the describe server's key are kept in the shared database encrypted with this passphrase, on each device before they're sent; the server never sees them or the passphrase. The first device to enter one sets it; every other device must enter the same. Only a key derived from it is kept on each device.",
+      fields: [{ name: "passphrase", placeholder: "Passphrase (at least 10 characters)", secret: true }] },
     { section: H, id: "cudaget", label: "NVIDIA CUDA", type: "button",
       button: () => `Download CUDA support (${(hw.cuda_offer?.gb || 1.9).toFixed(1)} GB)`,
       hidden: () => !hw.cuda_offer?.offer,
       hint: "Lets this app run its models on the NVIDIA card. Downloads NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA from PyPI (the public Python package index), for this app's Python 3.12, each checked by size and SHA-256, into the app's data folder (about 3.5 GB unpacked). Used from the next start; the app checks each model gives the same answers on the card before using it." },
   ], {
+    dbpass: a => post("/api/db/passphrase", { passphrase: a.passphrase || "" }),
     dbsetup: a => post("/api/db/setup", { host: a.host || "", port: +a.port || 5432, dbname: a.dbname || "sentient",
                                          user: a.user || "", password: a.password || "" }),
     wsgoogle: a => post("/api/websearch/key", { key: a.key || "" }),

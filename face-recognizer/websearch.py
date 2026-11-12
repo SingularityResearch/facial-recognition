@@ -98,6 +98,9 @@ def usage(service="vision"):
 
 
 _count_lock = threading.Lock()
+# With a shared database (label_tool.start_sync sets it to dbsync_home.count_use): every device's searches count
+# toward one cap per service. Without it, or while it can't be reached, this device counts alone.
+shared_count = None
 
 
 def _count(service):
@@ -105,6 +108,18 @@ def _count(service):
     lock, so two searches at once can't both take the last one."""
     with _count_lock:
         u = usage(service)
+        if shared_count is not None:
+            try:
+                used = shared_count(service, u["month"], u["cap"])
+            except ValueError:                  # the cap, counted across devices
+                raise
+            except Exception:                   # offline: count here
+                used = None
+            if used is not None:
+                HOME.mkdir(parents=True, exist_ok=True)
+                paths.atomic_write(HOME / f"{service}_usage.json",
+                                   json.dumps({"month": u["month"], "used": max(used, u["used"] + 1)}))
+                return
         if u["used"] >= u["cap"]:
             raise ValueError(f"{service} limit reached: {u['cap']} searches this month (keeps the bill under $10)")
         HOME.mkdir(parents=True, exist_ok=True)

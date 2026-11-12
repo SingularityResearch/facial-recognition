@@ -511,6 +511,17 @@ def make_handler(db, importer):
                     if getattr(db, "sync", None):
                         db.sync.note()
                     return self.send(dict(r, **db_state(db)))
+                if path == "/api/db/passphrase":        # the owner's passphrase for keys in the shared database
+                    import facedb
+                    import secretbox
+                    try:
+                        with facedb.connect() as conn:
+                            r = secretbox.set_passphrase(conn, str(body.get("passphrase") or ""))
+                    except facedb.NotConfigured:
+                        raise ValueError("Connect to the shared database first.") from None
+                    if getattr(db, "sync", None):
+                        db.sync.note()
+                    return self.send(dict(r, **db_state(db)))
                 if path == "/api/websearch/aws":        # optional Amazon key, kept outside the project
                     websearch.save_aws(body.get("id"), body.get("secret"), body.get("region"))
                     return self.send({"ok": True, "services": websearch.services()})
@@ -580,13 +591,20 @@ def downloads():
     return out
 
 
+def facedb_configured():
+    import facedb
+    return facedb.configured()
+
+
 def db_state(db):
     """The shared database for the Settings tab: {available, config (no password), device, sync}."""
     sync = getattr(db, "sync", None)
     if sync is None:
         return {"available": False, "why": "This copy of the app can't use a shared database (psycopg isn't installed)."}
     import facedb
-    return {"available": True, "config": facedb.config(), "device": facedb.device(), "sync": sync.status()}
+    import secretbox
+    return {"available": True, "config": facedb.config(), "device": facedb.device(), "sync": sync.status(),
+            "passphrase": secretbox.status()["here"]}
 
 
 def start_sync(db):
@@ -601,10 +619,19 @@ def start_sync(db):
         return None
     version = getattr(sys.modules.get("app"), "VERSION", "")
 
+    import dbsync_home
+    import persondata
+
     def save_web():
         with db.web_lock:
             F.save_json(WEB_SAVED, db.web_saved)
-    db.sync = dbsync.Sync(dbsync.Local(db, db.web_saved, save_web), version).start()
+
+    def forget(name):                      # another device forgot someone: here too
+        persondata.forget(db, name, db.web_saved, db.web_lock, known=True)
+    home = dbsync_home.HomePart(forget=forget)
+    db.sync = dbsync.Sync(dbsync.Local(db, db.web_saved, save_web), version, home=home).start()
+    websearch.shared_count = lambda service, month, cap: (
+        dbsync_home.count_use(service, month, cap) if facedb_configured() else None)
     F.SAVED_HOOKS.append(db.sync.note)
     return db.sync
 

@@ -218,12 +218,16 @@ def _only(obj, name):
 
 
 # --------------------------------------------------------------------------- forget
-def forget(db, name, web_saved=None, web_lock=None):
+def forget(db, name, web_saved=None, web_lock=None, known=False):
     """Forget name everywhere in this module's list (but the browser storage) and return what was removed, by
-    place. Their faces stay as Ignored faces without print or picture. Clears Undo; can't be undone."""
+    place. Their faces stay as Ignored faces without print or picture. Clears Undo; can't be undone.
+    With a shared database the forget also goes to every other device (dbsync_home: the forgotten table), and
+    known=True is how it arrives there: the name may already be gone from this device's labels."""
     done = {}
     with db.lock:
-        name = check_name(db, name)
+        name = str(name or "").strip() if known else check_name(db, name)
+        if not name or name.startswith("#"):
+            raise ValueError("Give the name of a person.")
         idx = _their_faces(db, name)
         fids = {db.store.fid[i] for i in idx}
         snaps = _snapshots(db, idx, name)
@@ -291,6 +295,14 @@ def forget(db, name, web_saved=None, web_lock=None):
     done["webcam"] = len(snaps)
     done["descriptions"] = describe.drop(lambda d: mentions(d.get("text"), name))
     done["appLog"] = _forget_log(paths.HOME / "app.log", name)
+    try:                                     # the other devices forget them too (only with a shared database)
+        import facedb
+        if facedb.configured():
+            import dbsync_home
+            dbsync_home.note_forgotten(name)
+            done["otherDevices"] = True
+    except ImportError:
+        pass
     return done
 
 

@@ -113,10 +113,64 @@ class State:
 
 class Local:
     """The labeling tool's data as rows: read under db.lock, applied under db.lock. `db` is a labels.LabelDB;
-    `web` its Web search answers ({fid: {...}}, with web_save() to write them)."""
+    `web` its Web search answers ({fid: {...}}, with web_save() to write them). One "part" of the sync: a part has
+    TABLES, digests(), rows(), apply(), push(), fetch(), all_keys(), after_push() and on_join()
+    (dbsync_home.HomePart is the other)."""
+    TABLES = TABLES
+    KEYS = {"photos": "hash", "faces": "fid", "labels": "fid", "web_suggestions": "fid"}
 
     def __init__(self, db, web=None, web_save=None):
         self.db, self.web, self.web_save = db, web if web is not None else {}, web_save
+
+    def push(self, conn, tbl, rows, deletes):
+        push(conn, tbl, rows, deletes)
+
+    def fetch(self, conn, tbl, keys):
+        return fetch(conn, tbl, keys)
+
+    def all_keys(self, conn, tbl):
+        return [r[0] for r in conn.execute(f"SELECT {self.KEYS[tbl]} FROM {tbl}")]
+
+    def after_push(self, conn, state):
+        """The undo history log's new lines (this device's own; never pulled)."""
+        import face_id as F
+        p = F.DATA / "history.jsonl"
+        try:
+            lines = p.read_text("utf-8").splitlines()
+        except OSError:
+            return
+        done = int(state.get("history_lines", 0))
+        if len(lines) < done:                 # the file was rewritten (forget): start counting again
+            done = len(lines)
+        new = []
+        for line in lines[done:]:
+            try:
+                h = json.loads(line)
+            except ValueError:
+                continue
+            new.append((dbimport.ts(h.get("t")) or datetime.now(timezone.utc), facedb.device()["id"],
+                        h.get("what", ""), json.dumps(h.get("faces") or {})))
+        if new:
+            with conn.transaction():
+                conn.cursor().executemany("INSERT INTO label_history (t, device, what, faces) VALUES (%s, %s, %s, %s)",
+                                          new)
+        state.put("history_lines", len(lines))
+
+    def on_join(self, state):
+        import face_id as F
+        p = F.DATA / "history.jsonl"
+        state.put("history_lines", len(p.read_text("utf-8").splitlines()) if p.exists() else 0)
+
+    def before_join(self):
+        """Every file written as it is in memory, so dbimport reads the newest."""
+        import face_id as F
+        db = self.db
+        with db.lock:
+            db.store.save()
+            F.save_json("labels.json", db.labels)
+            db.facts.save()
+            if self.web_save:
+                self.web_save()
 
     # digests of every local row, per table
     def digests(self):
@@ -368,8 +422,9 @@ class Sync:
     """One per labeling tool. start() runs it in the background; note() after the labeling data was saved;
     status() for the Settings tab."""
 
-    def __init__(self, local, app_version="", log=print, state_path=STATE):
+    def __init__(self, local, app_version="", log=print, state_path=STATE, home=None):
         self.local, self.app_version, self.log = local, app_version, log
+        self.parts = [local] + ([home] if home is not None else [])
         self.state = State(state_path)
         self.wake = threading.Event()
         self.stopping = threading.Event()
@@ -401,9 +456,15 @@ class Sync:
         out = dict(self.info)
         if out["state"] in ("online", "offline"):
             try:
-                local = self.local.digests()
-                out["waiting"] = sum(1 for t in TABLES for k, d in local[t].items()
-                                     if self.state.digests(t).get(k) != d) if out["state"] == "offline" else 0
+                n = 0
+                if out["state"] == "offline":
+                    for part in self.parts:
+                        local = part.digests()
+                        for t in part.TABLES:
+                            if local[t] is not None:
+                                synced = self.state.digests(t)
+                                n += sum(1 for k, d in local[t].items() if synced.get(k) != d)
+                out["waiting"] = n
             except Exception:
                 pass
         return out
@@ -431,47 +492,25 @@ class Sync:
             conn.execute("UPDATE devices SET last_seen = now() WHERE id = %s", (facedb.device()["id"],))
             return did
 
-    def _push(self, conn, local=None):
-        local = local if local is not None else self.local.digests()
+    def _push(self, conn):
         sent = 0
-        for tbl in TABLES:
-            synced = self.state.digests(tbl)
-            mine = local[tbl]
-            changed = [k for k, d in mine.items() if synced.get(k) != d]
-            gone = [k for k in synced if k not in mine]
-            if not changed and not gone:
-                continue
-            rows = self.local.rows(tbl, changed)
-            push(conn, tbl, rows, gone)
-            self.state.set_digests(tbl, {**{k: mine[k] for k in rows}, **{k: None for k in gone}})
-            sent += len(rows) + len(gone)
-        self._push_history(conn)
+        for part in self.parts:
+            local = part.digests()
+            for tbl in part.TABLES:
+                mine = local[tbl]
+                if mine is None:                  # not available here now (keys without the passphrase)
+                    continue
+                synced = self.state.digests(tbl)
+                changed = [k for k, d in mine.items() if synced.get(k) != d]
+                gone = [k for k in synced if k not in mine]
+                if not changed and not gone:
+                    continue
+                rows = part.rows(tbl, changed)
+                part.push(conn, tbl, rows, gone)
+                self.state.set_digests(tbl, {**{k: mine[k] for k in rows}, **{k: None for k in gone}})
+                sent += len(rows) + len(gone)
+            part.after_push(conn, self.state)
         return sent
-
-    def _push_history(self, conn):
-        """The undo history log's new lines (this device's own; never pulled)."""
-        import face_id as F
-        p = F.DATA / "history.jsonl"
-        try:
-            lines = p.read_text("utf-8").splitlines()
-        except OSError:
-            return
-        done = int(self.state.get("history_lines", 0))
-        if len(lines) < done:                 # the file was rewritten (forget): start counting again
-            done = len(lines)
-        new = []
-        for line in lines[done:]:
-            try:
-                h = json.loads(line)
-            except ValueError:
-                continue
-            new.append((dbimport.ts(h.get("t")) or datetime.now(timezone.utc), facedb.device()["id"],
-                        h.get("what", ""), json.dumps(h.get("faces") or {})))
-        if new:
-            with conn.transaction():
-                conn.cursor().executemany("INSERT INTO label_history (t, device, what, faces) VALUES (%s, %s, %s, %s)",
-                                          new)
-        self.state.put("history_lines", len(lines))
 
     def _pull(self, conn):
         cursor = int(self.state.get("cursor", 0))
@@ -479,52 +518,45 @@ class Sync:
         if top <= cursor:
             return 0
         me = facedb.device()["id"]
+        owner = {t: part for part in self.parts for t in part.TABLES}
         rows = conn.execute("""SELECT tbl, key, max(seq), (array_agg(device ORDER BY seq DESC))[1]::text
                                FROM changes WHERE seq > %s AND seq <= %s AND tbl = ANY(%s)
-                               GROUP BY tbl, key""", (cursor, top, list(TABLES))).fetchall()
-        want = {t: [] for t in TABLES}
+                               GROUP BY tbl, key""", (cursor, top, list(owner))).fetchall()
+        want = {t: [] for t in owner}
         for tbl, key, _seq, dev in rows:
             if dev != me:                       # the newest change of this row is another device's
                 want[tbl].append(key)
         got = 0
-        for tbl in TABLES:
+        for tbl, part in owner.items():         # in each part's order (photos before faces before labels)
             if want[tbl]:
-                server = fetch(conn, tbl, want[tbl])
-                self.state.set_digests(tbl, self.local.apply(tbl, server, self.log))
+                server = part.fetch(conn, tbl, want[tbl])
+                self.state.set_digests(tbl, part.apply(tbl, server, self.log))
                 got += len(want[tbl])
         self.state.put("cursor", top)
         return got
 
     def _join(self, conn, inst):
         """First sync with this database: merge everything in, then take everything."""
-        import dbimport
         import face_id as F
         self.info.update(state="joining", text="Joining the shared database: sending this device's data ...")
-        db = self.local.db
-        with db.lock:
-            db.store.save()
-            F.save_json("labels.json", db.labels)
-            db.facts.save()
-            if self.local.web_save:
-                self.local.web_save()
+        self.local.before_join()
         self.state.reset()
         counts = dbimport.run(conn, F.DATA, paths.HOME, facedb.device())
-        self.info.update(text="Joining the shared database: taking every device's faces and labels ...")
+        self.info.update(text="Joining the shared database: taking every device's data ...")
         top = conn.execute("SELECT coalesce(max(seq), 0) FROM changes").fetchone()[0]
-        for tbl in TABLES:
-            key = {"photos": "hash", "faces": "fid", "labels": "fid", "web_suggestions": "fid"}[tbl]
-            keys = [r[0] for r in conn.execute(f"SELECT {key} FROM {tbl}")]
-            for b in range(0, len(keys), 2000):
-                part = keys[b:b + 2000]
-                self.state.set_digests(tbl, self.local.apply(tbl, fetch(conn, tbl, part), self.log))
-            # a row only this device has (added while joining) differs from the digests: it's sent next time
-        lines = (F.DATA / "history.jsonl").read_text("utf-8").splitlines() if (F.DATA / "history.jsonl").exists() else []
-        self.state.put("history_lines", len(lines))
+        for part in self.parts:
+            for tbl in part.TABLES:
+                keys = part.all_keys(conn, tbl)
+                for b in range(0, len(keys), 2000):
+                    got = part.fetch(conn, tbl, keys[b:b + 2000])
+                    self.state.set_digests(tbl, part.apply(tbl, got, self.log))
+                # a row only this device has (added while joining) differs from the digests: it's sent next time
+            part.on_join(self.state)
         self.state.put("cursor", top)
         self.state.put("instance", inst)
         self._dirty = True
         self.log(f"Joined the shared database: sent {counts.get('faces', 0)} faces and {counts.get('labels', 0)} "
-                 f"labels; this device now has {db.n} faces.")
+                 f"labels; this device now has {self.local.db.n} faces.")
         return {"joined": counts}
 
     def _close(self):
