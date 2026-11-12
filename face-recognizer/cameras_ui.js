@@ -17,6 +17,7 @@ async function loadDevices() {
   let r = { devices: [], why: "" };
   try { r = await (await fetch("/api/cameras", { cache: "no-store" })).json(); } catch { r.why = "This device's tracker isn't answering."; }
   devices = r.devices || [];
+  for (const d of devices) d.seen = !!d.streamingAt;          // has streamed at some time: keep its tile
   $("why").textContent = r.why || (devices.some(d => d.streaming) ? "" : "No camera is streaming now: a device streams while its Face tracking tab has the camera on (Stream this camera to my other devices).");
   drawPicker();
   layout();
@@ -32,7 +33,8 @@ function drawPicker() {
 }
 
 function layout() {
-  const show = devices.filter(d => d.streaming && !hidden.has(d.id));
+  // every ticked camera stays in the grid: one that stops streaming shows "offline" instead of disappearing
+  const show = devices.filter(d => !hidden.has(d.id) && (d.streaming || tiles[d.id] || d.seen));
   for (const id of Object.keys(tiles)) if (!show.some(d => d.id === id)) { stopTile(id); }
   if (!show.length) {
     $("grid").replaceChildren(el("div", { className: "empty", textContent: devices.length ? "No camera to show." : "Looking for cameras…" }));
@@ -40,12 +42,28 @@ function layout() {
   }
   $("grid").querySelector(".empty")?.remove();
   for (const d of show) if (!tiles[d.id]) startTile(d);
+  for (const d of show) offline(tiles[d.id], d);
   const n = solo ? 1 : show.length;
   $("grid").style.gridTemplateColumns = n <= 1 ? "1fr" : n <= 4 ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(0, 1fr))";
   for (const [id, t] of Object.entries(tiles)) {
     t.tile.hidden = !!solo && solo !== id;
     t.tile.classList.toggle("solo", solo === id);
   }
+}
+
+function offline(t, d) {
+  if (!t) return;
+  t.d = d;
+  if (d.streaming) {
+    if (t.down) { t.down = false; connect(t); }            // back: pick the stream up again
+    return;
+  }
+  t.down = true; t.retryAt = 0;
+  t.st.className = "st off";
+  const ago = d.streamingAt ? ` since ${new Date(d.streamingAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
+  t.st.textContent = `offline${ago}`;
+  t.msg.hidden = false;
+  t.msg.textContent = `${d.name}'s camera is offline${ago}: its app or camera isn't running, or it can't be reached. It comes back here by itself.`;
 }
 
 function startTile(d) {
@@ -84,6 +102,7 @@ function stopTile(id) {
 setInterval(() => {
   const now = Date.now();
   for (const t of Object.values(tiles)) {
+    if (t.down) continue;                                    // offline: shown as such until it streams again
     if (t.retryAt && now > t.retryAt) { t.retryAt = 0; connect(t); continue; }
     if (!t.retryAt && now - (t.connectedAt || 0) > 110000) connect(t);
     else if (t.lastFrame && !t.retryAt && !t.paused) { t.st.className = "st live"; t.st.textContent = "live"; }

@@ -32,7 +32,7 @@ import localguard
 import paths
 
 TITLE = "Face Recognizer"
-VERSION = "1.19.2"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.19.3"                                    # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -263,6 +263,44 @@ def allow_camera(window):
         traceback.print_exc()
 
 
+def recover_renderer(window):
+    """When the window's page renderer dies (crashed, killed, out of memory) the window stays black or white with
+    nothing drawn (seen on the Linux laptop): log why and load the page again. Qt WebEngine (Linux, macOS):
+    renderProcessTerminated; WebView2 (Windows): ProcessFailed. Once per window."""
+    if getattr(window, "_recover_on", False):
+        return
+    window._recover_on = True
+    try:
+        view = window.native.webview
+    except Exception:
+        return
+    if sys.platform == "win32":
+        try:
+            from System import Action
+
+            def on_failed(_, e):
+                kind = str(e.ProcessFailedKind)
+                print(f"The window's {kind} stopped (exit {getattr(e, 'ExitCode', '?')}): loading the page again.")
+                if "Render" in kind or "Frame" in kind or "Browser" not in kind:
+                    view.Reload()
+
+            def hook():
+                view.CoreWebView2.ProcessFailed += on_failed
+            window.native.Invoke(Action(hook))
+        except Exception:
+            traceback.print_exc()
+        return
+    try:
+        from qtpy.QtCore import QTimer
+
+        def on_terminated(status, code):
+            print(f"The window's page renderer stopped ({status}, exit {code}): loading the page again.")
+            QTimer.singleShot(1000, view.reload)
+        view.page().renderProcessTerminated.connect(on_terminated)
+    except Exception:
+        traceback.print_exc()
+
+
 NAMES = {"track": "Face tracker", "label": "Face Labels"}
 _restart_lock = threading.Lock()
 
@@ -485,6 +523,7 @@ def main(argv=None):
         global WINDOW
         WINDOW = window
         window.events.loaded += lambda: allow_camera(window)
+        window.events.loaded += lambda: recover_renderer(window)
         # private_mode=False keeps each page's remembered options and per-person baselines between runs
         clear_graphics_caches(HOME / "webview")
         keep_running_in_background()

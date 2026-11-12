@@ -130,10 +130,11 @@ def cameras():
         import facedb
         with facedb.connect() as conn:
             me = facedb.device()["id"]
-            rows = conn.execute("""SELECT id::text, name, peer_share, streaming_at > now() - interval '30 seconds'
-                                   FROM devices ORDER BY name""").fetchall()
-        return {"devices": [{"id": i, "name": n, "me": i == me, "share": bool(sh), "streaming": bool(st)}
-                            for i, n, sh, st in rows], "why": ""}
+            rows = conn.execute("""SELECT id::text, name, peer_share, streaming_at > now() - interval '30 seconds',
+                                          streaming_at FROM devices ORDER BY name""").fetchall()
+        return {"devices": [{"id": i, "name": n, "me": i == me, "share": bool(sh), "streaming": bool(st),
+                             "streamingAt": at.isoformat().replace("+00:00", "Z") if at else None}
+                            for i, n, sh, st, at in rows], "why": ""}
     except Exception as e:
         return {"devices": [], "why": f"No shared database to find the other devices ({str(e)[:120]})"}
 
