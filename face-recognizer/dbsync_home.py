@@ -20,6 +20,7 @@ SHARED_DOCS = ("expr_calibration", "va_fit")      # data/<name>.json, fitted fro
 DEVICE_DOCS = ("model_eval", "hw_bench", "webcam_eval")
 LOG_KEEP_DAYS = 90
 MOVE_WINDOW = 600            # seconds: seen on another camera this recently counts as moving between cameras
+KEEP_SIGHTINGS = 2 * MOVE_WINDOW   # seconds: older sightings are deleted (only the move alert uses them)
 FORGOTTEN = "forgotten.json"                      # HOME: names forgotten here or applied from other devices
 _forgot_lock = threading.Lock()
 
@@ -530,13 +531,21 @@ class HomePart:
     def _cameras(self, conn):
         """This device's camera: whether it streams, who it sees (sightings), and a "moved" alert when someone it
         sees now was on another device's camera within MOVE_WINDOW (only this device raises it: the one they
-        arrived at). The alert syncs to every device like the others."""
+        arrived at). The alert syncs to every device like the others.
+
+        Sightings are opt-in like the presence log: only while "They move between cameras" is on, and only people
+        on this device's alert list (the tracker's "alertWho"); nobody else's name and times are written. Rows older
+        than KEEP_SIGHTINGS are deleted, every device's, so the table never becomes a record of who was where."""
         import alerts
         import camstream
         import devicesettings
         me = facedb.device()["id"]
         camstream.start_heartbeat()                # streaming_at and last_seen, on their own thread
-        now_seen = camstream.in_view()
+        track = devicesettings.settings("track")
+        on = (track.get("ft-o-optAlertMove") or "1") == "1"
+        who = {s.strip().lower() for s in (track.get("ft-alertWho") or "").split(",") if s.strip()}
+        now_seen = [n for n in camstream.in_view() if n.lower() in who] if on else []
+        conn.execute("DELETE FROM sightings WHERE last_seen < now() - make_interval(secs => %s)", (KEEP_SIGHTINGS,))
         if now_seen:
             conn.cursor().executemany("""INSERT INTO sightings (device, name) VALUES (%s, %s)
                                          ON CONFLICT (device, name) DO UPDATE SET last_seen = now(),
@@ -545,8 +554,7 @@ class HomePart:
                                       [(me, n) for n in now_seen])
         arrived = set(now_seen) - self.seen_before
         self.seen_before = set(now_seen)
-        on = (devicesettings.settings("track").get("ft-o-optAlertMove") or "1") == "1"
-        for name in sorted(arrived) if on else []:
+        for name in sorted(arrived):
             row = conn.execute("""SELECT d.name, s.last_seen FROM sightings s JOIN devices d ON d.id = s.device
                                   WHERE s.name = %s AND s.device <> %s
                                     AND s.last_seen > now() - make_interval(secs => %s)

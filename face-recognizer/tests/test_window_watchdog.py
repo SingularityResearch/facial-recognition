@@ -65,8 +65,55 @@ def test_camera_restart_at_most_hourly_and_only_in_the_window(monkeypatch, tmp_p
 
 def test_restart_keeps_program_and_arguments(monkeypatch):
     seen = {}
+    monkeypatch.setattr(app.sys, "platform", "linux")
     monkeypatch.setattr(app.os, "execve", lambda exe, args, env: seen.update(exe=exe, args=args, env=env))
     monkeypatch.setattr(app.sys, "argv", ["app.py", "--browser"])
     app.restart_app()
     assert seen["exe"] == app.sys.executable and seen["args"][-1] == "--browser"
     assert seen["env"]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+
+
+def test_windows_restart_new_copy_waits_for_the_old(monkeypatch):
+    import subprocess
+    seen = {}
+    monkeypatch.setattr(app.sys, "platform", "win32")
+    monkeypatch.setattr(app.sys, "argv", ["app.py", "--browser"])
+    monkeypatch.setattr(subprocess, "Popen", lambda args, env, close_fds: seen.update(args=args, env=env))
+    monkeypatch.setattr(app.os, "execve", lambda *a: seen.update(execve=True))
+
+    class Exit(Exception):
+        pass
+
+    def _exit(code):
+        raise Exit
+    monkeypatch.setattr(app.os, "_exit", _exit)
+    try:
+        app.restart_app()
+    except Exit:
+        pass
+    assert "execve" not in seen and seen["args"][-1] == "--browser"
+    assert seen["env"]["FACE_RESTART_AFTER"] == str(app.os.getpid())
+
+
+def test_wait_for_previous_takes_the_variable_away(monkeypatch):
+    monkeypatch.setenv("FACE_RESTART_AFTER", "not a pid")
+    app.wait_for_previous(timeout=0)
+    assert "FACE_RESTART_AFTER" not in app.os.environ
+
+
+def test_window_restarts_in_a_row_wait_longer():
+    assert app.window_restart_due({}, 1000.0) == (True, 0)                  # the first: at once
+    assert app.window_restart_due({"at": 1000, "n": 1}, 1060) == (False, 1)  # one a minute later: not yet
+    assert app.window_restart_due({"at": 1000, "n": 1}, 1000 + app.WINDOW_BACKOFF) == (True, 1)
+    assert app.window_restart_due({"at": 1000, "n": 3}, 1000 + app.WINDOW_BACKOFF * 3)[0] is False   # 4x now
+    assert app.window_restart_due({"at": 1000, "n": 9}, 1000 + app.RESTART_EVERY - 1)[0] is False   # an hour, at most
+    assert app.window_restart_due({"at": 1000, "n": 9}, 1000 + app.RESTART_EVERY) == (True, 0)      # starts over
+    assert app.window_restart_due("junk", 5.0) == (True, 0)
+
+
+def test_old_restart_file_counts_as_the_cameras(monkeypatch, tmp_path):
+    monkeypatch.setattr(app, "HOME", tmp_path)
+    (tmp_path / "restarted.json").write_text('{"at": 5, "why": "camera"}', "utf-8")
+    assert app._restarts() == {"camera": {"at": 5, "why": "camera"}}
+    app._note_restart("window", {"at": 7, "n": 1})
+    assert app._restarts() == {"camera": {"at": 5, "why": "camera"}, "window": {"at": 7, "n": 1}}

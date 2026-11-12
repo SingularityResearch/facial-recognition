@@ -55,7 +55,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     `/restart` (Start again for a program that failed or stopped), `/alive`, `/restart-app`.
   - Window watchdog: the tab page asks `/alive` every 2 s; `watch_window` (`watch_step`) stops the page renderer
     after `HUNG_AFTER` (30) s of silence (Linux, macOS: Qt loads the page again), and starts the whole app again in
-    place (`restart_app`, `os.execve`, ports freed) if it stays silent `RESTART_AFTER` (30) s more, or on Windows.
+    (`restart_app`) if it stays silent `RESTART_AFTER` (30) s more, or on Windows. Linux, macOS: `os.execve` in place
+    (same pid, ports freed). Windows has no real exec: a new copy is started with `FACE_RESTART_AFTER=<pid>` and
+    waits for the old one to end before taking the ports (`wait_for_previous`). Restarts in a row back off
+    (`window_restart_due`: `WINDOW_BACKOFF` 2 min, doubling, at most an hour; `HOME/restarted.json` `window`).
     A gap of more than 20 s between its own checks means the computer slept: it starts counting again.
     `recover_renderer` reloads a page whose renderer died.
   - A camera that won't start even after a page reload: the tracker page tells the tab page (`fs: "camstuck"`),
@@ -189,7 +192,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     - at most `MAX_CAMERAS` (64) cameras per request. Measured with a stub: 40 cameras at 9-10 fps each, at most 3
       requests open.
   - "Moved" alerts: `HomePart._cameras` keeps `sightings` and raises "moved" when someone is on this camera within
-    `MOVE_WINDOW` (10 min) of being seen on another's.
+    `MOVE_WINDOW` (10 min) of being seen on another's. Sightings are opt-in like the presence log: only while that alert
+    is on, only people on the device's alert list (`ft-alertWho`); rows older than `KEEP_SIGHTINGS` (20 min) are deleted.
 
 ### Shared database and devices
 

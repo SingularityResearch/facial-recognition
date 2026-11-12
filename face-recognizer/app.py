@@ -32,7 +32,7 @@ import localguard
 import paths
 
 TITLE = "Face Recognizer"
-VERSION = "1.20.0"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.20.1"                                    # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -297,7 +297,10 @@ def renderer_pids():
 
 
 def restart_app():
-    """Start this app again in place (same process id on Linux and macOS): its ports are freed by the exec."""
+    """Start this app again. Linux and macOS: in place (exec, same process id; the exec frees the ports). Windows has
+    no real exec (os.execve starts a new process and ends this one, so the new copy could find the ports still
+    taken and move to others): the new copy is started with FACE_RESTART_AFTER=<this pid> and waits for this process
+    to be gone before it takes the ports (wait_for_previous)."""
     exe = sys.executable
     args = [exe] + ([] if getattr(sys, "frozen", False) else [str(Path(__file__).resolve())]) + sys.argv[1:]
     env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")       # a fresh start for a PyInstaller build
@@ -305,10 +308,64 @@ def restart_app():
         sys.stdout.flush()
     except Exception:
         pass
+    if sys.platform == "win32":
+        import subprocess
+        env["FACE_RESTART_AFTER"] = str(os.getpid())
+        subprocess.Popen(args, env=env, close_fds=True)
+        os._exit(0)
     os.execve(exe, args, env)
 
 
-RESTART_EVERY = 3600                        # restart_soon: at most once an hour (HOME/restarted.json)
+def wait_for_previous(timeout=30):
+    """A copy started by restart_app on Windows: wait (up to timeout s) until the copy that started it has ended, so
+    its ports are free."""
+    pid = os.environ.pop("FACE_RESTART_AFTER", "")
+    if sys.platform != "win32" or not pid.isdigit():
+        return
+    import ctypes
+    k = ctypes.windll.kernel32
+    h = k.OpenProcess(0x00100000, False, int(pid))        # SYNCHRONIZE; 0 when it has ended already
+    if h:
+        try:
+            k.WaitForSingleObject(h, int(timeout * 1000))
+        finally:
+            k.CloseHandle(h)
+    time.sleep(0.5)                                       # its window's helper processes end with it
+
+
+RESTART_EVERY = 3600                        # camera restarts: at most once an hour (HOME/restarted.json)
+WINDOW_BACKOFF = 120                        # s: window restarts in a row wait 2, 4, 8 ... min, at most an hour
+
+
+def _restarts():
+    """HOME/restarted.json: {"camera": {at, why}, "window": {at, n}} (older files held only the camera's)."""
+    try:
+        d = json.loads((HOME / "restarted.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(d, dict):
+        return {}
+    return {"camera": d} if "at" in d else d
+
+
+def _note_restart(kind, rec):
+    d = _restarts()
+    d[kind] = rec
+    paths.atomic_write(HOME / "restarted.json", json.dumps(d).encode())
+
+
+def window_restart_due(rec, now):
+    """(due, n) for the watchdog's restart: the first at once; while they keep coming, each waits twice as long as
+    the one before (WINDOW_BACKOFF, 2x, 4x ... at most RESTART_EVERY), so a page that always hangs can't keep the app
+    restarting every minute; an hour without one starts over. n: restarts in the current run of them."""
+    try:
+        at, n = float(rec.get("at", 0)), int(rec.get("n", 0))
+    except (AttributeError, TypeError, ValueError):
+        at, n = 0.0, 0
+    if now - at >= RESTART_EVERY:
+        n = 0
+    wait = 0 if n == 0 else min(RESTART_EVERY, WINDOW_BACKOFF * 2 ** (n - 1))
+    return now - at >= wait, n
 
 
 def restart_soon(why):
@@ -316,16 +373,15 @@ def restart_soon(why):
     RESTART_EVERY s, so a camera that's really broken can't keep the app restarting. True when it will."""
     if WINDOW is None:
         return False
-    f = HOME / "restarted.json"
     try:
-        last = float(json.loads(f.read_text("utf-8")).get("at", 0))
-    except (OSError, ValueError, AttributeError):
+        last = float(_restarts().get("camera", {}).get("at", 0))
+    except (AttributeError, TypeError, ValueError):
         last = 0.0
     if time.time() - last < RESTART_EVERY:
-        print(f"Not starting the app again ({why}): it did so less than an hour ago.")
+        print(f"Not starting the app again ({why}): it did so less than {RESTART_EVERY // 60} min ago.")
         return False
     try:
-        paths.atomic_write(f, json.dumps({"at": time.time(), "why": why}).encode())
+        _note_restart("camera", {"at": time.time(), "why": why})
     except OSError:
         return False
     print(f"Starting the app again: {why}.")
@@ -355,11 +411,21 @@ def watch_window():
                     except OSError as e:
                         print(f"Couldn't stop {p}: {e}")
             elif what == "restart":
+                due, n = window_restart_due(_restarts().get("window", {}), time.time())
+                if not due:
+                    if not st.get("held"):
+                        print(f"The window's page hasn't answered for {now - ALIVE['at']:.0f} s, but the app was "
+                              f"started again for that {n} time(s) lately: waiting longer before the next.")
+                    st["held"] = True
+                    continue
                 print(f"The window's page hasn't answered for {now - ALIVE['at']:.0f} s: starting the app again.")
                 try:
+                    _note_restart("window", {"at": time.time(), "n": n + 1})
                     restart_app()
                 except Exception:
                     traceback.print_exc()
+            elif ALIVE["at"] is not None and now - ALIVE["at"] < HUNG_AFTER:
+                st["held"] = False
     threading.Thread(target=run, daemon=True, name="window watchdog").start()
 
 
@@ -672,6 +738,7 @@ def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if "--probe-window" in args:
         probe_window()
+    wait_for_previous()                             # Windows, started again by restart_app: its ports free first
     HOME.mkdir(parents=True, exist_ok=True)
     if getattr(sys, "frozen", False) or sys.stdout is None:      # no console: keep the messages in a log
         log = Stamped(open(HOME / "app.log", "a", encoding="utf-8", buffering=1))

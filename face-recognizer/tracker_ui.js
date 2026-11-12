@@ -1328,7 +1328,7 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
         $("optAlertUnknown").checked = v.includes("Unknown");
         $("optAlertUnknown").dispatchEvent(new Event("change"));
       } },
-    c("optAlertArrive", A), c("optAlertLeave", A), c("optAlertMove", A, { label: "They move between cameras", hint: "Someone this camera sees was on another device's camera in the last 10 minutes (with a shared database). Every device shows the alert." }), c("optAlertUnusual", A), c("optAlertUnknown", A, { label: "An unknown face stays" }),
+    c("optAlertArrive", A), c("optAlertLeave", A), c("optAlertMove", A, { label: "They move between cameras", hint: "Someone on your alert list was on another device's camera in the last 10 minutes and is now on this one (with a shared database). Only the people on the list are shared with your other devices for this, and only for 20 minutes. Every device shows the alert." }), c("optAlertUnusual", A), c("optAlertUnknown", A, { label: "An unknown face stays" }),
     c("optArriveGap", A), c("optLeaveGap", A), c("optUnknownStay", A), c("optUnusualZ", A), c("optUnusualFor", A),
     c("optUnusualRepeat", A), c("optDetailsAfter", A, { label: "Alert details: measure again after" }), c("optBannerFor", A),
     c("optAlertSound", A, { hint: $("alertHint").textContent }),

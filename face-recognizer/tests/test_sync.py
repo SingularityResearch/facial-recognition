@@ -374,7 +374,9 @@ def test_watching_another_devices_camera_and_moving_between_cameras(shared, tmp_
     import camstream
     import peer
     camstream.reset()
+    import devicesettings
     a = Device(tmp_path / "a", monkeypatch, 2)
+    devicesettings.update("track", {"ft-alertWho": "Ann"})          # sightings: people on the alert list only
     a.step()
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -389,12 +391,16 @@ def test_watching_another_devices_camera_and_moving_between_cameras(shared, tmp_
             peer.register(c, True)
         frame = bytes([0xFF, 0xD8]) + b"a's camera" + bytes([0xFF, 0xD9])
         camstream.put(frame)
-        camstream.set_in_view(["Ann"])
+        camstream.set_in_view(["Ann", "Zed"])
         camstream.set_readout([{"name": "Ann", "sim": 70}])
         a.step()                                                   # a: Ann on its camera (sightings)
         with shared.connect() as c:                                # (a's own step marks it not sharing: the
             peer.register(c, True)                                 #  test runs its service apart)
+            seen = [r[0] for r in c.execute("SELECT name FROM sightings")]
+        assert seen == ["Ann"]                                     # Zed isn't on a's alert list: not written
+        camstream.set_in_view(["Ann"])
         b = Device(tmp_path / "b", monkeypatch, 2)
+        devicesettings.update("track", {"ft-alertWho": "ann, Bob"})
         b.step()
         b.switch()
         with shared.connect() as c:

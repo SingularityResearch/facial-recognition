@@ -603,7 +603,8 @@ networks. Started by `HomePart._peer`.
   instead of a frozen picture.
 - **"Moved" alerts** (`HomePart._cameras`, db/008 `sightings`): someone on this camera who was on another device's
   camera within `MOVE_WINDOW` 600 s raises "moved" (only the device that sees them now raises it); the alert reaches
-  every device.
+  every device. Since 1.20.1 sightings are written only for people on the device's alert list while the alert is on,
+  and deleted after `KEEP_SIGHTINGS` (20 min); before, every named face was noted whenever a database was set up.
 - **Keep this camera running** (v1.19.2, on by default): the camera starts with the app and again within 10 s when it
   stops or its track ends (unplugged, taken by another program); Stop camera turns the option off.
 - Measured: 9.7 frames a second at the source for a minute with no gap over half a second (v1.19.4); 40 cameras (a
@@ -770,8 +771,12 @@ The app window (WebView2 on Windows, Qt WebEngine on Linux and macOS), streaming
   `/alive` every 2 s; `app.watch_window` checks every 5 s: after `HUNG_AFTER` 30 s of silence it kills the page's
   `QtWebEngineProcess --type=renderer` children (Linux, macOS: Qt then reloads the page), and if the page is still
   silent `RESTART_AFTER` 30 s later (on Windows, where nothing is killed, after the same 60 s) the app starts itself
-  again in place (`restart_app`, `os.execve`). A gap of over 20 s between checks means the computer slept and resets
-  the count (v1.19.7).
+  again (`restart_app`). A gap of over 20 s between checks means the computer slept and resets the count (v1.19.7).
+  Since 1.20.1: restarts in a row wait 2, 4, 8 ... min (at most an hour), so a page that always hangs can't restart
+  the app every minute; and on Windows, where `os.execve` only starts a new process and ends the old one (the new
+  copy could find the ports still taken and move to others, losing the tab page's storage), the new copy is started
+  with `FACE_RESTART_AFTER=<old pid>` and waits for that process to end (`wait_for_previous`; measured: ports taken
+  again 0.5 s after).
 - **Restarting a PyInstaller build in place:** `restart_app` sets `PYINSTALLER_RESET_ENVIRONMENT=1`, so the re-executed
   bootloader starts as a fresh top-level instance instead of taking itself for the old process's child.
 - **The camera start that never returns:** once after a restart on Linux the window's camera (video capture) service
