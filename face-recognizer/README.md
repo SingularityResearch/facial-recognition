@@ -198,7 +198,7 @@ The tracker and the labeling tool are ordinary local web apps; the .exe only put
 - Each .bat (or .sh) opens its page in your browser. Leave its console or terminal window open while you use it, and close the window to stop it. Run both at once to have both pages; they're separate programs.
 - Options: `--port 9000` uses another port, and `--no-browser` doesn't open the page (for example to bookmark it, or to start it from a script).
 - The browser asks once for the camera and microphone. (In FaceRecognizer.exe's window only the Face tracking tab gets them without asking.) It remembers each page's options and per-person baselines itself, separately from the .exe window's.
-- Both servers listen only on this computer (`127.0.0.1`). Other devices on your network can't reach them, and pages from other websites can't use them.
+- Both servers listen only on this computer (`127.0.0.1`). Other devices on your network can't reach them, and pages from other websites can't use them. (Devices share data only through a shared database, if you set one up: see [Sharing between your devices](#sharing-between-your-devices-shared-database).)
 - If FaceRecognizer.exe starts while one is already running from its .bat, that tab says so: close the .bat copy and start the app again. A page started from its .bat can be shown only by itself, never inside another page (only the app window's own tab page may show the programs it started).
 - The **Settings** tab exists only in FaceRecognizer.exe's window (or `python app.py`). In the browser, the same options are on each page: the tracker's **Controls** panel, the labeling tool's toolbar and photo view, and **Settings and other ways to search** in the Web search dialog. The Describe photo server, model and API key can be set only in the Settings tab (or the default address with `FACE_LLM_URL`).
 
@@ -374,7 +374,7 @@ Also:
 - **Named automatically**: check the automatic names, if you like, least certain first.
 - **Checks**: named faces that look more like someone else, people with fewer than 5 clear faces, and the duplicate photos that were skipped.
 - **People**: click a person to see all their faces, least typical first, so mistakes are at the top. **Rename or merge** fixes a name or combines two people. **Photos…** lists every photo the person is named in, newest first. Type more names under **Together with** to find photos where they're all named. Click a photo to open it, or type a folder and **Copy photos** to copy them there, keeping their file dates. Photos already in that folder are skipped, and photos whose originals aren't on this computer are counted but can't be copied.
-  **Their data…** shows what's held about the person and does two things. **Export** writes all of it into a new folder inside the one you type: `data.json` (their faces with photo, box, label and face print; faces marked "not them"; the labeling history about them; saved Web search answers; photo tags; descriptions that name them; their presence log visits, Expression test frames and feeling reports; per-person fitted numbers), their face pictures (`faces\`) and their Collect faces pictures (`webcam\`). **Forget** (type their name, then confirm) deletes all of it and removes their name everywhere: labels and the "not this person" lists, face prints and pictures (`faces.npz`, `thumbs.npz`, `people.npz`), `history.jsonl`, the `labels.json` copies in `data\backups\`, `web_suggestions.json`, `photo_facts.json`, `expr_eval\`, `expr_calibration.json`/`va_fit.json`/`webcam_eval.json`, the contact sheets in `data\sheets\` (made again by `cluster`), and in `%APPDATA%\FaceLabels\` the presence log, Collect faces pictures, descriptions that name them and `app.log`. Their faces stay as Ignored faces without print or picture, so their photos aren't read again. Undo is cleared and it can't be undone. What the tracker page learned about them (usual look, normal signals) is in that page's browser storage: in FaceRecognizer.exe's window the Face tracking tab forgets it at the same time; with the tracker open in a browser, use **Forget what's learned** there.
+  **Their data…** shows what's held about the person and does two things. **Export** writes all of it into a new folder inside the one you type: `data.json` (their faces with photo, box, label and face print; faces marked "not them"; the labeling history about them; saved Web search answers; photo tags; descriptions that name them; their presence log visits, Expression test frames and feeling reports; per-person fitted numbers), their face pictures (`faces\`) and their Collect faces pictures (`webcam\`). **Forget** (type their name, then confirm) deletes all of it and removes their name everywhere: labels and the "not this person" lists, face prints and pictures (`faces.npz`, `thumbs.npz`, `people.npz`), `history.jsonl`, the `labels.json` copies in `data\backups\`, `web_suggestions.json`, `photo_facts.json`, `expr_eval\`, `expr_calibration.json`/`va_fit.json`/`webcam_eval.json`, the contact sheets in `data\sheets\` (made again by `cluster`), and in `%APPDATA%\FaceLabels\` the presence log, Collect faces pictures, descriptions that name them and `app.log`. Their faces stay as Ignored faces without print or picture, so their photos aren't read again. Undo is cleared and it can't be undone. What the tracker page learned about them (usual look, normal signals) is kept by the tracker in `%APPDATA%\FaceLabels\person_signals.json` and forgotten with the rest; the page's own copy in its browser storage is forgotten at the same time in FaceRecognizer.exe's window, else the next time the page loads. With a shared database, the forget goes to every other device too and is carried out there (and what only the server holds about them, such as the app log, is deleted).
 - Double-click a face (or press Space) to see the whole photo with everyone in it boxed and named; ← → step through faces. Click a box to switch to that face.
 - **Same picture, one tile**: a face that's the same picture as faces in other photos (an avatar in many screenshots, burst shots, re-saved copies; face prints at least 0.95 alike) shows as one tile with a **×N** badge, in every list. Selecting, naming, ignoring, accepting or rejecting it does the same to all N. Different photos of one real person are rarely that alike (0.06% of pairs), so different photos still get their own tiles. In this library 1,722 faces fall into 783 such stacks.
 - **Possible faces**: every photo is looked at twice. Faces the detector is at least 85% sure of are kept as before; faces it's 45% to 85% sure of, or finds only at other sizes, are kept too, as **possible faces**: blurry, turned, small or partly hidden faces, and some things that only look like faces. They have their own list under **To review**, so **New faces** isn't buried in them. Most of them aren't faces (in a hand-sorted sample of 160, only 24 were real faces), so the list is sorted by how much each looks like a real face: a small model learns that from your library each time faces are added (faces the normal detector found count as real, possible faces as mostly not; possible faces you name teach it too; ignored ones can't any more, since an ignored face's print is deleted). Only the most face-like quarter, under **Look like faces**, get **dashed yellow boxes** in the photo view, labelled with how sure the detector is ("Face? 73%"); the rest are under **Less likely to be faces**, without boxes. On the hand-sorted sample this kept boxes on 17 of the 24 real faces and took them off about 9 in 10 non-face objects (food, tyres, hands, screens). Drawings, paintings and game characters mostly keep their boxes: to the recognition model a drawn face is a face. Name them now or later; once one looks like someone you've named it moves to **Suggestions**, and **Ignore** anything that isn't a face. Possible faces named automatically don't teach the recognizer until you confirm them (like webcam snapshots). Photos added before possible faces were kept: **Look in N photos added before** in the Possible faces list (about 6 photos a second, so roughly 25 minutes for 8,000; progress at the top; videos and online-only cloud photos are skipped). In a sample of 1,378 photos this found 732 possible faces. In an earlier sample of 400, about half of those scored 0.55-0.85 were real faces and half food, tyres, drawings and pets. The photo view also looks at the photo you're viewing on the spot (dashed boxes not saved yet; click one to add it, **Add all possible faces** adds every one; **Show possible faces** turns them off). A face hidden too much (behind someone else, or a hand over most of it) may still not be found: the detector scores those like junk.
@@ -496,6 +496,41 @@ Face prints from different models can't be mixed. After changing models, run `py
 - **Measuring on your webcam:** `python tools/webcam_eval.py` scores the live tracker on your confirmed webcam snapshots: correct, Unknown, wrong person, and stranger named (that person left out of the known people). It also compares ways of combining frames. Results go to `data/webcam_eval.json` (numbers only). It needs webcam faces collected with **Collect faces for labeling** and confirmed in the labeling tool. The more people they cover, the more the stranger figure means (on 2026-11-08 they were all of one person).
 - **New-face groups mixing two people, or one person split across groups:** select faces within a group to name just those; the grouping distance is `cluster` in `REC_MODELS` in `face_id.py` (0.70 with ArcFace).
 
+## Sharing between your devices (shared database)
+
+Several computers with Face Recognizer (say a desktop, a laptop and a NAS) can share one set of names, labels and
+private data through a PostgreSQL database with the pgvector extension, on a computer they can all reach on your
+network. Each keeps working from its own copy, so the tracker is as fast as before and nothing stops while the server
+is away (a laptop out of the house): changes made meanwhile wait and are sent when it's back.
+
+- **What's shared:** every face found (its print, picture and place), every label, the photos by content (a photo
+  imported on two devices is the same photo), photo tags and dates, Web search answers, descriptions, Collect faces
+  pictures, alerts, presence visits, each person's usual look and signal normals, and (encrypted, see below) the
+  keys. A name given on one device reaches the others within a few seconds; their trackers know the person at once.
+- **What stays each device's own:** where each photo is on it, its page options and other settings (kept in the
+  database under that device; **Copy settings from** takes another device's), its hardware.
+- **Rules when two devices disagree:** a name given by hand beats an automatic one; otherwise the last change wins.
+  A face Ignored on one device is Ignored everywhere. Forgetting a person (**Their data…** → **Forget**) is carried
+  out on every device.
+- **Photos from another device** come without their file: their faces show with their pictures, and the photo view
+  says the original isn't on this computer until you import the same photo here.
+
+**Setting up the server** (once; this is for the computer that keeps the database):
+1. Install PostgreSQL (16 or later) and the pgvector extension; in the database, as its administrator:
+   `CREATE EXTENSION vector; CREATE ROLE facerec LOGIN PASSWORD '<a long random one>';
+   CREATE SCHEMA facerec AUTHORIZATION facerec; GRANT CONNECT ON DATABASE <db> TO facerec;`
+2. Make its certificates: `python tools/db_certs.py <a folder outside the project> <server name> <its addresses>`.
+   Put `server.crt` and `server.key` in PostgreSQL's data folder, set `ssl = on`, and in `pg_hba.conf` let your
+   network in with `hostssl ... scram-sha-256` only. Keep `ca.key` somewhere safe.
+3. Give the devices the certificate authority (public): connect once as `facerec` (Settings → Shared database →
+   Connect makes the tables), then `INSERT INTO facerec.server_ca VALUES (1, '<the text of ca.crt>');`.
+
+**On each device:** Settings → **Shared database** → server, port, database, `facerec` and its password →
+**Connect**. The first time, the device's data is merged in and everyone else's comes in (a minute or two). Then
+enter the same **Passphrase for keys** on each device to share the Web search and describe keys.
+
+Times are kept in UTC everywhere (files and database) and shown in your local time.
+
 ## Files
 
 - `data/faces.npz`: every face found, with its permanent ID, face print and quality (an ignored face keeps only its ID, photo and box: no print)
@@ -511,7 +546,9 @@ Face prints from different models can't be mixed. After changing models, run `py
   - the Web search keys (`google_vision_key.txt`, `aws_rekognition.json`) and this month's search counts (`vision_usage.json`, `rekognition_usage.json`). Never put the keys in the repository.
   - `describe.json`: the Describe photo settings (which describer, server address, model, optional API key); `descriptions.json`: the saved photo descriptions
   - `webcam\`: face pictures from **Collect faces for labeling** (each face alone, never the whole frame); `presence\`: the presence log, if you turned it on
-  - `webview\`: the app window's browser storage (each page's options, per-person baselines and usual looks); `app.log`: the app's messages and errors
+  - `webview\`: the app window's browser storage (each page's quick copy of its options and per-person baselines and usual looks); `app.log`: the app's messages and errors
+  - `settings.json`: each page's options; `person_signals.json`: each person's usual look and signal normals (the tracker's)
+  - with a shared database: `database.json` (its settings, the password protected), `database-ca.pem` (the server's certificate authority), `device.json` (this device's id and name), `sync.sqlite` (what was last synced), `secret.key` (the key from your passphrase, protected), `forgotten.json` (people forgotten, to tell the other devices)
 - The keys and `describe.json` are plain files readable by your Windows account; anyone who can sign in as you can read them.
 - `websearch.py`: the Web search (Amazon + Google, combined); `tools\websearch_check.py`: the same search on picture files
 - If an import or **Describe all** couldn't read some files, **Why?** beside the progress bar lists the last 20 and the reason for each (nothing is saved).
@@ -519,13 +556,13 @@ Face prints from different models can't be mixed. After changing models, run `py
 - `data/expr_calibration.json`, `data/va_fit.json`: fitted by `tools\expr_eval.py` from those (a few numbers each; delete them to go back to the defaults)
 - Live expression readings, voice and pulse aren't written to `data`. The expression model, MediaPipe and the voice model are optional (the tracker says so at startup if one is missing). The usual looks live in the browser's storage for the tracker page.
 
-All of `data/` stays on this computer: it's in `.gitignore` and not in the releases, and a new copy of the project starts with an empty one.
+All of `data/` stays on this computer (and, if you set one up, your shared database): it's in `.gitignore` and not in the releases, and a new copy of the project starts with an empty one.
 
 **Where each setting is kept:** the Settings tab only shows them; each lives with the program it belongs to.
 
 | Setting | Kept in |
 |---|---|
-| Face tracking options, alert names, Labeling view options (picture size, order, blurry, possible faces, describe every photo) | the page's browser storage: `%APPDATA%\FaceLabels\webview\` for the .exe window, the browser's own for the .bat pages |
+| Face tracking options, alert names, Labeling view options (picture size, order, blurry, possible faces, describe every photo) | `%APPDATA%\FaceLabels\settings.json` (and a copy in the page's browser storage); with a shared database, also this device's rows there |
 | Photo folders added | `data/settings.json` |
 | Web search keys | `%APPDATA%\FaceLabels\google_vision_key.txt`, `aws_rekognition.json` |
 | Describe photo: describer, server, model, API key | `%APPDATA%\FaceLabels\describe.json` |

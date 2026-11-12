@@ -417,6 +417,28 @@ the static model in `models\npu\`; `tools/hw_bench.py` compiles it and re-measur
 
 ---
 
+## 4b. Shared database (v1.16, 2026-11-11/12)
+
+The owner's decision (2026-11-11): every device with Face Recognizer keeps its data and settings in PostgreSQL 18.6
++ pgvector 0.8.7 on sentient-nas (database `sentient`, schema `facerec`, role `facerec`), shared private data for
+all devices, settings per device. Choices: work from a local copy and sync later; files stay the default for a new
+copy (public repo); keys encrypted with a passphrase held on each device; per-person baselines shared.
+- Design: local-first. The existing stores and files are the working copy and the offline cache; dbsync.py
+  pushes rows whose digest changed since the last sync and pulls other devices' changes from a trigger-written change
+  log (deletes as tombstones). Recognition stays numpy in memory; pgvector (HNSW cosine on `print::vector(512)`)
+  serves searches across devices (3 ms for a face's nearest neighbours over 8k faces).
+- Face IDs and photo keys come from the photo's content, so the devices' data merge by key. The NAS found 4,015 of
+  the same faces itself: half its prints identical to the PC's, 95% at cosine >= 0.985, 10 under 0.9 (blurry faces;
+  its own detector placed them slightly differently); the copy first in the database (the PC's) is kept.
+- First import (2026-11-11): 8,242 faces, 9,533 photos, 2,337 labels (119 people), 954 webcam snapshots, 8,337
+  descriptions, 216 MB. Sync measured on a test copy: app -> database 0.5 s, database -> app 3 s.
+- Server: SSL on (TLS 1.3 negotiated), pg_hba `hostssl` for 10.0.0.0/24 with scram-sha-256; CA and server
+  certificate from tools/db_certs.py (CA key in E:\PostgreSQL\ca, admin only); devices read the CA from
+  `server_ca` over the SCRAM-checked login, then verify-ca.
+- Gotcha: psycopg 3 without autocommit makes `conn.transaction()` a savepoint inside a transaction nobody commits
+  (the first import ran and rolled back silently); facedb.connect is autocommit.
+- Times in UTC everywhere since this change (the owner's rule); 9,345 local-time texts already imported converted.
+
 ## 5. Live tracker (tracker.py + tracker_ui.html)
 
 - Browser page served at `http://127.0.0.1:8766`; the page grabs webcam frames in the browser and POSTs

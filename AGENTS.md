@@ -6,8 +6,10 @@ directly). Keep it current when the layout, conventions or checks change.
 Local face recognition for a USB webcam: learn specific people from a photo library, name/ignore faces
 in a labeling tool, and show names + match confidence (+ optional expression) on faces live in the
 browser. Everything runs on this machine; no data leaves it, except a face or photo the owner sends
-on purpose with the labeling tool's **Web search** (face to Amazon, photo to Google; never automatic), and
-photos sent to be described when the owner points **Describe photo** at a server on another device (Settings).
+on purpose with the labeling tool's **Web search** (face to Amazon, photo to Google; never automatic), photos sent
+to be described when the owner points **Describe photo** at a server on another device (Settings), and, once the
+owner sets one up, everything private going to their own **shared database** (PostgreSQL + pgvector over TLS, so
+several devices share names, labels and private data; optional, off for a new copy).
 
 Goals, key decisions and research value: [`README.md`](README.md).
 Full background, history, measured tuning values and gotchas: **see [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).**
@@ -42,13 +44,31 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     job that hides the model until cancelled in LM Studio. The Labeling header's second bar (`#dlprogress`,
     `/api/downloads`) shows model and CUDA downloads.
   - `facedb.py` + `db/NNN_*.sql` — the optional shared database (PostgreSQL + pgvector on a server the devices
-    share; in progress, 2026-11-11): connection settings in `HOME/database.json` (password DPAPI-protected on
+    share; since v1.16): connection settings in `HOME/database.json` (password DPAPI-protected on
     Windows, mode 600 elsewhere; TLS `verify-ca` against the server's own CA from `tools/db_certs.py`), this device's
     id in `HOME/device.json`, migrations under an advisory lock, `changes` log by trigger (deletes as tombstones).
     Connections are autocommit: group writes in `with conn.transaction():`. Without `database.json` (or `FACE_DB`)
     nothing changes: files only. `tools/db_import.py` copies a device's `data/` and HOME in (reads only; merges by
-    face ID and photo hash; a hand label beats an automatic one; Ignored stays Ignored). Tests: `test_facedb.py`,
-    with `FACE_TEST_PG` (CI job `database`, pgvector service).
+    face ID and photo hash; a hand label beats an automatic one; Ignored stays Ignored); `dbimport.py` holds the
+    work (Join uses it). `facedb.setup` (Settings → Shared database → Connect) logs in with sslmode=require, takes
+    the server's CA from `server_ca` (SCRAM proves the server knows the password) and keeps it for verify-ca.
+    Tests: `test_facedb.py`, `test_sync.py`, with `FACE_TEST_PG` (CI job `database`, pgvector service; each test
+    makes and drops its own schema).
+  - `dbsync.py` — the sync, in the labeling tool's process (`label_tool.start_sync`): files stay the working copy;
+    each row's digest as last synced is in `HOME/sync.sqlite`; changed rows are pushed (after each save:
+    `face_id.SAVED_HOOKS` → `Sync.note`; and every minute), other devices' changes pulled from `changes` every 3 s
+    and applied through the stores (so `people.npz` is rebuilt and the tracker reloads by mtime). Parts: `Local`
+    (photos, faces, labels, Web search answers; the undo log only sent) and `dbsync_home.HomePart` (descriptions,
+    Collect faces pictures, alerts, presence, shared documents, keys, forgotten people, device settings, person
+    signals; the app log and posed tests only sent; `count_use` holds the Web search caps across devices). Join (first
+    sync with a database, by its `instance` id): dbimport, then everything pulled. A new place that keeps data must
+    get a table (new `db/NNN_*.sql`) and a part.
+  - `secretbox.py` — keys in the database encrypted on the device (scrypt + AES-256-GCM, name as associated data);
+    `secret_check` tells a right passphrase from a wrong one; the derived key in `HOME/secret.key` (protected).
+  - `devicesettings.py` + `page_store.js` — each page's settings (`HOME/settings.json`) and each person's usual look
+    and signal normals (`HOME/person_signals.json`), kept by the page's own server (`/api/settings`,
+    `/api/signals`); `page_store.js` restores them into localStorage first thing (one synchronous request) and sends
+    each change; localStorage is the page's quick copy.
   - `hardware.py` — what the computer has (`describe`: processor, memory, GPUs, NPU, ONNX Runtime providers; from
     the registry, /proc and /sys, sysctl) and how the programs use it (`uses`: `face_id.LAST_DEVICES`,
     `GPU_DECISIONS`, `import_workers`), `ai_apps` (AI model apps for Describe photo: the usual local ports, the
@@ -245,7 +265,10 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   port) and wrap handlers in `localguard.answer_errors` (an uncaught error still gets a JSON 500).
 - Anything put into `innerHTML` goes through `esc()` (names, paths, descriptions, web results, tags, errors).
   The Settings tab builds its rows with `textContent`/DOM properties only.
-- Keys (Web search, describe API key) are never sent to the page: endpoints return only whether one is saved.
+- Keys (Web search, describe API key) are never sent to the page: endpoints return only whether one is saved. In the
+  shared database they exist only encrypted (`secretbox.py`); the passphrase is never stored, only its derived key.
+- The shared database is reached only over TLS checked against its own CA (`verify-ca`); LAN connections without
+  TLS are refused by its pg_hba. The app's role (`facerec`) is not a superuser and owns only its schema.
 - Only the two fixed folders may be opened (`/open?what=data|private`); photos are addressed by face index, never by path.
 - Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`, `cudasupport.py`); the CUDA
   download starts only from its Settings button, and only `onnxruntime/` and `nvidia/` are unpacked from the wheels.
@@ -298,8 +321,12 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - Camera opening on Windows: try `CAP_DSHOW` → `CAP_MSMF` → `CAP_ANY`, retry `cap.read()` while the webcam warms up.
 - Face-shape cues are evidence only until fusion is measured with `tools/expr_eval.py` on posed sessions.
 - Expression is display-only and never stored (except opt-in posed test sessions and feeling reports in `data/expr_eval/`,
-  numbers only); microphone audio is analysed live and never stored; per-person baselines and usual looks live in the
-  browser's storage only (never `data/`); keep README wording honest ("looks", not "feels").
+  numbers only); microphone audio is analysed live and never stored; per-person baselines and usual looks are kept by
+  the tracker in `HOME/person_signals.json` (never `data/`) with a copy in the page's storage, and in the shared
+  database when one is set up; keep README wording honest ("looks", not "feels").
+- Times are stored in UTC everywhere (files, file names, the database: `paths.utc_now`, `paths.utc_stamp`,
+  timestamptz with the session in UTC) and shown in local time only on the pages; `paths.parse_time` also reads
+  the older local-time text.
 - Describe photo is local by default. Pointing it at another device (Settings) sends each described photo there; the
   Settings tab must say so (`describe.where`). Descriptions and `describe.json` live in `%APPDATA%\FaceLabels`.
 - Releases: `FaceRecognizer-win64.zip` (`FaceRecognizer.exe` and a new-user `README.txt`),

@@ -3,7 +3,7 @@
 Every setting in Face Recognizer: what it is for, its default, and where it is kept. They are all in the app
 window's **Settings** tab (Ctrl+3), in the sections below, in the order the tab shows them: App; Face tracking
 (camera, display, expression, voice/pulse/posture, recognition, alerts, presence log); Labeling (the face lists, Web
-search, Describe photo); LM Studio; This computer. Changes apply at once and are remembered; sections with
+search, Describe photo); LM Studio; This computer; Shared database. Changes apply at once and are remembered; sections with
 switches and choices have **Reset to defaults**. The same options also stay where they are used: the Face tracking
 tab's **Controls** panel and the Labeling tab's toolbar. Run in a web browser instead of the app window
 (`--browser`, or `recognize.bat` / `label.bat`), there is no Settings tab: use those controls on each page.
@@ -12,7 +12,7 @@ How settings are kept:
 
 | Kind | Where | Examples |
 |---|---|---|
-| Page options | the window's own storage (per page, per computer) | everything under Face tracking, Labeling's display options |
+| Page options | the page's own storage, and its program in `%APPDATA%\FaceLabels\settings.json` (per computer); with a shared database also this device's rows there | everything under Face tracking, Labeling's display options |
 | Program settings | `%APPDATA%\FaceLabels\` (macOS `~/Library/Application Support/FaceLabels`, Linux `~/.local/share/FaceLabels`) | Describe photo (`describe.json`), Web search keys, the shared models folder (`lmstudio.json`), alerts |
 | Start-up choices | environment variables (end of this page) | `FACE_DEVICE`, `FACE_PORTS` |
 
@@ -184,6 +184,28 @@ What the app found on this computer and what it does with it. See the user guide
 
 ---
 
+## Shared database
+
+Optional: keeps every device's faces, names, labels and private data in one PostgreSQL database (with pgvector) that
+all your devices with Face Recognizer share, and each device's own settings there too. Without it, everything stays
+in each device's own files, as before. See the user guide's
+[Sharing between your devices](../face-recognizer/README.md#sharing-between-your-devices-shared-database).
+
+| Setting | Default | What it is for |
+|---|---|---|
+| **Shared database** (status) | Not set up | The server and database, whether it's reachable, when it last checked, how many changes made here wait to be sent (while the server can't be reached), and this device's name. |
+| **Connect** (server, port, database, user, password) | empty, 5432, `sentient` | Logs in over an encrypted connection, takes the server's own certificate authority from its `server_ca` table and from then on checks the server with it on every connection. The first time, this device's data is merged in and every other device's is taken (Joining). Leave the server empty and Connect to stop using it: this device keeps its copy. Kept in `%APPDATA%\FaceLabels\database.json`; the password is protected by Windows for your user (DPAPI; on macOS and Linux the file is readable by you only). |
+| **Copy settings from** | — | Takes another device's options for the Face tracking and Labeling pages, its describer choices and LM Studio shared folder (not its describe server address), in place of this device's. |
+| **Passphrase for keys** | not entered | The Web search keys and the describe server's API key are kept in the database encrypted with it (AES-256-GCM, key from the passphrase by scrypt), on the device before they're sent. The first device sets it; the others must enter the same. Each device keeps only the derived key (`secret.key`, protected like the password). Without it on a device, that device's keys stay on it alone. |
+
+What is shared, and what stays each device's own:
+
+| Shared by every device | Each device's own (in the database under its id) | Only ever sent, never taken by other devices |
+|---|---|---|
+| faces (prints, pictures, boxes), labels, photos (by content), photo tags and dates, Web search answers, descriptions, Collect faces pictures, alerts, presence visits, each person's usual look and signal normals, fitted expression numbers, keys (encrypted), forgotten people, Web search use per month | page options, describer choices, LM Studio shared folder, where each photo is on it (`photo_paths`), measured hardware and model numbers | the app log (kept 90 days), the undo history log, posed expression tests |
+
+---
+
 ## Environment variables
 
 Set before starting the app (or a program) to change how it starts.
@@ -201,6 +223,8 @@ Set before starting the app (or a program) to change how it starts.
 | `FACE_UI` | `browser`, `none` | browser: open the app in the web browser instead of its window (same as `--browser`). none: start the servers only, with no window and no browser (for test copies; open `http://127.0.0.1:8764/` yourself). |
 | `FACE_ROOT` | a folder | Another folder with `models` and `data`. |
 | `FACE_HOME` | a folder | Another folder instead of the private `FaceLabels` folder. |
+| `FACE_DB` | a PostgreSQL connection string | Use this shared database instead of the one set in Settings (tests and test copies). |
+| `FACE_DB_SCHEMA` | a schema name | The schema in it (default `facerec`). |
 
 ---
 
@@ -219,3 +243,4 @@ Nothing is sent anywhere by itself except as listed here.
 | **LM Studio → LM Studio on the network** | While Settings is open: a connection attempt to LM Studio's port on each address of this computer's local networks, each server's model list, each computer's name (mDNS or NetBIOS), and an mDNS question for announced servers. Local network only. |
 | **LM Studio on this computer** | While the app runs: announces this computer's LM Studio on the local network (mDNS). |
 | **Shared models folder** | Copies vision models to and from that folder (your own NAS or share). |
+| **Shared database** | Once connected: every face, name, label, photo record, description, Collect faces picture, alert, presence visit, per-person signal and this device's settings go to that PostgreSQL server, and come from it, over TLS checked against the server's own certificate authority. Keys go only encrypted, and only once the passphrase is entered. |

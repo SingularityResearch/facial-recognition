@@ -6,7 +6,7 @@ are recognized the same way: the same face prints and matching, with faces named
 signal is actually worth on your own face before letting it influence anything.
 
 Everything runs on one computer: Windows, macOS (14+, Apple Silicon) or Linux (Ubuntu 22.04+). It identifies that computer's processor, graphics processors and NPU at start and runs each job the fastest way that gives the same answers (Settings, **This computer**). No photos, video, audio or face data leave the machine unless you send them
-on purpose: the labeling tool's **Web search** (one face or photo, when you click it) and **Describe photo** if
+on purpose: to a shared database of your own, if you set one up so your devices share names and labels (PostgreSQL with pgvector, over TLS; optional, off by default); the labeling tool's **Web search** (one face or photo, when you click it) and **Describe photo** if
 you point it at a model server on another device.
 
 ## Goals
