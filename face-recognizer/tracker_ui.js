@@ -442,7 +442,48 @@ async function startCamera() {
   }
 }
 
+// A camera that sends a flat picture: a laptop camera with the lid shut, a closed privacy shutter, a covered lens.
+// Every 2 s the live picture is shrunk to 32x18 and its brightest and darkest points compared; three flat ones in a
+// row (6 s) and the Source card says so, with a button for the next camera. Any real scene, even a dim room, differs
+// by far more than FLAT_SPREAD (a closed lid measured a single value, 8 of 255, everywhere).
+const FLAT_SPREAD = 12, FLAT_CHECKS = 3, FLAT_EVERY = 2000;
+let flatRun = 0, flatShown = false;
+const flatGrab = Object.assign(document.createElement("canvas"), { width: 32, height: 18 });
+function pictureSpread() {
+  const g = flatGrab.getContext("2d", { willReadFrequently: true });
+  g.drawImage(video, 0, 0, 32, 18);
+  const d = g.getImageData(0, 0, 32, 18).data;
+  let lo = 255, hi = 0;
+  for (let i = 0; i < d.length; i += 4) { const y = (d[i] + d[i + 1] + d[i + 2]) / 3; if (y < lo) lo = y; if (y > hi) hi = y; }
+  return hi - lo;
+}
+function showFlat(on) {
+  flatShown = on; $("camFlat").hidden = !on;
+  if (!on) return;
+  const sel = $("camSelect"), cams = [...sel.options].filter(o => o.value);
+  const now = stream?.getVideoTracks()[0]?.getSettings().deviceId;
+  const next = cams[(cams.findIndex(o => o.value === now) + 1) % Math.max(1, cams.length)];
+  $("camFlatText").textContent = "This camera is sending a blank picture: its lens may be covered, its privacy shutter " +
+    "closed or the laptop lid shut." + (next && next.value !== now ? "" : " No other camera was found.");
+  const btn = $("camFlatTry");
+  btn.hidden = !next || next.value === now;
+  if (!btn.hidden) { btn.textContent = `Use ${next.textContent}`; btn.dataset.id = next.value; }
+}
+setInterval(() => {
+  if (!stream || video.readyState < 2 || !video.videoWidth) { flatRun = 0; if (flatShown) showFlat(false); return; }
+  let spread;
+  try { spread = pictureSpread(); } catch { return; }
+  flatRun = spread < FLAT_SPREAD ? flatRun + 1 : 0;
+  if (flatRun >= FLAT_CHECKS && !flatShown) showFlat(true);
+  else if (flatRun === 0 && flatShown) showFlat(false);
+}, FLAT_EVERY);
+$("camFlatTry").onclick = () => {
+  const sel = $("camSelect"); sel.value = $("camFlatTry").dataset.id || "";
+  showFlat(false); flatRun = 0; sel.dispatchEvent(new Event("change"));
+};
+
 function stopCamera() {
+  flatRun = 0; showFlat(false);
   stream?.getTracks().forEach(t => t.stop());
   stream = null; video.srcObject = null; running = false;
   $("camBtn").textContent = "Start camera";

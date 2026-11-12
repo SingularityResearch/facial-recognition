@@ -18,6 +18,7 @@ falls back to the browser by itself: on Linux it first tries the window in a chi
 import json
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -31,7 +32,7 @@ import localguard
 import paths
 
 TITLE = "Face Recognizer"
-VERSION = "1.14"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.15"                                    # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -391,6 +392,54 @@ def window_works():
     return r.returncode == 0
 
 
+# The window's compiled graphics and script caches. A newer built-in browser can freeze on ones an older version wrote
+# and show only a white window (seen on Linux after updating from a 2026-11-09 build to 1.14: the page never drew until
+# these were set aside). Each version starts with fresh ones; they're only caches, rebuilt on their own. What the pages
+# remember (Local Storage, Session Storage, cookies) is never touched.
+GRAPHICS_CACHES = {"GPUCache", "GPUPersistentCache", "GrShaderCache", "ShaderCache", "DawnGraphiteCache",
+                   "DawnWebGPUCache", "Code Cache"}
+CACHE_VERSION_FILE = "app-version.txt"
+
+
+def clear_graphics_caches(folder, version=None):
+    """When the app's version differs from the one that last used `folder` (the window's storage), remove the
+    GRAPHICS_CACHES folders in it (up to 3 levels down: WebView2 keeps them under EBWebView\\ and EBWebView\\Default\\),
+    then note this version. Returns the folders removed. Never raises: a cache left in place is only a cache."""
+    version = version or VERSION
+    folder = Path(folder)
+    mark = folder / CACHE_VERSION_FILE
+    try:
+        if mark.read_text("utf-8").strip() == version:
+            return []
+    except OSError:
+        pass
+    removed = []
+    if folder.is_dir():
+        level = [folder]
+        for _ in range(3):
+            below = []
+            for d in level:
+                try:
+                    subs = [s for s in d.iterdir() if s.is_dir() and not s.is_symlink()]
+                except OSError:
+                    continue
+                for s in subs:
+                    if s.name in GRAPHICS_CACHES:
+                        shutil.rmtree(s, ignore_errors=True)
+                        removed.append(s)
+                    else:
+                        below.append(s)
+            level = below
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        mark.write_text(version, "utf-8")
+    except OSError:
+        pass
+    if removed:
+        print(f"New version {version}: cleared the window's graphics caches ({len(removed)} folders).")
+    return removed
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if "--probe-window" in args:
@@ -421,6 +470,7 @@ def main(argv=None):
         WINDOW = window
         window.events.loaded += lambda: allow_camera(window)
         # private_mode=False keeps each page's remembered options and per-person baselines between runs
+        clear_graphics_caches(HOME / "webview")
         webview.start(private_mode=False, storage_path=str(HOME / "webview"))
     except Exception:                               # no window toolkit here (e.g. Linux without GTK or Qt)
         traceback.print_exc()
