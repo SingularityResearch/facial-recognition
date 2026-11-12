@@ -58,7 +58,11 @@ iframe.on { visibility: visible; }
 .sets input[type=text], .sets input[type=password], .sets select { font: inherit; color: #dfe8e4; background: #0d1512;
   border: 1px solid #2c3f38; border-radius: 7px; padding: 5px 8px; min-width: 0; flex: 1; }
 .sets input[type=range] { flex: 1; accent-color: #4fc3a1; }
-.sets .secret { display: flex; flex: 1; min-width: 0; align-items: center; gap: 4px; }
+.sets .secret { display: flex; flex: 1; min-width: 14ch; align-items: center; gap: 4px; }
+.sets .ctl.fields { align-items: flex-end; }
+.sets .fld { display: flex; flex-direction: column; gap: 3px; min-width: 8ch; }
+.sets .fld > span { color: #7f938c; font-size: 12px; }
+.sets .fld input { width: 100%; box-sizing: border-box; }
 .sets .eye { flex: 0 0 auto; width: 30px; height: 30px; padding: 5px; color: #9fb2ab; background: transparent;
   border: 1px solid #2c3f38; border-radius: 7px; cursor: pointer; touch-action: none; user-select: none; }
 .sets .eye:hover, .sets .eye.on { color: #4fc3a1; border-color: #2f5a4b; }

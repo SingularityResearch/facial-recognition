@@ -153,9 +153,17 @@ function makeRow(k, it) {
     ctl.append(el("span", { className: "info", id: "s-" + key }));
   } else if (it.type === "button" || it.type === "form") {
     const inputs = (it.fields || []).map(f => el("input", { type: f.secret ? "password" : "text", placeholder: f.placeholder || "",
-      autocomplete: "off", ariaLabel: f.placeholder || f.name, size: f.size || 20, style: f.size ? "flex:0 0 auto" : "",
+      autocomplete: "off", ariaLabel: f.label || f.placeholder || f.name, size: f.size || 20,
       value: f.value ?? "", oninput: e => { e.target.dataset.edited = "1"; } }));
-    const parts = inputs.map((inp, j) => it.fields[j].secret ? secretBox(inp) : inp);
+    // several fields: each with its caption above it, wrapping to the next line rather than shrinking
+    const parts = inputs.map((inp, j) => {
+      const f = it.fields[j], part = f.secret ? secretBox(inp) : inp;
+      if ((it.fields || []).length < 2) return part;
+      const box = el("label", { className: "fld" }, el("span", { textContent: f.label || f.placeholder || f.name }), part);
+      box.style.flex = `${f.size ? 0 : 1} 1 ${(f.size || 18) + 4}ch`;
+      return box;
+    });
+    if ((it.fields || []).length >= 2) ctl.classList.add("fields");
     const b = el("button", { className: "b", id: "s-" + key, type: "button" }), msg = el("span", { className: "msg" });
     b.onclick = async () => {
       b.disabled = true; msg.className = "msg"; msg.textContent = "…";
