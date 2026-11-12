@@ -510,7 +510,7 @@ def make_handler(db, importer):
                     r = facedb.setup(str(body.get("host") or ""), body.get("port") or 5432,
                                      str(body.get("dbname") or "sentient"), str(body.get("user") or ""),
                                      str(body.get("password") or ""), str(body.get("schema") or "facerec"),
-                                     getattr(sys.modules.get("app"), "VERSION", ""))
+                                     app_version())
                     if getattr(db, "sync", None):
                         db.sync.note()
                     return self.send(dict(r, **db_state(db)))
@@ -605,6 +605,15 @@ def downloads():
     return out
 
 
+def app_version():
+    """The app's version (app.VERSION), also when app.py runs as __main__ (python app.py, the built app)."""
+    for name in ("app", "__main__"):
+        v = getattr(sys.modules.get(name), "VERSION", None)
+        if isinstance(v, str):
+            return v
+    return ""
+
+
 def facedb_configured():
     import facedb
     return facedb.configured()
@@ -640,7 +649,7 @@ def start_sync(db):
     except ImportError:
         db.sync = None
         return None
-    version = getattr(sys.modules.get("app"), "VERSION", "")
+    version = app_version()
 
     import dbsync_home
     import persondata
