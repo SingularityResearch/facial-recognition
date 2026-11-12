@@ -16,7 +16,7 @@ How settings are kept:
 | Program settings | `%APPDATA%\FaceLabels\` (macOS `~/Library/Application Support/FaceLabels`, Linux `~/.local/share/FaceLabels`) | Describe photo (`describe.json`), Web search keys, the shared models folder (`lmstudio.json`), alerts |
 | Start-up choices | environment variables (end of this page) | `FACE_DEVICE`, `FACE_PORTS` |
 
-Keys are never shown back: the page only learns whether one is saved.
+Keys and the shared database's password are shown in their fields masked (`*`); hold the eye button beside a field to see it. The passphrase for keys is never stored, so it can't be shown.
 
 ---
 

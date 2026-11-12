@@ -58,6 +58,11 @@ iframe.on { visibility: visible; }
 .sets input[type=text], .sets input[type=password], .sets select { font: inherit; color: #dfe8e4; background: #0d1512;
   border: 1px solid #2c3f38; border-radius: 7px; padding: 5px 8px; min-width: 0; flex: 1; }
 .sets input[type=range] { flex: 1; accent-color: #4fc3a1; }
+.sets .secret { display: flex; flex: 1; min-width: 0; align-items: center; gap: 4px; }
+.sets .eye { flex: 0 0 auto; width: 30px; height: 30px; padding: 5px; color: #9fb2ab; background: transparent;
+  border: 1px solid #2c3f38; border-radius: 7px; cursor: pointer; touch-action: none; user-select: none; }
+.sets .eye:hover, .sets .eye.on { color: #4fc3a1; border-color: #2f5a4b; }
+.sets .eye svg { width: 100%; height: 100%; display: block; pointer-events: none; }
 .sets input[type=checkbox] { width: 18px; height: 18px; accent-color: #4fc3a1; }
 .sets output { min-width: 3.2em; text-align: right; color: #9fb2ab; font-variant-numeric: tabular-nums; }
 .sets button.b { font: inherit; font-size: 13px; color: #dfe8e4; background: #18332a; border: 1px solid #2f5a4b; border-radius: 7px;

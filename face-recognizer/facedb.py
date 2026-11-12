@@ -97,6 +97,22 @@ def config():
     return {k: c.get(k) for k in ("host", "port", "dbname", "user", "schema")} | {"ca": bool(c.get("ca"))}
 
 
+def saved_login():
+    """{host, port, dbname, user, password} as saved on this device (for the Settings tab), or None."""
+    try:
+        c = json.loads(CONFIG.read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not c.get("host"):
+        return None
+    try:
+        pw = unprotect(c.get("password"))
+    except (OSError, ValueError):
+        pw = ""
+    return {"host": c["host"], "port": str(c.get("port") or 5432), "dbname": c.get("dbname") or "",
+            "user": c.get("user") or "", "password": pw}
+
+
 def configured():
     return config() is not None
 

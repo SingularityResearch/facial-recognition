@@ -265,7 +265,10 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   port) and wrap handlers in `localguard.answer_errors` (an uncaught error still gets a JSON 500).
 - Anything put into `innerHTML` goes through `esc()` (names, paths, descriptions, web results, tags, errors).
   The Settings tab builds its rows with `textContent`/DOM properties only.
-- Keys (Web search, describe API key) are never sent to the page: endpoints return only whether one is saved. In the
+- Keys (Web search, describe API key) and the shared database's password reach a page only through `/api/secrets`
+  (labeling tool; needs `X-Face-Tool: 1`, refused cross-site), for the Settings tab to show them masked, each with an
+  eye button that shows it only while held (the owner's choice, 2026-11-11). Every other endpoint returns only
+  whether one is saved. The Settings tab never stores them; nothing is written into page HTML or storage. In the
   shared database they exist only encrypted (`secretbox.py`); the passphrase is never stored, only its derived key.
 - The shared database is reached only over TLS checked against its own CA (`verify-ca`); LAN connections without
   TLS are refused by its pg_hba. The app's role (`facerec`) is not a superuser and owns only its schema.

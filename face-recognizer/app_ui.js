@@ -153,7 +153,9 @@ function makeRow(k, it) {
     ctl.append(el("span", { className: "info", id: "s-" + key }));
   } else if (it.type === "button" || it.type === "form") {
     const inputs = (it.fields || []).map(f => el("input", { type: f.secret ? "password" : "text", placeholder: f.placeholder || "",
-      autocomplete: "off", ariaLabel: f.placeholder || f.name, size: f.size || 20, style: f.size ? "flex:0 0 auto" : "" }));
+      autocomplete: "off", ariaLabel: f.placeholder || f.name, size: f.size || 20, style: f.size ? "flex:0 0 auto" : "",
+      value: f.value ?? "", oninput: e => { e.target.dataset.edited = "1"; } }));
+    const parts = inputs.map((inp, j) => it.fields[j].secret ? secretBox(inp) : inp);
     const b = el("button", { className: "b", id: "s-" + key, type: "button" }), msg = el("span", { className: "msg" });
     b.onclick = async () => {
       b.disabled = true; msg.className = "msg"; msg.textContent = "…";
@@ -161,9 +163,10 @@ function makeRow(k, it) {
       const r = await act(k, it.id, args);
       b.disabled = false;
       msg.textContent = r.ok ? r.value?.message || (it.type === "form" ? "Saved" : "Started") : r.error; msg.className = r.ok ? "msg" : "msg err";
-      if (r.ok) inputs.forEach(i => i.value = "");
+      if (r.ok) inputs.forEach(i => { delete i.dataset.edited; i.value = ""; });   // the saved values come back with the next state
     };
-    ctl.append(...inputs, b, msg);
+    ctl._inputs = inputs;
+    ctl.append(...parts, b, msg);
   }
   if (["toggle", "range", "select", "text"].includes(it.type)) ctl.append(el("span", { className: "msg err rmsg" }));
   row.append(it.type === "info" || it.type === "button" ? el("span", { className: "lab", textContent: it.label }) : lab, ctl);
@@ -199,7 +202,27 @@ function update(row, it) {
   }
   else if (it.type === "info") c.textContent = it.error ? `Couldn't read this: ${it.error}` : it.value ?? "";
   else if (it.type === "button") c.textContent = it.button;
-  else if (it.type === "form") c.textContent = it.button || "Save";
+  else if (it.type === "form") {
+    c.textContent = it.button || "Save";
+    // the saved values (keys masked): not over what's being typed
+    (c.parentElement._inputs || []).forEach((inp, j) => {
+      const v = it.fields?.[j]?.value;
+      if (v !== undefined && document.activeElement !== inp && !inp.dataset.edited) inp.value = v ?? "";
+      if (it.fields?.[j]?.placeholder !== undefined) inp.placeholder = it.fields[j].placeholder;
+    });
+  }
+}
+const EYE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+// A secret's field with an eye button: the secret shows only while the button is held (mouse, touch, or Space/Enter).
+function secretBox(inp) {
+  const eye = el("button", { type: "button", className: "eye", title: "Hold to show", ariaLabel: "Hold to show " + (inp.ariaLabel || "the secret") });
+  eye.innerHTML = EYE;                           // fixed markup, nothing from outside
+  const show = on => { inp.type = on ? "text" : "password"; eye.classList.toggle("on", on); };
+  eye.addEventListener("pointerdown", e => { e.preventDefault(); eye.setPointerCapture?.(e.pointerId); show(true); });
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture", "blur"]) eye.addEventListener(ev, () => show(false));
+  eye.addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); show(true); } });
+  eye.addEventListener("keyup", () => show(false));
+  return el("span", { className: "secret" }, inp, eye);
 }
 function drawPrograms() {
   const box = document.getElementById("sec-programs");

@@ -1087,6 +1087,15 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     get: () => (store.get(key) ?? (def ? "1" : "0")) === "1",
     set: v => { store.set(key, v ? "1" : "0"); const el = $("#" + id); if (el) el.checked = !!v; } });
   let desc = {}, hw = {}, lms = {}, lmsOffer = false, sdb = {};
+  // The saved keys and the shared database's password, shown masked in their fields (an eye button shows one while
+  // held). Loaded with the page and again after each save. Never in this page's own HTML or storage.
+  let sec = { aws: {}, db: {} };
+  const loadSecrets = async () => {
+    try { sec = await (await fetch("/api/secrets", { headers: { "X-Face-Tool": "1" } })).json(); } catch { sec = { aws: {}, db: {} }; }
+    SettingsBridge.changed();
+  };
+  const saved = act => async a => { const r = await act(a); await loadSecrets(); return r; };
+  loadSecrets();
   SettingsBridge.init("label", [
     c("tilesz", L, { label: "Face picture size" }),
     c("psort", L, { label: "Order of the people list" }),
@@ -1100,10 +1109,11 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       get: async () => { const r = await get("/api/websearch/key");
         return `Amazon: ${r.services.rekognition ? "key saved" : "no key"}. Google: ${r.services.vision ? "key saved" : "no key"}.`; } },
     { section: W, id: "wsgoogle", label: "Google Cloud Vision API key", type: "form", button: "Save key",
-      fields: [{ name: "key", placeholder: "API key", secret: true }] },
+      fields: () => [{ name: "key", placeholder: "API key", secret: true, value: sec.google || "" }] },
     { section: W, id: "wsaws", label: "Amazon Rekognition key", type: "form", button: "Save",
-      fields: [{ name: "id", placeholder: "Access key ID" }, { name: "secret", placeholder: "Secret access key", secret: true },
-               { name: "region", placeholder: "us-east-1", size: 9 }] },
+      fields: () => [{ name: "id", placeholder: "Access key ID", value: sec.aws?.id || "" },
+                     { name: "secret", placeholder: "Secret access key", secret: true, value: sec.aws?.secret || "" },
+                     { name: "region", placeholder: "us-east-1", size: 9, value: sec.aws?.region || "" }] },
     { section: P, id: "describer", label: "Describing with", type: "info",
       get: async () => {
         desc = await get("/api/describe/status");
@@ -1140,7 +1150,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       hint: "Asks the server above which models it has." },
     { section: P, id: "describeKey", label: "API key", type: "form", button: "Save key", hidden: () => desc.config?.use === "builtin",
       hint: () => `Only if the server asks for one (for example behind a proxy). ${desc.config?.key ? "A key is saved." : "None saved."} Save an empty key to remove it. Kept in %APPDATA%\\FaceLabels on this computer.`,
-      fields: [{ name: "key", placeholder: "API key", secret: true }] },
+      fields: () => [{ name: "key", placeholder: "API key", secret: true, value: sec.describe || "" }] },
     { section: P, id: "describeSpread", label: "Share Describe all with other computers", type: "toggle", def: false,
       hidden: () => desc.config?.use === "builtin",
       hint: "Describe all also sends photos to the other LM Studio servers on your network that have the same vision model, one photo at a time each: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice is left out and its photo goes back to the others. Describing a single photo uses only the server above.",
@@ -1245,9 +1255,11 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       } },
     { section: D, id: "dbsetup", label: "Connect", type: "form", button: "Connect",
       hint: "Keeps this device's faces, names, labels, Web search answers and photo descriptions in a PostgreSQL database (with pgvector) that your other devices share, and takes theirs. The data goes to that server over an encrypted connection; the password is kept on this device only (protected by Windows for your user). While the server can't be reached the app works from this device's copy and sends changes later. Leave the server empty and Connect to stop using it (this device keeps its copy).",
-      fields: [{ name: "host", placeholder: "Server (e.g. sentient-nas)" }, { name: "port", placeholder: "5432", size: 5 },
-               { name: "dbname", placeholder: "Database (sentient)", size: 10 }, { name: "user", placeholder: "User", size: 9 },
-               { name: "password", placeholder: "Password", secret: true }] },
+      fields: () => [{ name: "host", placeholder: "Server (e.g. sentient-nas)", value: sec.db?.host || "" },
+                     { name: "port", placeholder: "5432", size: 5, value: sec.db?.port || "" },
+                     { name: "dbname", placeholder: "Database (sentient)", size: 10, value: sec.db?.dbname || "" },
+                     { name: "user", placeholder: "User", size: 9, value: sec.db?.user || "" },
+                     { name: "password", placeholder: "Password", secret: true, value: sec.db?.password || "" }] },
     { section: D, id: "dbcopy", label: "Copy settings from", type: "select", def: "",
       hidden: () => !sdb.available || !sdb.config || !(sdb.devices || []).length,
       hint: "Takes another device's options for the Face tracking and Labeling pages (and its photo describer choices and LM Studio shared folder; not its describe server address) in place of this device's. The pages load them again.",
@@ -1260,22 +1272,23 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       hidden: () => !sdb.available || !sdb.config,
       hint: () => (sdb.passphrase ? "Entered on this device: the Web search and describe keys are shared with your other devices, encrypted. " : "Not entered on this device: its keys stay on it alone. ") +
         "The Web search keys and the describe server's key are kept in the shared database encrypted with this passphrase, on each device before they're sent; the server never sees them or the passphrase. The first device to enter one sets it; every other device must enter the same. Only a key derived from it is kept on each device.",
-      fields: [{ name: "passphrase", placeholder: "Passphrase (at least 10 characters)", secret: true }] },
+      fields: () => [{ name: "passphrase", secret: true, value: "",
+                       placeholder: sdb.passphrase ? "Entered here (it isn't stored: type it to enter again)" : "Passphrase (at least 10 characters)" }] },
     { section: H, id: "cudaget", label: "NVIDIA CUDA", type: "button",
       button: () => `Download CUDA support (${(hw.cuda_offer?.gb || 1.9).toFixed(1)} GB)`,
       hidden: () => !hw.cuda_offer?.offer,
       hint: "Lets this app run its models on the NVIDIA card. Downloads NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA from PyPI (the public Python package index), for this app's Python 3.12, each checked by size and SHA-256, into the app's data folder (about 3.5 GB unpacked). Used from the next start; the app checks each model gives the same answers on the card before using it." },
   ], {
     dbpass: a => post("/api/db/passphrase", { passphrase: a.passphrase || "" }),
-    dbsetup: a => post("/api/db/setup", { host: a.host || "", port: +a.port || 5432, dbname: a.dbname || "sentient",
-                                         user: a.user || "", password: a.password || "" }),
-    wsgoogle: a => post("/api/websearch/key", { key: a.key || "" }),
-    wsaws: a => post("/api/websearch/aws", { id: a.id || "", secret: a.secret || "", region: a.region || "us-east-1" }),
+    dbsetup: saved(a => post("/api/db/setup", { host: a.host || "", port: +a.port || 5432, dbname: a.dbname || "sentient",
+                                               user: a.user || "", password: a.password || "" })),
+    wsgoogle: saved(a => post("/api/websearch/key", { key: a.key || "" })),
+    wsaws: saved(a => post("/api/websearch/aws", { id: a.id || "", secret: a.secret || "", region: a.region || "us-east-1" })),
     descget: () => post("/api/describe/getmodel", {}),
     cudaget: () => post("/api/cuda/download", {}),
     lmsget: () => post("/api/lmstudio/get", {}),
     describeTest: () => post("/api/describe/test", { url: desc.config?.url || "" }),
-    describeKey: a => post("/api/describe/config", { key: a.key || "" }),
+    describeKey: saved(a => post("/api/describe/config", { key: a.key || "" })),
   });
 }
 

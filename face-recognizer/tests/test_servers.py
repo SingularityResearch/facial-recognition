@@ -417,3 +417,17 @@ def test_page_settings_and_person_signals_are_kept_by_the_server(track, tmp_path
     assert state["signals"]["ft-baselines"]["Ann"]["all"]["blink"]["n"] == 3 and state["signals"]["ft-usual"] == {}
     assert devicesettings.of("Ann") == {"baseline": {"all": {"blink": {"n": 3, "m": 1, "v": 0}}}}
     assert devicesettings.forget("Ann") == 1 and devicesettings.of("Ann") == {}
+
+
+def test_saved_keys_go_only_to_the_tools_own_page(label_url, home):
+    import websearch
+    websearch.save_key("G" * 39)
+    websearch.save_aws("AKIA" + "A" * 16, "s" * 40, "us-west-2")
+    assert request(label_url, "/api/secrets")[0] == 403                        # no header: not the tool's page
+    assert request(label_url, "/api/secrets", headers={"X-Face-Tool": "1", "Sec-Fetch-Site": "cross-site"})[0] == 403
+    code, _, body = request(label_url, "/api/secrets", headers={"X-Face-Tool": "1"})
+    r = json.loads(body)
+    assert code == 200 and r["google"] == "G" * 39 and r["aws"] == {"id": "AKIA" + "A" * 16, "secret": "s" * 40,
+                                                                    "region": "us-west-2"}
+    assert r["describe"] == "" and r["db"] == {}
+    assert "G" * 39 not in request(label_url, "/api/websearch/key")[2].decode()   # the other answers still say only "saved"

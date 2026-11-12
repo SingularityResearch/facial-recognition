@@ -394,6 +394,10 @@ def make_handler(db, importer):
                                           "hints": dict(db.hints(i), web=web_saved.get(db.store.fid[i]))})
                     if path == "/api/websearch/key":
                         return self.send({"set": bool(websearch.key()), "services": websearch.services()})
+                    if path == "/api/secrets":               # the Settings tab's saved keys, shown masked
+                        if self.refused(write=True):         # only to the tool's own page (its header), never cross-site
+                            return
+                        return self.send(secrets())
                     if path == "/api/settings":              # this page's settings (page_store.js)
                         import devicesettings
                         return self.send(devicesettings.page_state("label"))
@@ -612,6 +616,28 @@ def app_version():
         if isinstance(v, str):
             return v
     return ""
+
+
+def secrets():
+    """Every saved key and password, for the Settings tab to show masked (each can be shown while its eye button is
+    held): the Web search keys, the describe server's key and the shared database's password. Not the passphrase for
+    keys: it is never stored (only a key made from it)."""
+    import describe
+    out = {"google": "", "aws": {"id": "", "secret": "", "region": ""}, "describe": describe.config().get("key") or "",
+           "db": {}}
+    try:
+        out["google"] = websearch.KEY_FILE.read_text("utf-8").strip()
+    except OSError:
+        pass
+    a = websearch.aws() or {}
+    out["aws"] = {"id": a.get("access_key_id") or "", "secret": a.get("secret_access_key") or "",
+                  "region": a.get("region") or ""}
+    try:
+        import facedb
+        out["db"] = facedb.saved_login() or {}
+    except ImportError:
+        pass
+    return out
 
 
 def facedb_configured():
