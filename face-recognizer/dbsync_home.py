@@ -66,6 +66,7 @@ class HomePart:
 
     def __init__(self, forget=None):
         self.forget = forget
+        self.key_current = False          # this device has the current passphrase (secretbox.catch_up): keys sync
 
     def keycol(self, tbl):
         return self.KEYS[tbl]
@@ -80,7 +81,8 @@ class HomePart:
         out["presence"] = {k: _h(v) for k, v in self._presence().items()}
         out["documents"] = {k: _h(v) for k, v in self._documents().items()}
         key = secretbox.local_key()
-        out["secrets"] = None if key is None else {n: secretbox.digest(key, n, p) for n, p in self._secrets().items()}
+        out["secrets"] = None if key is None or not self.key_current else \
+            {n: secretbox.digest(key, n, p) for n, p in self._secrets().items()}
         out["forgotten"] = {n: _h(n) for n in forgotten_names()}
         out["device_settings"] = {k: _h(v) for k, v in self._settings().items()}
         out["person_signals"] = {k: _h(v) for k, v in self._signals().items()}
@@ -257,6 +259,10 @@ class HomePart:
                                    ON CONFLICT (id) DO UPDATE SET body = excluded.body""",
                                 [(k, v["device"], v["name"], json.dumps(v["body"])) for k, v in items])
             elif tbl == "secrets":
+                cur_v = secretbox.current(conn)
+                if cur_v is None or secretbox.local_version() != cur_v["id"]:
+                    self.key_current = False          # changed elsewhere meanwhile: take the new one first
+                    return False                      # (nothing sent; the sync keeps these as not sent)
                 key = secretbox.local_key()
                 enc = [(k, *secretbox.encrypt(key, k, v)) for k, v in items]
                 cur.executemany("""INSERT INTO secrets (name, nonce, ciphertext) VALUES (%s, %s, %s)
@@ -433,7 +439,7 @@ class HomePart:
             now = self._documents()
             return {k: _h(now[k]) if k in now else None for k in rows}
         if tbl == "secrets":
-            key = secretbox.local_key()
+            key = secretbox.local_key() if self.key_current else None   # an old passphrase reads nothing
             if key is None:
                 return {}
             import describe
@@ -501,6 +507,19 @@ class HomePart:
         return {n: _h(n) for n in rows if n in forgotten_names()}
 
     # ---- only sent: the app log and posed expression tests, new lines since the last time
+    def every_step(self, conn, state):
+        """Each sync step (a few small queries): the passphrase for keys. Take the current one if it was set or
+        changed elsewhere, give it to devices that lack it, and show this device's fingerprints. Taking a new one
+        reads every key again under it."""
+        import secretbox
+        self.key_current, took = secretbox.catch_up(conn)
+        login = facedb.saved_login() or {}
+        inst = conn.execute("SELECT id FROM instance").fetchone()[0]
+        secretbox.register(conn, login.get("password"), inst)
+        if took:
+            keys = self.all_keys(conn, "secrets")
+            state.set_digests("secrets", self.apply("secrets", self.fetch(conn, "secrets", keys)))
+
     def after_push(self, conn, state):
         import face_id as F
         me = facedb.device()["id"]

@@ -529,12 +529,16 @@ def make_handler(db, importer):
                     with facedb.connect() as conn:
                         n = dbsync_home.copy_settings(conn, str(body.get("from") or ""), db.sync.parts[-1])
                     return self.send({"ok": True, "copied": n})
-                if path == "/api/db/passphrase":        # the owner's passphrase for keys in the shared database
+                if path in ("/api/db/passphrase", "/api/db/passphrase/restore"):   # passphrase for keys
                     import facedb
                     import secretbox
                     try:
                         with facedb.connect() as conn:
-                            r = secretbox.set_passphrase(conn, str(body.get("passphrase") or ""))
+                            if path.endswith("/restore"):
+                                r = secretbox.restore(conn, int(body.get("version") or 0))
+                            else:
+                                r = secretbox.set_passphrase(conn, str(body.get("passphrase") or ""),
+                                                             str(body.get("again") or ""))
                     except facedb.NotConfigured:
                         raise ValueError("Connect to the shared database first.") from None
                     if getattr(db, "sync", None):
@@ -661,6 +665,7 @@ def db_state(db):
                 out["devices"] = [{"id": str(i), "name": n, "seen": s.isoformat().replace("+00:00", "Z")}
                                   for i, n, s in conn.execute("SELECT id, name, last_seen FROM devices "
                                                               "WHERE id <> %s ORDER BY name", (out["device"]["id"],))]
+                out["keys"] = secretbox.overview(conn)
         except Exception:
             pass
     return out

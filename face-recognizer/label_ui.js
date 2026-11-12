@@ -1268,17 +1268,37 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       set: async v => { if (!v) return; const r = await post("/api/db/copy", { from: v });
         if (r.error) throw new Error(r.error);
         SettingsBridge.notify({ fs: "reload" }); setTimeout(() => location.reload(), 300); } },
-    { section: D, id: "dbpass", label: "Passphrase for keys", type: "form", button: "Enter",
+    { section: D, id: "dbpass", label: "Passphrase for keys", type: "form",
+      button: () => sdb.keys?.current ? "Change" : "Set",
       hidden: () => !sdb.available || !sdb.config,
-      hint: () => (sdb.passphrase ? "Entered on this device: the Web search and describe keys are shared with your other devices, encrypted. " : "Not entered on this device: its keys stay on it alone. ") +
-        "The Web search keys and the describe server's key are kept in the shared database encrypted with this passphrase, on each device before they're sent; the server never sees them or the passphrase. The first device to enter one sets it; every other device must enter the same. Each device keeps it (protected by Windows for your user, like the database password), so it shows here masked.",
-      fields: () => [{ name: "passphrase", secret: true, value: sec.passphrase || "", placeholder: "Passphrase (at least 10 characters)" }] },
+      hint: () => (sdb.keys?.current
+        ? "Set: the Web search keys and the describe server's key are shared with your other devices, encrypted with it. To change it, type the new one in both boxes; every key is encrypted again and every device takes the new one by itself. "
+        : "Not set yet: each device's keys stay on it alone. Type one in both boxes (at least 10 characters) to share them. ") +
+        "It's set once, on any device, and reaches the others by itself, sealed so that only each device can open it. The server never sees it or the keys. Each device keeps it (protected by Windows for your user), so it shows here masked; hold the eye to see it.",
+      fields: () => [{ name: "passphrase", label: "Passphrase", secret: true, value: sec.passphrase || "", placeholder: "at least 10 characters" },
+                     { name: "again", label: "Again", secret: true, value: sec.passphrase || "", placeholder: "the same again" }] },
+    { section: D, id: "dbkeys", label: "Passphrase on each device", type: "info",
+      hidden: () => !sdb.keys?.current,
+      hint: "Each device's fingerprint of the passphrase it has: the same fingerprint means the same passphrase (a fingerprint can't be turned back into it). A device that was off when it changed takes the new one when it's back. The database password's fingerprint shows the same for each device's saved password.",
+      get: () => {
+        const k = sdb.keys || {};
+        return [`Current: ${k.current?.fingerprint || "none"}`,
+                ...(k.devices || []).map(d => `${d.name}${d.me ? " (this device)" : ""}: ${d.fingerprint || "none"} ${d.current ? "✓ current" : d.fingerprint ? "✗ not the current one yet" : ""}` +
+                                              (d.password ? `; database password ${d.password}` : ""))].join("\n");
+      } },
+    { section: D, id: "dbrestore", label: "Restore an earlier passphrase", type: "select", def: "",
+      hidden: () => (sdb.keys?.versions || []).filter(v => !v.current).length === 0,
+      hint: "Undoes a wrong change: the chosen passphrase becomes the current one again, every key is encrypted again with it, and every device takes it by itself. The list keeps every passphrase ever set (newest first), with who set it and when.",
+      options: () => [["", "Choose one"], ...(sdb.keys?.versions || []).filter(v => !v.current)
+        .map(v => [String(v.id), `${localTime(v.when)} by ${v.by || "?"}: ${v.fingerprint} (${v.note})`])],
+      get: () => "",
+      set: async v => { if (!v) return; await post("/api/db/passphrase/restore", { version: +v }); await loadSecrets(); } },
     { section: H, id: "cudaget", label: "NVIDIA CUDA", type: "button",
       button: () => `Download CUDA support (${(hw.cuda_offer?.gb || 1.9).toFixed(1)} GB)`,
       hidden: () => !hw.cuda_offer?.offer,
       hint: "Lets this app run its models on the NVIDIA card. Downloads NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA from PyPI (the public Python package index), for this app's Python 3.12, each checked by size and SHA-256, into the app's data folder (about 3.5 GB unpacked). Used from the next start; the app checks each model gives the same answers on the card before using it." },
   ], {
-    dbpass: saved(a => post("/api/db/passphrase", { passphrase: a.passphrase || "" })),
+    dbpass: saved(a => post("/api/db/passphrase", { passphrase: a.passphrase || "", again: a.again || "" })),
     dbsetup: saved(a => post("/api/db/setup", { host: a.host || "", port: +a.port || 5432, dbname: a.dbname || "sentient",
                                                user: a.user || "", password: a.password || "" })),
     wsgoogle: saved(a => post("/api/websearch/key", { key: a.key || "" })),

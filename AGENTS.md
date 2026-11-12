@@ -63,9 +63,13 @@ Expression design review (LM Studio export): [`Real-Time Facial Emotion Recognit
     signals; the app log and posed tests only sent; `count_use` holds the Web search caps across devices). Join (first
     sync with a database, by its `instance` id): dbimport, then everything pulled. A new place that keeps data must
     get a table (new `db/NNN_*.sql`) and a part.
-  - `secretbox.py` — keys in the database encrypted on the device (scrypt + AES-256-GCM, name as associated data);
-    `secret_check` tells a right passphrase from a wrong one; the derived key and the passphrase in `HOME/secret.key`
-    (protected; the passphrase kept so Settings can show it masked, the owner's choice). Neither goes to the database.
+  - `secretbox.py` — keys in the database encrypted on the device (scrypt + AES-256-GCM, name as associated data).
+    Every passphrase is a version (`passphrase_versions`, db/006: check value, fingerprint, who/when; one current);
+    each version is sealed to every device's X25519 public key (`passphrase_shares`; private half in
+    `HOME/device-key.json`, protected), so setting, changing (re-encrypts every key in one transaction) or restoring
+    on one device reaches all; `HomePart.every_step` takes the current one (`catch_up`) and registers fingerprints. A
+    device not on the current version neither sends nor reads keys (`push` returns False: not marked sent). The
+    passphrase and its key are kept in `HOME/secret.key` (protected) so Settings shows it masked.
   - `devicesettings.py` + `page_store.js` — each page's settings (`HOME/settings.json`) and each person's usual look
     and signal normals (`HOME/person_signals.json`), kept by the page's own server (`/api/settings`,
     `/api/signals`); `page_store.js` restores them into localStorage first thing (one synchronous request) and sends

@@ -518,6 +518,9 @@ class Sync:
                 self._dirty = False
                 self._last_local = time.time()
                 did["pushed"] = self._push(conn)
+            for part in self.parts:
+                if hasattr(part, "every_step"):
+                    part.every_step(conn, self.state)
             did["pulled"] = self._pull(conn)
             conn.execute("UPDATE devices SET last_seen = now() WHERE id = %s", (facedb.device()["id"],))
             return did
@@ -536,7 +539,8 @@ class Sync:
                 if not changed and not gone:
                     continue
                 rows = part.rows(tbl, changed)
-                part.push(conn, tbl, rows, gone)
+                if part.push(conn, tbl, rows, gone) is False:     # the part held them back: not sent
+                    continue
                 self.state.set_digests(tbl, {**{k: mine[k] for k in rows}, **{k: None for k in gone}})
                 sent += len(rows) + len(gone)
             part.after_push(conn, self.state)

@@ -60,7 +60,8 @@ class Device:
                                (describe, "STORE", h / "descriptions.json"), (describe, "CONFIG", h / "describe.json"),
                                (describe, "_saved", None), (websearch, "HOME", h),
                                (websearch, "KEY_FILE", h / "google_vision_key.txt"),
-                               (websearch, "AWS_FILE", h / "aws_rekognition.json"), (secretbox, "KEY_FILE", h / "secret.key")):
+                               (websearch, "AWS_FILE", h / "aws_rekognition.json"), (secretbox, "KEY_FILE", h / "secret.key"),
+                               (secretbox, "DEVICE_KEY", h / "device-key.json")):
             self.mp.setattr(mod, attr, val)
         import tracker
         self.mp.setattr(tracker, "PRESENCE", h / "presence")
@@ -188,32 +189,58 @@ def test_private_data_keys_and_forgets_reach_the_other_device(shared, tmp_path, 
     (a.home / "webcam" / "webcam-20261112-010000-000.json").write_text(json.dumps({"when": "2026-11-12T01:00:00Z", "faces": []}))
     (a.home / "webcam" / "webcam-20261112-010000-000.jpg").write_bytes(b"JPGsnap")
     websearch.save_key("A" * 39)
+    b.step()                                                              # b's public key reaches the database
+    a.switch()
     with shared.connect() as c:
         with pytest.raises(ValueError):
-            secretbox.set_passphrase(c, "short")
-        assert secretbox.set_passphrase(c, "correct horse battery")["first"]
+            secretbox.set_passphrase(c, "short", "short")
+        with pytest.raises(ValueError):
+            secretbox.set_passphrase(c, "correct horse battery", "correct horse batterY")   # typed twice, differently
+        r = secretbox.set_passphrase(c, "correct horse battery", "correct horse battery")
+        assert r["what"] == "set"
     assert secretbox.saved_passphrase() == "correct horse battery"         # kept on the device, for Settings
     a.sync.note()
+    a.step()
     a.step()
     with shared.connect() as c:
         row = c.execute("SELECT ciphertext FROM secrets WHERE name = 'google_vision'").fetchone()
         assert row and b"AAAA" not in bytes(row[0])                       # encrypted on the device
 
-    b.switch()
-    with shared.connect() as c:
-        with pytest.raises(secretbox.WrongPassphrase):
-            secretbox.set_passphrase(c, "wrong passphrase here")
-        secretbox.set_passphrase(c, "correct horse battery")
-    b.sync.note()
+    # b takes the passphrase by itself (sealed to its key), and with it the key
     b.step()
     b.step()
     b.switch()
+    assert secretbox.saved_passphrase() == "correct horse battery"
     assert describe.saved("h0")["text"] == "Ann at the beach"
     assert [x["text"] for x in alerts.listing()["alerts"]] == ["Ann arrived"]
     day = tracker.time.strftime("%Y-%m-%d", tracker.time.localtime(1_700_000_000))
     assert [v["name"] for v in tracker.visits(day)] == ["Ann"]
     assert (b.home / "webcam" / "webcam-20261112-010000-000.jpg").read_bytes() == b"JPGsnap"
     assert websearch.key() == "A" * 39                                       # decrypted with b's own passphrase key
+
+    # b changes it; a takes the new one by itself and still reads the key
+    with shared.connect() as c:
+        assert secretbox.set_passphrase(c, "a brand new passphrase", "a brand new passphrase")["what"] == "changed"
+    a.step()
+    a.step()
+    a.switch()
+    assert secretbox.saved_passphrase() == "a brand new passphrase" and websearch.key() == "A" * 39
+    with shared.connect() as c:
+        ov = secretbox.overview(c)
+        assert {d["name"]: d["current"] for d in ov["devices"]} == {"a": True, "b": False} or             [d for d in ov["devices"] if d["name"] == "a"][0]["current"]
+        first = [v for v in ov["versions"] if v["note"] == "set"][0]["id"]
+        # a wrong change undone from a: the first passphrase is current again, everywhere
+        assert secretbox.restore(c, first)["what"] == "restored"
+    b.step()
+    b.step()
+    b.switch()
+    assert secretbox.saved_passphrase() == "correct horse battery" and websearch.key() == "A" * 39
+    a.step()
+    with shared.connect() as c:
+        ov = secretbox.overview(c)
+        assert all(d["current"] for d in ov["devices"]), ov["devices"]       # every device on the same passphrase
+        fps = {d["fingerprint"] for d in ov["devices"]}
+        assert fps == {ov["current"]["fingerprint"]}
 
     # the Web search cap counts every device's searches
     monkeypatch.setattr(websearch, "shared_count", __import__("dbsync_home").count_use)

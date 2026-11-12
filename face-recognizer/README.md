@@ -526,8 +526,14 @@ is away (a laptop out of the house): changes made meanwhile wait and are sent wh
    Connect makes the tables), then `INSERT INTO facerec.server_ca VALUES (1, '<the text of ca.crt>');`.
 
 **On each device:** Settings → **Shared database** → server, port, database, `facerec` and its password →
-**Connect**. The first time, the device's data is merged in and everyone else's comes in (a minute or two). Then
-enter the same **Passphrase for keys** on each device to share the Web search and describe keys.
+**Connect**. The first time, the device's data is merged in and everyone else's comes in (a minute or two).
+
+**Sharing the keys:** set a **Passphrase for keys** once, on any device (typed twice). The Web search and describe
+keys go to the database encrypted with it, and the passphrase reaches every other device by itself (sealed to each
+device's own key, so only that device can open it). To change it, type a new one twice on any device: every key is
+encrypted again and every device takes the new one. **Passphrase on each device** shows each device's fingerprint
+of it (the same fingerprint, the same passphrase). If a change was a mistake, **Restore an earlier passphrase**
+brings back any earlier one, everywhere.
 
 Times are kept in UTC everywhere (files and database) and shown in your local time.
 
