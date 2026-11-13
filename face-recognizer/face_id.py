@@ -24,7 +24,7 @@ After switching recognition models, run:  python face_id.py reembed
 Examples
   python face_id.py scan "D:\\Photos"
   python face_id.py cluster                    (groups of faces nobody has named yet)
-  python face_id.py name 3 7 12 Chris          (name groups 3, 7 and 12 Chris)
+  python face_id.py name 3 7 12 Ann            (name groups 3, 7 and 12 Ann)
   python face_id.py name 9 --ignore            (group 9 is not someone to recognize)
   python face_id.py people
   python face_id.py recognize --camera 0
@@ -40,6 +40,11 @@ from io import BytesIO
 from pathlib import Path
 
 import cv2
+
+try:                                     # OpenCV's own warnings (one for every face detector made: 37 a second in
+    cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)   # the Linux journal) say nothing we act on
+except Exception:
+    pass
 import numpy as np
 
 import paths
@@ -104,7 +109,7 @@ MAX_TURN = 0.35          # head turned more than this (nose offset / eye distanc
 REC_MODELS = {
     "arcface_w600k_r50": dict(file="arcface_w600k_r50.onnx", dim=512, match=0.35, cluster=0.70),
     # ArcFace at 0.35: 100% of labeled faces correct, 0% of strangers named; on simulated blurry
-    # webcam frames 76% correct vs 44% for SFace. Grouping at 0.70 put Chris in 2 groups instead of 4.
+    # webcam frames 76% correct vs 44% for SFace. Grouping at 0.70 put one person in 2 groups instead of 4.
     "sface_2021dec": dict(file="face_recognition_sface_2021dec.onnx", dim=128, match=0.45, cluster=0.58),
     # SFace at 0.45: 99.3% correct, 0% of strangers named (0.40 named 4.4%).
 }
@@ -231,6 +236,8 @@ def _ort_runner(path, npu_static=None):
     if "DmlExecutionProvider" in avail:
         with ACCEL_LOCK:                         # loading a model while another runs crashed onnxruntime too
             sess = ort.InferenceSession(str(path), so, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+        if sess.get_providers()[0] != "DmlExecutionProvider":     # it fell back to the processor by itself: say so
+            return _locked(sess), "CPU (DirectML wasn't usable)"
         return _locked(sess), "GPU (DirectML)"
     for provider, name in CHECKED_GPU:
         if provider not in avail:
@@ -1220,7 +1227,8 @@ def cmd_reembed(a):
     t0 = time.time()
     lost = []
     for i in range(len(store.emb)):
-        if store.printless(i):                   # deleted on purpose (Ignored or forgotten): stays deleted
+        if store.printless(i):                   # deleted on purpose (Ignored or forgotten): stays deleted,
+            store.emb[i] = np.zeros(REC["dim"], np.float32)   # in the new model's size (one array holds them all)
             continue
         crop = store.thumb(i)
         if crop is None:                         # no picture on this computer: make it again from the photo
@@ -1549,7 +1557,7 @@ def main():
     s.set_defaults(fn=cmd_recognize)
 
     a = p.parse_args()
-    if a.cmd == "name":   # `name 3 7 Chris Smith` -> groups [3, 7], name "Chris Smith"
+    if a.cmd == "name":   # `name 3 7 Ann Smith` -> groups [3, 7], name "Ann Smith"
         nums = [x for x in a.args if x.isdigit()]
         a.groups = [int(x) for x in nums]
         a.name = " ".join(x for x in a.args if not x.isdigit()) or None

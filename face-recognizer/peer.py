@@ -26,6 +26,7 @@ import os
 import re
 import socket
 import ssl
+import sys
 import threading
 import time
 from pathlib import Path
@@ -41,7 +42,9 @@ TIMEOUT = 8                      # seconds to wait for another device
 MAX_PHOTO = 60_000_000           # bytes accepted from another device
 STREAM_FOR = 7 * 24 * 3600       # a /stream request lasts until the watching device closes it
 BOUNDARY = "facerecframe"
-READOUT_EVERY = 1.0              # s between the live readouts sent along a /stream (JSON parts between the frames)
+STREAM_READ = 15                 # s a watching device waits for the next part before it takes the stream as gone
+                                 # and connects again (it used to wait a week: a device that vanished froze its tile)
+READOUT_EVERY = 1.0             # s between the live readouts sent along a /stream (JSON parts between the frames)
 PHOTO_RE = re.compile(r"^/photo/([0-9a-f]{40}|path-[0-9a-f]{24}|nofile-[0-9a-f]{24})(?:\?frame=(\d{1,7}))?$")
 _key_cache = {}
 CURRENT_KEY = None               # the cluster key as of the last sync step (dbsync_home.HomePart.every_step)
@@ -87,10 +90,8 @@ def certificate():
         cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
                 .serial_number(x509.random_serial_number()).not_valid_before(now - datetime.timedelta(days=1))
                 .not_valid_after(now + datetime.timedelta(days=3650)).sign(key, hashes.SHA256()))
-        paths.atomic_write(KEY, key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                                                  serialization.NoEncryption()))
-        if os.name != "nt":
-            os.chmod(KEY, 0o600)
+        paths.write_private(KEY, key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                                   serialization.NoEncryption()))
         paths.atomic_write(CERT, cert.public_bytes(serialization.Encoding.PEM))
     der = ssl.PEM_cert_to_DER_cert(CERT.read_text("ascii"))
     return CERT, KEY, hashlib.sha256(der).hexdigest()
@@ -172,6 +173,14 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     server_version = "FaceRecognizerPeer"
     sys_version = ""
     service = None
+    timeout = 30         # seconds without a byte moving, the TLS handshake included: a silent connection ends
+
+    def setup(self):
+        # The TLS handshake happens here, on this request's own thread and under the timeout. It used to happen
+        # inside accept() on the one serving thread, where a connection that said nothing stopped the whole service.
+        self.request.settimeout(self.timeout)
+        self.request.do_handshake()
+        super().setup()
 
     def log_message(self, *a):
         pass
@@ -256,6 +265,10 @@ class _Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = os.name != "nt"         # Windows: a second copy must fail, not share the port
 
+    def handle_error(self, request, client_address):
+        if not isinstance(sys.exc_info()[1], OSError):   # a failed or silent handshake, a dropped connection: no news
+            super().handle_error(request, client_address)
+
 
 class Service:
     """The peer service: answers signed requests for photos this device has. provider(hash, frame) -> JPEG or None."""
@@ -271,7 +284,7 @@ class Service:
         self.srv = _Server((self.bind, self.listen_port), handler)
         ctx = _context(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(cert, key)
-        self.srv.socket = ctx.wrap_socket(self.srv.socket, server_side=True)
+        self.srv.socket = ctx.wrap_socket(self.srv.socket, server_side=True, do_handshake_on_connect=False)
         threading.Thread(target=self.srv.serve_forever, daemon=True, name="peer service").start()
         return self
 
@@ -392,7 +405,7 @@ def open_stream(device_id):
                 s.close()
                 raise OSError(f"{name} answered {status[1].decode() if len(status) > 1 else '?'}")
             m = re.search(rb"\r\ncontent-type:\s*([^\r\n]+)", head, re.I)
-            s.settimeout(STREAM_FOR + 15)              # a paused camera sends nothing for a while: not an error
+            s.settimeout(STREAM_READ)                  # the sender writes a readout every second, paused or not
             return s, (m.group(1).decode() if m else "multipart/x-mixed-replace"), rest
         except (OSError, ssl.SSLError) as e:
             last = f"{a}:{port_}: {e}"

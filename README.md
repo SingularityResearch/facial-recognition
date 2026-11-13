@@ -47,7 +47,7 @@ you send them on purpose:
 | **Times stored in UTC** | Devices sync with each other and can be in different time zones or cross a daylight-saving change. Every stored time (files, file names, the database) is UTC; pages show local time. |
 | **Thresholds are measured values**, never guesses | Each matching, quality and voting threshold was measured on the owner's labeled photos, for example ArcFace match 0.35: 100% of labeled faces correct, 0% of strangers named. Changing one means re-measuring. |
 | **ArcFace for recognition**, with SFace as a fallback; AdaFace evaluated and rejected | ArcFace named 76% of blurry webcam-like faces correctly vs 44% for SFace. AdaFace was slower and less accurate on these photos (95.5% vs 99.4%). |
-| **The hardware decides, after a check** | Each model runs on the graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) only after a start-up check shows it gives the processor's answers (within 1%), faster; photos are read and decoded on several processor threads at once. Measured on a Ryzen 7 7840HS + RTX 4060: importing 412 files went from 89.5 s to 43.5 s, with the same faces found. The NPU isn't picked by itself: it was slower for one face at a time. |
+| **The hardware decides, after a check** | Each model runs on the graphics processor (DirectML on Windows, CUDA on NVIDIA under Linux, CoreML on a Mac) only after a start-up check shows it gives the processor's answers (within 1%), faster (CUDA, CoreML and face finding everywhere; DirectML on Windows runs the other models as measured, without the check at each start); photos are read and decoded on several processor threads at once. Measured on a Ryzen 7 7840HS + RTX 4060: importing 412 files went from 89.5 s to 43.5 s, with the same faces found. The NPU isn't picked by itself: it was slower for one face at a time. |
 | **LM Studio shared across your computers** | Describe photo needs a vision model; the owner runs LM Studio on more than one computer. On every computer with this app and LM Studio, the app keeps LM Studio serving on all network interfaces, announces it on the local network (mDNS, with its port), lists every LM Studio server it finds (names, addresses, ports, models), and gets missing vision models from a shared folder (a NAS: 17.7 GB in about 3.5 min over Wi-Fi) before falling back to the internet (about 2 MB/s from Hugging Face here). Downloads start only when asked, with a progress bar. |
 | **Labels per face, not per cluster** | Cluster numbers change on every regrouping. A permanent ID per face keeps every decision, with undo history. |
 | **"Looks", not "feels"** | Research shows facial expression is a weak, context-dependent indicator of felt emotion. The wording follows the evidence. |
@@ -55,7 +55,7 @@ you send them on purpose:
 | **New signals are evidence only until measured** | Face-shape cues, talking, motion, blinks, gaze, pulse, body posture, voice and the state model are shown but don't change the label. The options that would change it (skip while talking, skip when a hand is on the face, state model) are off by default. |
 | **Every signal is read against the person's own normal** | People differ more from each other than from their own good and bad days, so a population norm says little about one person (the idiographic view, Molenaar 2004). Each named person's usual level of every signal is learned, separately alone and in company, and the tracker shows departures ("head -2.3 SD for Sam"). Kept on this computer (by the tracker, with a copy in the page's browser storage) and in your shared database if you set one up; forgettable per person. |
 | **Self-report is the only ground truth for feelings** | An opt-in "feeling check" asks how you feel on two 1–7 scales. Without it, accuracy can only be measured against posed expressions, never against feelings. |
-| **Only numbers are stored for research** | Posed tests and feeling reports save scores and signals (including body points): no pictures, no audio. Live expression, voice, pulse and posture are never written down. |
+| **Only numbers are stored for research** | Posed tests and feeling reports save scores and signals (including body points): no pictures, no audio. Live voice, pulse and posture are never written down. Expression readings are: with a shared database, every few seconds for each named person (the owner's choice, for reports later; a switch turns it off), and with each alert. Always as numbers, never a picture or sound. |
 | **Two separate apps** (labeling and tracking) | Owner preference. Each stays simple, and both can run at once. Since 2026-11-08 FaceRecognizer.exe shows both in one window as tabs, but each keeps its own server and page. |
 | **One Settings tab that owns no settings** | Each setting stays with the program it belongs to (the page's controls and storage, or its server). The Settings tab asks each page for its settings and sends changes back (`settings_bridge.js`), so the tab and the pages can't disagree and each page still works on its own. |
 | **Describe photo: local by default, your choice of server** | A vision model in LM Studio on this computer, or a built-in one (Florence-2) when there's none. The server can be moved to another device; the Settings tab then says each described photo is sent there, and warns about unencrypted internet addresses. |
@@ -226,7 +226,7 @@ from audEERING.
 - The valence/arousal fit needs about 15–20 feeling reports per person before it exists at all.
 - The shared database, photos between devices and the Cameras tab are new (versions 1.16 to 1.20) and run on a
   few devices so far; the Cameras page was measured with a stand-in for 40 cameras (9–10 frames a second each).
-- Web search names well-known people reliably (two tests, 99.4% and 100%) but never private people, and its confidence bands haven't been measured on this project's faces.
+- Web search named both well-known people it was tried on (Amazon's own match confidence 99.4% and 100%: two pictures, not an accuracy measurement) but never private people, and its confidence bands haven't been measured on this project's faces.
 - This is a single-user personal system, not a product. Expression and feeling readings must not be used
   to make decisions about people. The EU AI Act bans emotion recognition in workplaces and schools.
 
@@ -269,6 +269,8 @@ whole history and from the releases then. Keep your own `data/` out of any publi
 personal data about the people in your photos.
 
 ## Licenses of third-party models
+
+The project's own code is under the Apache License 2.0 (`LICENSE`). The models it downloads keep their publishers' terms, listed here; two of them are for non-commercial use only.
 
 | Model | Used for | License |
 |---|---|---|

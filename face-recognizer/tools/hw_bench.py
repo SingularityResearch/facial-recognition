@@ -2,7 +2,7 @@
 hw_bench.py - measure the face models on this computer's CPU, GPU and NPU.
 
 Run with the Ryzen AI environment's Python (it has ONNX Runtime with the NPU and GPU providers):
-  X:\\ProgramData\\miniconda3\\envs\\ryzen-ai-1.8.0\\python.exe tools\\hw_bench.py
+  <its conda environment ryzen-ai-1.8.0>\\python.exe tools\\hw_bench.py
 On Linux with an NVIDIA card (CUDA, after ./setup.sh) or on macOS (CoreML):
   .venv/bin/python tools/hw_bench.py
 
@@ -51,7 +51,7 @@ def faces(n):
     jpg, off = z["thumbs"], z["thumb_off"]
     have = [i for i in range(len(off) - 1) if off[i + 1] > off[i]]
     if not have:
-        sys.exit("No face pictures in data\thumbs.npz (it isn't in git): run on the computer the faces were found on")
+        sys.exit("No face pictures in data\\thumbs.npz (it isn't in git): run on the computer the faces were found on")
     idx = [have[int(k)] for k in np.linspace(0, len(have) - 1, n)]
     return [cv2.imdecode(jpg[off[i]:off[i + 1]], cv2.IMREAD_COLOR) for i in idx]
 

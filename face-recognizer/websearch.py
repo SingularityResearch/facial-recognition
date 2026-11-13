@@ -119,9 +119,8 @@ def services():
 def usage(service="vision"):
     """{'month': 'YYYY-MM', 'used': n, 'cap': CAPS[service]} for this calendar month."""
     month = time.strftime("%Y-%m", time.gmtime())     # billing months are UTC
-    try:
-        u = json.loads((HOME / f"{service}_usage.json").read_text("utf-8"))
-    except (OSError, ValueError):
+    u = paths.read_json(HOME / f"{service}_usage.json", {})   # can't be read: OSError, not "none used yet"
+    if not isinstance(u, dict):
         u = {}
     return {"month": month, "used": int(u.get("used", 0)) if u.get("month") == month else 0, "cap": CAPS[service]}
 

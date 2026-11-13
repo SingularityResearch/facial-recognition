@@ -16,6 +16,7 @@ let SUM = null, FIDS = [], view = { v: "suggested" }, showLow = false, WEBCAM = 
 let sel = new Set(), order = [], secOf = new Map(), anchor = null;
 const PAGE = 160;     // faces shown per section before "show more"
 
+const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return "link"; } };
 async function get(p) {
   const r = await fetch(p);
   const j = await r.json().catch(() => ({}));
@@ -101,27 +102,36 @@ function findPeople() {
 }
 function setTile(px) { document.documentElement.style.setProperty("--tile", px + "px"); }
 
+// Only the newest render() shows. A slow view's answer (New faces regrouping) arriving after a quicker, newer one used
+// to replace that view and add its faces to it, so the selection bar then acted on the wrong view's sections.
+let renderN = 0;
 async function render(top) {
+  const mine = ++renderN;
   const main = $("#main");
   const scroll = top ? 0 : main.scrollTop;
   markNav();
-  let html;
-  order = []; secOf = new Map(); STACK.clear();       // stacks are rebuilt by grid() for this view only
+  let html, d;
   try {
     const low = showLow ? "1" : "0";
+    const fresh = () => { order = []; secOf = new Map(); STACK.clear(); return true; };   // stacks are rebuilt by grid() for this view only
+    const got = async url => { d = await get(url); return mine === renderN && fresh(); };   // false: a newer render took over
     if (SUM && !SUM.faces && !view.name)              // a new copy: nothing added yet
-      html = `<div class="empty"><b>No photos yet</b><p style="max-width:560px;margin:6px auto">Click <strong>Add photos</strong> and choose a folder
+      html = fresh() && `<div class="empty"><b>No photos yet</b><p style="max-width:560px;margin:6px auto">Click <strong>Add photos</strong> and choose a folder
         of your photos or videos. The faces in them are found on this computer and listed under <strong>New faces</strong>; name a few
         faces of each person and the recognizer learns them, then suggests names for the rest. Your photos, faces and names stay on
         this computer.</p><p><button class="btn primary" id="addfirst">Add photos</button></p></div>`;
-    else if (view.v === "suggested") html = viewSuggested(await get(`/api/suggested?low=${low}`));
-    else if (view.v === "unknown") html = viewUnknown(await get(`/api/unknown?low=${low}${view.regroup ? "&regroup=1" : ""}`));
-    else if (view.v === "possible") html = viewPossible(await get("/api/possiblefaces"));
-    else if (view.v === "auto") html = viewAuto(await get("/api/auto"));
-    else if (view.v === "tagged") html = viewTagged(await get(`/api/tagged?low=${low}`));
-    else if (view.v === "checks") html = viewChecks(await get("/api/checks"));
-    else html = viewPerson(await get(`/api/person?name=${encodeURIComponent(view.name)}`));
-  } catch (e) { html = `<div class="empty"><b>Couldn't load this view</b>${esc(e.message)}. Is the Face Labels window still open?</div>`; }
+    else if (view.v === "suggested") html = await got(`/api/suggested?low=${low}`) && viewSuggested(d);
+    else if (view.v === "unknown") html = await got(`/api/unknown?low=${low}${view.regroup ? "&regroup=1" : ""}`) && viewUnknown(d);
+    else if (view.v === "possible") html = await got("/api/possiblefaces") && viewPossible(d);
+    else if (view.v === "auto") html = await got("/api/auto") && viewAuto(d);
+    else if (view.v === "tagged") html = await got(`/api/tagged?low=${low}`) && viewTagged(d);
+    else if (view.v === "checks") html = await got("/api/checks") && viewChecks(d);
+    else html = await got(`/api/person?name=${encodeURIComponent(view.name)}`) && viewPerson(d);
+  } catch (e) {
+    if (mine !== renderN) return;
+    html = `<div class="empty"><b>Couldn't load this view</b>${esc(e.message)}. Is the Face Labels window still open?</div>`;
+  }
+  if (mine !== renderN || html === false) return;
   view.regroup = false;
   main.innerHTML = html;
   main.querySelectorAll(".grid").forEach(g => fillGrid(g));
@@ -751,7 +761,7 @@ function drawMode(on) {
 function showDescription(d) {
   const t = $("#desctext");
   if (!t) return;
-  t.innerHTML = `${esc(d.text)}<br><small>${esc(d.model || "")}${d.when ? ", " + esc(localTime(d.when)) : ""}${d.secs ? `, ${d.secs} s` : ""}</small>`;
+  t.innerHTML = `${esc(d.text)}<br><small>${esc(d.model || "")}${d.when ? ", " + esc(localTime(d.when)) : ""}${+d.secs ? `, ${+d.secs} s` : ""}</small>`;
   $("#descgo").innerHTML = "Describe again <kbd>D</kbd>";
 }
 // what describes photos (LM Studio, or the built-in model), how many are done, and the built-in model's download
@@ -851,10 +861,10 @@ async function webSearch(refresh) {
     const s = r.suggestions;
     res.innerHTML = (s.length
       ? `<div><b>${s.length === 1 ? "Suggestion" : "Suggestions"}</b></div>` + s.map(x => `<div class="wssug">
-          <div><b>${esc(x.name)}</b> <span class="lvl lvl-${x.level.replace(" ", "-")}">${LEVEL_TEXT[x.level]}</span></div>
+          <div><b>${esc(x.name)}</b> <span class="lvl lvl-${esc(String(x.level).replace(" ", "-"))}">${esc(LEVEL_TEXT[x.level] || "")}</span></div>
           <div class="meta">${x.why.map(esc).join(". ")}.</div>
           <div class="acts"><button class="btn small primary" data-tag="${esc(x.name)}">Name this face ${esc(x.name)}</button>
-            ${x.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(new URL(u).hostname.replace(/^www\./, ""))} ↗</a>`).join(" ")}</div></div>`).join("")
+            ${x.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(hostOf(u))} ↗</a>`).join(" ")}</div></div>`).join("")
       : `<div><b>No suggestions found.</b></div><div class="meta">${r.checked.length ? "Checked: " + r.checked.map(esc).join("; ") + "." : ""}
           Amazon only knows well-known people, and Google only helps when this same picture is posted online.</div>`) +
       (r.cached ? `<div><small>Saved answer from your search on ${esc(localTime(r.when))}: nothing was sent again. <b>Search again</b> asks anew.</small></div>` : "") +

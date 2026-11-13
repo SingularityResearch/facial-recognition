@@ -188,3 +188,64 @@ def test_the_faceness_model_trains_in_the_background_without_holding_the_lock(da
     db._fj_thread.join(20)
     with db.lock:
         assert db.face_cut() > 0.0 and db.faceness(np.asarray(db.store.emb[:2])) is not None
+
+
+def test_a_name_given_by_hand_is_no_longer_a_forgotten_name(data, tmp_path, monkeypatch):
+    import dbsync_home
+    import paths
+    monkeypatch.setattr(paths, "HOME", tmp_path / "home")
+    db = db_with_faces(data)
+    for n in ("Ann", "Cy", "Dee"):
+        dbsync_home.note_forgotten(n)
+    db.act("reject", [0], "Ann")                             # saying who it isn't names nobody
+    assert dbsync_home.forgotten_names() == {"Ann", "Cy", "Dee"}
+    db.act("name", [0], "Ann")
+    db.act("name", [1], "Bob")
+    assert dbsync_home.forgotten_names() == {"Cy", "Dee"}
+    db.rename("Bob", "Cy")
+    assert dbsync_home.forgotten_names() == {"Dee"}
+    # a list that can't be read is "no names" for the pages, but the sync must not send that on as every forget withdrawn
+    (tmp_path / "home" / dbsync_home.FORGOTTEN).write_text("{not json")
+    assert dbsync_home.forgotten_names() == set()
+    with pytest.raises(OSError):
+        dbsync_home.forgotten_names(strict=True)
+
+
+def test_a_copy_of_a_photo_with_possible_faces_is_still_a_copy(data):
+    """Possible faces (kept with the low detector cut-off) aren't among a new photo's regular faces: counting them
+    made every copy of such a photo look like a different photo."""
+    emb = make_faces(data, 6)                                # photo h0 holds f0 and f1
+    photos = json.loads((data / "photos.json").read_text())
+    photos["h0"]["maybe"] = {"f1": 0.5}                      # f1 is a possible face
+    (data / "photos.json").write_text(json.dumps(photos))
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    assert db.same_faces("h0", [emb[0]])                     # the copy's one regular face is f0
+    assert not db.same_faces("h0", [emb[4]])                 # another face: not a copy
+    assert not db.same_faces("h0", [emb[0], emb[1]])
+    assert db.same_faces("h1", [emb[2], emb[3]])             # a photo without possible faces, as before
+
+
+def test_a_merge_leaves_no_face_that_is_and_is_not_the_same_person(data):
+    db = db_with_faces(data)
+    db.act("name", [0], "Ann")
+    db.act("name", [1], "Bob")
+    db.act("reject", [1], "Ann")                             # Bob's face: "not Ann"
+    db.rename("Ann", "Bob")                                  # Ann was Bob all along
+    assert db.rec(1) == {"n": "Bob", "by": "me"} and db.name(0) == "Bob"
+
+
+def test_a_bad_face_number_changes_nothing(data):
+    db = db_with_faces(data)
+    with pytest.raises(ValueError):
+        db.act("name", [0, 1, 99], "Ann")                    # the last one doesn't exist: the first two stay as they were
+    assert db.labels == {} and db.name(0) is None
+
+
+def test_a_skipped_copy_is_not_what_later_copies_are_compared_with(data):
+    make_faces(data, 6)
+    photos = json.loads((data / "photos.json").read_text())
+    photos["h0"]["fp"] = "00" * 32                           # the original
+    photos["h1"].update(fp="00" * 31 + "01", dup_of="h0", faces=0)   # a copy of it, skipped at import
+    (data / "photos.json").write_text(json.dumps(photos))
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    assert db.near_duplicate("00" * 31 + "01") == "h0"       # a third version, closest to the copy: still the original

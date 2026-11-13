@@ -55,6 +55,16 @@ from photofacts import (CLOSEST, FOLDER_NEAR, TAKEN_NEAR_H, PhotoFacts, match_re
 from relocate import migrate, register_faceless, relocate  # noqa: E402,F401
 
 
+def _named_again(name):
+    """A name given by hand is a person again: an earlier forget of that name (persondata.forget) no longer applies
+    to them, on this device or, with a shared database, on the others (dbsync_home.unforget)."""
+    try:
+        import dbsync_home
+        dbsync_home.unforget(name)
+    except (ImportError, OSError):
+        pass
+
+
 # --------------------------------------------------------------------------- engine
 class LabelDB:
     """All faces + their labels. Thread-safe: the labeling page's requests and a background photo
@@ -674,9 +684,10 @@ class LabelDB:
             raise ValueError("names can't start with #")
         with self.lock:
             before = []
-            for i in idx:
+            for i in idx:                        # all of them first: a bad one mustn't leave the others half done
                 if not (0 <= i < self.n):
                     raise ValueError(f"no face {i}")
+            for i in idx:
                 fid = self.store.fid[i]
                 old = self.labels.get(fid)
                 before.append((fid, dict(old) if old else None))
@@ -712,6 +723,8 @@ class LabelDB:
             self._commit(before, text or self._describe(action, len(idx), name))
             if action == "ignore" and before:    # an ignored face's print and picture aren't kept
                 self.undo_stack[-1]["prints"] = self.forget_faces(idx)
+        if action == "name" and idx:
+            _named_again(name)
         return len(idx)
 
     @staticmethod
@@ -737,9 +750,13 @@ class LabelDB:
                         r["n"] = new
                     if hit_not:
                         r["not"] = sorted({new if x == old else x for x in r["not"]})
-                    self.labels[fid] = r
+                    if r.get("n") == new and r.get("not"):      # merged: a face can't be Bob and "not Bob"
+                        r["not"] = [x for x in r["not"] if x != new]
+                    self.labels[fid] = {k: v for k, v in r.items() if v}
             self._commit(before, f"Merged {old} into {new}" if merge else f"Renamed {old} to {new}")
-            return len(before)
+        if before:
+            _named_again(new)
+        return len(before)
 
     def undo(self):
         with self.lock:
@@ -830,7 +847,9 @@ class LabelDB:
         """True if a photo's faces are the same faces as an already-read photo's (a copy of it):
         same number of faces, each with a near-identical face print."""
         with self.lock:
-            old = self.by_photo().get(photo, [])
+            # the photo's regular faces: embs are the new photo's regular faces too. Its possible and drawn faces
+            # (maybe) were counted here before, so a copy of any photo that had one never matched and came in again
+            old = [i for i in self.by_photo().get(photo, []) if self.maybe(i) is None]
             if len(old) != len(embs):
                 return False
             if not embs:
@@ -847,8 +866,11 @@ class LabelDB:
 
     def near_duplicate(self, fp):
         """Content hash of an already-read photo that looks the same as fingerprint fp, else None."""
-        if self._fp is None or len(self._fp_keys) != sum(1 for p in self.store.photos.values() if p.get("fp")):
-            keys = [h for h, p in self.store.photos.items() if p.get("fp")]
+        # copies already skipped (dup_of) aren't compared with: a third version closest to such a copy was matched to
+        # it, found "different faces" (a skipped copy has none) and came in whole
+        if self._fp is None or len(self._fp_keys) != sum(1 for p in self.store.photos.values()
+                                                          if p.get("fp") and not p.get("dup_of")):
+            keys = [h for h, p in self.store.photos.items() if p.get("fp") and not p.get("dup_of")]
             self._fp_keys = keys
             self._fp = np.array([np.frombuffer(bytes.fromhex(self.store.photos[h]["fp"]), np.uint8) for h in keys],
                                 np.uint8).reshape(len(keys), 32)

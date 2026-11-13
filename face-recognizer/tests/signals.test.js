@@ -147,25 +147,25 @@ const teach = (b, name, n, { head = 0.5, pitch = 120, ctx = "alone", t0 = 0 } = 
 
 test("baselines: learning until trusted, then departures in spreads from the person's normal", () => {
   const b = new S.Baselines(memStore());
-  teach(b, "Chris", 60);
-  assert.deepEqual(b.z("Chris", { head: 0.2 }, "alone"), {});          // not trusted yet
-  assert.equal(b.progress("Chris"), 0.5);
-  assert.match(S.unusualEvidence(b, "Chris", { head: 0.2 }, "alone"), /learning Chris's normal 50%/);
-  teach(b, "Chris", 120, { t0: 60000 });
-  const z = b.z("Chris", { head: 0.3, pitch: 121 }, "alone");
+  teach(b, "Ann", 60);
+  assert.deepEqual(b.z("Ann", { head: 0.2 }, "alone"), {});          // not trusted yet
+  assert.equal(b.progress("Ann"), 0.5);
+  assert.match(S.unusualEvidence(b, "Ann", { head: 0.2 }, "alone"), /learning Ann's normal 50%/);
+  teach(b, "Ann", 120, { t0: 60000 });
+  const z = b.z("Ann", { head: 0.3, pitch: 121 }, "alone");
   assert.ok(z.head < -3, `head z ${z.head}`);                          // 0.2 below a normal of 0.5 ± 0.05
   assert.ok(Math.abs(z.pitch) < 0.5);
-  assert.match(S.unusualEvidence(b, "Chris", { head: 0.3, pitch: 121 }, "alone"), /^unusual for Chris \(alone\): head -\d\.\d SD$/);
-  assert.equal(S.unusualEvidence(b, "Chris", { head: 0.5, pitch: 120 }, "alone"), "usual for Chris (alone)");
+  assert.match(S.unusualEvidence(b, "Ann", { head: 0.3, pitch: 121 }, "alone"), /^unusual for Ann \(alone\): head -\d\.\d SD$/);
+  assert.equal(S.unusualEvidence(b, "Ann", { head: 0.5, pitch: 120 }, "alone"), "usual for Ann (alone)");
   // the Live readout's three fixed cells
-  const nf = S.normalFields(b, "Chris", { head: 0.3, pitch: 121 }, "alone");
+  const nf = S.normalFields(b, "Ann", { head: 0.3, pitch: 121 }, "alone");
   assert.deepEqual(nf.map(([k]) => k), ["now", "most unusual", "next"]);
   assert.equal(nf[0][1], "unusual (alone)");
   assert.match(nf[1][1], /^head -\d\.\d SD$/);
   assert.equal(nf[2][1], null);
-  assert.deepEqual(S.normalFields(b, "Chris", { head: 0.5, pitch: 120 }, "alone").map(([, v]) => v), ["usual (alone)", null, null]);
+  assert.deepEqual(S.normalFields(b, "Ann", { head: 0.5, pitch: 120 }, "alone").map(([, v]) => v), ["usual (alone)", null, null]);
   assert.deepEqual(S.normalFields(b, "Unknown", {}, "alone").map(([, v]) => v), [null, null, null]);
-  assert.deepEqual(S.normalFields(b, "Chris", null, "alone").map(([k]) => k), ["now", "most unusual", "next"]);
+  assert.deepEqual(S.normalFields(b, "Ann", null, "alone").map(([k]) => k), ["now", "most unusual", "next"]);
 });
 
 test("readout fields: fixed labels in a fixed order, a null value when there's no reading", () => {
@@ -188,35 +188,35 @@ test("readout fields: fixed labels in a fixed order, a null value when there's n
 
 test("baselines: one sample a second, never for Unknown, people differ", () => {
   const b = new S.Baselines(memStore());
-  assert.equal(b.learn("Chris", { head: 0.5 }, "alone", 0), true);
-  assert.equal(b.learn("Chris", { head: 0.5 }, "alone", 500), false);   // too soon
+  assert.equal(b.learn("Ann", { head: 0.5 }, "alone", 0), true);
+  assert.equal(b.learn("Ann", { head: 0.5 }, "alone", 500), false);   // too soon
   assert.equal(b.learn("Unknown", { head: 0.5 }, "alone", 0), false);
-  teach(b, "Chris", 150, { head: 0.5, t0: 2000 });
-  teach(b, "Mom", 150, { head: 0.3, t0: 2000 });
+  teach(b, "Ann", 150, { head: 0.5, t0: 2000 });
+  teach(b, "Bo", 150, { head: 0.3, t0: 2000 });
   const head = { head: 0.3 };
-  assert.ok(b.z("Chris", head, "alone").head < -3);                    // low for Chris...
-  assert.ok(Math.abs(b.z("Mom", head, "alone").head) < 0.5);           // ...normal for Mom
+  assert.ok(b.z("Ann", head, "alone").head < -3);                    // low for Ann...
+  assert.ok(Math.abs(b.z("Bo", head, "alone").head) < 0.5);           // ...normal for Mom
 });
 
 test("baselines: company has its own normal, falling back to the overall one until trusted", () => {
   const b = new S.Baselines(memStore());
-  teach(b, "Chris", 150, { pitch: 120, ctx: "alone" });
-  assert.equal(b.normal("Chris", "pitch", "company").scope, "all");    // no company normal yet: overall
-  teach(b, "Chris", 150, { pitch: 160, ctx: "company", t0: 200000 });
-  const n = b.normal("Chris", "pitch", "company");
+  teach(b, "Ann", 150, { pitch: 120, ctx: "alone" });
+  assert.equal(b.normal("Ann", "pitch", "company").scope, "all");    // no company normal yet: overall
+  teach(b, "Ann", 150, { pitch: 160, ctx: "company", t0: 200000 });
+  const n = b.normal("Ann", "pitch", "company");
   assert.equal(n.scope, "company");
   assert.ok(Math.abs(n.m - 160) < 1);
-  assert.ok(Math.abs(b.z("Chris", { pitch: 160 }, "company").pitch) < 0.5);   // usual in company...
-  assert.ok(b.z("Chris", { pitch: 160 }, "alone").pitch > 2);                // ...unusual alone
+  assert.ok(Math.abs(b.z("Ann", { pitch: 160 }, "company").pitch) < 0.5);   // usual in company...
+  assert.ok(b.z("Ann", { pitch: 160 }, "alone").pitch > 2);                // ...unusual alone
 });
 
 test("baselines: saved in the store, forgotten per person or all", () => {
   const store = memStore(), b = new S.Baselines(store);
-  teach(b, "Chris", 130); teach(b, "Mom", 130);
+  teach(b, "Ann", 130); teach(b, "Bo", 130);
   b.save();
-  assert.deepEqual(new S.Baselines(store).names(), ["Chris", "Mom"]);
-  b.forget("Mom");
-  assert.deepEqual(new S.Baselines(store).names(), ["Chris"]);
+  assert.deepEqual(new S.Baselines(store).names(), ["Ann", "Bo"]);
+  b.forget("Bo");
+  assert.deepEqual(new S.Baselines(store).names(), ["Ann"]);
   b.forget();
   assert.equal(store.m["ft-baselines"], undefined);
   assert.deepEqual(b.names(), []);
@@ -244,11 +244,11 @@ test("summary has every feature, and applyFit uses the person's model or the sha
   assert.equal(s.voiceValence, 0.7);
   const fit = { features: ["p_happy", "motion"], models: {
     "*": { mean: [0.5, 0], scale: [0.1, 1], v: { w: [0.2, 0], b: 0 }, a: { w: [0, 0], b: 0.1 } },
-    Chris: { mean: [0.5, 0], scale: [0.1, 1], v: { w: [-0.1, 0], b: 0 }, a: { w: [0, 0], b: 0 } } } };
+    Ann: { mean: [0.5, 0], scale: [0.1, 1], v: { w: [-0.1, 0], b: 0 }, a: { w: [0, 0], b: 0 } } } };
   assert.deepEqual(S.applyFit(fit, "Someone", s).map(v => +v.toFixed(2)), [0.6, 0.1]);
-  assert.deepEqual(S.applyFit(fit, "Chris", s).map(v => +v.toFixed(2)), [-0.3, 0]);
-  assert.deepEqual(S.applyFit(fit, "Chris", { p_happy: 5 }), [-1, 0]);   // clamped to -1..1
-  assert.equal(S.applyFit(null, "Chris", s), null);
+  assert.deepEqual(S.applyFit(fit, "Ann", s).map(v => +v.toFixed(2)), [-0.3, 0]);
+  assert.deepEqual(S.applyFit(fit, "Ann", { p_happy: 5 }), [-1, 0]);   // clamped to -1..1
+  assert.equal(S.applyFit(null, "Ann", s), null);
 });
 
 test("baselines: progress is 0, not -Infinity, for a person with nothing learned yet", () => {

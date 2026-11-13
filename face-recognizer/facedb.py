@@ -42,10 +42,7 @@ protect, unprotect = paths.protect, paths.unprotect       # DPAPI on Windows, pl
 
 def write_private(path, obj):
     """Write JSON readable only by this user (mode 600 outside Windows; HOME is per user on Windows)."""
-    data = json.dumps(obj, indent=1).encode()
-    paths.atomic_write(path, data)
-    if sys.platform != "win32":
-        os.chmod(path, 0o600)
+    paths.write_private(path, json.dumps(obj, indent=1).encode())
 
 
 # --- settings ----------------------------------------------------------------------------------------------------
@@ -240,8 +237,10 @@ def open_ready(app_version=""):
 
 def setup(host, port, dbname, user, password, schema="facerec", app_version=""):
     """Set up the shared database from the Settings tab: log in over an encrypted connection (sslmode=require; the
-    SCRAM login proves the server knows this password), take the server's certificate authority from its server_ca
-    table, then keep the settings with it so every later connection checks the server (verify-ca). Returns test()."""
+    SCRAM login with channel binding proves the server at the other end of this very connection knows the
+    password: without the binding, something between the two could pass the login along and hand over an authority
+    of its own), take the server's certificate authority from its server_ca table, then keep the settings with it so
+    every later connection checks the server (verify-ca). Returns test()."""
     import psycopg
     if not host:
         save_config("", 0, "", "", "", "")
@@ -251,6 +250,7 @@ def setup(host, port, dbname, user, password, schema="facerec", app_version=""):
     from psycopg.conninfo import make_conninfo
     info = make_conninfo(host=host.strip(), port=int(port or 5432), dbname=(dbname or "").strip(),
                          user=(user or "").strip(), password=password or "", sslmode="require",
+                         channel_binding="require",
                          connect_timeout=CONNECT_TIMEOUT, application_name="Face Recognizer")
     try:
         with psycopg.connect(info, autocommit=True) as conn:
@@ -259,7 +259,7 @@ def setup(host, port, dbname, user, password, schema="facerec", app_version=""):
             row = conn.execute("SELECT pem FROM server_ca WHERE id = 1").fetchone() if ok else None
     except psycopg.Error as e:
         return {"ok": False, "text": f"Couldn't log in: {str(e).strip().splitlines()[0][:300]}"}
-    if not row:
+    if not row or "BEGIN CERTIFICATE" not in (row[0] or ""):
         return {"ok": False, "text": "The server has no certificate authority in its server_ca table: ask its "
                                      "administrator to add it (tools/db_certs.py), so this device can check the server."}
     save_config(host, port, dbname, user, password, row[0], schema)

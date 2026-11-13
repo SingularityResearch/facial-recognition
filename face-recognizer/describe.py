@@ -351,10 +351,8 @@ def ask(jpeg, name=None, url=None):
 def _load():
     global _saved
     if _saved is None:
-        try:
-            _saved = json.loads(STORE.read_text("utf-8"))
-        except (OSError, ValueError):
-            _saved = {}
+        s = paths.read_json(STORE, {})             # OSError if it's there and can't be read: never taken as empty
+        _saved = s if isinstance(s, dict) else {}
     return _saved
 
 

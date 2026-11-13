@@ -32,7 +32,7 @@ import localguard
 import paths
 
 TITLE = "Face Recognizer"
-VERSION = "1.20.1"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.22"                                      # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -112,7 +112,8 @@ def start(name, module, port, app):
         except BaseException:
             srv.server_close()                       # free the port for a later Start again
             raise
-        threading.Thread(target=srv.serve_forever, daemon=True, name=name).start()
+        OWN[url] = threading.Thread(target=srv.serve_forever, daemon=True, name=name)
+        OWN[url].start()
         print(f"{name}: serving at {url}")
         return url
     raise OSError(f"No free port between {port} and {port + PORT_TRIES - 1}")
@@ -220,7 +221,10 @@ WINDOW = None                               # the app window, once made (main)
 
 # ---- the window's page must never stay frozen ----------------------------------------------------------------------
 # The tab page asks /alive every 2 s. Seen on the Linux laptop (Qt WebEngine): the page's renderer stopped running
-# its scripts for hours while the process lived on, idle (no camera, no stream, nothing drawn). After HUNG_AFTER s
+# its scripts for hours while the process lived on, idle (no camera, no stream, nothing drawn). The cause found on
+# 2026-11-12: every answer a page script didn't read kept a file descriptor open in the renderer, which froze at its
+# limit (1024: ten minutes after a start; 8192 after a restart in place: every 90 minutes). The scripts let unread
+# answers go now (drop), and allow_more_open_files gives a margin; this watchdog stays for whatever comes next. After HUNG_AFTER s
 # without a word the page's renderer is stopped (Linux, macOS: Qt loads the page again, recover_renderer); if the
 # page still says nothing RESTART_AFTER s later, or on Windows, the whole app starts again in place.
 ALIVE = {"at": None}
@@ -389,13 +393,16 @@ def restart_soon(why):
     return True
 
 
+WATCHING = {"on": True}                     # off once there is no app window to watch (the browser is used instead)
+
+
 def watch_window():
     """Watch the window's page (ALIVE) and bring it back when it stops (watch_step)."""
     import signal
 
     def run():
         st = {}
-        while True:
+        while WATCHING["on"]:
             time.sleep(5)
             now = time.monotonic()
             what = watch_step(st, now, ALIVE["at"])
@@ -525,6 +532,9 @@ NAMES = {"track": "Face tracker", "label": "Face Labels"}
 _restart_lock = threading.Lock()
 
 
+OWN = {}                                    # url -> the thread serving a program started in this process
+
+
 def restart(key):
     """Start one program again (the window's Start again button): after it failed (say the model download), or
     when it stopped answering. Returns "running" (it answers: nothing to do), "starting" or "busy" (already
@@ -534,6 +544,11 @@ def restart(key):
         if not s.get("url") and not s.get("error"):
             return "busy"
         if s.get("url") and answering(s["url"], "tracker" if key == "track" else "face-labels"):
+            return "running"
+        if s.get("url") in OWN and OWN[s["url"]].is_alive():
+            # It is loaded in this process and only slow or answering with an error. Starting it "again" found its
+            # own port taken, moved to the next and loaded a second copy onto the same data files: two labeling
+            # databases, two syncs, two importers. The page is just loaded again instead.
             return "running"
         keys = [key] + [k for k in NAMES if k != key and STATUS.get(k, {}).get("error")]   # a failed download: both
         for k in keys:
@@ -703,7 +718,30 @@ def clear_graphics_caches(folder, version=None):
 # names and boxes froze, on its own screen and in other devices' Cameras tab.
 KEEP_RUNNING_FLAGS = ("--disable-background-timer-throttling --disable-renderer-backgrounding "
                       "--disable-backgrounding-occluded-windows "
-                      "--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling")
+                      "--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,"
+                      "MediaFoundationD3D11VideoCapture")
+# MediaFoundationD3D11VideoCapture off (Windows): camera frames stay in ordinary memory. As textures on the graphics
+# processor, every frame the page copies out (for recognition, for the stream) has to be read back from it, and in a
+# desktop session nobody is connected to (the NAS) one read-back in ten took 165 ms: the page stalled and the stream
+# reached 13 frames a second. Off, every step took 4 ms or less and it reached 20 (measured 2026-11-12).
+
+
+def allow_more_open_files(want=8192):
+    """Linux, macOS: let this process, and the window's helper processes that inherit it, have `want` files open
+    (systemd starts programs with 1024). The window's page process once used up 1024 in ten minutes (one descriptor
+    for every answer its scripts didn't read: fixed there, drop() in the page scripts) and froze. This is the margin
+    for the next such thing: hours instead of minutes before the watchdog has to step in. Returns the limit."""
+    try:
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if hard != resource.RLIM_INFINITY:
+            want = min(want, hard)
+        if soft != resource.RLIM_INFINITY and soft < want:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+            soft = want
+        return soft
+    except Exception:                                     # Windows (no such limit), or not allowed: as it was
+        return None
 
 
 def keep_running_in_background(env=os.environ):
@@ -767,13 +805,15 @@ def main(argv=None):
         window.events.loaded += lambda: recover_renderer(window)
         # private_mode=False keeps each page's remembered options and per-person baselines between runs
         clear_graphics_caches(HOME / "webview")
+        allow_more_open_files()
         keep_running_in_background()
         watch_window()                              # a page that stops answering is brought back
         webview.start(private_mode=False, storage_path=str(HOME / "webview"))
     except Exception:                               # no window toolkit here (e.g. Linux without GTK or Qt)
         traceback.print_exc()
         print("No app window could open here: using the web browser instead.")
-        in_browser(shell)
+        WINDOW, WATCHING["on"] = None, False          # no window: nothing to watch or to start again for (a closed
+        in_browser(shell)                             # browser tab isn't a frozen window)
     os._exit(0)                                     # window closed: stop both servers and background readers
 
 

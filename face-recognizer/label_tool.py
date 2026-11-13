@@ -366,6 +366,25 @@ def make_handler(db, importer):
                     if not 0 <= i < db.n:
                         return self.send({"error": "no such face"}, code=404)
                     return self.send({"saved": describe.saved(describe_key(i))})
+                # These ask the network, other programs or files of their own, never the labeling data: outside its
+                # lock, or a search of the local network (seconds) held up every labeling request, the import, the
+                # sync and the page's own settings request at load.
+                if path == "/api/lmstudio":                # LM Studio on this computer, and models it lacks
+                    st = lmstudio.status()
+                    return self.send({**st, "missing": lmstudio.missing_models() if st.get("installed") else []})
+                if path == "/api/hardware/network":       # LM Studio servers on the local network (Settings)
+                    return self.send({"servers": hardware.lmstudio_network()})
+                if path == "/api/hardware":               # this computer, and where each job runs (Settings)
+                    return self.send({"has": hardware.describe(), "uses": hardware.uses(), "ai": hardware.ai_apps()})
+                if path == "/api/websearch/key":
+                    return self.send({"set": bool(websearch.key()), "services": websearch.services()})
+                if path == "/api/secrets":               # the Settings tab's saved keys, shown masked
+                    if self.refused(write=True):         # only to the tool's own page (its header), never cross-site
+                        return
+                    return self.send(secrets())
+                if path == "/api/settings":              # this page's settings (page_store.js)
+                    import devicesettings
+                    return self.send(devicesettings.page_state("label"))
                 with db.lock:
                     if path == "/api/summary":
                         s = db.summary()
@@ -390,13 +409,6 @@ def make_handler(db, importer):
                         return self.send(importer.status)
                     if path == "/api/downloads":               # what is downloading now (the header's bar)
                         return self.send({"items": downloads()})
-                    if path == "/api/lmstudio":                # LM Studio on this computer, and models it lacks
-                        st = lmstudio.status()
-                        return self.send({**st, "missing": lmstudio.missing_models() if st.get("installed") else []})
-                    if path == "/api/hardware/network":       # LM Studio servers on the local network (Settings)
-                        return self.send({"servers": hardware.lmstudio_network()})
-                    if path == "/api/hardware":               # this computer, and where each job runs (Settings)
-                        return self.send({"has": hardware.describe(), "uses": hardware.uses(), "ai": hardware.ai_apps()})
                     if path == "/api/possiblefaces":         # the Possible faces list
                         return self.send({"faces": db.possible(), "left": db.possible_left()})
                     if path.startswith("/api/possible/"):   # possible faces the import didn't keep (shown only)
@@ -420,15 +432,6 @@ def make_handler(db, importer):
                                           "exists": here, "remote": [] if here else remote_holders(h),
                                           "date": L.photo_date(path_) if path_ else "", "faces": others,
                                           "hints": dict(db.hints(i), web=web_saved.get(db.store.fid[i]))})
-                    if path == "/api/websearch/key":
-                        return self.send({"set": bool(websearch.key()), "services": websearch.services()})
-                    if path == "/api/secrets":               # the Settings tab's saved keys, shown masked
-                        if self.refused(write=True):         # only to the tool's own page (its header), never cross-site
-                            return
-                        return self.send(secrets())
-                    if path == "/api/settings":              # this page's settings (page_store.js)
-                        import devicesettings
-                        return self.send(devicesettings.page_state("label"))
                     if path == "/api/db":                    # the shared database: settings (never the password), state
                         return self.send(db_state(db))
                     if path == "/api/photos":                # photos with all of these people: ?with=A&with=B
@@ -455,7 +458,7 @@ def make_handler(db, importer):
                     n = db.act(str(body.get("action")), faces, body.get("name"))
                     return self.send({"ok": True, "changed": n, "undo": db.undo_stack[-1]["text"] if db.undo_stack else ""})
                 if path == "/api/morefaces":              # look again for faces in one photo (photo view)
-                    new = importer.find_more(int(body.get("i", -1)), body.get("box"))
+                    new = importer.find_more(face_index(body), body.get("box"))
                     return self.send({"ok": True, "new": new})
                 if path == "/api/rename":
                     n = db.rename(str(body.get("old", "")), str(body.get("new", "")))
@@ -466,7 +469,7 @@ def make_handler(db, importer):
                     importer.start(body.get("folder", ""))
                     return self.send({"ok": True})
                 if path == "/api/drawface":               # a face drawn by hand in the photo view
-                    j = importer.add_drawn(int(body.get("i", -1)), body.get("box") or [])
+                    j = importer.add_drawn(face_index(body), body.get("box") or [])
                     return self.send({"ok": True, "i": j})
                 if path == "/api/possible/scan":            # look for possible faces in photos added before
                     importer.scan_possible()
@@ -654,6 +657,17 @@ def app_version():
         if isinstance(v, str):
             return v
     return ""
+
+
+def face_index(body, db=None):
+    """The face a request is about (its "i"): a missing or bad one is refused, never taken as the last face (-1)."""
+    try:
+        i = int(body.get("i"))
+    except (TypeError, ValueError):
+        raise ValueError("no such face") from None
+    if i < 0:
+        raise ValueError("no such face")
+    return i
 
 
 def secrets():

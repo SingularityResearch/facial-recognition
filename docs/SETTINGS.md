@@ -5,8 +5,8 @@ window's **Settings** tab (Ctrl+3), in the sections below, in the order the tab 
 (camera, display, expression, voice/pulse/posture, recognition and this camera, alerts, presence log); Labeling (the
 face lists, Web search, Describe photo); LM Studio; This computer; Shared database. Changes apply at once and are
 remembered; sections with switches and choices have **Reset to defaults**. The same options also stay where they are
-used: the Face tracking tab's **Controls** panel and the Labeling tab's toolbar. Run in a web browser instead of the
-app window (`--browser`, or `recognize.bat` / `label.bat`), there is no Settings tab: use those controls on each page.
+used: the Face tracking tab's **Controls** panel and the Labeling tab's toolbar. The programs started on their
+own (`recognize.bat` / `label.bat`, or the `.sh` ones) have no Settings tab: use those controls on each page. (`--browser` opens the whole app, Settings tab included, in the web browser.)
 The **Cameras** tab has no rows in Settings; its two choices are under [Cameras tab](#cameras-tab).
 
 How settings are kept:
@@ -65,7 +65,7 @@ it still hangs the app starts again (at most once an hour, in the app window onl
 
 ## Face tracking: expression
 
-Expression is display only and never stored. The settings marked *evidence only* aren't measured yet: they're off by
+Expression readings are shown live and, with a shared database, kept there (see **Keep expression readings**); each alert also keeps what was measured when it was raised. The settings marked *evidence only* aren't measured yet: they're off by
 default and don't change the expression label until `tools/expr_eval.py` shows they help.
 
 | Setting | Default | What it is for |
@@ -73,6 +73,7 @@ default and don't change the expression label until `tools/expr_eval.py` shows t
 | **Show expression** | on | The face's expression under its name ("looks happy"), read from sharp, camera-facing frames and averaged over the last second. |
 | **Calibrate to each person** | on | Learns each named person's usual look (about a minute) and their normal for every signal; a reading that departs from it is highlighted, one that matches is marked "usual". Kept on this computer (`person_signals.json` in the private folder, and the page's storage); with a shared database every device shares them. **Forget what's learned** (Controls panel) clears it. |
 | **Show expression evidence** | on | What the expression is based on: the model's votes, face-shape cues, and why a frame was skipped. |
+| **Keep expression readings** | on | With a shared database: every 5 seconds, what each named person's face looks like (the expression shown and its share, the model's score for every expression, valence and arousal, alone or in company, how well the face matched) is kept in the database's `expression_log`, for reports later. Numbers and short labels only, never a picture or sound; never for unknown faces. It records how a face looked, not what the person felt. Nothing is kept without a shared database. A person's readings are in their export and go when they are forgotten. |
 | **Skip expression while talking** | off | *Evidence only.* No expression reading while the mouth moves with speech. |
 | **Use state model for expression** | off | *Evidence only.* Smooths the label with a model of how expressions change over time. |
 | **Skip expression when a hand is on the face** | off | *Evidence only.* No reading while a hand covers part of the face. |
@@ -95,7 +96,7 @@ Signals besides the face's expression, each with its own normal per person when 
 | **Match strictness** | 0.35 (0.20 to 0.60) | How alike a face must be to a known person to be named. Higher: fewer wrong names, more Unknown. 0.35 is the measured best for ArcFace. |
 | **Collect faces for labeling** | off | While a face stays in view, saves a sharp picture of that face every few seconds (up to 12 per face) with who the tracker thinks it is; never the whole frame, other faces greyed out. The Labeling tab adds them by itself, for you to confirm. |
 | **Keep this camera running** | on | Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. A start that hangs is retried as described under [App](#app). Clicking Stop camera turns this off. |
-| **Stream this camera to my other devices** | on | Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on), with its live readout. Sent all the time at full rate (about 10 frames a second), watched or not, also while the window is minimized; over your local network, encrypted, to your devices only; never stored. Needs a shared database and **Share my photos with my other devices** on (the peer service). |
+| **Stream this camera to my other devices** | on | Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on), with its live readout. Sent all the time at full rate (about 20 frames a second), watched or not, also while the window is minimized; over your local network, encrypted, to your devices only; never stored. Needs a shared database and **Share my photos with my other devices** on (the peer service). |
 
 ## Face tracking: alerts
 
@@ -104,7 +105,7 @@ Signals besides the face's expression, each with its own normal per person when 
 | **Alert me about these people** | none | Whom to be told about; Unknown means a face nobody is named for. |
 | **They arrive** | on | Alert when one of them is first seen after being out of view at least the time below. |
 | **They leave** | off | Alert when one of them has been out of view the time below. |
-| **They move between cameras** | on | With a shared database: alert when someone on the alert list who was on another device's camera in the last 10 minutes is now on this one. Raised by the device they arrived at; every device shows it. Only people on the alert list are noted in the database for it (`sightings`, deleted after 20 minutes); with it off, nothing is noted. |
+| **They move between cameras** | off | With a shared database: alert when someone on the alert list who was on another device's camera in the last 10 minutes is now on this one. Raised by the device they arrived at; every device shows it. Only people on the alert list are noted in the database for it (`sightings`, deleted after 20 minutes); with it off, nothing is noted. |
 | **Their signals are unusual for them** | off | Alert when one of their signals is far from their own normal (needs Calibrate to each person; the thresholds are guesses, not yet measured). |
 | **An unknown face stays** | off | Alert when a face nobody is named for stays in view the time below. |
 | **"Arrive": out of view at least** | 10 min | How long someone must have been away for their return to count as arriving. |
@@ -189,7 +190,7 @@ kept the same on every computer.
 | **LM Studio on this computer** | Whether LM Studio's server is running, and on which port. While the app runs it keeps LM Studio serving on all network interfaces and announces it on the network with its port, unless the computer already does. Lists the vision models the other LM Studio servers (or the shared folder) have and this one hasn't, and where each would come from. |
 | **Get the same models** (button) | Gets those models: copied from the **Shared models folder** when they're there (the same files, each checked by SHA-256); if that copy fails in any way or the model isn't there, downloaded from the internet with LM Studio (the same model and quantization). A bar at the top of the Labeling tab shows which, how far, and how long is left. |
 | **Shared models folder** | A folder every computer can reach, for example on a NAS: `\\NAS\share\lmstudio-models` on Windows, `/mnt/nas/share/lmstudio-models` on Linux. Each computer with the app and LM Studio puts its vision models there (with a list of every file's size and SHA-256) and gets the ones it lacks from there first. Empty: not used. This computer's own setting (`lmstudio.json`). |
-| **LM Studio on the network** | Every LM Studio server on the local network: each computer's name, its addresses (every network port) and port, the models it serves, which read pictures and which are loaded. Servers that announce themselves give their own port; the rest are found by trying LM Studio's port on each address of this computer's networks, only while Settings is open. |
+| **LM Studio on the network** | Every LM Studio server on the local network: each computer's name, its addresses (every network port) and port, the models it serves, which read pictures and which are loaded. Servers that announce themselves give their own port; the rest are found by trying LM Studio's port on each address of this computer's networks, only while Settings is open. With **Share Describe all with other computers** on, the same search also runs when a photo is opened in the labeling tool and during Describe all. |
 | **AI model apps found** | Apps that can run a vision model for Describe photo: LM Studio, Ollama, Jan, llama.cpp, vLLM and others on their usual ports here, the server set under Describe photo, apps installed but not running (for LM Studio, its downloaded models), and the address other computers can use when the server listens on all interfaces. |
 
 ---
@@ -202,7 +203,7 @@ What the app found on this computer and what it does with it. See the user guide
 | Setting | What it is for |
 |---|---|
 | **Hardware** | The processor (and threads), memory, graphics processors, NPU, and the ways ONNX Runtime can run models here (DirectML, CUDA, CoreML, CPU). |
-| **Where the work runs** | Which processor runs each job (face finding, recognition, photo quality, expression, face-shape cues, body posture), with the start-up check behind each choice: a model runs on the graphics processor only if it gives the processor's answers (within 1%), faster. Also how many photos an import works on at once. To choose yourself, set `FACE_DEVICE`. |
+| **Where the work runs** | Which processor runs each job (face finding, recognition, photo quality, expression, face-shape cues, body posture), with the start-up check behind each choice: a model runs on the graphics processor only if it gives the processor's answers (within 1%), faster. On Windows, DirectML runs recognition, photo quality and expression as measured there, without that check at each start; face finding is checked on every system. Also how many photos an import works on at once. To choose yourself, set `FACE_DEVICE`. |
 | **NVIDIA CUDA** (button) | Shown on the downloaded Linux app when it finds an NVIDIA card it can't use yet (after checking the driver, 525.60 or newer, and the card). Downloads NVIDIA's CUDA 12 and cuDNN 9 and Microsoft's ONNX Runtime with CUDA from PyPI (about 1.9 GB, about 3.5 GB unpacked, each file checked by size and SHA-256) into the app's folder; used from the next start, each model still only after its start-up check. Nothing is downloaded until clicked; `FACE_CUDA=off` hides it. Its progress shows in the bar at the top of the Labeling tab. |
 
 ---
@@ -228,7 +229,7 @@ What is shared, and what stays each device's own:
 
 | Shared by every device | Each device's own (in the database under its id) | Only ever sent, never taken by other devices |
 |---|---|---|
-| faces (prints, pictures, boxes), labels, photos (by content), photo tags and dates, Web search answers, descriptions, Collect faces pictures, alerts (also "moved between cameras"), presence visits, each person's usual look and signal normals, fitted expression numbers, keys (encrypted; the passphrase sealed to each device), forgotten people, Web search use per month | page options, describer choices, LM Studio shared folder, where each photo is on it (`photo_paths`), measured hardware and model numbers; the device list (name, app version, addresses and certificate fingerprint for the peer service, last seen, whether its camera streams) and who on its alert list its camera saw in the last 20 minutes (names and times, for "moved between cameras", only while that alert is on) | the app log (kept 90 days), the undo history log, posed expression tests |
+| faces (prints, pictures, boxes), labels, photos (by content), photo tags and dates, Web search answers, descriptions, Collect faces pictures, alerts (also "moved between cameras"), presence visits, expression readings (sent only, see Keep expression readings), each person's usual look and signal normals, fitted expression numbers, keys (encrypted; the passphrase sealed to each device), forgotten people, Web search use per month | page options, describer choices, LM Studio shared folder, where each photo is on it (`photo_paths`), measured hardware and model numbers; the device list (name, app version, addresses and certificate fingerprint for the peer service, last seen, whether its camera streams) and who on its alert list its camera saw in the last 20 minutes (names and times, for "moved between cameras", only while that alert is on) | the app log (kept 90 days), the undo history log, posed expression tests |
 
 Live camera pictures and readouts never go to the database: they go from device to device over the peer service, and
 stay in memory.
@@ -241,7 +242,7 @@ Set before starting the app (or a program) to change how it starts.
 
 | Variable | Values | What it does |
 |---|---|---|
-| `FACE_DEVICE` | `auto` (default), `gpu`, `cpu`, `npu` | Where the models run. auto: the graphics processor for each model that passes its start-up check, else the processor. gpu: the graphics processor without the check. npu: the Ryzen AI NPU (needs the Ryzen AI Python). |
+| `FACE_DEVICE` | `auto` (default), `gpu`, `cpu`, `npu` | Where the models run. auto: the graphics processor for each model that passes its start-up check, else the processor (DirectML on Windows: without the check, except for face finding). gpu: the graphics processor without the check. npu: the Ryzen AI NPU (needs the Ryzen AI Python). |
 | `FACE_MODEL` | `sface_2021dec` | Use the older SFace recognizer instead of ArcFace (then run `face_id.py reembed`). |
 | `FACE_IMPORT_WORKERS` | a number | How many photos an import works on at once (default: processor threads − 2, 2 to 12). |
 | `FACE_CUDA` | `off` (or `0`, `no`) | Don't use or offer the downloaded CUDA (Linux app). |
@@ -256,6 +257,10 @@ Set before starting the app (or a program) to change how it starts.
 | `FACE_DB_SCHEMA` | a schema name | The schema in it (default `facerec`). |
 | `FACE_PEER` | `off` | Don't share this device's photos or stream its camera to the other devices (no peer service), whatever Settings says. |
 | `FACE_PEER_PORT` | a port | The peer service's port instead of the app's ports + 3 (8767, or `FACE_PORTS` + 3). |
+| `FACE_DB_PASSWORD` | a password | `tools/db_setup.py` only: the database role's password, instead of being asked for it. |
+| `XDG_DATA_HOME` | a folder | Linux: the private folder is `FaceLabels` inside it (default `~/.local/share`), unless `FACE_HOME` is set. |
+| `PYTHON` | a Python 3.12 command | `setup.sh` only: the Python to make `.venv` with (default `python3.12`). |
+| `FACE_RESTART_AFTER` | a process id | Set by the app itself when it starts again on Windows (the new copy waits for that process to end); not for use by hand. |
 | `FACE_TEST_PG` | a PostgreSQL connection string | Tests only: the database `test_facedb.py` and `test_sync.py` run against (each test makes and drops its own schema); without it they're skipped. |
 
 ---
@@ -272,11 +277,11 @@ Nothing is sent anywhere by itself except as listed here.
 | **Describe photo** on another computer's server | Each photo described goes to that server. |
 | **Share Describe all with other computers** | During Describe all, photos go to the other LM Studio servers on the local network that have the same model. |
 | **Built-in model**, **NVIDIA CUDA**, **Get the same models** (from the internet) | Downloads, when clicked: Hugging Face, PyPI, LM Studio's sources. |
-| **LM Studio → LM Studio on the network** | While Settings is open: a connection attempt to LM Studio's port on each address of this computer's local networks, each server's model list, each computer's name (mDNS or NetBIOS), and an mDNS question for announced servers. Local network only. |
+| **LM Studio → LM Studio on the network** | While Settings is open (and, with Share Describe all on, when a photo is opened and during Describe all): a connection attempt to LM Studio's port on each address of this computer's local networks, each server's model list, each computer's name (mDNS or NetBIOS), and an mDNS question for announced servers. Local network only. |
 | **LM Studio → AI model apps found** | While Settings is open: asks the usual AI ports on this computer, and the Describe photo server set (which may be another device, with its own API key) for its models. |
-| **LM Studio on this computer** | While the app runs (every minute): keeps this computer's LM Studio server listening on all network interfaces, so other computers on the network can use it, and announces it on the local network (mDNS). `FACE_LMSTUDIO=off` stops both. |
+| **LM Studio on this computer** | While the app runs (every minute): keeps this computer's LM Studio server listening on all network interfaces (restarting it with `--bind 0.0.0.0 --cors` if it listened on this computer only: CORS on means a web page open in your browser may call it too), so other computers on the network can use it, and announces it on the local network (mDNS). `FACE_LMSTUDIO=off` stops both. |
 | **Shared models folder** | While the app runs: puts this computer's vision models in that folder (your own NAS or share); **Get the same models** copies from it. |
 | **Share my photos with my other devices** | While on (with a shared database): the peer service listens on the local network (port 8767), TLS. It answers your other devices' requests for its original photos (by content hash) and for this camera's stream. Opening a photo another device has asks that device for it. |
 | **Stream this camera to my other devices** | While on and the camera runs: this device's camera, as its tracker shows it, and its live readout go to your other devices whose Cameras tab shows it, over the peer service. |
 | **Cameras** tab | While it watches: this device's app connects to each streaming device's peer service (TLS, signed requests) for its frames and readout. |
-| **Shared database** | Once connected: every face, name, label, photo record, description, Collect faces picture, alert, presence visit, per-person signal and this device's settings go to that PostgreSQL server, and come from it, over TLS checked against the server's own certificate authority. Also who on this device's alert list its camera sees (names and times, kept 20 minutes, only while "They move between cameras" is on) and this device's entry in the device list. Keys go only encrypted, and only once the passphrase is set. |
+| **Shared database** | Once connected: every face, name, label, photo record, description, Collect faces picture, alert, presence visit, expression reading (while Keep expression readings is on), per-person signal and this device's settings go to that PostgreSQL server, and come from it, over TLS checked against the server's own certificate authority. Also who on this device's alert list its camera sees (names and times, kept 20 minutes, only while "They move between cameras" is on) and this device's entry in the device list. Keys go only encrypted, and only once the passphrase is set. |

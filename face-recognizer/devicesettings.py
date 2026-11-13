@@ -24,11 +24,8 @@ _lock = threading.Lock()
 
 
 def _read(name):
-    try:
-        v = json.loads((paths.HOME / name).read_text("utf-8"))
-        return v if isinstance(v, dict) else {}
-    except (OSError, ValueError):
-        return {}
+    v = paths.read_json(paths.HOME / name, {})     # OSError if it's there and can't be read: never taken as empty
+    return v if isinstance(v, dict) else {}
 
 
 def _write(name, obj):
@@ -75,8 +72,54 @@ def signals():
     return {k: dict(s.get(k) or {}) for k in KINDS}
 
 
+def _forgotten():
+    try:
+        import dbsync_home
+        return dbsync_home.forgotten_names()
+    except ImportError:
+        return set()
+
+
+def merge_signals(kind, changed, gone=()):
+    """What the tracker page learned since it last said: changed {name: data} is set, the names in gone are removed.
+    Nobody else is touched. (The page used to send its whole map, and whoever it didn't know of was dropped: people
+    another device had learned since the page loaded, here and through the sync on every device.) A forgotten name
+    is refused until it is given to someone again, so a page still running can't bring a forgotten person back."""
+    if kind not in KINDS or not isinstance(changed, dict) or not isinstance(gone, (list, tuple)):
+        raise ValueError("bad signals")
+    if len(json.dumps(changed)) > MAX_SIGNALS:
+        raise ValueError("too much")
+    forgotten = _forgotten()
+    with _lock:
+        s = _read(SIGNALS)
+        m = s[kind] = dict(s.get(kind) or {})
+        for n, d in changed.items():
+            n = str(n)[:100]
+            if isinstance(d, dict) and n and not n.startswith("#") and n not in forgotten:
+                m[n] = d
+        for n in gone:
+            m.pop(str(n), None)
+        _write(SIGNALS, s)
+
+
+def signals_state(have=None):
+    """For the tracker page's check every half minute: {v} and, unless the page already has version `have`,
+    {signals, forgotten} (what other devices learned or forgot arrives in the file through the sync)."""
+    def stamp(p):
+        try:
+            st = p.stat()
+            return f"{st.st_mtime_ns}.{st.st_size}"
+        except OSError:
+            return "-"
+    v = stamp(paths.HOME / SIGNALS) + "/" + stamp(paths.HOME / "forgotten.json")
+    if have == v:
+        return {"v": v, "same": True}
+    return {"v": v, "signals": {KINDS[k]: p for k, p in signals().items()}, "forgotten": sorted(_forgotten())}
+
+
 def set_signals(kind, people):
-    """The page's whole map of one kind ({name: data}); a person missing from it is dropped (forgotten there)."""
+    """The whole map of one kind ({name: data}); a person missing from it is dropped. Not for the page (see
+    merge_signals): it only knows the people it has seen."""
     if kind not in KINDS or not isinstance(people, dict):
         raise ValueError("bad signals")
     if len(json.dumps(people)) > MAX_SIGNALS:
@@ -122,9 +165,5 @@ def page_state(app):
     out = {"settings": settings(app)}
     if app == "track":
         out["signals"] = {KINDS[k]: v for k, v in signals().items()}
-        try:
-            import dbsync_home
-            out["forgotten"] = sorted(dbsync_home.forgotten_names())
-        except ImportError:
-            out["forgotten"] = []
+        out["forgotten"] = sorted(_forgotten())
     return out

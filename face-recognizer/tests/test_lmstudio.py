@@ -115,3 +115,56 @@ def test_any_shared_folder_failure_falls_back_to_the_internet(monkeypatch):
     g = L.STATE["get"]
     assert got == ["qwen/qwen3.8-27b@q4_k_m"] and g["error"] is None
     assert g["done"] == ["qwen/qwen3.8-27b@q4_k_m (downloaded from the internet)"] and "NAS went away" in g["notes"][0]
+
+
+def test_the_shared_folders_list_cant_write_outside_lm_studios_folders(tmp_path, monkeypatch):
+    """Other computers write index.json: a path in it that leaves the models or hub folder is never used."""
+    import pytest
+    shared = tmp_path / "share"
+    monkeypatch.setattr(L, "CONF", tmp_path / "lmstudio.json")
+    L.set_share(shared)
+    _computer(tmp_path / "a", monkeypatch, True)
+    L.publish()
+    good = json.loads((shared / "index.json").read_text())["qwen/qwen3.8-27b@q4_k_m"]
+    models, hub = _computer(tmp_path / "b", monkeypatch, False)
+    (shared / "evil.bat").write_bytes(b"x")
+    sha = L._sha256(shared / "evil.bat")
+    bad_paths = ["../evil.bat", r"..\evil.bat", "a/../../evil.bat", "/evil.bat", "C:/evil.bat", "C:evil.bat", "a//b", ""]
+    for path in bad_paths:
+        entry = {"hub": good["hub"], "files": [{"path": path, "size": 1, "sha256": sha}]}
+        (shared / "index.json").write_text(json.dumps({"x/y@q4": entry, "qwen/qwen3.8-27b@q4_k_m": good}))
+        assert sorted(L._read_index(shared)) == ["qwen/qwen3.8-27b@q4_k_m"], path     # the bad entry is left out
+        assert L.from_share("x/y@q4") is False
+    for hub_path in ["../../evil", "C:/evil", 5, None]:
+        (shared / "index.json").write_text(json.dumps({"x/y@q4": {**good, "hub": hub_path}}))
+        assert L._read_index(shared) == {} and L.from_share("x/y@q4") is False
+    for junk in ["[]", "5", json.dumps({"x/y@q4": 5}), json.dumps({"x/y@q4": {"hub": "a/b"}}),
+                 json.dumps({"x/y@q4": {"hub": "a/b", "files": [{"path": "a/b.gguf", "size": "1", "sha256": sha}]}})]:
+        (shared / "index.json").write_text(junk)
+        assert L._read_index(shared) == {} and L.missing_models([]) == [] and L.share_status()["models"] == []
+        L.publish()                                           # and none of them stops this computer's own publish
+    assert list(tmp_path.rglob("evil.bat")) == [shared / "evil.bat"]       # copied nowhere
+    assert not list(models.rglob("*")) and not list(hub.rglob("*"))
+    with pytest.raises(OSError, match="outside its folder"):
+        L._inside(models, "../evil.bat")
+
+
+def test_only_plain_model_names_are_ever_downloaded(monkeypatch):
+    """Model names come from other computers on the network: one that is an option or a URL never reaches `lms get`."""
+    monkeypatch.setattr(L, "local_models", lambda: [])
+    monkeypatch.setattr(L, "share", lambda: None)
+    net = [{"this_computer": False, "host": "other", "models": [
+        {"id": "qwen/qwen3.8-27b", "vision": True, "quant": "Q4_K_M"}, {"id": "--help", "vision": True, "quant": None},
+        {"id": "https://example.com/x.gguf", "vision": True, "quant": None}, {"id": "a b", "vision": True, "quant": None}]}]
+    assert [m["variant"] for m in L.missing_models(net)] == ["qwen/qwen3.8-27b@q4_k_m"]
+    got = []
+    monkeypatch.setattr(L, "lms_path", lambda: "lms")
+    monkeypatch.setattr(L, "from_share", lambda v, st=None: False)
+    monkeypatch.setattr(L, "_lms_get", lambda v, st: (got.append(v) or True, ""))
+    L.STATE["get"] = None
+    L.get_models(["--yes", "qwen/qwen3.8-27b@q4_k_m", "-o /tmp/x", 5])
+    for _ in range(100):
+        if not L.STATE["get"]["running"]:
+            break
+        __import__("time").sleep(0.02)
+    assert got == ["qwen/qwen3.8-27b@q4_k_m"]

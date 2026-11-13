@@ -68,9 +68,15 @@ def check(G, D, lab, named, use, thr):
 def main():
     store = F.Store()
     if store.missing_thumbs():
-        sys.exit(f"{store.missing_thumbs()} faces have no picture in data\thumbs.npz (it isn't in git): "
+        sys.exit(f"{store.missing_thumbs()} faces have no picture in data\\thumbs.npz (it isn't in git): "
                  "run this on the computer the faces were found on")
     crops = [store.thumb(i) for i in range(len(store.emb))]
+    real = next((c for c in crops if c is not None), None)
+    if real is None:
+        sys.exit("No face pictures yet.")
+    # Ignored and forgotten faces have no picture left (and no name, so they are in no result below): a grey
+    # stand-in keeps one row per face
+    crops = [np.full_like(real, 127) if c is None else c for c in crops]
     import labels as L
     db = L.LabelDB(backup=False)
     lab = np.array([n if n and n != L.IGNORE else "" for n in map(db.name, range(db.n))])

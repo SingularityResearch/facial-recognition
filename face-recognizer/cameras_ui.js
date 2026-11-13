@@ -100,7 +100,7 @@ async function pumpAll() {
     try {
       const r = await fetch(`/api/cameras/frames?after=${ids.map(id => `${id}:${tiles[id].seq}`).join(",")}`,
                             { cache: "no-store", signal: AbortSignal.timeout(15000) });
-      if (!r.ok) { await sleep(1000); continue; }
+      if (!r.ok) { r.body?.cancel().catch(() => {}); await sleep(1000); continue; }   // an unread answer keeps a descriptor (see drop in tracker_ui.js)
       const buf = await r.arrayBuffer(), n = new DataView(buf).getUint32(0);
       const head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, n)));
       let off = 4 + n;

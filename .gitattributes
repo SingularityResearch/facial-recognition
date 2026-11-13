@@ -14,3 +14,5 @@
 # Shell scripts for macOS and Linux keep Unix line endings wherever they are checked out
 *.sh text eol=lf
 *.command text eol=lf
+# cmd needs CRLF to find a batch file's labels (goto): also in a ZIP downloaded from GitHub
+*.bat text eol=crlf

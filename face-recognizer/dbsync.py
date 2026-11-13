@@ -88,6 +88,10 @@ class State:
         with self.lock:
             self.db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (k, str(v)))
 
+    def drop(self, k):
+        with self.lock:
+            self.db.execute("DELETE FROM meta WHERE k = ?", (k,))
+
     def digests(self, tbl):
         with self.lock:
             return dict(self.db.execute("SELECT key, d FROM digest WHERE tbl = ?", (tbl,)).fetchall())
@@ -460,6 +464,7 @@ class Sync:
         self.stopping = threading.Event()
         self.thread = None
         self.conn = None
+        self._info = None                     # the connection settings self.conn was opened with
         self.lock = threading.Lock()          # one sync step at a time (the thread, or join() from a request)
         self.info = {"state": "off", "text": "", "waiting": 0, "last": None, "error": None}
         self._last_local = 0.0
@@ -507,8 +512,12 @@ class Sync:
                 self._close()
                 self.info.update(state="off", text="No shared database: data is kept on this device only.")
                 return {}
+            info = facedb._conninfo()
+            if self.conn is not None and info != self._info:
+                self._close()                 # Settings -> Connect to another server or schema: not the old one still
             if self.conn is None or self.conn.closed:
                 self.conn = facedb.open_ready(self.app_version)
+                self._info = info
             conn = self.conn
             inst = str(conn.execute("SELECT id FROM instance").fetchone()[0])
             if self.state.get("instance") != inst:
@@ -547,17 +556,40 @@ class Sync:
         return sent
 
     def _pull(self, conn):
-        cursor = int(self.state.get("cursor", 0))
-        top = conn.execute("SELECT coalesce(max(seq), 0) FROM changes").fetchone()[0]
-        if top <= cursor:
-            return 0
+        """Take the rows other devices changed since the last pull. Which changes are new is decided by their
+        transaction, not their seq (db/009): seq numbers are taken when a row is written and seen when its
+        transaction commits, so a long transaction (a device joining) commits rows numbered below what a device
+        polling meanwhile has already passed. The pull remembers the snapshot it read the log with and next time
+        takes every change whose transaction wasn't visible in it."""
+        seen = self.state.get("snapshot")
         me = facedb.device()["id"]
         owner = {t: part for part in self.parts for t in part.TABLES}
-        rows = conn.execute("""SELECT tbl, key, max(seq), (array_agg(device ORDER BY seq DESC))[1]::text
-                               FROM changes WHERE seq > %s AND seq <= %s AND tbl = ANY(%s)
-                               GROUP BY tbl, key""", (cursor, top, list(owner))).fetchall()
+        newest = "SELECT tbl, key, (array_agg(device ORDER BY seq DESC))[1]::text FROM changes WHERE "
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")   # the snapshot and the rows: one view
+            if seen is None:                    # the first pull since db/009: by seq this once, as before it
+                now = conn.execute("SELECT pg_current_snapshot()::text").fetchone()[0]
+                rows = conn.execute(newest + "seq > %s AND tbl = ANY(%s) GROUP BY tbl, key",
+                                    (int(self.state.get("cursor", 0)), list(owner))).fetchall()
+            else:
+                now, back = conn.execute("""SELECT s::text, pg_snapshot_xmax(s)::text::bigint
+                                                            < pg_snapshot_xmin(%s::pg_snapshot)::text::bigint
+                                            FROM pg_current_snapshot() AS s""", (seen,)).fetchone()
+                if now == seen:
+                    return 0
+                rows = None if back else conn.execute(
+                    newest + """txid >= pg_snapshot_xmin(%(seen)s::pg_snapshot)::text::bigint
+                                AND txid < pg_snapshot_xmax(%(now)s::pg_snapshot)::text::bigint
+                                AND NOT pg_visible_in_snapshot(txid::text::xid8, %(seen)s::pg_snapshot)
+                                AND tbl = ANY(%(tbls)s) GROUP BY tbl, key""",
+                    {"seen": seen, "now": now, "tbls": list(owner)}).fetchall()
+        if rows is None:                        # restored from a backup onto another server: its numbers started again
+            self.log("Shared database: its transaction numbers went back (moved or restored?): taking everything again.")
+            self._push(conn)
+            self.state.put("snapshot", self._take_all(conn))
+            return 0
         want = {t: [] for t in owner}
-        for tbl, key, _seq, dev in rows:
+        for tbl, key, dev in rows:
             if dev != me:                       # the newest change of this row is another device's
                 want[tbl].append(key)
         got = 0
@@ -566,8 +598,23 @@ class Sync:
                 server = part.fetch(conn, tbl, want[tbl])
                 self.state.set_digests(tbl, part.apply(tbl, server, self.log))
                 got += len(want[tbl])
-        self.state.put("cursor", top)
+        self.state.put("snapshot", now)
         return got
+
+    def _take_all(self, conn, joining=False):
+        """Every row of every table, applied here. Returns the snapshot taken before the first: the next pull
+        takes whatever was committed after it (some of it twice, which changes nothing)."""
+        snap = conn.execute("SELECT pg_current_snapshot()::text").fetchone()[0]
+        for part in self.parts:
+            for tbl in part.TABLES:
+                keys = part.all_keys(conn, tbl)
+                for b in range(0, len(keys), 2000):
+                    got = part.fetch(conn, tbl, keys[b:b + 2000])
+                    self.state.set_digests(tbl, part.apply(tbl, got, self.log))
+                # a row only this device has (added while joining) differs from the digests: it's sent next time
+            if joining:
+                part.on_join(self.state)
+        return snap
 
     def _join(self, conn, inst):
         """First sync with this database: merge everything in, then take everything."""
@@ -577,16 +624,7 @@ class Sync:
         self.state.reset()
         counts = dbimport.run(conn, F.DATA, paths.HOME, facedb.device())
         self.info.update(text="Joining the shared database: taking every device's data ...")
-        top = conn.execute("SELECT coalesce(max(seq), 0) FROM changes").fetchone()[0]
-        for part in self.parts:
-            for tbl in part.TABLES:
-                keys = part.all_keys(conn, tbl)
-                for b in range(0, len(keys), 2000):
-                    got = part.fetch(conn, tbl, keys[b:b + 2000])
-                    self.state.set_digests(tbl, part.apply(tbl, got, self.log))
-                # a row only this device has (added while joining) differs from the digests: it's sent next time
-            part.on_join(self.state)
-        self.state.put("cursor", top)
+        self.state.put("snapshot", self._take_all(conn, joining=True))
         self.state.put("instance", inst)
         self._dirty = True
         self.log(f"Joined the shared database: sent {counts.get('faces', 0)} faces and {counts.get('labels', 0)} "

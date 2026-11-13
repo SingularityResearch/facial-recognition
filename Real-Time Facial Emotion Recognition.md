@@ -919,12 +919,12 @@ Avoid single-frame classifiers and single-label outputs. The strongest systems a
 
 ### User
 Excellent summary! Please examine this proof of concept that I created in Python and compare it with your summary and provide specific recommendations. This is the path to the code base:
-X:\source\facial-recognition
+C:\src\facial-recognition
 
 
 
 ### Assistant
-User wants me to examine proof of concept at path X:\source\facial-recognition. I as AI likely don't have access to their local file system unless tool? We don't have file access. Need respond that I can't directly access X: path, ask them to paste code or upload, but also can provide a checklist for PoC comparison and what to look for. Need be helpful. Maybe mention if they can share directory tree and main files. Since they expect examine code, need say can't access local drive, but can review if they paste contents. Could provide targeted questions and a rubric mapping to previous summary. Also maybe provide a script to generate a review package? Need maybe ask for files: requirements.txt, main inference script, model config, README, data pipeline, tests, metrics. Could propose they run commands to produce file tree and paste. But maybe user expects direct code review; we cannot. Need not pretend. Could also offer to analyze if they provide code snippets. Need final in English.
+User wants me to examine proof of concept at path C:\src\facial-recognition. I as AI likely don't have access to their local file system unless tool? We don't have file access. Need respond that I can't directly access X: path, ask them to paste code or upload, but also can provide a checklist for PoC comparison and what to look for. Need be helpful. Maybe mention if they can share directory tree and main files. Since they expect examine code, need say can't access local drive, but can review if they paste contents. Could provide targeted questions and a rubric mapping to previous summary. Also maybe provide a script to generate a review package? Need maybe ask for files: requirements.txt, main inference script, model config, README, data pipeline, tests, metrics. Could propose they run commands to produce file tree and paste. But maybe user expects direct code review; we cannot. Need not pretend. Could also offer to analyze if they provide code snippets. Need final in English.
 
 Need include specific recommendations maybe generic for PoC. Could ask to share:
 - project tree
@@ -938,14 +938,14 @@ Need include specific recommendations maybe generic for PoC. Could ask to share:
 - deployment config
 - privacy/consent.
 
-Could provide a self-audit checklist they can use, with concrete recommendations and red flags. Maybe include a command to list files: PowerShell Get-ChildItem -Recurse -Path X:\source\facial-recognition | Select-Object FullName, Length | Format-Table. But don't execute. Also ask to sanitize secrets.
+Could provide a self-audit checklist they can use, with concrete recommendations and red flags. Maybe include a command to list files: PowerShell Get-ChildItem -Recurse -Path C:\src\facial-recognition | Select-Object FullName, Length | Format-Table. But don't execute. Also ask to sanitize secrets.
 
 Need maybe mention that I can compare once code is provided. Since they ask "Please examine this proof of concept... compare... provide specific recommendations." Need politely decline due to no filesystem access, but provide immediate actionable next steps. Maybe include a template for them to paste.
 
 Could also say if they have repository, create a public/private link? But can't browse. Better: paste code or attach files.
 
 Need final answer with:
-- "I can't access X:\source\facial-recognition from here."
+- "I can't access C:\src\facial-recognition from here."
 - "To give a real code review, send..."
 - "In the meantime, here is exactly what I would look for and common PoC weaknesses mapped to best practices."
 - Provide review checklist:
@@ -993,7 +993,7 @@ Need perhaps include "If you can't share full code, paste the 5 most important f
 Need mention avoid secrets, API keys, credentials, proprietary data.
 
 Potential final:
-"I don't have access to your Windows drive X:. Please paste or upload. If you want, run this to generate a safe file tree: `Get-ChildItem -Path X:\source\facial-recognition -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize` and then share key files. Do not include secrets."
+"I don't have access to your Windows drive X:. Please paste or upload. If you want, run this to generate a safe file tree: `Get-ChildItem -Path C:\src\facial-recognition -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize` and then share key files. Do not include secrets."
 
 Then "What I will compare against summary" table.
 
@@ -1015,7 +1015,7 @@ Also maybe ask for target hardware, frame rate, model, datasets.
 
 Let's produce final.
 
-I can’t directly access your local drive or path `X:\source\facial-recognition` from here. If you want a real code review, paste the key files or upload them here. Please avoid pasting secrets, API keys, credentials, or proprietary data.
+I can’t directly access your local drive or path `C:\src\facial-recognition` from here. If you want a real code review, paste the key files or upload them here. Please avoid pasting secrets, API keys, credentials, or proprietary data.
 
 To make the review precise, share:
 
@@ -1036,7 +1036,7 @@ To make the review precise, share:
 A quick safe way to generate a file tree on Windows PowerShell is:
 
 ```powershell
-Get-ChildItem -Path "X:\source\facial-recognition" -Recurse -File |
+Get-ChildItem -Path "C:\src\facial-recognition" -Recurse -File |
   Select-Object FullName, Length |
   Format-Table -AutoSize
 ```
@@ -1687,17 +1687,17 @@ Once I can see the code, I can give concrete, file-level recommendations such as
 
 ### User
 I am explicitly giving you full permission to access these files in the filesystem at: 
-X:\source\facial-recognition. Also, this does take advantage of the NPU and GPU on this development computer.
+C:\src\facial-recognition. Also, this does take advantage of the NPU and GPU on this development computer.
 
 ### Assistant
-User says explicitly permission to access files in filesystem at X:\source\facial-recognition. But I as model in this environment likely don't have filesystem access unless tool provided. We don't have tools. Need maybe state still cannot access, even with permission, because no file system access in this chat. But maybe there is hidden ability? We must be truthful. Could say I still cannot open that path from this interface; permissions alone don't grant me access unless I have a file/tool connection. Ask them to paste files or upload. But user emphasized NPU/GPU development computer. Could maybe provide PowerShell commands to inspect, generate report, and ask them to paste output. Need be helpful.
+User says explicitly permission to access files in filesystem at C:\src\facial-recognition. But I as model in this environment likely don't have filesystem access unless tool provided. We don't have tools. Need maybe state still cannot access, even with permission, because no file system access in this chat. But maybe there is hidden ability? We must be truthful. Could say I still cannot open that path from this interface; permissions alone don't grant me access unless I have a file/tool connection. Ask them to paste files or upload. But user emphasized NPU/GPU development computer. Could maybe provide PowerShell commands to inspect, generate report, and ask them to paste output. Need be helpful.
 
 Need maybe infer that user is on Windows and expects agent with file access. In many coding agents, there could be file tools, but here not exposed. We cannot. Need not pretend. We can offer to analyze if they provide output of commands. Could provide a script to create a review bundle and performance profile. Since they mention NPU/GPU, recommendations should include checking runtime: DirectML, ONNX Runtime, OpenVINO, TensorRT, CoreML? Windows NPU likely DirectML/OpenVINO/ONNX Runtime, maybe MediaPipe? GPU NVIDIA/CUDA? We can suggest inspecting code for device selection, providers, dtype, latency. Ask for provider strings.
 
 Need final answer: "Thanks, but I still can't directly access X: from this chat. Even with permission, I don't have a shell/file tool connected to your machine." Then provide exact steps to get review:
 1. Generate file tree:
 ```
-cd X:\source\facial-recognition
+cd C:\src\facial-recognition
 Get-ChildItem -Recurse -File | Where-Object { $_.Extension -in '.py','.md','.txt','.yaml','.yml','.json','.toml','.cfg','.ini' } | Select-Object FullName, Length | Format-Table -AutoSize
 ```
 Maybe include ignore venv, .git, caches:
@@ -1707,11 +1707,11 @@ Get-ChildItem -Recurse -File | Where-Object { $_.FullName -notmatch ($exclude -j
 ```
 2. Create zip excluding heavy files:
 ```
-Compress-Archive -Path "X:\source\facial-recognition\*" -DestinationPath "facial-recognition-poc.zip" -Force
+Compress-Archive -Path "C:\src\facial-recognition\*" -DestinationPath "facial-recognition-poc.zip" -Force
 ```
 But careful include venv huge. Better:
 ```
-robocopy X:\source\facial-recognition C:\temp\facial-recognition-poc /E /XF *.pyc /XD .git .venv venv __pycache__ node_modules dist build models weights /R:1 /W:1
+robocopy C:\src\facial-recognition C:\temp\facial-recognition-poc /E /XF *.pyc /XD .git .venv venv __pycache__ node_modules dist build models weights /R:1 /W:1
 Compress-Archive C:\temp\facial-recognition-poc facial-recognition-poc.zip
 ```
 Maybe too much.
@@ -1785,7 +1785,7 @@ Need maybe mention "If this chat is connected to a file tool in your environment
 Need produce final with clear next steps.
 
 Let's draft:
-- "Thanks for clarifying. I still can’t open `X:\source\facial-recognition` because I don't have filesystem access from this chat. Explicit permission doesn't change that."
+- "Thanks for clarifying. I still can’t open `C:\src\facial-recognition` because I don't have filesystem access from this chat. Explicit permission doesn't change that."
 - "To proceed, please send either the file tree + key files or a zip if the interface supports attachments. If attachments are not available, paste code."
 - "Since you mention NPU/GPU, I’ll specifically review device/runtime usage, not just logic."
 - Provide a copy-paste PowerShell script to prepare a review bundle:
@@ -1811,7 +1811,7 @@ Need final not too long but detailed. Ensure no false claim. Good.
 
 Let's write final.
 
-Thanks for clarifying. I still can’t directly open `X:\source\facial-recognition` from this chat, even with your explicit permission. The limitation is on my side: I don’t currently have a shell or filesystem tool connected to your Windows machine. I can only analyze files you paste, upload, or export as text.
+Thanks for clarifying. I still can’t directly open `C:\src\facial-recognition` from this chat, even with your explicit permission. The limitation is on my side: I don’t currently have a shell or filesystem tool connected to your Windows machine. I can only analyze files you paste, upload, or export as text.
 
 That said, I can still give you a very specific review if you provide the code or a safe bundle. Since you mentioned the PoC uses the **NPU and GPU**, I will specifically check whether the system is actually using the accelerators, whether it is silently falling back to CPU, and whether the pipeline is structured for real-time inference.
 
@@ -1865,7 +1865,7 @@ If your chat interface supports file upload, you can create a zip and upload it.
 From PowerShell:
 
 ```powershell
-$source = "X:\source\facial-recognition"
+$source = "C:\src\facial-recognition"
 $dest = "C:\temp\facial-recognition-poc"
 $zip = "C:\temp\facial-recognition-poc.zip"
 
@@ -2298,7 +2298,7 @@ Once you share the files, I can provide:
 Please paste the project file tree first:
 
 ```powershell
-Get-ChildItem -Path "X:\source\facial-recognition" -Recurse -File |
+Get-ChildItem -Path "C:\src\facial-recognition" -Recurse -File |
   Where-Object {
     $_.FullName -notmatch "\\(\.git|\.venv|venv|__pycache__|node_modules|dist|build|\.idea|\.vscode)\\" -and
     $_.Extension -in ".py", ".md", ".txt", ".yaml", ".yml", ".json", ".toml", ".cfg", ".ini", ".env"
@@ -2330,7 +2330,7 @@ User asks how enable me to inspect files, reading files from filesystem should b
 1. In this chat: upload files or paste code.
 2. Use an AI coding agent that runs locally with filesystem permissions: Cursor, Windsurf, GitHub Copilot Workspace, Cline, Continue, Aider, OpenHands, etc. But user asks enable "you" specifically. If same model through an agent, possible.
 3. Use API + function calling: build a small local tool `list_dir`, `read_file`, `search` and allow model to call it. Provide example Python FastAPI/OpenAI function calling. Could include code.
-4. Use MCP (Model Context Protocol) filesystem server. If client supports MCP, connect to filesystem server with root X:\source\facial-recognition. Provide config example.
+4. Use MCP (Model Context Protocol) filesystem server. If client supports MCP, connect to filesystem server with root C:\src\facial-recognition. Provide config example.
 5. Use a local CLI bridge: e.g., write a script that reads files and sends to API, or use `aider`/`cline` with model.
 6. Security: restrict to project directory, avoid secrets, use allowlist, sandbox.
 
@@ -2361,7 +2361,7 @@ And Python handler with safe path resolution:
 
 ```python
 from pathlib import Path
-ROOT = Path(r"X:\source\facial-recognition")
+ROOT = Path(r"C:\src\facial-recognition")
 def read_file(path: str) -&gt; str:
     p = (ROOT / path).resolve()
     if ROOT.resolve() not in p.parents and p != ROOT.resolve():
@@ -2380,7 +2380,7 @@ MCP config example:
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "X:\\source\\facial-recognition"]
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\src\\facial-recognition"]
     }
   }
 }
@@ -2430,7 +2430,7 @@ But:
   no shell execution
 ```
 
-That’s why I can’t simply open `X:\source\facial-recognition` unless the platform you’re using gives me a way to do it.
+That’s why I can’t simply open `C:\src\facial-recognition` unless the platform you’re using gives me a way to do it.
 
 Here are the practical ways to enable file inspection.
 
@@ -2445,7 +2445,7 @@ If you’re using a web chat interface, the easiest path is:
 Create a bundle:
 
 ```powershell
-$source = "X:\source\facial-recognition"
+$source = "C:\src\facial-recognition"
 $dest = "C:\temp\facial-recognition-poc"
 $zip = "C:\temp\facial-recognition-poc.zip"
 
@@ -2564,7 +2564,7 @@ For example, a conceptual MCP config might look like this:
       "args": [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "X:\\source\\facial-recognition"
+        "C:\\src\\facial-recognition"
       ]
     }
   }
@@ -2610,7 +2610,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-ROOT = Path(r"X:\source\facial-recognition").resolve()
+ROOT = Path(r"C:\src\facial-recognition").resolve()
 
 ALLOWED_EXTENSIONS = {
     ".py", ".md", ".txt", ".json", ".yaml", ".yml",
@@ -2743,7 +2743,7 @@ Model says:
   call read_file(path="main.py")
 
 Your backend:
-  reads X:\source\facial-recognition\main.py
+  reads C:\src\facial-recognition\main.py
   returns contents to model
 
 Model:
@@ -2772,7 +2772,7 @@ Example `tools/inspect.py`:
 import sys
 from pathlib import Path
 
-ROOT = Path(r"X:\source\facial-recognition").resolve()
+ROOT = Path(r"C:\src\facial-recognition").resolve()
 
 def list_files():
     for p in sorted(ROOT.rglob("*")):
@@ -2823,7 +2823,7 @@ A local AI agent could run those and pass the output to the model.
 If you want to give an AI controlled access to this project, I would not give it full filesystem access. I would restrict it to:
 
 ```text
-X:\source\facial-recognition
+C:\src\facial-recognition
 ```
 
 and exclude:
@@ -2893,7 +2893,7 @@ Allowed:
   + scoped to project directory
 
 Not allowed / not currently available here:
-  AI model directly opening X:\source\facial-recognition
+  AI model directly opening C:\src\facial-recognition
 ```
 
 So the practical options are:
@@ -2941,7 +2941,7 @@ Need maybe mention if LM Studio has "plugins" or "MCP"? I need not overstate. Co
 Need provide a minimal local bridge they can run. Since no secrets, okay. Could include Python script that:
 - reads environment variable LMSTUDIO_BASE_URL default http://localhost:1234/v1
 - API key dummy
-- allowed root X:\source\facial-recognition
+- allowed root C:\src\facial-recognition
 - list, read, search
 - interactive chat with model, model can request tool via JSON.
 But if model doesn't do function calling, we can implement a simple protocol: system prompt says respond with JSON `{"action":"list"}` or `{"action":"read","path":"main.py"}` or `{"action":"answer","text":"..."}`. The Python loop executes and feeds back. That is robust for local models.
@@ -3006,7 +3006,7 @@ import json, os, re, sys
 from pathlib import Path
 from openai import OpenAI
 
-ROOT = Path(os.environ.get("POC_ROOT", r"X:\source\facial-recognition")).resolve()
+ROOT = Path(os.environ.get("POC_ROOT", r"C:\src\facial-recognition")).resolve()
 BASE_URL = os.environ.get("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
 MODEL = os.environ.get("LMSTUDIO_MODEL", "local-model")
 API_KEY = os.environ.get("LMSTUDIO_API_KEY", "lm-studio")
@@ -3175,14 +3175,14 @@ search_code
 run_shell_command
 ```
 
-So the model can *reason about* reading files, but it cannot actually open `X:\source\facial-recognition` unless the LM Studio client or an external wrapper gives it a file tool.
+So the model can *reason about* reading files, but it cannot actually open `C:\src\facial-recognition` unless the LM Studio client or an external wrapper gives it a file tool.
 
 The clean way to enable this is:
 
 ```text
 LM Studio local server
   + small local Python tool executor
-  + scoped filesystem access to X:\source\facial-recognition
+  + scoped filesystem access to C:\src\facial-recognition
 ```
 
 That gives the model a controlled way to inspect your PoC.
@@ -3232,7 +3232,7 @@ pip install openai
 Create this file:
 
 ```powershell
-X:\source\facial-recognition\tools\lmstudio_inspector.py
+C:\src\facial-recognition\tools\lmstudio_inspector.py
 ```
 
 Paste in:
@@ -3247,7 +3247,7 @@ from openai import OpenAI
 
 
 # Scoped to your PoC.
-ROOT = Path(os.environ.get("POC_ROOT", r"X:\source\facial-recognition")).resolve()
+ROOT = Path(os.environ.get("POC_ROOT", r"C:\src\facial-recognition")).resolve()
 
 LMSTUDIO_BASE_URL = os.environ.get("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
 LMSTUDIO_MODEL = os.environ.get("LMSTUDIO_MODEL", "local-model")
@@ -3391,7 +3391,7 @@ You are a local code reviewer running on the user's machine.
 You can inspect a project through a local tool executor.
 
 The project root is:
-X:\\source\\facial-recognition
+C:\\src\\facial-recognition
 
 You must output exactly one JSON object per turn.
 
@@ -3543,7 +3543,7 @@ $env:LMSTUDIO_API_KEY = "lm-studio"
 From PowerShell:
 
 ```powershell
-cd X:\source\facial-recognition
+cd C:\src\facial-recognition
 python tools\lmstudio_inspector.py
 ```
 
@@ -3575,7 +3575,7 @@ LM Studio
 
 Python process
   → actual filesystem access
-  → scoped to X:\source\facial-recognition
+  → scoped to C:\src\facial-recognition
   → executes list/read/search
   → returns results to model
 ```
@@ -3595,7 +3595,7 @@ You have a few good options.
 If your LM Studio setup or client supports MCP, connect a filesystem MCP server scoped to:
 
 ```text
-X:\source\facial-recognition
+C:\src\facial-recognition
 ```
 
 Then the model can call:
@@ -3686,7 +3686,7 @@ For your case, the fastest practical path is:
 ```text
 1. Start LM Studio server
 2. Run the Python inspector script above
-3. Let it list/read/search X:\source\facial-recognition
+3. Let it list/read/search C:\src\facial-recognition
 4. Let it produce the review
 ```
 
@@ -3717,7 +3717,7 @@ User-facing docs: `face-recognizer/README.md`.
   - `labels.py` — labeling engine: per-face labels (`LabelDB`), background photo `Importer`,
     auto-naming, duplicate-photo detection, undo history.
   - `label_tool.py` + `label_ui.html` / `label.bat` — labeling web app on `http://127.0.0.1:8765`.
-    Chris calls this "the recognizer".
+    The owner calls this "the recognizer".
   - `tracker.py` + `tracker_ui.html` / `recognize.bat` — live tracker on `http://127.0.0.1:8766`.
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
@@ -3778,7 +3778,7 @@ User-facing docs: `face-recognizer/README.md`.
   - `labels.py` — labeling engine: per-face labels (`LabelDB`), background photo `Importer`,
     auto-naming, duplicate-photo detection, undo history.
   - `label_tool.py` + `label_ui.html` / `label.bat` — labeling web app on `http://127.0.0.1:8765`.
-    Chris calls this "the recognizer".
+    The owner calls this "the recognizer".
   - `tracker.py` + `tracker_ui.html` / `recognize.bat` — live tracker on `http://127.0.0.1:8766`.
   - `localguard.py` — request checks for both local servers (Host, `X-Face-Tool: 1`, Origin).
   - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt`.
@@ -3836,10 +3836,10 @@ tuning values, the owner's stated preferences, and the environment gotchas that 
 
 ## 1. What this is
 
-A fully local face-recognition system for a USB webcam, built for Chris:
+A fully local face-recognition system for a USB webcam, built for its owner:
 
 1. **Face tracker** — the original standalone browser page (MediaPipe face detector).
-2. **Face recognizer** — a Python pipeline that learned specific people from Chris's personal photo
+2. **Face recognizer** — a Python pipeline that learned specific people from the owner's personal photo
    library and names them live on the webcam.
 3. **Labeling tool** — a local browser app for adding photos, confirming suggested names, naming new
    people, ignoring false positives and fixing mistakes.
@@ -3853,7 +3853,7 @@ Nothing leaves the machine. No photos or face data are sent anywhere.
 ## 2. Where it lives (Windows)
 
 ```
-X:\source\facial-recognition\
+facial-recognition\
 ├── CLAUDE.md, PROJECT_CONTEXT.md
 ├── face-tracker\                 original standalone HTML tracker (MediaPipe), double-click index.html
 │   └── index.html
@@ -3901,10 +3901,10 @@ X:\source\facial-recognition\
 `face-recognizer\data_backup_20261029\` is a full copy of `data\` from before the per-face migration
 (old format, 3.8 MB faces.npz).
 
-Earlier in the project the two halves lived at `X:\source\face-tracker` and `X:\source\face-recognizer`;
-they were later consolidated under `X:\source\facial-recognition\` as the two subfolders above.
+Earlier in the project the two halves lived at two separate folders, `face-tracker` and `face-recognizer`;
+they were later consolidated under `facial-recognition\` as the two subfolders above.
 
-**Vocabulary Chris uses** (recorded so the right thing gets launched):
+**Vocabulary the owner uses** (recorded so the right thing gets launched):
 - "the recognizer" = the **labeling tool** (`label.bat`, port 8765), *not* `recognize.bat`.
 - "the tracker" = the live tracker (`recognize.bat` → `tracker.py`, port 8766).
 
@@ -3922,16 +3922,16 @@ Every face has a **permanent ID**: its photo's content hash + where the face is 
 or moving/renaming photos never loses them:
 
 ```
-{"&lt;face id&gt;": {"n": "Chris", "by": "me"}, ...}
+{"&lt;face id&gt;": {"n": "Ann", "by": "me"}, ...}
   n    the person's name, or "#ignore" (stranger, artwork, not a face: never recognized)
-  by   "me" (named by Chris) or "auto" (named automatically because the model was very sure)
+  by   "me" (named by the owner) or "auto" (named automatically because the model was very sure)
   not  names this face is NOT, so they are never suggested again
   ok   a "might be mislabeled" warning was checked and the name kept
   s    the model's score when the face was named automatically
 ```
 
 Groups are no longer stored. For unnamed faces the engine works out on the fly:
-- **suggested** — the model thinks it knows who it is (score ≥ `MATCH`): Chris confirms or rejects.
+- **suggested** — the model thinks it knows who it is (score ≥ `MATCH`): the owner confirms or rejects.
 - **unknown** — nobody known is close: shown in groups of look-alikes to name or ignore. Groups that come
   within `HINT` (`MATCH − 0.12`) of a known person get a "looks like …" hint.
 
@@ -3969,7 +3969,7 @@ people     list who it knows
 ```
 python face_id.py scan "D:\Photos"
 python face_id.py cluster
-python face_id.py name 4 9 15 Chris          # name groups 4, 9 and 15
+python face_id.py name 4 9 15 Ann            # name groups 4, 9 and 15
 python face_id.py name 7 --ignore            # not someone to recognize
 python face_id.py people
 python face_id.py recognize --camera 0
@@ -4014,9 +4014,9 @@ MARGIN = 0.10   # ... if the next most likely person scores at least this much l
 TOPK   = 5      # a person's score = mean similarity of their 5 closest face prints
 ```
 
-Measured on Chris's labeled faces:
+Measured on the owner's labeled faces:
 - **ArcFace @ 0.35**: 100% of labeled faces correct, 0% of strangers named; on simulated blurry webcam
-  frames 76% correct vs 44% for SFace. Clustering at 0.70 put Chris in 2 groups instead of 4.
+  frames 76% correct vs 44% for SFace. Clustering at 0.70 put one person in 2 groups instead of 4.
 - **SFace @ 0.45**: 99.3% correct, 0% strangers named (0.40 named 4.4% of strangers).
 - **Auto-naming (AUTO 0.45 + MARGIN 0.10)**: named 89% of labeled faces with no mistakes; no stranger
   scored above 0.35.
@@ -4035,7 +4035,7 @@ Measured on Chris's labeled faces:
 | NPU (Ryzen AI 1.8 VitisAI, BF16) | ~25 ms | 99.97% identical; first start compiles ~6 min (342 s) |
 
 The recognizer, quality and expression models use ONNX Runtime when available; YuNet stays on the CPU.
-The NPU needs the Ryzen AI env's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`) and
+The NPU needs the Ryzen AI environment's Python (its conda environment `ryzen-ai-1.8.0`) and
 the static model in `models\npu\`; `tools/hw_bench.py` compiles it and re-measures all three
 (`data/hw_bench.json`). `tracker.py` prints `Recognition model: &lt;name&gt; on &lt;device&gt;` at startup.
 
@@ -4049,7 +4049,7 @@ the static model in `models\npu\`; `tools/hw_bench.py` compiles it and re-measur
 - `Engine` reloads `people.npz` whenever its mtime changes, so names saved in the labeling tool appear
   automatically. Each request takes a snapshot of the identifier and passes its own threshold, so two tabs
   with different strictness don't interfere; detection runs under a lock (OpenCV isn't thread-safe).
-- Each face gets a box; **name + match %** are drawn on the face near the **top of the head** (Chris's
+- Each face gets a box; **name + match %** are drawn on the face near the **top of the head** (the owner's
   explicit preference — not above the bounding box). Unnamed people show as **Unknown**.
 - **Match strictness** slider 0.20–0.60, default **0.35** (the measured ArcFace setting; the earlier 0.45
   was the SFace-era value). Per-track name voting over the last **7** frames, each vote weighted by face
@@ -4095,7 +4095,7 @@ Implementation (`face_id.py` → `Faces.expression()`, `Faces._optional()`, `hea
   missing). UI toggles: **Show expression**, **Calibrate to each person**.
 - `python tools\expr_check.py` scores a sample of stored faces (ms/face, label spread, mirror agreement)
   and runs one tracker request on a stored photo — confirms the model is installed and working.
-- Status at end of session: Chris confirmed "It is working now!" and the collapsible Known-people card
+- Status at end of session: the owner confirmed "It is working now!" and the collapsible Known-people card
   "worked!!".
 
 ---
@@ -4104,16 +4104,16 @@ Implementation (`face_id.py` → `Faces.expression()`, `Faces._optional()`, `hea
 
 Current data (2026-10-29):
 - **5,702 photos** read from the owner's photo folder, of which 112 were skipped as copies.
-- **1,551 faces** in `faces.npz`; **786 labeled**: 456 by Chris, 328 named automatically, 231 of them
+- **1,551 faces** in `faces.npz`; **786 labeled**: 456 by the owner, 328 named automatically, 231 of them
   `#ignore`.
 - **26 named people**; `people.npz` holds 544 face prints.
 
 History:
 - The first scan read **1,936 photos** → **638 faces** after fixing HEIC decoding and adding
   close-up/selfie handling. That listing truncated at 2,000 entries, so ~60 photos were missed at first.
-- Faces were clustered; Chris named **14 people** in the first pass, and more later in the labeling tool.
+- Faces were clustered; the owner named **14 people** in the first pass, and more later in the labeling tool.
 - Groups that were artwork, video-game characters, tattoos, sculptures, or ambiguous images were ignored
-  at Chris's request.
+  at the owner's request.
 - The database was then migrated from group-based labels (`groups.json`/`names.json`/`scanned.json`) to
   permanent face IDs with per-face labels; the old files are in `data\backups\legacy-20261029-080425\`
   and `data_backup_20261029\`.
@@ -4130,7 +4130,7 @@ Timeline of the Project's chats:
 
 ---
 
-## 8. Chris's stated preferences and decisions (keep honoring these)
+## 8. The owner's stated preferences and decisions (keep honoring these)
 
 - The labeling/exclusion tool must be a **separate program** from the tracker.
 - Name overlay goes **on the face / top of head**, not above the bounding box ("this is MUCH better").
@@ -4153,7 +4153,7 @@ Python on this machine:
 Webcam / OpenCV on this Windows machine:
 - `cv2.CAP_DSHOW` alone didn't reliably open the USB webcam; iterate `CAP_DSHOW` → `CAP_MSMF` → `CAP_ANY`.
 - Retry `cap.read()` up to ~10 times with short sleeps; some webcams return empty frames while starting.
-- Camera index 1 = the Pixel phone's camera via Phone Link, not the USB webcam. Pick cameras by name in the browser UI.
+- Camera index 1 = a phone's camera (through Phone Link), not the USB webcam. Pick cameras by name in the browser UI.
 
 Claude ↔ PC tooling (relevant if continuing with Claude's device tools):
 - `device_commit_files` fails above ~30 MB → large models are shipped as 20 MB `.partN` files
@@ -4343,10 +4343,10 @@ That is exactly the right boundary.
 The system should not claim:
 
 ```text
-Chris is angry.
-Chris is sad.
-Chris is lying.
-Chris is depressed.
+Ann is angry.
+Ann is sad.
+Ann is lying.
+Ann is depressed.
 ```
 
 It should claim:

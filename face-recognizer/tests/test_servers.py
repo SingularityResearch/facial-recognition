@@ -346,7 +346,11 @@ def test_an_alert_keeps_what_was_measured_numbers_only(track):
                 {"a": {"b": {"c": {"d": {"e": 1}}}}},      # too deep
                 {"list": [1, 2, 3]},                       # only objects of numbers and short text
                 {"big": {f"k{i}": 1.5 for i in range(3000)}}):
-        assert post("/api/alerts", {"kind": "arrived", "name": "Ann", "text": "x", "t": now, "details": bad})[0] in (400, 413), bad
+        try:
+            code = post("/api/alerts", {"kind": "arrived", "name": "Ann", "text": "x", "t": now, "details": bad})[0]
+        except (ConnectionError, urllib.error.URLError):   # refused (413) and closed while the big body was still on its way
+            code = 413
+        assert code in (400, 413), bad
     assert post("/api/alerts/details", {"id": aid, "which": "first", "details": later})[0] == 400   # first is fixed
 
 
@@ -411,12 +415,35 @@ def test_page_settings_and_person_signals_are_kept_by_the_server(track, tmp_path
         assert post("/api/settings", bad) == 400, bad
     assert post("/api/settings", {"app": "track", "settings": {"ft-camera": None}}) == 200      # None removes
     assert devicesettings.settings("track") == {"ft-o-optMesh": "1"}
-    assert post("/api/signals", {"key": "ft-baselines", "people": {"Ann": {"all": {"blink": {"n": 3, "m": 1, "v": 0}}}}}) == 200
-    assert post("/api/signals", {"key": "ft-other", "people": {}}) == 400
+    ann = {"all": {"blink": {"n": 3, "m": 1, "v": 0}}}
+    assert post("/api/signals", {"key": "ft-baselines", "changed": {"Ann": ann}}) == 200
+    assert post("/api/signals", {"key": "ft-other", "changed": {}}) == 400
+    assert post("/api/signals", {"key": "ft-baselines", "changed": ["Ann"]}) == 400
+    assert post("/api/signals", {"key": "ft-baselines", "changed": {}, "gone": "Ann"}) == 400
     state = json.loads(request(url, "/api/settings?app=track")[2])
     assert state["signals"]["ft-baselines"]["Ann"]["all"]["blink"]["n"] == 3 and state["signals"]["ft-usual"] == {}
-    assert devicesettings.of("Ann") == {"baseline": {"all": {"blink": {"n": 3, "m": 1, "v": 0}}}}
+    assert devicesettings.of("Ann") == {"baseline": ann}
+    # the page says only who changed: a person it never saw (learned on another device, put here by the sync) stays
+    devicesettings.put_signal("baseline", "Bo", {"all": {}})
+    assert post("/api/signals", {"key": "ft-baselines", "changed": {"Cy": {"all": {}}, "#x": {}, "": {}}}) == 200
+    assert sorted(devicesettings.signals()["baseline"]) == ["Ann", "Bo", "Cy"]
+    assert post("/api/signals", {"key": "ft-baselines", "changed": {}, "gone": ["Cy", "Nobody"]}) == 200
+    assert sorted(devicesettings.signals()["baseline"]) == ["Ann", "Bo"]
+    # the page's half-minute check: nothing while its version is current, then what changed and who was forgotten
+    first = json.loads(request(url, "/api/signals")[2])
+    assert sorted(first["signals"]["ft-baselines"]) == ["Ann", "Bo"] and first["forgotten"] == []
+    assert json.loads(request(url, "/api/signals?v=" + urllib.parse.quote(first["v"]))[2]) == {"v": first["v"], "same": True}
+    # a forgotten person can't be written back by a page that is still running; named again, they can be learned again
+    import dbsync_home
     assert devicesettings.forget("Ann") == 1 and devicesettings.of("Ann") == {}
+    dbsync_home.note_forgotten("Ann")
+    later = json.loads(request(url, "/api/signals?v=" + urllib.parse.quote(first["v"]))[2])
+    assert sorted(later["signals"]["ft-baselines"]) == ["Bo"] and later["forgotten"] == ["Ann"]
+    assert post("/api/signals", {"key": "ft-baselines", "changed": {"Ann": ann}}) == 200
+    assert devicesettings.of("Ann") == {}
+    dbsync_home.unforget("Ann")
+    assert post("/api/signals", {"key": "ft-baselines", "changed": {"Ann": ann}}) == 200
+    assert devicesettings.of("Ann") == {"baseline": ann}
 
 
 def test_saved_keys_go_only_to_the_tools_own_page(label_url, home):
@@ -506,3 +533,86 @@ def test_one_request_for_every_cameras_frames(monkeypatch):
     assert 0.25 < time.time() - t0 < 2.0                  # woken by the frames, not by the timeout
     assert len(got) == 20 and not errors
     assert tracker.camera_ids("x:1," + ",".join(f"{d}:7" for d in fakes)) == {d: 7 for d in fakes}
+
+
+def test_settings_and_hardware_answer_while_the_labeling_data_is_busy(data, serve, monkeypatch):
+    """These routes ask the network or files of their own. Inside the labeling lock, a search of the local network
+    held up the page's own settings request at load (a synchronous one) and every labeling request."""
+    import threading
+
+    import hardware
+    make_faces(data, 6)
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    url = serve(label_tool.make_handler(db, L.Importer(db)))
+    monkeypatch.setattr(hardware, "lmstudio_network", lambda: [])
+    held, done = threading.Event(), threading.Event()
+
+    def hold():
+        with db.lock:
+            held.set()
+            done.wait(20)
+    t = threading.Thread(target=hold, daemon=True)
+    t.start()
+    held.wait(5)
+    try:
+        for path in ("/api/settings?app=label", "/api/hardware/network", "/api/websearch/key"):
+            assert request(url, path)[0] == 200, path          # (request() gives up after 10 s)
+    finally:
+        done.set()
+        t.join(5)
+
+
+def test_expression_readings_are_kept_only_for_a_shared_database(track, tmp_path, monkeypatch):
+    """The expression log (exprlog.py): readings wait in the private folder for the sync, only when there is a shared
+    database to keep them in and the switch is on; numbers and short text only, named people only."""
+    import time
+
+    import dbsync_home
+    import devicesettings
+    import exprlog
+    import facedb
+    import paths
+    monkeypatch.setattr(paths, "HOME", tmp_path / "h")
+    url, _ = track
+    now = int(time.time() * 1000)
+    ann = {"t": now, "name": "Ann", "label": "happy", "share": 0.81234567, "state": "plain",
+           "data": {"lead": 0.5, "scores": {"happy": 0.8, "sad": 0.1}, "setting": "alone", "flags": None}}
+    post = lambda rows: request(url, "/api/expression-log", json.dumps({"readings": rows}).encode())   # noqa: E731
+    assert json.loads(post([ann])[2]) == {"kept": 0} and not exprlog.folder().exists()        # no database: nothing
+    monkeypatch.setattr(facedb, "configured", lambda: True)
+    assert json.loads(post([ann, dict(ann, name="Bo", t=now + 1)])[2]) == {"kept": 2}
+    kept = exprlog.waiting()
+    assert [r["name"] for r in kept] == ["Ann", "Bo"] and kept[0]["share"] == 0.8123
+    assert kept[0]["data"]["scores"] == {"happy": 0.8, "sad": 0.1}
+    for bad in (dict(ann, name="Unknown"), dict(ann, name=""), dict(ann, t=now - 3 * 86_400_000), dict(ann, label=""),
+                dict(ann, share=1.5), dict(ann, state="furious"), dict(ann, data={"picture": "x" * 600}),
+                dict(ann, data={"list": [1, 2]}), "Ann"):
+        assert post([bad])[0] == 400, bad
+    assert post([ann] * 101)[0] == 400
+    dbsync_home.note_forgotten("Bo")                                                           # a forgotten person:
+    assert json.loads(post([dict(ann, name="Bo", t=now + 2), dict(ann, t=now + 3)])[2]) == {"kept": 1}   # left out
+    assert exprlog.forget("Bo") == 1 and [r["name"] for r in exprlog.waiting()] == ["Ann", "Ann"]
+    devicesettings.update("track", {exprlog.OPTION: "0"})                                      # switched off
+    assert json.loads(post([dict(ann, t=now + 4)])[2]) == {"kept": 0} and len(exprlog.waiting()) == 2
+
+
+def test_a_request_without_its_face_is_refused_not_taken_as_the_last_face(label_url):
+    for path in ("/api/morefaces", "/api/drawface"):
+        for body in ({}, {"i": -1}, {"i": "x"}):
+            assert request(label_url, path, json.dumps(body).encode())[0] == 400, (path, body)
+
+
+def test_start_again_never_loads_a_second_copy_of_a_program_this_app_runs(monkeypatch):
+    """A program loaded in this process that answers slowly or with an error is not "stopped": starting it again
+    found its own port taken and loaded a second copy onto the same data."""
+    import threading
+    started = []
+    alive = threading.Thread(target=lambda: threading.Event().wait(5), daemon=True)
+    alive.start()
+    monkeypatch.setattr(app, "STATUS", {"label": {"url": "http://127.0.0.1:1/"}})
+    monkeypatch.setattr(app, "OWN", {"http://127.0.0.1:1/": alive})
+    monkeypatch.setattr(app, "answering", lambda url, name: False)
+    monkeypatch.setattr(app, "run_programs", lambda keys: started.append(keys))
+    assert app.restart("label") == "running" and started == []
+    monkeypatch.setattr(app, "OWN", {})                      # one that isn't ours (or whose thread ended): started
+    assert app.restart("label") == "starting" and started == [("label",)]

@@ -3,7 +3,7 @@
 Exported 2026-10-29 from the Claude Project **"Facial-Recognition"**
 (*Detect known faces and provide for the management and labeling of new or unknown faces.*).
 Revised the same day to match the code and data as they now stand, and kept up to date since
-(last: 2026-11-12, v1.20 released for Windows, macOS and Linux: the shared database and sync (v1.16), keys under a
+(last: 2026-11-13, v1.22 released for Windows, macOS and Linux after a full review of the code and docs (§7 "Releases", §10); before it, v1.20: the shared database and sync (v1.16), keys under a
 passphrase kept in step on every device (v1.17), original photos from other devices (v1.18), every device's live
 camera in a Cameras tab (v1.19-v1.20); see §4b, §5b, §7 "Releases", §9 and §10).
 
@@ -50,7 +50,7 @@ server and page. The same app is built for macOS and Linux (since v1.9).
 ## 2. Where it lives (Windows; macOS and Linux below)
 
 ```
-X:\source\facial-recognition\
+facial-recognition\
 ├── AGENTS.md (the guide), CLAUDE.md (reads AGENTS.md), PROJECT_CONTEXT.md, README.md
 ├── .github\workflows\checks.yml   CI: node tests, ruff, pytest on Windows, macOS, Linux; then builds for all three
 ├── Real-Time Facial Emotion Recognition.md   expression design review (LM Studio export)
@@ -168,8 +168,8 @@ each face alone with some room around it, others greyed out; whole frames until 
 `presence\` (opt-in log), `alerts.json` (the alert inbox), `lmstudio.json` (the shared models folder),
 `settings.json` and `person_signals.json` (each page's settings, each person's usual look and signal normals, since
 v1.16; the pages keep a quick copy in their browser storage), `webview\` (the .exe window's browser storage),
-`app.log` (each line stamped with the time in UTC since v1.19.6), `restarted.json` (the last restart for a stuck
-camera). With a shared database also: `database.json` + `database-ca.pem` (connection; password DPAPI-protected on
+`app.log` (each line stamped with the time in UTC since v1.19.6), `restarted.json` (the last restarts the app made itself: for a stuck
+camera, and for a frozen window with how many in a row). With a shared database also: `database.json` + `database-ca.pem` (connection; password DPAPI-protected on
 Windows, file mode 600 elsewhere), `device.json` (this device's id), `sync.sqlite` (each row's digest as last synced),
 `secret.key` and `device-key.json` (the passphrase for keys and this device's X25519 key pair, protected like the
 password), `peer-cert.pem`/`peer-key.pem`/`peer.json` (the peer service's own certificate and settings),
@@ -191,8 +191,8 @@ the system (bundled ones broke OpenGL on Ubuntu 24.04). Build steps for all thre
 `face-recognizer\data_backup_20261029\` (a full copy of `data\` from before the per-face migration) is gone from
 the checkout; `data\backups\` keeps the labels from each start.
 
-Earlier in the project the two halves lived at `X:\source\face-tracker` and `X:\source\face-recognizer`;
-they were later consolidated under `X:\source\facial-recognition\` as the two subfolders above.
+Earlier in the project the two halves lived at two separate folders, `face-tracker` and `face-recognizer`;
+they were later consolidated under `facial-recognition\` as the two subfolders above.
 
 **Vocabulary the owner uses** (recorded so the right thing gets launched):
 - "the recognizer" = the **labeling tool** (`label.bat`, port 8765), *not* `recognize.bat`.
@@ -282,7 +282,8 @@ Every change is logged to `history.jsonl` and can be undone. `people.npz` is reb
   even from a normal Edge window, and a server-side upload's results link is tied to that upload's `NID`
   cookie, so it opened without the picture in the owner's browser. Tried and dropped: Yandex (named Bernie
   Sanders, but non-US and mixed-language), Bing (only describes), TinEye (robot check). This is the only
-  path by which anything leaves the machine.
+  path by which a face or photo goes to an outside company without the owner setting up a server (see docs/SETTINGS.md,
+  "What reaches the network").
 - API: GET `/api/summary`, `/api/fids`, `/api/suggested`, `/api/unknown`, `/api/tagged`, `/api/auto`, `/api/person`,
   `/api/checks`, `/api/import`, `/api/photoinfo/…` (includes `hints`); POST `/api/act`, `/api/rename`, `/api/undo`,
   `/api/import`, `/api/import/stop`, `/api/autoname`. Added since: possible faces (`/api/possiblefaces`,
@@ -327,7 +328,7 @@ Image handling: `load_image()` applies EXIF rotation, decodes HEIC/HEIF (pillow-
 
 ## 4. Models and measured tuning values
 
-Detection: **OpenCV YuNet** (`cv2.FaceDetectorYN`, CPU). Quality: **eDifFIQA** tiny.
+Detection: **OpenCV YuNet** (`cv2.FaceDetectorYN` on the CPU, or the same model through ONNX Runtime on a graphics processor when the start-up check passes). Quality: **eDifFIQA** tiny.
 Recognition: **ArcFace** (ResNet-50, WebFace600K, from InsightFace buffalo_l) when installed, else **SFace**.
 `FACE_MODEL=sface_2021dec` forces the old model. InsightFace pretrained models are non-commercial;
 commercial use needs a license. Faces are aligned to the 5-point 112×112 template (`align()`).
@@ -407,7 +408,7 @@ PyAV would help but adds a dependency). `tools/import_profile.py` times each ste
 the rest. First full import of a 6,189-file folder on the network drive with v1.9: 1,217 s, GPU 2% busy, ~10 cores.
 v1.10 (released 2026-11-10, tag at 35b14cb): the downloaded Linux app ships plain ONNX Runtime; with an NVIDIA card,
 Settings → This computer checks driver/card (`cudasupport.check`) and offers Download CUDA support (onnxruntime-gpu +
-NVIDIA cu12/cuDNN 9 wheels from PyPI, 1.95 GB, 3.1 GB unpacked in `ROOT/cuda`); from the next start `activate()`
+NVIDIA cu12/cuDNN 9 wheels from PyPI, 1.95 GB, 3.5 GB unpacked in `ROOT/cuda`); from the next start `activate()`
 imports it ahead of the bundled copy. Tested in the built app on the RTX 4060 laptop: download ~1 min, all models
 pass their checks onto CUDA; the 412-file import took 45.2 / 42.8 / 43.8 s with CUDA vs 62.6 / 62.7 s with
 FACE_CUDA=off (4 vs 8-10 cores busy). The 1.6 GB sample alone takes 16 s to read over Wi-Fi 6 (~100 MB/s).
@@ -434,7 +435,7 @@ now does that once per version. Its lid was shut, so the integrated camera sent 
 now warns when the picture's brightest and darkest points differ by under 12 of 255 for 6 s, offering the next camera.
 v1.15 (released 2026-11-11, tag at e11b9ca) carries both; older releases deleted. v1.16-v1.20 (2026-11-11/12): the
 shared database, keys, peer photos and the Cameras tab (§4b, §5b, §7 "Releases"); since v1.20 (tag at 6586b77) only
-v1.20.0 and models-v1 remain.
+v1.20.0 and models-v1 remain. v1.20.1 and v1.22 (2026-11-12/13) followed: §7 "Releases".
 
 LM Studio across the owner's computers (2026-11-10/11, after v1.10; `lmstudio.py`, `hardware.lmstudio_network`):
 both computers serve LM Studio on 0.0.0.0:1234 (the Linux laptop: headless llmster 0.0.27 + CUDA 12 llama.cpp 2.72.0 as
@@ -453,7 +454,7 @@ Describe all shared between the two (`describe.helpers`, Settings "Share Describ
 2026-11-11, 2 sets of 40 library photos each way, test copy): the PC alone 134.6 / 138.4 s (3.4 s a photo); with the
 laptop helping over Wi-Fi 99.4 / 86.7 s, the laptop doing 13 of 40 each time (~7 s a photo from the PC, against 3 s
 asked on the laptop itself: Wi-Fi and the PC's 1024 px JPEGs), the PC's own rate unchanged: 1.5x overall.
-The NPU needs the Ryzen AI env's Python (`X:\ProgramData\miniconda3\envs\ryzen-ai-1.8.0\python.exe`) and
+The NPU needs the Ryzen AI environment's Python (its conda environment `ryzen-ai-1.8.0`) and
 the static model in `models\npu\`; `tools/hw_bench.py` compiles it and re-measures all three
 (`data/hw_bench.json`). `tracker.py` prints `Recognition model: <name> on <device>` at startup.
 
@@ -471,10 +472,12 @@ device's settings and person signals), released together as v1.16.
 - Design: local-first. The existing stores and files stay the working copy and the offline cache. `dbsync.py` runs in
   the labeling tool's process: rows whose digest differs from the one recorded at the last sync (`HOME/sync.sqlite`)
   are pushed after each save (`face_id.SAVED_HOOKS` → `Sync.note`) and every minute; other devices' changes are pulled
-  from a trigger-written `changes` log every 3 s (deletes as tombstones) and applied through the same stores, so
+  from a trigger-written `changes` log every 3 s (deletes as tombstones; new changes told apart by their
+  transaction's visibility in the last pull's snapshot, db/009, since `seq` order isn't commit order) and applied
+  through the same stores, so
   `people.npz` is rebuilt and the tracker reloads it by mtime. Two parts: `Local` (photos, faces, labels, Web search
   answers; the undo log only sent) and `dbsync_home.HomePart` (descriptions, Collect faces pictures, alerts, presence,
-  shared fitted documents, keys, forgotten people, device settings, person signals; the app log and posed tests only
+  shared fitted documents, keys, forgotten people, device settings, person signals; the app log, posed tests and the expression log only
   sent). Alerts, presence visits and descriptions nudge the sync when saved (since v1.19), so they reach the other
   devices within seconds. A new place that keeps data needs a table (`db/NNN_*.sql`, run under an advisory lock) and
   a part.
@@ -493,9 +496,11 @@ device's settings and person signals), released together as v1.16.
   server knows the password) and from then on connects with verify-ca. The password is DPAPI-protected on Windows
   (file mode 600 elsewhere).
 - Each device's page settings, describer choices and LM Studio share folder are its own rows (`device_settings`;
-  Settings can copy another device's); usual looks and signal baselines are shared (`person_signals`, the last save
-  wins). Web search use is counted in the database before each call (`count_use`), so each service's monthly cap
-  holds across devices. Forgetting a person reaches every device (db/004 `forgotten`) and the tracker pages there.
+  Settings can copy another device's); usual looks and signal baselines are shared (`person_signals`, per person: that
+  person's last save wins). Web search use is counted in the database before each call (`count_use`), so each service's monthly cap
+  holds across devices. Forgetting a person reaches every device (db/004 `forgotten`) and the tracker pages there;
+  the name stops being a forget instruction once it is given to someone again (`dbsync_home.unforget`). The tracker
+  page sends person signals per person and takes in other devices' every half minute (`page_store.js`).
 - Keys (`secretbox.py`; passphrase versions since v1.17): encrypted on the device (scrypt + AES-256-GCM, the key's
   name as associated data) with a key from the owner's passphrase. Every passphrase is a version (db/006
   `passphrase_versions`: check value, fingerprint, who and when; one current), sealed to each device's X25519 public
@@ -587,7 +592,7 @@ key (HKDF of the database password and its instance id), valid `CLOCK_SKEW` 120 
 networks. Started by `HomePart._peer`.
 
 - **Streaming** (`camstream.py`): the tracker page composes the video with its overlay canvas (every marker, mirrored
-  as shown) into JPEG frames (`streamFrame`, ~10 a second all the time since v1.19.2, the owner's choice; only while
+  as shown) into JPEG frames (`streamFrame`, all the time since v1.19.2, 20 a second since v1.21.2, the owner's choices; only while
   Stream this camera is on and the peer service runs) and sends who's in view and its readout as data every second
   (`/api/inview`). Frames stay in memory. The peer service serves `/stream` (multipart: JPEG parts with a JSON readout
   part every `READOUT_EVERY` 1 s between them, since v1.20; a stream lasts until the watcher closes it) and `/readout`.
@@ -635,10 +640,12 @@ Implementation (`face_id.py` → `Faces.expression()`, `Faces._optional()`, `hea
   kept in the browser (localStorage key `ft-usual`; since v1.16 also `HOME/person_signals.json`); trusted after ~100 frames. Readings that match the
   usual look are tagged **usual** (dim); departures show bright. **Forget learned usual looks** clears it.
   Functions: `learnUsual`, `readExpression`.
-- Reliable labels: happy, surprised, neutral. Fearful/disgust are rare in training data and most
+- Reliable labels: happy and neutral (surprised was right about half the time on the one posed session). Fearful/disgust are rare in training data and most
   confused; angry/sad are often just a resting face. Photo-library distribution: ~40–45% neutral,
   ~40–45% happy, rest thin.
-- Expression is never stored; display only. The model is optional (the tracker says so at startup if
+- Expression readings are stored since 2026-11-12 (the owner's decision, for analytical reports later): with a
+  shared database, every 5 s per named person in view, in `expression_log` (`exprlog.py`, db/010; a switch turns
+  it off, nothing without a database); and in each alert's details. Before that: never stored. The model is optional (the tracker says so at startup if
   missing). UI toggles: **Show expression**, **Calibrate to each person**.
 - `python tools\expr_check.py` scores a sample of stored faces (ms/face, label spread, mirror agreement)
   and runs one tracker request on a stored photo — confirms the model is installed and working.
@@ -697,6 +704,10 @@ first-start downloads; only the latest app release is kept):
 | v1.18 | Nov 12 | Original photos from another device over the peer service (port 8767, TLS, signed). 1.18.1: faceness model with liblinear (L-BFGS held the GIL for minutes on Linux) |
 | v1.19 | Nov 12 | Cameras tab: every device's live camera with its readout, "moved between cameras" alerts (§5b). 1.19.1-1.19.9: streaming while minimized or covered, Keep this camera running, renderer-exit recovery, streams that never end on a timer (`camrelay.py`), heartbeat on its own thread, no 30 s pauses, UTC-stamped log, window watchdog (`/alive`), events fly-out, no false "offline", a hung camera start retried, then the page reloaded, then the app restarted (§9) |
 | v1.20 | Nov 12 | Cameras tab: one request for every camera's frames and one for every readout (the browser's six connections per address); the readout rides along each peer stream. Released 2026-11-12 for Windows, macOS and Linux from CI's builds of 6586b77; older app releases deleted (only v1.20.0 and `models-v1` remain) |
+| v1.21 | Nov 12 | From the full review: the sync takes changes by transaction (db/009), a forgotten name given again is no longer forgotten, person signals are sent per person, the LM Studio shared folder can't write outside LM Studio's folders; the expression log in the shared database (`exprlog.py`, db/010); "They move between cameras" off by default; Connect needs channel binding; peer and relay timeouts. Built and installed on the three devices for testing on 2026-11-12; not released yet. |
+| v1.21.1 | Nov 12 | The Linux window's freeze found and fixed: answers the page scripts never read (`/alive` every 2 s, `/api/inview` every second) each kept a 2 MiB shared-memory descriptor open in the page's renderer, which froze at its limit (1024 after a fresh start: ten minutes; 8192 after the watchdog's restart in place: every 90 minutes). Every fetch now reads or drops its answer (a test checks), and the app raises its open-files limit to 8192. On Windows the same handles grew without a freeze. Not released yet. |
+| v1.21.2 | Nov 12 | Cameras: 20 frames a second instead of 10 (`STREAM_FPS`; the owner's choice), paced by when each frame is due, and drawn on a timer whenever the display hasn't drawn for two frames (a window in a disconnected desktop session sent only 4 a second). 1.21.3: the names and boxes are drawn at most 60 times a second (`DRAW_EVERY`): on a 240 Hz display drawing at its rate left no time to encode stream frames (93 ms a frame instead of 12; 13 frames a second instead of 20). 1.21.4: on Windows camera frames stay in ordinary memory (`MediaFoundationD3D11VideoCapture` off in `KEEP_RUNNING_FLAGS`): in the NAS's disconnected desktop session one read-back from the graphics processor in ten took 165 ms (13 frames a second; 20 without). Not released yet. |
+| v1.22 | Nov 13 | Released for Windows, macOS and Linux: everything in 1.21 to 1.21.4 (built and run on the three devices first), and more from the review: Start again never loads a second copy of a program; the sync follows a change of the connection settings; the window watchdog stops when there is no window; a person left in no label can still be exported and forgotten; the server-side forget is repeated daily and clears photo-tag names; LM Studio model names and model lists from the network are checked; overlapping camera and microphone starts; a merge leaves no face that is and isn't the same person; copies of copies; client disconnects and OpenCV's per-detector warning no longer fill the logs. |
 
 ---
 
@@ -728,7 +739,7 @@ first-start downloads; only the latest app release is kept):
 - Every time stored in UTC, shown in local time only on the pages (2026-11-11).
 - Saved keys and the database password shown masked in Settings, with an eye button that shows one only while held
   (2026-11-11).
-- Every camera runs and streams all the time at its full rate (~10 frames a second), watched or not, minimized or not
+- Every camera runs and streams all the time at its full rate (20 frames a second since v1.21.2), watched or not, minimized or not
   (2026-11-12); the app window must never stay frozen (a watchdog brings it back, §9).
 
 ---
@@ -743,7 +754,7 @@ Python on this machine:
 Webcam / OpenCV on this Windows machine:
 - `cv2.CAP_DSHOW` alone didn't reliably open the USB webcam; iterate `CAP_DSHOW` → `CAP_MSMF` → `CAP_ANY`.
 - Retry `cap.read()` up to ~10 times with short sleeps; some webcams return empty frames while starting.
-- Camera index 1 = the Pixel phone's camera via Phone Link, not the USB webcam. Pick cameras by name in the browser UI.
+- Camera index 1 = a phone's camera (through Phone Link), not the USB webcam. Pick cameras by name in the browser UI.
 
 - **One GPU run at a time per process** (`face_id.ACCEL_LOCK`). FaceRecognizer.exe hosts the tracker and the
   labeling tool's webcam import in one process; with Collect faces on, both ran DirectML at once and the AMD
@@ -752,7 +763,7 @@ Webcam / OpenCV on this Windows machine:
   the app ran 4+ min while importing 32 snapshots during live tracking. Loading models at the same moment
   (both programs start together) crashed onnxruntime too; loading is serialized by the same lock.
 
-The app window (WebView2 on Windows, Qt WebEngine on Linux and macOS), streaming and sync (v1.15-v1.20):
+The app window (WebView2 on Windows, Qt WebEngine on Linux, WebKit on macOS), streaming and sync (v1.15-v1.20):
 - **Stale graphics caches** from an older build froze a newer Qt WebEngine (white window, the renderer never drew):
   `app.clear_graphics_caches` removes the window's compiled graphics caches once per new version, never Local Storage
   (v1.15).
@@ -968,15 +979,30 @@ Still open (structure): `label_tool.make_handler` is still one long function (it
 the database through a closure) and has kept growing (about 570 lines by v1.20, with the peer-photo and Describe all
 helpers); splitting it into a class with route methods is the next step.
 
+Open after the 2026-11-12 review and v1.22 (not fixed yet):
+- The search for LM Studio servers isn't limited to real network interfaces on Windows and macOS (`hardware.own_addresses`
+  filters virtual ones on Linux only), and with Share Describe all on it also runs when a photo is opened.
+- Any row in `devices` with a public key gets the passphrase for keys sealed to it (`secretbox.share_all`): whoever
+  holds the database password can add one. To decide: confirm a new device on an existing one, or type the passphrase.
+- Naming or un-ignoring an Ignored face leaves a face without print or picture; a moved video is never re-pointed;
+  a Cameras tile can stay frozen after its tracker restarts in a browser; Ctrl+1..4 don't reach the tab bar from
+  inside a tab; an open confirm() dialog looks like a frozen page to the watchdog.
+- The changes log is never pruned; `photo_paths` has no index on `hash`; devices on different recognition models
+  overwrite each other's prints; a failed local forget is recorded as done.
+- Linux: after the watchdog's restart in place the window's DevTools port stays dead (testing only), and one camera
+  start hung after a stop and start a few seconds apart (the app restarted itself and recovered).
+- Git history before 9c76e0f still holds the old Connect defaults (a host name and a database name).
+- For later, asked for by the owner: reports on the expression log; a per-picture quality menu on the Cameras tab.
+
 Other open items (2026-11-12):
 - The macOS app is still not signed or notarized: the Apple secrets aren't set in CI, and the release notes say so.
 - `hand_landmarker.task` is fetched from MediaPipe storage only (optional in `fetch_models.py`); not yet in
   `models-v1`.
+- Asked for on 2026-11-12, for later: a setting on each picture of the Cameras tab (a gear on the tile, as on
+  YouTube) for its quality and frame rate. Today the rate is one constant for every camera (`STREAM_FPS`).
 - Devices on different versions: the Cameras tab of 1.20 shows no readout for a 1.19 device; there is no version check
   between devices yet, so every device has to be updated together.
-- The window watchdog's own restart (`watch_window`) has no hourly limit, unlike the stuck-camera restart
-  (`restart_soon`); a page that loads and then always stops answering would restart the app about every minute.
-- Step 2 of "each person's normal" (§9, the interaction layer between identified people) is still to discuss.
+- Step 2 of "each person's normal" ("Each person's normal", the interaction layer between identified people) is still to discuss.
 - Record more posed sessions (now with the talking and "chin on hand" steps) and feeling reports; then
   decide on `TALK_JAW_SD`, the talking and hand gates, the state model and any cue fusion from
   `tools/expr_eval.py`.

@@ -115,7 +115,8 @@ def save_capture(jpeg, faces, others=()):
         stem = f"{base}-{k}"
         (F.WEBCAM / f"{stem}.json").write_text(json.dumps({"when": when, "faces": [verdict]}), encoding="utf-8")
         jpg = cv2.imencode(".jpg", part, [cv2.IMWRITE_JPEG_QUALITY, 92])[1].tobytes()
-        (F.WEBCAM / f"{stem}.jpg").write_bytes(jpg)   # last: the labeling tool never sees a jpg without its json
+        paths.atomic_write(F.WEBCAM / f"{stem}.jpg", jpg)   # last, and whole: the labeling tool never sees a jpg
+                                                            # without its json, or half of one
         stems.append(stem)
     return stems
 
@@ -163,7 +164,7 @@ def camera_readouts(ids):
     return {d: camstream.readout() if d == me else camrelay.get(d).live_readout() for d in ids}
 
 
-def camera_frames(after, watcher, wait=3.0, gather=0.04):
+def camera_frames(after, watcher, wait=3.0, gather=0.02):
     """([(device id, seq, jpeg)], {device id: error}): each asked-for camera's newest frame after its number. Waits
     up to `wait` s for the first, then `gather` s more so frames of several cameras go in one answer."""
     import camrelay
@@ -498,6 +499,10 @@ def make_handler(engine):
             if path == "/api/settings":                 # this page's settings and person signals (page_store.js)
                 import devicesettings
                 return self.send_json(devicesettings.page_state("track"))
+            if path == "/api/signals":                  # what other devices learned or forgot since (page_store.js)
+                import devicesettings
+                have = dict(parse_qsl(self.path.partition("?")[2])).get("v", "")
+                return self.send_json(devicesettings.signals_state(have))
             if path == "/api/people":
                 devices = {**engine.faces.devices, "voice": engine.voice.device}
                 return self.send_json({"people": engine.people(), "threshold": F.MATCH,
@@ -541,13 +546,17 @@ def make_handler(engine):
                     if body.get("app") != "track":
                         raise ValueError("bad settings")
                     return self.send_json({"settings": devicesettings.update("track", body.get("settings") or {})})
+                if path == "/api/expression-log":       # readings for the expression log (exprlog.py)
+                    import exprlog
+                    body = json.loads(self.body(200_000) or b"{}")
+                    return self.send_json({"kept": exprlog.add(body.get("readings"))})
                 if path == "/api/signals":              # what was learned about each person (usual look, baselines)
                     import devicesettings
                     body = json.loads(self.body(devicesettings.MAX_SIGNALS + 1000) or b"{}")
                     kind = {v: k for k, v in devicesettings.KINDS.items()}.get(body.get("key"))
                     if kind is None:
                         raise ValueError("bad signals")
-                    devicesettings.set_signals(kind, body.get("people") or {})
+                    devicesettings.merge_signals(kind, body.get("changed") or {}, body.get("gone") or [])
                     return self.send_json({"ok": True})
                 if path == "/api/expr-eval/delete":
                     return self.send_json({"deleted": engine.recorder.delete_all()})

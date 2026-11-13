@@ -51,11 +51,8 @@ def check_details(d, depth=0):
 
 
 def _load():
-    try:
-        rows = json.loads(F.ALERTS.read_text("utf-8"))
-        return [r for r in rows if isinstance(r, dict) and r.get("id")] if isinstance(rows, list) else []
-    except (OSError, ValueError):
-        return []
+    rows = paths.read_json(F.ALERTS, [])           # OSError if it's there and can't be read: never taken as empty
+    return [r for r in rows if isinstance(r, dict) and r.get("id")] if isinstance(rows, list) else []
 
 
 def _save(rows):

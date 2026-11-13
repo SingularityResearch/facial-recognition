@@ -106,13 +106,38 @@ def replace_file(tmp, dest, tries=20):
             time.sleep(0.05)
 
 
-def atomic_write(path, data):
-    """Write text or bytes to path without ever leaving a half-written file: into path.tmp, then replaced."""
+def read_json(path, default, tries=10):
+    """The JSON in path; default when there is no such file, or it isn't JSON. A file that is there but can't be
+    read (on Windows: while another program or thread has it open) is tried again for half a second, then raises
+    OSError. For files that are read, changed and written back whole: taking "couldn't read it just now" for
+    "empty" wrote that over everything the file held (and, with a shared database, sent it on as deletions)."""
+    import json
+    for k in range(tries):
+        try:
+            return json.loads(Path(path).read_text("utf-8"))
+        except FileNotFoundError:
+            return default
+        except ValueError:
+            return default
+        except OSError:
+            if k == tries - 1:
+                raise
+            time.sleep(0.05)
+
+
+def atomic_write(path, data, private=False):
+    """Write text or bytes to path without ever leaving a half-written file: into path.tmp, then replaced.
+    private: the file is this user's alone from its first byte (mode 600 outside Windows, see write_private)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     if isinstance(data, str):
-        tmp.write_text(data, "utf-8")
+        data = data.encode("utf-8")
+    if private and sys.platform != "win32":
+        tmp.unlink(missing_ok=True)              # a leftover could be a link, or have other rights
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
     else:
         tmp.write_bytes(data)
     replace_file(tmp, path)
@@ -171,6 +196,4 @@ def reveal(stored):
 
 def write_private(path, data):
     """atomic_write, readable only by this user (mode 600 outside Windows; HOME is per user on Windows)."""
-    atomic_write(path, data)
-    if sys.platform != "win32":
-        os.chmod(path, 0o600)
+    atomic_write(path, data, private=True)     # made with mode 600: never readable by others, not even briefly

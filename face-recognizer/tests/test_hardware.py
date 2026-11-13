@@ -52,6 +52,8 @@ def test_lan_addresses_are_this_computers_own():
 
 
 def test_lmstudio_network_merges_one_computers_addresses(monkeypatch):
+    monkeypatch.setattr(hardware, "mdns_services", lambda timeout=1.5: [])       # no question to the real network,
+    monkeypatch.setattr(hardware, "lmstudio_port", lambda: None)                 # no look at a real LM Studio
     monkeypatch.setattr(hardware, "lan_addresses", lambda: ["192.168.1.13"])
     monkeypatch.setattr(hardware.socket, "gethostbyname_ex", lambda h: (h, [], ["192.168.1.13", "192.168.1.6"]))
     up = {"192.168.1.6", "192.168.1.13", "192.168.1.18"}
@@ -77,3 +79,28 @@ def test_an_announced_server_is_found_on_its_own_port(monkeypatch):
                                                                           "quant": "Q4", "kind": "vlm"}])
     found = hardware.lmstudio_network(max_age=0)
     assert [(e["host"], e["urls"], e["announced"]) for e in found] == [("linux-box", ["http://192.168.1.18:18234"], True)]
+
+
+def test_a_model_list_that_isnt_one_is_not_lm_studio(serve):
+    """Any computer on the network can answer on LM Studio's port: an answer of another shape is taken as "not LM
+    Studio", never as an error that fails the whole search."""
+    import http.server
+    import json
+
+    def answering(body):
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                data = json.dumps(body).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+        return serve(H)
+    assert hardware._lms_models(answering({"data": 5})) is None
+    assert hardware._lms_models(answering([1, 2])) is None
+    got = hardware._lms_models(answering({"data": [{"id": "a/b", "type": "vlm", "quantization": 7}, {"id": 5}, "x",
+                                                    {"id": "c" * 300}]}))
+    assert got == [{"id": "a/b", "vision": True, "loaded": False, "quant": None, "kind": "vlm"}]

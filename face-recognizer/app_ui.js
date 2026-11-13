@@ -44,7 +44,12 @@ async function poll() {                          // each program's URL once it's
 }
 poll();
 // This page runs: app.py's watchdog brings the window back when these stop (a frozen page renderer)
-setInterval(() => { fetch("/alive", { cache: "no-store" }).catch(() => {}); }, 2000);
+// An answer nobody reads has to be let go. Until then its body keeps a file descriptor open in the page's process,
+// and nothing frees it while the page runs. On Linux (Qt WebEngine, 1024 descriptors) the unread answers of the
+// every-second requests used them all in ten minutes and the window froze; the watchdog then restarted the app,
+// about every 90 minutes after that. drop(answer) lets the body go; a test checks every fetch reads or drops.
+const drop = r => { try { r?.body?.cancel().catch(() => {}); } catch {} return r; };
+setInterval(() => { fetch("/alive", { cache: "no-store" }).then(drop, () => {}); }, 2000);
 // Start again: a program that failed to start (the model download, say) or whose page says it stopped answering
 // (its "Start again" button asks this page, over postMessage). app.py starts it again, with any other program that
 // failed; one that still answers is left alone. Its frame is emptied until /status gives its (maybe new) address.
@@ -56,6 +61,7 @@ async function startAgain(k) {
     if (j !== k && !errors[j]) continue;
     delete errors[j];
     frame(j).removeAttribute("src");
+    if (j === "track") frame("cams").removeAttribute("src");   // the Cameras page is the tracker's: its address may change too
     STATE[j] = null;
     document.getElementById("st-" + j).textContent = "";
   }
@@ -68,7 +74,7 @@ addEventListener("keydown", e => {               // Ctrl+1 / Ctrl+2 / Ctrl+3 swi
 });
 let newer = false;                               // a newer release was found: the buttons open its download page
 async function checkUpdate() {
-  if (newer) return fetch("/open-release", { headers: { "X-Face-Tool": "1" } });
+  if (newer) return fetch("/open-release", { headers: { "X-Face-Tool": "1" } }).then(drop);
   const bs = ["upd", "upd2"].map(id => document.getElementById(id)), say = t => bs.forEach(b => b.textContent = t);
   say("Checking…");
   try {
@@ -106,7 +112,7 @@ addEventListener("message", e => {
   if (k === "label" && m.fs === "forgot" && typeof m.name === "string" && m.name) act("track", "forgetPerson", { name: m.name });
   if (m.fs === "result" && waiting[m.rid]) { waiting[m.rid](m); delete waiting[m.rid]; }
   // the camera won't start even after the tracker page loaded again: the app starts again (app.py, at most hourly)
-  if (k === "track" && m.fs === "camstuck") fetch("/restart-app?why=camera", { cache: "no-store", headers: { "X-Face-Tool": "1" } }).catch(() => {});
+  if (k === "track" && m.fs === "camstuck") fetch("/restart-app?why=camera", { cache: "no-store", headers: { "X-Face-Tool": "1" } }).then(drop, () => {});
   if (m.fs === "restart") startAgain(k);                                  // the page's own Start again button
   // another device's settings were copied to this one: the tracker page loads them again (the labeling page itself)
   if (k === "label" && m.fs === "reload" && frame("track").src) frame("track").src = frame("track").src;
@@ -183,7 +189,9 @@ function makeRow(k, it) {
     ctl.append(...parts, b, msg);
   }
   if (["toggle", "range", "select", "text"].includes(it.type)) ctl.append(el("span", { className: "msg err rmsg" }));
-  row.append(it.type === "info" || it.type === "button" ? el("span", { className: "lab", textContent: it.label }) : lab, ctl);
+  // a form's or button's row name is plain text: as a <label for> the button, a click on the name pressed it, and with
+  // the fields empty that saved an empty key or disconnected the shared database
+  row.append(["info", "button", "form"].includes(it.type) ? el("span", { className: "lab", textContent: it.label }) : lab, ctl);
   if (it.hint) row.append(el("div", { className: "hint", textContent: it.hint }));
   return row;
 }
@@ -284,7 +292,7 @@ function alerts(m) {
     if (ms) alerts.timer = setTimeout(() => { document.getElementById("banner").hidden = true; }, ms);
     b.classList.remove("ring"); void b.offsetWidth; b.classList.add("ring");
   }
-  if (n !== unread || m.latest) fetch(`/attention?unread=${n}&flash=${m.latest ? 1 : 0}`, { headers: { "X-Face-Tool": "1" } }).catch(() => {});
+  if (n !== unread || m.latest) fetch(`/attention?unread=${n}&flash=${m.latest ? 1 : 0}`, { headers: { "X-Face-Tool": "1" } }).then(drop, () => {});
   unread = n;
 }
 function viewAlerts() {
@@ -296,7 +304,7 @@ document.getElementById("bell").addEventListener("click", viewAlerts);
 document.getElementById("bannerView").addEventListener("click", viewAlerts);
 document.getElementById("bannerOk").addEventListener("click", () => { document.getElementById("banner").hidden = true; });
 
-async function openDir(which) { try { await fetch("/open?what=" + which, { headers: { "X-Face-Tool": "1" } }); } catch {} }
+async function openDir(which) { try { drop(await fetch("/open?what=" + which, { headers: { "X-Face-Tool": "1" } })); } catch {} }
 (async () => {
   try { const p = await (await fetch("/paths", { cache: "no-store" })).json();
         document.getElementById("p-data").textContent = p.data; document.getElementById("p-private").textContent = p.private; } catch {}

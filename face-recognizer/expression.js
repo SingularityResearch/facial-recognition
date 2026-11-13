@@ -114,6 +114,8 @@
       if (name) { delete this.looks[name]; this.save(); return; }
       this.looks = {}; try { this.store?.removeItem(STORE_KEY); } catch {}
     }
+    // What another device learned about name (look), or that they were forgotten there (null): the store has it already
+    take(name, look) { if (look && Array.isArray(look.p)) this.looks[name] = look; else delete this.looks[name]; }
   }
 
   const rank = q => q.map((v, i) => i).sort((i, j) => q[j] - q[i]);

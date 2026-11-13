@@ -117,3 +117,39 @@ def test_old_restart_file_counts_as_the_cameras(monkeypatch, tmp_path):
     assert app._restarts() == {"camera": {"at": 5, "why": "camera"}}
     app._note_restart("window", {"at": 7, "n": 1})
     assert app._restarts() == {"camera": {"at": 5, "why": "camera"}, "window": {"at": 7, "n": 1}}
+
+
+def test_the_window_gets_room_for_more_open_files():
+    """Linux and macOS: the app raises its limit on open files (its window's helper processes inherit it), never
+    lowers one, and never fails over it. On Windows there is no such limit: None."""
+    import sys
+
+    import app
+    if sys.platform == "win32":
+        assert app.allow_more_open_files() is None
+        return
+    import resource
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    try:
+        low = 256 if hard == resource.RLIM_INFINITY else min(256, hard)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (low, hard))
+        want = 512 if hard == resource.RLIM_INFINITY else min(512, hard)
+        assert app.allow_more_open_files(512) == want == resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+        assert app.allow_more_open_files(128) == want                       # already more: left as it is
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+
+
+def test_the_windows_browser_flags_keep_what_is_set_and_are_added_once():
+    """The flags that keep the window's pages running in the background and the camera's frames in ordinary memory
+    are added to whatever is set already (a test's DevTools port), once."""
+    import app
+    env = {"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS": "--remote-debugging-port=9335"}
+    app.keep_running_in_background(env)
+    for var in ("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "QTWEBENGINE_CHROMIUM_FLAGS"):
+        assert "--disable-background-timer-throttling" in env[var] and "MediaFoundationD3D11VideoCapture" in env[var]
+        assert env[var].count("--disable-features=") == 1         # one list: a second one would replace the first
+    assert env["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"].startswith("--remote-debugging-port=9335 ")
+    before = dict(env)
+    app.keep_running_in_background(env)
+    assert env == before

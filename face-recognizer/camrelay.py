@@ -12,6 +12,7 @@ import re
 import threading
 import time
 
+MAX_PART = 8_000_000        # bytes in one part of a stream: more is a stream out of step, not a frame
 IDLE = 60
 READOUT_STALE = 5.0          # s: a readout older than this isn't shown (the device stopped sending it)
 _relays = {}
@@ -74,6 +75,8 @@ class Relay:
                     raise OSError("stream out of step")
                 m = _PART.search(buf)
             ctype, n, start = m.group(1).strip().lower(), int(m.group(2)), m.end()
+            if n > MAX_PART:
+                raise OSError("stream out of step")
             while len(buf) < start + n:
                 chunk = sock.recv(max(65536, start + n - len(buf)))
                 if not chunk:
@@ -92,6 +95,8 @@ class Relay:
                 self.sock, _ctype, first = peer.open_stream(self.device)
                 self.error = ""
                 for ctype, body in self._parts(self.sock, first):
+                    if time.time() - self.used > IDLE or self.stopped:   # after readouts too: a paused camera
+                        break                                            # sends only those
                     if ctype.startswith(b"application/json"):
                         try:
                             ro = json.loads(body)

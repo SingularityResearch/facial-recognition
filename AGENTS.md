@@ -52,9 +52,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     and page. Ports 8764-8766 (tab page, labeling, tracker); `FACE_PORTS=<n>` uses n to n+2 (a second copy).
   - The tab page itself (`app_ui.html` + `app_ui.js`, `{{VERSION}}` filled in) is served on `127.0.0.1:8764`:
     `/status`, `/paths`, `/update`, `/open-release`, `/open`, `/attention` (alert count in the title, taskbar flash),
-    `/restart` (Start again for a program that failed or stopped), `/alive`, `/restart-app`.
+    `/restart` (Start again for a program that failed or stopped; one loaded in this process and only slow is never
+    loaded a second time: `OWN`), `/alive`, `/restart-app`.
   - Window watchdog: the tab page asks `/alive` every 2 s; `watch_window` (`watch_step`) stops the page renderer
-    after `HUNG_AFTER` (30) s of silence (Linux, macOS: Qt loads the page again), and starts the whole app again in
+    after `HUNG_AFTER` (30) s of silence (Linux with Qt: Qt loads the page again; the macOS window is WebKit, with no such renderer to stop), and starts the whole app again in
     (`restart_app`) if it stays silent `RESTART_AFTER` (30) s more, or on Windows. Linux, macOS: `os.execve` in place
     (same pid, ports freed). Windows has no real exec: a new copy is started with `FACE_RESTART_AFTER=<pid>` and
     waits for the old one to end before taking the ports (`wait_for_previous`). Restarts in a row back off
@@ -66,7 +67,11 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     `HOME/restarted.json`), and only in the app window.
   - `clear_graphics_caches`: before the window opens, removes its compiled graphics caches once per new version (a
     stale one froze a newer Qt WebEngine: white window); never Local Storage.
-  - `KEEP_RUNNING_FLAGS`: the window's browser runs pages unthrottled in the background (the camera stream needs it).
+  - `KEEP_RUNNING_FLAGS`: the window's browser runs pages unthrottled in the background (the camera stream needs it),
+    and on Windows keeps camera frames in ordinary memory (`MediaFoundationD3D11VideoCapture` off: reading them back
+    from the graphics processor stalled the page in a disconnected desktop session).
+  - `allow_more_open_files`: Linux, macOS: the app and its window's processes may have 8192 files open (systemd
+    starts programs with 1024).
   - Without a console (the built app) messages go to `HOME/app.log`, each line stamped with the UTC time (`Stamped`;
     `tests/test_app_log.py`).
   - On Linux the window is first tried in a child process (`--probe-window`); without a working window the app uses
@@ -96,10 +101,15 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   normals in `HOME/person_signals.json`. `page_store.js` restores them into localStorage first thing (one synchronous
   request) and sends each change; localStorage is the page's quick copy. With a shared database both are synced
   (settings per device, person signals shared).
+  - Person signals go per person: the page sends only the people it changed and the names it removed
+    (`merge_signals`; never its whole map, which dropped everyone another device had learned since the page loaded),
+    and every half minute takes in what other devices learned or forgot (`PageStore.signals.refresh`,
+    `GET /api/signals?v=`). A forgotten name is refused until it is given to someone again.
 - `desktop.py` — what the app asks of the operating system on Windows, macOS and Linux: show a folder, draw the eye
   to the window for an alert. `paths.user_data` gives each system's application-data folder.
 - `paths.py` — `ROOT` (`FACE_ROOT` overrides), `HOME` (`FACE_HOME` overrides), `atomic_write`/`replace_file`,
-  `utc_now`/`utc_stamp`/`parse_time`. Every module takes its folders from here. Importing it also makes HTTPS check
+  `read_json` (a file that is there but can't be read raises instead of counting as empty: for files that are
+  rewritten whole), `utc_now`/`utc_stamp`/`parse_time`. Every module takes its folders from here. Importing it also makes HTTPS check
   certificates the operating system's way (`truststore`): a fresh Windows has few root certificates for Python, and
   the first-start model download from GitHub failed there (CERTIFICATE_VERIFY_FAILED; `tests/test_certificates.py`).
 
@@ -135,6 +145,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   place a person's data lives, listed at its top; their faces stay as Ignored places). In the person view (**Their
   data…**, `/api/person/export`, `/api/person/forget`); the tracker page forgets its browser storage itself
   (`forgetPerson`, sent by the tab page after a forget); with a shared database every device forgets (db/004).
+  The forgotten name is kept (`HOME/forgotten.json`, the `forgotten` table) as the instruction for devices that
+  haven't forgotten yet; giving the name to someone again removes it everywhere (`LabelDB.act`/`rename` →
+  `dbsync_home.unforget`), so a device joining later doesn't forget that new person.
 - `websearch.py` — the labeling tool's **Web search**: Amazon Rekognition celebrity recognition + Google Cloud Vision
   web detection, combined into suggestions with a confidence level. On click only; US services, English results,
   each capped under $10/month (`dbsync_home.count_use` holds the caps across devices); keys in `HOME`, never in the
@@ -166,6 +179,15 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
   each person's normal for every signal (`Baselines`, alone and in company), feeling-report summaries, fitted
   valence/arousal (browser; served by `tracker.py`).
+- `exprlog.py` — the expression log (the owner's decision, 2026-11-12): what each named person's face looks like,
+  every `EXPR_LOG_EVERY` (5 s, `tracker_ui.js`) while a tracker sees them, kept in the shared database for reports
+  later (`expression_log`, db/010: device, name, time, label, share, state, and the rest as numbers in `data`).
+  - The page posts readings to `/api/expression-log`; they wait in `HOME/expression/<UTC day>.jsonl` until the
+    sync has sent them (`exprlog.send` from `HomePart.after_push`; one row per device, name and time, so sending
+    twice changes nothing), then a past day's waiting file is deleted: the database is the store.
+  - Nothing is written without a shared database, or with **Keep expression readings** off (`ft-o-optExprLog`,
+    on by default). Named people only, never Unknown; a forgotten name is refused.
+  - `persondata.py` exports (`expression_log.jsonl`) and forgets them.
 - `alerts.py` — the tracker's alert inbox (`HOME/alerts.json`): add, list, acknowledge / archive / delete, and each
   alert's measured details (numbers and short text only, checked by `check_details`); routes `/api/alerts`,
   `/api/alerts/state`, `/api/alerts/details` in `tracker.py`. The bell and banner in the app window come from the
@@ -173,7 +195,7 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   taskbar button.
 - Live cameras across devices (with a shared database; db/008). Frames stay in memory, never on disk.
   - Sending (`camstream.py`): while "Stream this camera" is on and the peer service runs, the tracker page composes
-    the video with its overlay canvas (every marker, mirrored as shown) into JPEG frames (`streamFrame`, ~10/s all the
+    the video with its overlay canvas (every marker, mirrored as shown) into JPEG frames (`streamFrame`, `STREAM_FPS` 20 a second, the overlay drawn at most 60 times a second: `DRAW_EVERY`; all the
     time, watched or not: the owner's choice) and posts them to `/api/stream/frame`. Every second it also posts who's
     in view and its readout as data (`/api/inview`, `readoutData`). While the page is hidden it draws on a timer; the
     app window's browser runs unthrottled (`app.KEEP_RUNNING_FLAGS`).
@@ -189,7 +211,7 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
       (`camera_frames`: waits on `camstream.ANY` for the first, gathers 40 ms more; body: 4-byte length, a JSON head,
       then the JPEGs);
     - one `/api/cameras/readouts?ids=...` a second answers every readout from memory (`camera_readouts`);
-    - at most `MAX_CAMERAS` (64) cameras per request. Measured with a stub: 40 cameras at 9-10 fps each, at most 3
+    - at most `MAX_CAMERAS` (64) cameras per request. Measured with a stub, at the earlier 10 a second: 40 cameras at 9-10 fps each, at most 3
       requests open.
   - "Moved" alerts: `HomePart._cameras` keeps `sightings` and raises "moved" when someone is on this camera within
     `MOVE_WINDOW` (10 min) of being seen on another's. Sightings are opt-in like the presence log: only while that alert
@@ -201,24 +223,30 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   since v1.16). Without `HOME/database.json` (or `FACE_DB`) nothing changes: files only.
   - Connection settings in `HOME/database.json` (password DPAPI-protected on Windows, mode 600 elsewhere); TLS
     `verify-ca` against the server's own CA (made by `tools/db_certs.py`). This device's id in `HOME/device.json`.
-  - `facedb.setup` (Settings → Shared database → Connect) logs in with sslmode=require, takes the server's CA from
-    the `server_ca` table (the SCRAM login proves the server knows the password) and keeps it for verify-ca.
+  - `facedb.setup` (Settings → Shared database → Connect) logs in with sslmode=require and
+    channel_binding=require, takes the server's CA from the `server_ca` table (the SCRAM login, bound to this TLS
+    connection, proves the server at its other end knows the password) and keeps it for verify-ca.
   - Migrations run under an advisory lock; a `changes` log is kept by trigger (deletes as tombstones). Connections
     are autocommit: group writes in `with conn.transaction():`.
   - Migrations: `001_schema` (tables, change log), `002_sync` (database `instance` id, photo facts),
     `003_server_ca`, `004_forgotten` (people forgotten on any device), `005_picture_sha` (send a face picture only
     when it differs), `006_passphrase_versions` (`secretbox.py`), `007_peers` (`peer.py`: addresses, port,
-    certificate hash), `008_cameras` (`devices.streaming_at`, `sightings`).
+    certificate hash), `008_cameras` (`devices.streaming_at`, `sightings`), `009_change_order` (`changes.txid`: the
+    writing transaction), `010_expression_log` (`exprlog.py`).
 - `dbimport.py` + `tools/db_import.py` — copy a device's `data/` and HOME into the database (reads only; merges by
   face ID and photo hash; a hand label beats an automatic one; Ignored stays Ignored). Join uses it.
 - `dbsync.py` — the sync, in the labeling tool's process (`label_tool.start_sync`). Files stay the working copy.
   - Each row's digest as last synced is in `HOME/sync.sqlite`. Changed rows are pushed after each save
     (`face_id.SAVED_HOOKS` → `Sync.note`) and every minute; other devices' changes are pulled from `changes` every
     3 s and applied through the stores (so `people.npz` is rebuilt and the tracker reloads by mtime).
+  - Which changes are new is decided by transaction, not by `seq` (`Sync._pull`, db/009): the pull keeps the
+    snapshot it read the log with and next time takes every change whose transaction wasn't visible in it
+    (`pg_visible_in_snapshot`). By `seq` alone, rows of a long transaction (a join) that committed after a device
+    had read past their numbers were never pulled.
   - Join (first sync with a database, by its `instance` id): dbimport, then everything pulled.
   - Parts: `Local` (photos, faces, labels, Web search answers; the undo log only sent) and `dbsync_home.HomePart`
     (descriptions, Collect faces pictures, alerts, presence, shared documents, keys, forgotten people, device
-    settings, person signals; the app log and posed tests only sent). `HomePart.every_step` also runs the peer
+    settings, person signals; the app log, posed tests and the expression log only sent). `HomePart.every_step` also runs the peer
     service (`_peer`), camera sightings (`_cameras`) and the passphrase catch-up.
   - A new place that keeps data must get a table (new `db/NNN_*.sql`) and a part.
 - `secretbox.py` — keys in the database, encrypted on the device (scrypt + AES-256-GCM, name as associated data).
@@ -258,11 +286,13 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `lmstudio.py` — LM Studio on this computer, kept as the owner wants on every computer with this app and LM Studio
   (`keep()`, every minute from `app.py`; `FACE_LMSTUDIO=off` turns it off).
   - `serve_everywhere`: its `http-server-config.json` `networkInterface` 0.0.0.0; a localhost-only server is
-    restarted with `lms server start --bind 0.0.0.0`.
+    restarted with `lms server start --bind 0.0.0.0 --cors` (CORS on, as the owner's LM Studio servers run; if that
+    start fails, it is started again as it was, never left off).
   - `announce`: mDNS `_lmstudio._tcp` + `_http._tcp` with its port (Windows `DnsServiceRegister`, macOS
     `dns-sd -R`, Linux `avahi-publish-service`); skipped when the computer announces it already.
   - `missing_models` / `get_models`: vision models other servers on the network have, from Settings → LM Studio's
-    button: first from the shared models folder (`from_share`, checked by SHA-256, removed again if a file fails),
+    button: first from the shared models folder (`from_share`, checked by SHA-256, removed again if a file fails;
+    paths in the folder's `index.json` that would leave LM Studio's models or hub folder are never used: `_inside`),
     else `lms get <model>@<quant>`. Stopping `lms get` doesn't stop LM Studio's own download: it keeps a paused job
     that hides the model until cancelled in LM Studio.
   - `publish`: puts this computer's vision models in the shared folder (`<share>/models/...`, `<share>/hub/...`,
@@ -271,8 +301,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `fetch_models.py` — downloads missing models (or Git LFS placeholders), with SHA-256 checks (also of files already
   there, remembered by size and time in `models/.verified.json`, not in git); run by `setup.bat`/`setup.sh` and by
   the app on first start.
-  - Seven from their publishers (OpenCV Zoo on Hugging Face, pinned; MediaPipe storage v1; ArcFace's bytes only, by
-    range requests, from InsightFace's `buffalo_l.zip`); Wav2Small (and any fallback) from the GitHub Release
+  - Eight from their publishers (OpenCV Zoo on Hugging Face, pinned; MediaPipe storage v1; ArcFace's bytes only, by
+    range requests, from InsightFace's `buffalo_l.zip`); Wav2Small, the dynamic YuNet (and any fallback) from the GitHub Release
     `models-v1`.
   - `download_checked` is the pinned download (URL at a commit, size, SHA-256) that `tools/get_wav2small.py` and
     `tools/get_adaface.py` use.
@@ -313,7 +343,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     tables and `server_ca`, over verify-ca with that CA), `db_import.py`.
 - `tests/` — `conftest.py` points `FACE_ROOT`/`FACE_HOME` at a temp folder before anything is imported: no models, no
   real data.
-  - Node (`*.test.js`): `expression.js`, `signals.js`, `settings_bridge.js`; `pages.test.js`: every page script
+  - Node (`*.test.js`): `expression.js`, `signals.js`, `settings_bridge.js`, `page_store.js` (person signals sent
+    per person, `refresh`); `pages.test.js`: every page script
     parses and is served and packed, no inline handlers, no internet fonts.
   - Servers and security: `test_servers.py` (the three servers on test servers: CSP, CORP, cross-site refusals,
     request sizes, Collect faces, presence log, feeling reports, `/api/who`, no page loading from the internet),
@@ -374,6 +405,9 @@ set PY=%LOCALAPPDATA%\Programs\Python\Python312\python.exe
 ```
 
 CI runs all of these (the database tests only with its PostgreSQL service; locally set `FACE_TEST_PG` to run them).
+Every `fetch` in a page script must read its answer (`json()`, `text()`, `arrayBuffer()`) or let it go (`drop(r)`,
+`r.body?.cancel()`): an unread answer keeps a file descriptor open in the page's process, and on Linux the window
+froze when they ran out (ten minutes after a start, found 2026-11-12; `tests/pages.test.js` checks every fetch).
 Keep page code in the `.js` files (no inline `<script>` blocks: a test fails on them), and add any new page file to
 its server and to `PAGES` in `build_exe.py` (a test checks both). Change a measured threshold only together with
 `tests/test_thresholds.py`, after re-measuring.
@@ -425,13 +459,15 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - The shared database is reached only over TLS checked against its own CA (`verify-ca`); LAN connections without
   TLS are refused by its pg_hba. The app's role (`facerec`) is not a superuser and owns only its schema.
 - Only the two fixed folders may be opened (`/open?what=data|private`); photos are addressed by face index, never by path.
-- Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`, `cudasupport.py`,
-  `lmstudio.from_share`); the CUDA download starts only from its Settings button, and only `onnxruntime/` and
-  `nvidia/` are unpacked from the wheels.
+- Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`, `cudasupport.py`); the
+  CUDA download starts only from its Settings button, and only `onnxruntime/` and `nvidia/` are unpacked from the
+  wheels. `lmstudio.from_share` checks each file against the shared folder's own list (a damaged copy, not a
+  rewritten list: the folder is as trusted as the computers that write to it) and writes only inside LM Studio's
+  models and hub folders, whatever paths the list holds.
 - `settings_bridge.js` answers only its parent window, on `127.0.0.1`/`localhost`, and only when that is the origin
   the browser reports for the frame's parent (`location.ancestorOrigins`).
 - `lmstudio.py` changes another program's settings (LM Studio's `networkInterface` to 0.0.0.0, restarting its server
-  on all interfaces) and announces it on the local network: the owner's rule for every computer with this app and LM
+  on all interfaces with CORS on) and announces it on the local network: the owner's rule for every computer with this app and LM
   Studio (2026-11-10); `FACE_LMSTUDIO=off` turns it off. Model and CUDA downloads start only from a Settings button.
 - `hardware.ai_apps` asks 127.0.0.1's usual AI ports and the configured describe server (with that server's own key,
   through `describe.server_models`). `hardware.lmstudio_network` (Settings → LM Studio on the network, only while the
@@ -444,6 +480,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
     status; nothing is sent but those questions.
 - Describe photo: the API key belongs to its server address (changing the address clears it; Test sends it only to
   that address); redirects aren't followed; answers are capped (`MAX_ANSWER`, `MAX_TEXT`).
+- What other computers on the network say is checked before use: an LM Studio server's model list by shape
+  (`hardware._lms_models`), a model's name against `lmstudio.VARIANT` before it reaches `lms get`, paths in the
+  shared models folder's list (`lmstudio._inside`).
 - Background jobs (imports, possible-face scans, Describe all) start through `Importer.begin` (one at a time, under
   a lock). Shared caches and counters used by request threads need a lock.
 - Every person's data can be exported and forgotten (`persondata.py`): a new place that keeps anything about a person
@@ -479,11 +518,18 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   Since 2026-11-08 they can share one window as tabs (`app.py`), but each still runs on its own.
 - Camera opening on Windows: try `CAP_DSHOW` → `CAP_MSMF` → `CAP_ANY`, retry `cap.read()` while the webcam warms up.
 - Face-shape cues are evidence only until fusion is measured with `tools/expr_eval.py` on posed sessions.
-- Expression is display-only and never stored (except opt-in posed test sessions and feeling reports in `data/expr_eval/`,
-  numbers only); microphone audio is analysed live and never stored; per-person baselines and usual looks are kept by
+- Expression readings are stored, as numbers and short labels only (the owner's decision, 2026-11-12, for reports
+  later; before that they were never stored): in the shared database's `expression_log` (`exprlog.py`; nothing
+  without a shared database), in each alert's measured details (`alerts.py`), and in opt-in posed test sessions
+  and feeling reports (`data/expr_eval/`). Never a picture or sound with them. Microphone audio is analysed live
+  and never stored; per-person baselines and usual looks are kept by
   the tracker in `HOME/person_signals.json` (never `data/`) with a copy in the page's storage, and in the shared
   database when one is set up; keep README wording honest ("looks", not "feels").
 - Camera frames (streamed or relayed) are kept in memory only, never on disk or in the database.
+- Cameras are never paused (the owner's rule, 2026-11-12): the app never stops or slows a camera or its stream by
+  itself, whether or not a face is in view, the window is shown, or anyone is watching. Only the owner's own
+  Stop camera does. The Cameras page keeps fetching every stream while its tab is hidden; don't add a pause.
+- **They move between cameras** (and so camera sightings) is off until switched on.
 - Times are stored in UTC everywhere (files, file names, log lines, the database: `paths.utc_now`, `paths.utc_stamp`,
   timestamptz with the session in UTC) and shown in local time only on the pages; `paths.parse_time` also reads
   the older local-time text.

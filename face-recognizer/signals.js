@@ -551,10 +551,14 @@
       if (name) { delete this.people[name]; delete this.last[name]; } else { this.people = {}; this.last = {}; }
       try { if (name) this.save(); else this.store?.removeItem(B_STORE); } catch {}
     }
+    // What another device learned about name (person), or that they were forgotten there (null): the store has it already
+    take(name, person) {
+      if (person && typeof person === "object") this.people[name] = person; else { delete this.people[name]; delete this.last[name]; }
+    }
   }
 
-  // Evidence line of departures from a person's normal: "unusual for Chris (alone): head -2.3 SD, pitch +2.1 SD",
-  // "learning Chris's normal 40%", or "" when nothing stands out.
+  // Evidence line of departures from a person's normal: "unusual for Ann (alone): head -2.3 SD, pitch +2.1 SD",
+  // "learning Ann's normal 40%", or "" when nothing stands out.
   function unusualEvidence(baselines, name, snap, ctx) {
     if (!baselines || !name || name === "Unknown") return "";
     const z = baselines.z(name, snap, ctx), keys = Object.keys(z);

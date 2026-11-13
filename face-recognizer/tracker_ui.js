@@ -34,6 +34,7 @@ const colorFor = name => name === "Unknown" ? UNKNOWN : COLORS[[...name].reduce(
 async function loadPeople() {
   try {
     const r = await (await fetch("/api/people")).json();
+    if (!Array.isArray(r.people)) throw new Error(r.error || "no list of people");   // an error answer: keep the list we have
     people = r.people;
     setExpressions(r.expressions || null);
     cuesOn = !!r.cues; showDevices(r.devices, r.warmup_ms);
@@ -172,6 +173,11 @@ function alertDetails(t) {
 
 // ---------------------------------------------------------------- the alert inbox
 let alertView = "new", alertCounts = { new: 0, ack: 0, archived: 0 };
+// An answer nobody reads has to be let go. Until then its body keeps a file descriptor open in the page's process,
+// and nothing frees it while the page runs. On Linux (Qt WebEngine, 1024 descriptors) the unread answers of the
+// every-second requests used them all in ten minutes and the window froze; the watchdog then restarted the app,
+// about every 90 minutes after that. drop(answer) lets the body go; a test checks every fetch reads or drops.
+const drop = r => { try { r?.body?.cancel().catch(() => {}); } catch {} return r; };
 async function alertApi(path, body) {
   const r = await fetch(path, body === undefined ? { cache: "no-store" }
     : { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json", "X-Face-Tool": "1" } });
@@ -387,7 +393,7 @@ function closeVisit(name, keepalive = false) {
   delete visitsOpen[name]; lastLeft[name] = v.last; leaving[name] = v;
   if (!$("optPresence").checked) return;
   fetch("/api/presence", { method: "POST", keepalive, body: JSON.stringify({ name, start: v.start, end: v.last }),
-                           headers: { "Content-Type": "application/json", "X-Face-Tool": "1" } }).catch(() => {});
+                           headers: { "Content-Type": "application/json", "X-Face-Tool": "1" } }).then(drop, () => {});
 }
 async function showPresence() {
   const list = $("presenceList");
@@ -423,19 +429,27 @@ async function listCameras(activeId) {
   } catch {}
 }
 
+// Starts can overlap (the page's own start, the Start button, a change of camera, Keep this camera running): the
+// newest wins, and an earlier one that gets its camera afterwards hands it straight back. Before, that camera stayed
+// open with nothing showing it (its light on after Stop camera), and the two fought over the picture.
+let camGen = 0;
 async function startCamera() {
   if (stream) { stopCamera(); return; }
+  const mine = ++camGen;
+  let got = null;
   try {
     const id = $("camSelect").value;
     const ask = id => navigator.mediaDevices.getUserMedia({ video: {
       width: { ideal: 1280 }, height: { ideal: 720 }, ...(id ? { deviceId: { exact: id } } : {}) } });
-    try { stream = await ask(id); }
+    try { got = await ask(id); }
     catch (e) {
       // A remembered camera ID only fits the browser that saved it (the app window and each browser
       // get their own IDs), and cameras get unplugged: fall back to the default camera.
       if (!id || !["OverconstrainedError", "NotFoundError"].includes(e.name)) throw e;
-      $("camSelect").value = ""; stream = await ask("");
+      $("camSelect").value = ""; got = await ask("");
     }
+    if (mine !== camGen) { got.getTracks().forEach(t => t.stop()); return; }
+    stream = got;
     video.srcObject = stream; video.removeAttribute("src");
     $("optMirror").checked = true; applyMirror();
     await video.play();
@@ -447,6 +461,8 @@ async function startCamera() {
     $("camBtn").textContent = "Stop camera";
     begin();
   } catch (e) {
+    got?.getTracks().forEach(t => t.stop());
+    if (mine !== camGen) return;
     stream = null;
     setStatus(e.name === "NotReadableError" ? "That camera is busy in another app. Close it there, or pick another camera."
             : e.name === "NotAllowedError" ? "Camera blocked. Allow camera access for this page and try again."
@@ -589,7 +605,7 @@ function collect(blob, s) {
   const others = tracks.filter(t => t.matched && !due.includes(t)).slice(0, 20).map(boxOf);
   fetch(`/api/capture?${new URLSearchParams({ faces: JSON.stringify(faces), others: JSON.stringify(others) })}`,
         { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg", "X-Face-Tool": "1" } })
-    .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)))
+    .then(r => r.ok ? r.json() : (drop(r), Promise.reject(new Error(r.status))))
     .then(() => { captured += faces.length; $("collectHint").textContent = `${captured} face snapshot${captured === 1 ? "" : "s"} saved this session for the labeling tool.`; })
     .catch(() => { $("collectHint").textContent = "Couldn't save a snapshot. Is the tracker window still open?"; });
 }
@@ -620,7 +636,7 @@ async function identify(threshold) {
   try {
     const r = await fetch("/api/who", { method: "POST", body: JSON.stringify({ t: +threshold, prints }),
                                         headers: { "Content-Type": "application/json", "X-Face-Tool": "1" } });
-    if (!r.ok) throw new Error(r.status);
+    if (!r.ok) { drop(r); throw new Error(r.status); }
     (await r.json()).who.forEach(([name, sim], k) => Object.assign(live[k], { name, sim, byAverage: true }));
   } catch { for (const t of live) t.byAverage = false; }     // fall back to the vote
 }
@@ -751,12 +767,20 @@ function voiceFor(t, now) {
 // Microphone: 16 kHz audio into VoiceSignals (in the page); every second with speech in it, the last
 // 2 seconds go to the recognizer's voice model. Nothing is recorded.
 let voice = null, mic = null, audioCtx = null, voiceTimer = null, voiceBusy = false;
+// Switched off while it was still starting (the permission prompt, a quick off and on), the microphone used to open
+// anyway and stay open with the switch off: each start has a number, and one that was overtaken gives its microphone back.
+let voiceGen = 0;
 async function startVoice() {
+  const mine = ++voiceGen;
   try {
-    mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false } });
+    const got = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false } });
+    if (mine !== voiceGen) { got.getTracks().forEach(t => t.stop()); return; }
+    mic = got;
     audioCtx = new AudioContext({ sampleRate: Signals.S.V_RATE });
     const tap = "registerProcessor('tap', class extends AudioWorkletProcessor { process(i) { const c = i[0][0]; if (c) this.port.postMessage(c.slice(0)); return true; } });";
-    await audioCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([tap], { type: "text/javascript" })));
+    const tapUrl = URL.createObjectURL(new Blob([tap], { type: "text/javascript" }));
+    try { await audioCtx.audioWorklet.addModule(tapUrl); } finally { URL.revokeObjectURL(tapUrl); }
+    if (mine !== voiceGen) return;
     const node = new AudioWorkletNode(audioCtx, "tap"), mute = audioCtx.createGain();
     mute.gain.value = 0;
     audioCtx.createMediaStreamSource(mic).connect(node); node.connect(mute); mute.connect(audioCtx.destination);
@@ -764,11 +788,13 @@ async function startVoice() {
     node.port.onmessage = e => voice?.push(e.data, performance.now());
     voiceTimer = setInterval(scoreVoice, 1000);
   } catch (e) {
+    if (mine !== voiceGen) return;
     stopVoice(); $("optVoice").checked = false;
     setStatus(e.name === "NotAllowedError" ? "Microphone blocked. Allow it for this page to use voice." : "Couldn't start the microphone.", "err");
   }
 }
 function stopVoice() {
+  voiceGen++;
   clearInterval(voiceTimer); voiceTimer = null;
   mic?.getTracks().forEach(t => t.stop()); mic = null;
   audioCtx?.close(); audioCtx = null; voice = null;
@@ -844,6 +870,7 @@ async function saveFeel() {
     const r = await fetch("/api/expr-eval/report", { method: "POST", body: JSON.stringify(rep),
                                                      headers: { "Content-Type": "application/json", "X-Face-Tool": "1" } });
     if (!r.ok) throw new Error((await r.json()).error);
+    drop(r);
   } catch (e) { setStatus(`Couldn't save the report: ${e.message}`, "err"); }
   closeFeel(); loadPeople();
 }
@@ -893,14 +920,25 @@ async function runTest() {
 }
 
 // ---------------------------------------------------------------- drawing (every animation frame)
+// Frames a second sent to the other devices' Cameras tab: 20 since 1.21.2 (10 before), the owner's choice on my
+// recommendation, about 10 Mbit/s a camera on the local network. A choice, not a measured limit.
+const STREAM_FPS = 20, STREAM_EVERY = 1000 / STREAM_FPS;
+// The names, boxes and markers are drawn at most 60 times a second, whatever the display's rate. On a 240 Hz display,
+// drawing at its rate left the page no time for anything else: encoding one stream frame took 93 ms instead of 12
+// (measured 2026-11-12), and the stream reached 13 frames a second instead of 20.
+const DRAW_EVERY = 1000 / 60;
+let drawnAt = 0;                                    // when requestAnimationFrame last drew
 function draw() {
   if (!running) return;
-  render();
+  const now = performance.now();
+  if (now - drawnAt >= DRAW_EVERY - 1) { drawnAt = now; render(); }
   requestAnimationFrame(draw);
 }
 // While the page is hidden (window minimized, covered, or another tab of the app shown), the browser stops calling
-// requestAnimationFrame: draw (and stream this camera) on a timer instead, so the names and boxes keep up.
-setInterval(() => { if (running && document.hidden) render(); }, 100);
+// requestAnimationFrame, and in a desktop session nobody is connected to it calls it only now and then (the NAS
+// sent 4 frames a second): whenever it hasn't drawn for two frames, draw (and stream this camera) on a timer
+// instead, so the names and boxes keep up and the stream keeps its pace.
+setInterval(() => { if (running && (document.hidden || performance.now() - drawnAt > 2 * STREAM_EVERY)) render(); }, STREAM_EVERY / 2);
 function render() {
   if (video.videoWidth && canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
   if (shown && !$("optMesh").checked) shown = null;
@@ -1107,7 +1145,7 @@ function group(title, cells, note) {
 
 // ---- This camera for the other devices (camstream.py, peer.py): the video with every marker drawn on it, and the
 // live readout as data (drawn on the other side with text only). Sent with a shared database while "Stream this
-// camera" is on, at full rate (about 10 frames a second) all the time, watched or not.
+// camera" is on, at full rate (STREAM_FPS frames a second) all the time, watched or not.
 const comp = document.createElement("canvas"), cctx = comp.getContext("2d");
 let streamBusy = false, streamNext = 0, streamOff = 0, streamWhy = "";
 async function streamFrame() {
@@ -1132,7 +1170,9 @@ async function streamFrame() {
     streamWhy = "";
     if (j.stream === false) { streamOff = now + 2000; return; }       // not shared now: ask again in 2 s
     if (!r.ok) { streamWhy = `HTTP ${r.status} ${j.error || ""}`; streamOff = now + 500; return; }
-    streamNext = now + 100;                         // full rate all the time (about 10 frames a second)
+    // full rate all the time. The next frame is due one period after this one was due (not after it began plus
+    // whatever it took), so the pace holds whatever calls this: the display's refresh or the timer above
+    streamNext = Math.max(streamNext + STREAM_EVERY, now - STREAM_EVERY);
   } catch (e) { streamWhy = `${e.name}: ${e.message}`; streamOff = now + 500; } finally { streamBusy = false; }
 }
 // Each face as the live readout shows it: name, match, colour, expression, size and the labeled groups of cells
@@ -1158,8 +1198,27 @@ setInterval(() => {                       // who this camera sees, and its reado
   let readout = [];
   try { readout = $("optStream").checked ? readoutData() : []; } catch {}
   fetch("/api/inview", { method: "POST", headers: { "Content-Type": "application/json", "X-Face-Tool": "1" },
-                         body: JSON.stringify({ names, readout }) }).catch(() => {});
+                         body: JSON.stringify({ names, readout }) }).then(drop, () => {});
 }, 1000);
+// The expression log (exprlog.py): what each named face looks like, every EXPR_LOG_EVERY, sent to this page's
+// server, which keeps it in the shared database for reports (nothing is kept without one). The owner's decision of
+// 2026-11-12; until then readings were shown and never stored. How a face looks, not what the person feels.
+const EXPR_LOG_EVERY = 5000;               // ms between a person's readings: a choice, not a measured value
+function exprLogRow(t) {
+  const e = t.expr, va = e.vaFit || e.va, last = t.xt?.votes?.length ? t.xt.votes[t.xt.votes.length - 1].probs : null;
+  return { t: Date.now(), name: t.name, label: e.label, share: e.share ?? null, state: e.state || "",
+           data: { lead: e.lead ?? null, votes: e.votes ?? null, calibratedConfidence: e.cal ?? null,
+                   valence: va ? va[0] : null, arousal: va ? va[1] : null, flags: (e.flags || []).join(", ") || null,
+                   scores: last && expressions ? Object.fromEntries(expressions.map((l, i) => [l, last[i] ?? null])) : null,
+                   setting: t.ctx || null, match: t.sim ?? null, quality: t.quality ?? null } };
+}
+setInterval(() => {
+  if (!running || !$("optExprLog").checked || !$("optExpr").checked) return;
+  let readings = [];
+  try { readings = tracks.filter(t => !t.missed && t.name && t.name !== "Unknown" && t.expr?.label).map(exprLogRow); } catch {}
+  if (readings.length) fetch("/api/expression-log", { method: "POST", headers: { "Content-Type": "application/json", "X-Face-Tool": "1" },
+                                                      body: JSON.stringify({ readings }) }).then(drop, () => {});
+}, EXPR_LOG_EVERY);
 // Alerts the app raised itself (someone moved between cameras, from any device): shown like this page's own
 let alertsSeenT = Date.now();
 setInterval(async () => {
@@ -1263,7 +1322,7 @@ $("feelEvery").value = recall("feel") || "0";
 $("feelEvery").onchange = () => { remember("feel", $("feelEvery").value); lastAsk = performance.now(); };
 $("testDelete").onclick = async () => {
   if (!confirm("Delete all saved expression test sessions and feeling reports?")) return;
-  try { await fetch("/api/expr-eval/delete", { method: "POST", headers: { "X-Face-Tool": "1" } }); } catch {}
+  try { drop(await fetch("/api/expr-eval/delete", { method: "POST", headers: { "X-Face-Tool": "1" } })); } catch {}
   loadPeople();
 };
 $("optSmooth").oninput = e => $("smoothVal").textContent = (+e.target.value).toFixed(2);
@@ -1273,7 +1332,7 @@ navigator.mediaDevices?.addEventListener?.("devicechange", () => listCameras());
 function remember(k, v) { if (window.PageStore) PageStore.set("ft-" + k, String(v)); else try { localStorage.setItem("ft-" + k, v); } catch {} }
 function recall(k) { try { return localStorage.getItem("ft-" + k); } catch { return null; } }
 // The other options are remembered between visits too (the camera's mirror view follows the source instead)
-const KEEP = ["optPoints", "optTrail", "optUnknown", "optBlur", "optExpr", "optCalib", "optEvidence", "optVoice", "optPulse",
+const KEEP = ["optPoints", "optTrail", "optUnknown", "optBlur", "optExpr", "optCalib", "optEvidence", "optExprLog", "optVoice", "optPulse",
               "optTalkGate", "optState", "optPose", "optHandGate", "optSkeleton", "optFingers", "optSmooth", "optThresh", "optMeshStrength",
               "optAlertArrive", "optAlertLeave", "optAlertMove", "optStream", "optKeepCam", "optAlertUnusual", "optArriveGap", "optLeaveGap", "optUnknownStay",
               "optUnusualZ", "optUnusualFor", "optUnusualRepeat", "optDetailsAfter", "optBannerFor"];
@@ -1300,6 +1359,7 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
     c("optTrail", D), c("optUnknown", D), c("optBlur", D),
     c("optSmooth", D, { hint: "How much the boxes are smoothed between frames." }),
     c("optExpr", E), c("optCalib", E, { hint: $("exprHint").textContent }), c("optEvidence", E),
+    c("optExprLog", E, { hint: $("optExprLog").closest("label").title }),
     c("optTalkGate", E), c("optState", E),
     c("optHandGate", E, { hint: "The two \"skip\" options and the state model change the expression reading and aren't measured yet: they stay off until the Expression test and tools/expr_eval.py show they help." }),
     c("feelEvery", E, { label: "Ask how I feel (feeling check)" }),
@@ -1309,7 +1369,7 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
     c("optThresh", R, { hint: "Higher strictness means fewer wrong names but more \"Unknown\". The default is the measured best for the active model." }),
     c("optCollect", R, { hint: $("collectHint").textContent }),
     c("optKeepCam", R, { label: "Keep this camera running", hint: "Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. Stop camera turns this off." }),
-    c("optStream", R, { label: "Stream this camera to my other devices", hint: "Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on here), with its live readout. Sent all the time at full rate (about 10 frames a second), over your local network, encrypted, only to your own devices; never stored. Needs a shared database and Share my photos with my other devices." }),
+    c("optStream", R, { label: "Stream this camera to my other devices", hint: "Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on here), with its live readout. Sent all the time at full rate (about 20 frames a second), over your local network, encrypted, only to your own devices; never stored. Needs a shared database and Share my photos with my other devices." }),
     { section: A, id: "alertList", label: "Alert me about these people", type: "multi",
       hint: "Pick the people to be told about (their arrive, leave and unusual-signal events, as switched on below). Unknown: a face the recognizer can't name stays the set time.",
       options: () => {
@@ -1357,10 +1417,21 @@ function forgetForgotten(names) {
   let done;
   try { done = new Set(JSON.parse(localStorage.getItem("ft-forgot-done") || "[]")); } catch { done = new Set(); }
   let any = false;
+  if (Array.isArray(names))                  // a name given to someone again leaves the list: a later forget counts anew
+    for (const n of [...done]) if (!names.includes(n)) { done.delete(n); any = true; }
   for (const n of names || []) if (!done.has(n)) { try { forgetPerson({ name: n }); } catch {} done.add(n); any = true; }
   if (any) try { localStorage.setItem("ft-forgot-done", JSON.stringify([...done])); } catch {}
 }
 forgetForgotten(PAGE?.forgotten);
+// Every half minute, camera running or not: what other devices learned about people since this page loaded, and who
+// was forgotten there (with a shared database the sync puts both into this page's server). Without this the page
+// kept saving what it had at load: other devices' learning was overwritten and a forgotten person written back.
+if (window.PageStore) setInterval(async () => {
+  const r = await PageStore.signals.refresh((key, name, data) => (key === "ft-usual" ? usualLooks : baselines).take(name, data));
+  if (!r || r.same) return;
+  forgetForgotten(r.forgotten);
+  renderForget();
+}, 30000);
 loadPeople();
 loadAlerts();                              // the bell's count from the inbox, and the app window's tab bar told
 setInterval(() => { if (!running) loadPeople(); }, 10000);   // pick up names saved in the labeling tool

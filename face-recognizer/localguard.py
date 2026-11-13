@@ -155,7 +155,7 @@ def answer_errors(handler, run, send_error):
     connection, and is written to the log."""
     try:
         run()
-    except (BrokenPipeError, ConnectionResetError):
+    except ConnectionError:                      # the page went away before the answer was out: nothing to log
         pass
     except Exception as e:
         traceback.print_exc()

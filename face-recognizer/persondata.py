@@ -16,6 +16,8 @@ The labeling tool's person view (**Their data…**) uses it through label_tool.p
   data\expr_calibration.json, va_fit.json, webcam_eval.json   numbers fitted or measured per person
   data\sheets\                 contact sheets of unnamed faces (`face_id.py cluster`), which may show them
   private\presence\*.jsonl     their visits (presence log)
+  private\expression\*.jsonl   their expression readings waiting to be sent to the shared database, and there the
+           expression_log table (exprlog.py: what their face looked like, every few seconds in view)
   private\alerts.json          the tracker's alerts about them arriving (alerts.py)
   private\webcam\              Collect faces pictures of them, and the tracker's verdicts naming them
   private\descriptions.json    photo descriptions whose text names them
@@ -28,6 +30,9 @@ The labeling tool's person view (**Their data…**) uses it through label_tool.p
   the shared database (facedb.py), when one is set up: every table above's copy, and the sightings (who each
            device's camera saw: names and times). A forget here is sent to it and
            to every other device (dbsync_home: the forgotten table), and clears what only the server holds.
+  private\forgotten.json and the database's forgotten table: the forgotten name itself, the one thing kept, as the
+           instruction for devices that haven't forgotten yet. It goes when the name is given to someone again
+           (dbsync_home.unforget), so a later device doesn't forget that new person.
 
 Forgetting keeps their faces as Ignored faces without print or picture (only where each face is in its photo,
 so the photos aren't read again and the faces don't come back as new faces), removes their name everywhere
@@ -44,6 +49,7 @@ import numpy as np
 import alerts
 import describe
 import devicesettings
+import exprlog
 import face_id as F
 import labels as L
 import paths
@@ -57,9 +63,26 @@ def check_name(db, name):
     name = str(name or "").strip()
     if not name or name.startswith("#"):
         raise ValueError("Give the name of a person.")
-    if not any(r.get("n") == name or name in (r.get("not") or ()) for r in db.labels.values()):
+    if not any(r.get("n") == name or name in (r.get("not") or ()) for r in db.labels.values()) \
+            and not _kept_elsewhere(name):
         raise ValueError(f"Nobody is named {name}.")
     return name
+
+
+def _kept_elsewhere(name):
+    """True if something outside the labels is still kept under name: after a rename, or once their last face was
+    cleared, the person is in no label, and their alerts, visits, learned signals and expression readings could
+    neither be exported nor forgotten."""
+    try:
+        if devicesettings.of(name) or alerts.about(name) or exprlog.waiting(name):
+            return True
+        who = devicesettings.settings("track").get("ft-alertWho") or ""
+        if name in [x.strip() for x in who.split(",")]:
+            return True
+        return any(isinstance(o, dict) and _named(o, name)
+                   for p in (F.PRESENCE.glob("*.jsonl") if F.PRESENCE.is_dir() else ()) for _, o in _jsonl(p))
+    except OSError:
+        return False
 
 
 def mentions(text, name):
@@ -212,6 +235,13 @@ def export(db, name, folder, web_saved=None):
             for f in (s, s.with_suffix(".json")):
                 if f.exists():
                     shutil.copy2(f, where / "webcam" / f.name)
+    log = exprlog.export_to(where / "expression_log.jsonl", name)       # may be long: a file of its own
+    if log["readings"]:
+        out["expressionLog"] = {"file": "expression_log.jsonl", **log}
+    else:
+        (where / "expression_log.jsonl").unlink(missing_ok=True)
+        if log["note"]:
+            out["expressionLog"] = log
     paths.atomic_write(where / "data.json", json.dumps(out, indent=1, ensure_ascii=False))
     return {"folder": str(where), "faces": len(faces), "pictures": len(pictures)}
 
@@ -298,6 +328,7 @@ def forget(db, name, web_saved=None, web_lock=None, known=False):
     done["presence"] = sum(_drop_lines(p, lambda o: _named(o, name)) for p in F.PRESENCE.glob("*.jsonl")) \
         if F.PRESENCE.is_dir() else 0
     done["alerts"] = alerts.forget(name)
+    done["expressionLog"] = exprlog.forget(name)
     for s in snaps:
         s.unlink(missing_ok=True)
         s.with_suffix(".json").unlink(missing_ok=True)

@@ -63,6 +63,11 @@ def make(outdir, names):
     (out / "ca.key").write_bytes(_pem_key(ca_key))
     (out / "server.crt").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
     (out / "server.key").write_bytes(_pem_key(key))
+    for name in ("ca.key", "server.key"):            # the keys are the owner's alone (Windows: by the folder's rights)
+        try:
+            (out / name).chmod(0o600)
+        except OSError:
+            pass
     return out
 
 

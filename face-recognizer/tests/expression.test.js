@@ -69,11 +69,11 @@ test("unscored frames keep the reading, then drop it after X_STALE in a row", ()
 test("usual look: learning until settled, then a matching reading is 'usual'", () => {
   const looks = new X.UsualLooks(memStore()), t = new X.Track();
   feed(t, 3, probs("sad", 0.7));
-  let e = X.read(t, LABELS, "Chris", looks);
+  let e = X.read(t, LABELS, "Ann", looks);
   assert.ok(e.flags.includes("learning"));
   assert.ok(e.learning > 0 && e.learning < 1);
-  for (let i = 0; i < X.X.X_SETTLED; i++) { t.add(probs("sad", 0.7), 0.5); X.read(t, LABELS, "Chris", looks); }
-  e = X.read(t, LABELS, "Chris", looks);
+  for (let i = 0; i < X.X.X_SETTLED; i++) { t.add(probs("sad", 0.7), 0.5); X.read(t, LABELS, "Ann", looks); }
+  e = X.read(t, LABELS, "Ann", looks);
   assert.equal(e.learning, null);
   assert.equal(e.state, "usual");
   assert.equal(X.text(e), "sad · usual");
@@ -81,30 +81,30 @@ test("usual look: learning until settled, then a matching reading is 'usual'", (
 
 test("usual look: a departure is a 'change'", () => {
   const looks = new X.UsualLooks(memStore()), t = new X.Track();
-  for (let i = 0; i < X.X.X_SETTLED + 5; i++) { t.add(probs("neutral", 0.7), 0.5); X.read(t, LABELS, "Chris", looks); }
+  for (let i = 0; i < X.X.X_SETTLED + 5; i++) { t.add(probs("neutral", 0.7), 0.5); X.read(t, LABELS, "Ann", looks); }
   const t2 = new X.Track();
   feed(t2, 5, probs("happy", 0.8));
-  const e = X.read(t2, LABELS, "Chris", looks);
+  const e = X.read(t2, LABELS, "Ann", looks);
   assert.equal(e.state, "change");
   assert.equal(e.label, "happy");
 });
 
 test("usual look learns each check once, not again on unscored frames", () => {
   const looks = new X.UsualLooks(memStore()), t = new X.Track();
-  t.add(probs("sad", 0.7), 0.5); X.read(t, LABELS, "Chris", looks);
-  for (let i = 0; i < 5; i++) { t.add(null, 0.5, "turned"); X.read(t, LABELS, "Chris", looks); }
-  assert.equal(looks.looks.Chris.n, 1);
+  t.add(probs("sad", 0.7), 0.5); X.read(t, LABELS, "Ann", looks);
+  for (let i = 0; i < 5; i++) { t.add(null, 0.5, "turned"); X.read(t, LABELS, "Ann", looks); }
+  assert.equal(looks.looks.Ann.n, 1);
 });
 
 test("usual look ignores blurry frames and Unknown faces, and can be forgotten", () => {
   const store = memStore(), looks = new X.UsualLooks(store), t = new X.Track();
-  t.add(probs("sad", 0.7), 0.2); X.read(t, LABELS, "Chris", looks);
-  assert.equal(looks.looks.Chris, undefined);
+  t.add(probs("sad", 0.7), 0.2); X.read(t, LABELS, "Ann", looks);
+  assert.equal(looks.looks.Ann, undefined);
   t.add(probs("sad", 0.7), 0.5); X.read(t, LABELS, "Unknown", looks);
   assert.equal(looks.looks.Unknown, undefined);
-  t.add(probs("sad", 0.7), 0.5); X.read(t, LABELS, "Chris", looks); looks.save();
+  t.add(probs("sad", 0.7), 0.5); X.read(t, LABELS, "Ann", looks); looks.save();
   assert.ok(store.m["ft-usual"]);
-  assert.equal(new X.UsualLooks(store).looks.Chris.n, 1);   // survives a reload
+  assert.equal(new X.UsualLooks(store).looks.Ann.n, 1);   // survives a reload
   looks.forget();
   assert.equal(store.m["ft-usual"], undefined);
   assert.deepEqual(looks.looks, {});

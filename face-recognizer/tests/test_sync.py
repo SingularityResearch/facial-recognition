@@ -297,6 +297,18 @@ def test_settings_stay_each_devices_own_and_signals_are_shared(shared, tmp_path,
         with shared.connect() as c:
             dbsync_home.copy_settings(c, b.id, b.sync.parts[-1])            # not from itself
 
+    # b's tracker page saves what it learned about Bo. It says only that (it may never have heard of Ann): Ann stays,
+    # on b, in the database and on a
+    devicesettings.merge_signals("usual", {"Bo": {"p": [0.2] * 7, "n": 9}})
+    b.sync.note()
+    b.step()
+    a.step()
+    for dev in (a, b):
+        dev.switch()
+        assert sorted(devicesettings.signals()["usual"]) == ["Ann", "Bo"]
+    with shared.connect() as c:
+        assert c.execute("SELECT count(*) FROM person_signals WHERE kind = 'usual'").fetchone()[0] == 2
+
 
 def test_a_restart_sends_nothing_again(shared, tmp_path, monkeypatch):
     """What a device took from the database hashes the same after the program reads its files again: floats come
@@ -347,7 +359,10 @@ def test_a_device_shows_another_its_original_photos(shared, tmp_path, monkeypatc
         b = Device(tmp_path / "b", monkeypatch, 2)
         b.step()                                                  # joins: knows h0 is on a
         b.switch()
+        import socket
+        silent = socket.create_connection(("127.0.0.1", port_a))   # connects and says nothing: must hold up nobody
         jpg, who = peer.fetch(H)
+        silent.close()
         assert who == "a", who
         assert jpg[:2] == bytes([0xFF, 0xD8])
         got = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
@@ -376,7 +391,8 @@ def test_watching_another_devices_camera_and_moving_between_cameras(shared, tmp_
     camstream.reset()
     import devicesettings
     a = Device(tmp_path / "a", monkeypatch, 2)
-    devicesettings.update("track", {"ft-alertWho": "Ann"})          # sightings: people on the alert list only
+    devicesettings.update("track", {"ft-alertWho": "Ann", "ft-o-optAlertMove": "1"})   # sightings: off until switched
+                                                                    # on, and people on the alert list only
     a.step()
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -400,7 +416,7 @@ def test_watching_another_devices_camera_and_moving_between_cameras(shared, tmp_
         assert seen == ["Ann"]                                     # Zed isn't on a's alert list: not written
         camstream.set_in_view(["Ann"])
         b = Device(tmp_path / "b", monkeypatch, 2)
-        devicesettings.update("track", {"ft-alertWho": "ann, Bob"})
+        devicesettings.update("track", {"ft-alertWho": "ann, Bob", "ft-o-optAlertMove": "1"})
         b.step()
         b.switch()
         with shared.connect() as c:
@@ -437,3 +453,129 @@ def test_watching_another_devices_camera_and_moving_between_cameras(shared, tmp_
     finally:
         svc.stop()
         camstream.reset()
+
+
+def test_a_change_committed_late_still_reaches_devices_that_pulled_meanwhile(shared, tmp_path, monkeypatch):
+    """A long transaction (a device joining, a big import) takes its change-log numbers early and commits late. A
+    device that pulled in between had already passed those numbers; it must still get the rows (db/009)."""
+    import describe
+    a = Device(tmp_path / "a", monkeypatch, 6)
+    a.step()
+    b = Device(tmp_path / "b", monkeypatch, 6)
+    b.step()
+    a.step()
+    b.switch()
+    slow = shared.connect()                                  # b's long transaction: written, not committed yet
+    slow.execute("BEGIN")
+    slow.execute("INSERT INTO descriptions (key, data) VALUES ('h1', '{\"text\": \"written early, committed late\"}')")
+    b.db.act("name", [b.db.store.fid.index("f2")], "Cy")     # meanwhile b commits a later change ...
+    b.step()
+    a.step()
+    assert a.name("f2") == "Cy"                              # ... which a pulls, moving past the open one's number
+    a.switch()
+    assert describe.saved("h1") is None
+    slow.execute("COMMIT")
+    slow.close()
+    a.step()
+    a.switch()
+    assert describe.saved("h1")["text"] == "written early, committed late"
+    assert a.step().get("pulled") == 0                       # and nothing is taken twice
+
+
+def test_a_forgotten_name_given_again_is_not_forgotten_by_a_later_device(shared, tmp_path, monkeypatch):
+    """The forgotten name is an instruction to devices that haven't forgotten yet. Once the name is given to someone
+    again it must stop being one, or a device joining later would forget that new person on every device."""
+    import dbsync_home
+    import persondata
+    a = Device(tmp_path / "a", monkeypatch, 6, labels={"f0": {"n": "Ann", "by": "me"}})
+    a.step()
+    b = Device(tmp_path / "b", monkeypatch, 6)
+    b.step()
+    a.switch()
+    persondata.forget(a.db, "Ann", a.web, None)
+    a.sync.note()
+    a.step()
+    b.step()
+    b.switch()
+    assert b.forgot == ["Ann"] and b.name("f0") == "#ignore" and dbsync_home.forgotten_names() == {"Ann"}
+
+    a.switch()
+    a.db.act("name", [a.db.store.fid.index("f4")], "Ann")    # another Ann, or the same one added again
+    assert dbsync_home.forgotten_names() == set()
+    a.step()
+    with shared.connect() as c:
+        assert c.execute("SELECT count(*) FROM forgotten").fetchone()[0] == 0
+    b.step()
+    b.switch()
+    assert dbsync_home.forgotten_names() == set() and b.name("f4") == "Ann"
+
+    late = Device(tmp_path / "late", monkeypatch, 6)         # joins after all of it
+    late.step()
+    late.step()
+    a.step()
+    b.step()
+    assert late.forgot == [] and late.name("f4") == "Ann" and late.name("f0") == "#ignore"
+    assert a.name("f4") == "Ann" and b.name("f4") == "Ann" and b.forgot == ["Ann"]
+    i4 = a.db.store.fid.index("f4")
+    assert np.any(a.db.store.emb[i4]) and not a.db.printless(i4)             # her print is still there
+
+
+def test_expression_readings_go_to_the_database_and_go_with_a_forget(shared, tmp_path, monkeypatch):
+    """The expression log (exprlog.py, db/010): a device's waiting readings are put in expression_log once each, a
+    past day's waiting file goes when all of it is there, and forgetting a person removes their rows."""
+    import os
+    import time
+
+    import exprlog
+    import persondata
+    a = Device(tmp_path / "a", monkeypatch, 6, labels={"f0": {"n": "Ann", "by": "me"}, "f2": {"n": "Bo", "by": "me"}})
+    a.step()
+    a.switch()
+    now = int(time.time() * 1000)
+    row = lambda name, t: {"t": t, "name": name, "label": "happy", "share": 0.8, "state": "plain",   # noqa: E731
+                           "data": {"scores": {"happy": 0.8}, "setting": "alone"}}
+    assert exprlog.add([row("Ann", now), row("Bo", now), row("Ann", now + 5000)]) == 3
+    # yesterday's waiting file (UTC), written as the tracker would have yesterday: add() takes only readings of the
+    # last day, and how far back "yesterday noon" is depends on the time of day the test runs
+    from datetime import datetime, timedelta, timezone
+    yday = (datetime.now(timezone.utc) - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+    old_file = exprlog.folder() / f"{yday:%Y-%m-%d}.jsonl"
+    old_file.write_text(json.dumps(row("Ann", int(yday.timestamp() * 1000))) + "\n", "utf-8")
+    os.utime(old_file, (time.time() - 300, time.time() - 300))
+    a.sync.note()
+    a.step()
+    with shared.connect() as c:
+        rows = c.execute("SELECT name, label, share, state, data, device::text FROM expression_log ORDER BY at, name").fetchall()
+        assert [r[0] for r in rows] == ["Ann", "Ann", "Bo", "Ann"] and rows[0][4]["scores"] == {"happy": 0.8}
+        assert {r[5] for r in rows} == {a.id} and rows[1][1:4] == ("happy", 0.8, "plain")
+    a.switch()
+    assert not old_file.exists() and len(exprlog.waiting()) == 3          # yesterday's is in the database: gone here
+    assert exprlog.add([row("Ann", now + 10_000)]) == 1                    # more of today: only the new line is sent
+    a.sync.note()
+    a.step()
+    with shared.connect() as c:
+        assert c.execute("SELECT count(*) FROM expression_log").fetchone()[0] == 5
+    b = Device(tmp_path / "b", monkeypatch, 6)
+    b.step()
+    a.switch()
+    persondata.forget(a.db, "Ann", a.web, None)                          # rewrites the waiting file: sent again, once each
+    a.sync.note()
+    a.step()
+    a.step()
+    with shared.connect() as c:
+        assert c.execute("SELECT name FROM expression_log").fetchall() == [("Bo",)]
+    a.switch()
+    assert [r["name"] for r in exprlog.waiting()] == ["Bo"]
+
+
+def test_the_sync_follows_a_change_of_the_connection_settings(shared, tmp_path, monkeypatch):
+    """Settings -> Connect to another server or schema: the sync used to go on with the connection it had."""
+    a = Device(tmp_path / "a", monkeypatch, 2)
+    a.step()
+    first = a.sync.conn
+    a.step()
+    assert a.sync.conn is first and not first.closed
+    real = a.facedb._conninfo
+    monkeypatch.setattr(a.facedb, "_conninfo", lambda: (real()[0] + " application_name=changed", real()[1]))
+    a.step()
+    assert a.sync.conn is not first and first.closed and not a.sync.conn.closed

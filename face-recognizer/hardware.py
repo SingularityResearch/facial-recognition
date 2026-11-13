@@ -359,9 +359,13 @@ def _lms_models(url, timeout=3):
     try:
         with urllib.request.urlopen(url + "/api/v0/models", timeout=timeout) as r:
             data = json.loads(r.read(2_000_000)).get("data", [])
-        return [{"id": m.get("id"), "vision": m.get("type") == "vlm", "loaded": m.get("state") == "loaded",
-                 "quant": m.get("quantization"), "kind": m.get("type")} for m in data if isinstance(m, dict)]
-    except (OSError, ValueError, AttributeError):
+        if not isinstance(data, list):               # any computer on the network can answer here: nothing is assumed
+            return None
+        text = lambda v: v if isinstance(v, str) and len(v) <= 200 else None   # noqa: E731
+        return [{"id": m["id"], "vision": m.get("type") == "vlm", "loaded": m.get("state") == "loaded",
+                 "quant": text(m.get("quantization")), "kind": text(m.get("type"))}
+                for m in data[:500] if isinstance(m, dict) and text(m.get("id"))]
+    except (OSError, ValueError, AttributeError, TypeError):
         return None
 
 

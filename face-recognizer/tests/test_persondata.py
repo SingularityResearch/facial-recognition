@@ -240,3 +240,58 @@ def test_describe_all_shares_photos_with_other_servers(data, home, serve, tmp_pa
     else:
         assert st["by"]["other"] == 0 and asked.count("http://192.168.1.30:1234") == 2
         assert st["left_out"][0].startswith("other (failed twice")
+
+
+def test_a_persons_expression_readings_are_exported_and_forgotten(data, home, tmp_path, monkeypatch):
+    """The expression log (exprlog.py): a person's waiting readings are in their export (a file of its own, with
+    those in the shared database when it can be reached) and go when they are forgotten."""
+    import time
+    from pathlib import Path
+
+    import exprlog
+    import facedb
+    monkeypatch.setattr(paths, "HOME", home)
+    monkeypatch.setattr(F, "PRESENCE", home / "presence")
+    monkeypatch.setattr(F, "ALERTS", home / "alerts.json")
+    monkeypatch.setattr(F, "WEBCAM", home / "webcam")
+    make_faces(data, 6)
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    db.act("name", [0, 1], "Ann")
+    db.act("name", [2], "Bo")
+    monkeypatch.setattr(facedb, "configured", lambda: True)              # readings are kept only for a database
+    now = int(time.time() * 1000)
+    assert exprlog.add([{"t": now + k, "name": n, "label": "happy", "share": 0.7, "state": "usual", "data": {}}
+                        for k, n in enumerate(["Ann", "Bo", "Ann"])]) == 3
+    out = P.export(db, "Ann", tmp_path / "out")
+    where = Path(out["folder"])
+    lines = [json.loads(ln) for ln in (where / "expression_log.jsonl").read_text("utf-8").splitlines()]
+    assert len(lines) == 2 and all(ln["label"] == "happy" and ln["waitingToBeSent"] for ln in lines)
+    d = json.loads((where / "data.json").read_text("utf-8"))
+    assert d["expressionLog"]["readings"] == 2 and "couldn't be read" in d["expressionLog"]["note"]   # no server here
+    monkeypatch.setattr(facedb, "configured", lambda: False)
+    assert P.forget(db, "Ann")["expressionLog"] == 2
+    assert [r["name"] for r in exprlog.waiting()] == ["Bo"]
+
+
+def test_someone_left_in_no_label_can_still_be_forgotten(data, home, monkeypatch):
+    """After a rename, or once their last face was cleared, a person is in no label. What is still kept under the
+    name (alerts, learned signals, the alert list) must stay exportable and forgettable."""
+    import devicesettings
+    monkeypatch.setattr(paths, "HOME", home)
+    monkeypatch.setattr(F, "PRESENCE", home / "presence")
+    monkeypatch.setattr(F, "ALERTS", home / "alerts.json")
+    monkeypatch.setattr(F, "WEBCAM", home / "webcam")
+    make_faces(data, 6)
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    db.act("name", [0], "Annie")
+    devicesettings.put_signal("usual", "Annie", {"p": [0.1] * 7, "n": 150})
+    alerts.add({"kind": "arrived", "name": "Annie", "text": "Annie arrived"})
+    db.rename("Annie", "Ann")
+    with pytest.raises(ValueError):
+        P.check_name(db, "Nobody")
+    assert P.check_name(db, "Annie") == "Annie"
+    done = P.forget(db, "Annie")
+    assert done["personSignals"] == 1 and done["alerts"] == 1 and done["faces"] == 0
+    assert db.name(0) == "Ann" and devicesettings.of("Annie") == {} and alerts.about("Annie") == []
+    with pytest.raises(ValueError):
+        P.check_name(db, "Annie")                            # nothing is kept under the name any more

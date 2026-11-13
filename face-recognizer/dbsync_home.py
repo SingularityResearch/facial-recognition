@@ -29,10 +29,17 @@ def _h(obj):
     return hashlib.sha1(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def forgotten_names():
+def forgotten_names(strict=False):
+    """Names forgotten here or on another device, and not given to anyone since (unforget). strict (the sync): a
+    file that is there but can't be read raises OSError instead of counting as "no names", which the sync would
+    send on as every forget withdrawn."""
     try:
-        return set(json.loads((paths.HOME / FORGOTTEN).read_text("utf-8")))
-    except (OSError, ValueError, TypeError):
+        return {n for n in json.loads((paths.HOME / FORGOTTEN).read_text("utf-8")) if isinstance(n, str)}
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError, TypeError) as e:
+        if strict:
+            raise OSError(f"can't read {FORGOTTEN}: {e}") from e
         return set()
 
 
@@ -41,6 +48,18 @@ def note_forgotten(name):
     with _forgot_lock:
         names = forgotten_names() | {name}
         paths.atomic_write(paths.HOME / FORGOTTEN, json.dumps(sorted(names)))
+
+
+def unforget(name):
+    """The name was given to someone again (LabelDB.act, rename), or another device said so: the earlier forget no
+    longer applies. Without this the name stayed an instruction for good, and a device joining later (or back
+    after a long time away) forgot whoever carried the name by then, on every device. True if it was forgotten."""
+    with _forgot_lock:
+        names = forgotten_names()
+        if name not in names:
+            return False
+        paths.atomic_write(paths.HOME / FORGOTTEN, json.dumps(sorted(names - {name})))
+        return True
 
 
 class LimitReached(ValueError):
@@ -89,7 +108,7 @@ class HomePart:
         key = secretbox.local_key()
         out["secrets"] = None if key is None or not self.key_current else \
             {n: secretbox.digest(key, n, p) for n, p in self._secrets().items()}
-        out["forgotten"] = {n: _h(n) for n in forgotten_names()}
+        out["forgotten"] = {n: _h(n) for n in forgotten_names(strict=True)}
         out["device_settings"] = {k: _h(v) for k, v in self._settings().items()}
         out["person_signals"] = {k: _h(v) for k, v in self._signals().items()}
         return out
@@ -293,9 +312,11 @@ class HomePart:
             elif tbl == "forgotten":
                 cur.executemany("INSERT INTO forgotten (name) VALUES (%s) ON CONFLICT (name) DO NOTHING",
                                 [(k,) for k, _v in items])
-                deletes = []
                 for name, _v in items:              # what the server holds about them goes at once
                     _forget_on_server(cur, name)
+                if deletes:                         # named again here (unforget): no longer an instruction
+                    cur.execute("DELETE FROM forgotten WHERE name = ANY(%s)", (list(deletes),))
+                deletes = []
             if deletes and tbl in ("descriptions", "webcam_snapshots", "alerts", "presence", "secrets"):
                 cur.execute(f"DELETE FROM {tbl} WHERE {self.KEYS[tbl]} = ANY(%s)", (list(deletes),))
 
@@ -497,10 +518,12 @@ class HomePart:
                     devicesettings.put_signal(kind, name, None if v is None else v["data"])
             now = self._signals()
             return {k: _h(now[k]) if k in now else None for k in rows}
-        # forgotten on another device: forget here too, once
+        # forgotten on another device: forget here too, once; named again there (the row is gone): no longer forgotten
         done = forgotten_names()
         for name, v in rows.items():
-            if v is not None and name not in done and self.forget:
+            if v is None:
+                unforget(name)
+            elif name not in done and self.forget:
                 try:
                     self.forget(name)
                     log(f"Shared database: forgot {name}, as another device did.")
@@ -509,7 +532,7 @@ class HomePart:
                 note_forgotten(name)
         return {n: _h(n) for n in rows if n in forgotten_names()}
 
-    # ---- only sent: the app log and posed expression tests, new lines since the last time
+    # ---- only sent: the app log, posed expression tests and the expression log, new lines since the last time
     def every_step(self, conn, state):
         """Each sync step (a few small queries): the passphrase for keys. Take the current one if it was set or
         changed elsewhere, give it to devices that lack it, and show this device's fingerprints. Taking a new one
@@ -539,7 +562,7 @@ class HomePart:
         me = facedb.device()["id"]
         camstream.start_heartbeat()                # streaming_at and last_seen, on their own thread
         track = devicesettings.settings("track")
-        on = (track.get("ft-o-optAlertMove") or "1") == "1"
+        on = (track.get("ft-o-optAlertMove") or "0") == "1"       # off until switched on
         who = {s.strip().lower() for s in (track.get("ft-alertWho") or "").split(",") if s.strip()}
         now_seen = [n for n in camstream.in_view() if n.lower() in who] if on else []
         conn.execute("DELETE FROM sightings WHERE last_seen < now() - make_interval(secs => %s)", (KEEP_SIGHTINGS,))
@@ -585,8 +608,10 @@ class HomePart:
         peer.register(conn, peer.RUNNING)
 
     def after_push(self, conn, state):
+        import exprlog
         import face_id as F
         me = facedb.device()["id"]
+        exprlog.send(conn, state, me)          # the expression log: readings waiting in HOME/expression
         lp = paths.HOME / "app.log"
         try:
             size = lp.stat().st_size
@@ -627,6 +652,18 @@ class HomePart:
                 with conn.transaction():
                     conn.cursor().executemany("INSERT INTO expr_eval (id, device, file, data) VALUES (%s, %s, %s, %s) "
                                               "ON CONFLICT DO NOTHING", rows)
+        # Once a day (and after a join): what the server holds about forgotten people is cleared again. A device that
+        # was away during a forget sends its log, history and test lines about them when it is back, before it
+        # hears of the forget.
+        today = datetime.now(timezone.utc).toordinal()
+        if int(state.get("forgot_swept_day", 0)) != today:
+            names = sorted(forgotten_names())
+            if names:
+                with conn.transaction():
+                    cur = conn.cursor()
+                    for name in names:
+                        _forget_on_server(cur, name)
+            state.put("forgot_swept_day", today)
 
     def on_join(self, state):
         """After dbimport sent this device's log and tests: only lines written from now on are sent."""
@@ -676,11 +713,14 @@ def _forget_on_server(cur, name):
     """Delete what the server holds about name that no device's files hold (the change log can't carry it)."""
     like = re.escape(name)
     cur.execute("DELETE FROM app_log WHERE line ~* %s", (r"(^|\W)" + like + r"(\W|$)",))
-    cur.execute("DELETE FROM label_history WHERE what ~* %s OR faces::text ~ %s",
+    # (the name inside the faces column is looked for as it is, not as a pattern: "Ann (work)" has brackets)
+    cur.execute("DELETE FROM label_history WHERE what ~* %s OR position(%s in faces::text) > 0",
                 (r"(^|\W)" + like + r"(\W|$)", '"n": ' + json.dumps(name)))
+    cur.execute("UPDATE faces SET fact_name = NULL WHERE fact_name = %s", (name,))
     cur.execute("DELETE FROM expr_eval WHERE name = %s", (name,))
     cur.execute("DELETE FROM person_signals WHERE name = %s", (name,))
     cur.execute("DELETE FROM presence WHERE name = %s", (name,))
     cur.execute("DELETE FROM alerts WHERE name = %s", (name,))
     cur.execute("DELETE FROM sightings WHERE name = %s", (name,))
+    cur.execute("DELETE FROM expression_log WHERE name = %s", (name,))
 

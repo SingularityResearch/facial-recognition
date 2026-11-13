@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -82,9 +83,9 @@ def serve_everywhere():
     if cfg:
         try:
             c = json.loads(cfg.read_text(encoding="utf-8"))
-            if c.get("networkInterface") != "0.0.0.0":
+            if isinstance(c, dict) and c.get("networkInterface") != "0.0.0.0":
                 c["networkInterface"] = "0.0.0.0"
-                cfg.write_text(json.dumps(c, indent=2), encoding="utf-8")
+                paths.atomic_write(cfg, json.dumps(c, indent=2))     # never a half-written settings file of theirs
                 done.append("its settings now serve on all network interfaces")
         except (OSError, ValueError):
             pass
@@ -93,6 +94,9 @@ def serve_everywhere():
         r = _lms("server", "start", "--port", str(port()), "--bind", "0.0.0.0", "--cors", timeout=90)
         if r is not None and r.returncode == 0:
             done.append("its server was started again on all network interfaces")
+        else:                                        # never leave their server off: back as it was
+            _lms("server", "start", "--port", str(port()), timeout=90)
+            done.append("its server couldn't be started on all network interfaces; it runs as before")
     if done:
         STATE["bind"] = "; ".join(done)
     return done
@@ -229,6 +233,11 @@ def local_models():
         return None
 
 
+# A model as `lms get` takes it: <publisher>/<name>, maybe @<quantization>. Names come from other computers on the
+# network and the shared folder's list: anything else (an option, a URL) is never handed to `lms get --yes`.
+VARIANT = re.compile(r"[A-Za-z0-9][\w.-]*(/[A-Za-z0-9][\w.-]*)?(@[\w.-]+)?")
+
+
 def missing_models(network=None):
     """Vision models that other LM Studio servers on the network serve and this computer's hasn't got:
     [{variant, from}]; variant is "<model>@<quantization>", as `lms get` takes it."""
@@ -249,7 +258,7 @@ def missing_models(network=None):
         if variant.split("@")[0] not in have:
             want.setdefault(variant, "the shared folder")
     return [{"variant": v, "from": h, "in_share": bool(s and s.is_dir() and v in _read_index(s))}
-            for v, h in sorted(want.items())]
+            for v, h in sorted(want.items()) if VARIANT.fullmatch(v)]
 
 
 def _lms_get(variant, st):
@@ -289,6 +298,7 @@ def get_models(variants):
     """Download these models with `lms get` on a background thread (when asked in Settings)."""
     if not lms_path():
         raise ValueError("LM Studio's lms command isn't on this computer.")
+    variants = [v for v in variants if isinstance(v, str) and VARIANT.fullmatch(v)]
     if STATE.get("get") and STATE["get"].get("running"):
         return
 
@@ -449,11 +459,41 @@ def _copy(src, dst, want_sha=None, progress=None):
     return h.hexdigest()
 
 
-def _read_index(s):
+def _parts(rel):
+    """The folder names of a path from the shared folder's list, or None when it isn't a plain relative path: other
+    computers write that list, so a path that could leave the folder it is joined to (.., a drive, a leading
+    slash) is never used."""
+    parts = rel.replace("\\", "/").split("/") if isinstance(rel, str) else []
+    ok = parts and all(p not in ("", ".", "..") and ":" not in p and p == p.strip() for p in parts)
+    return parts if ok else None
+
+
+def _inside(base, rel):
+    """base / rel for a path from the shared folder's list; OSError unless it stays inside base (links included)."""
+    parts = _parts(rel)
+    out = base.joinpath(*parts) if parts else None
+    if out is None or not out.resolve().is_relative_to(base.resolve()):
+        raise OSError(f"the shared folder's list names a path outside its folder: {str(rel)[:200]!r}")
+    return out
+
+
+def _entry_ok(variant, e):
+    """One model of the shared folder's list, as publish() writes it: {hub, files: [{path, size, sha256}]}."""
     try:
-        return json.loads((s / INDEX).read_text(encoding="utf-8"))
+        return bool(isinstance(variant, str) and _parts(e["hub"]) and isinstance(e["files"], list) and e["files"]
+                    and all(_parts(f["path"]) and type(f["size"]) is int and f["size"] >= 0
+                            and isinstance(f["sha256"], str) and len(f["sha256"]) == 64 for f in e["files"]))
+    except (KeyError, TypeError):
+        return False
+
+
+def _read_index(s):
+    """The shared folder's list of models; entries that aren't as publish() writes them are left out."""
+    try:
+        index = json.loads((s / INDEX).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    return {v: e for v, e in index.items() if _entry_ok(v, e)} if isinstance(index, dict) else {}
 
 
 def publish():
@@ -488,7 +528,10 @@ def publish():
 
 
 def from_share(variant, st=None):
-    """Copy one model from the shared folder into LM Studio's models folder, checking each file. True if done."""
+    """Copy one model from the shared folder into LM Studio's models folder. True if done. Each file is checked
+    against the SHA-256 in the folder's own list (that catches a damaged copy, not a list someone rewrote: the
+    folder is trusted like the computers that write to it), and nothing is written outside LM Studio's models and
+    hub folders whatever the list says (_inside)."""
     s = share()
     entry = _read_index(s).get(variant) if s and s.is_dir() else None
     if not entry:
@@ -504,20 +547,20 @@ def from_share(variant, st=None):
             st.update(pct=int(done[0] * 100 / max(total, 1)), bytes=done[0])
     added = []
     try:
-        for f in entry["files"]:
-            dst = models_dir() / f["path"]
+        todo = [(f, _inside(s / "models", f["path"]), _inside(models_dir(), f["path"])) for f in entry["files"]]
+        hub_src, hub_dst = _inside(s / "hub", entry["hub"]), _inside(hub_dir(), entry["hub"])
+        for f, src, dst in todo:
             if dst.exists() and dst.stat().st_size == f["size"] and _sha256(dst) == f["sha256"]:
                 progress(f["size"])
                 continue
-            _copy(s / "models" / f["path"], dst, f["sha256"], progress)
+            _copy(src, dst, f["sha256"], progress)
             added.append(dst)
     except OSError:
         for dst in added:                                 # no half model for LM Studio to find
             dst.unlink(missing_ok=True)
         raise
-    hub_src = s / "hub" / entry["hub"]
     if hub_src.is_dir():
-        shutil.copytree(hub_src, hub_dir() / entry["hub"], dirs_exist_ok=True)
+        shutil.copytree(hub_src, hub_dst, dirs_exist_ok=True)
     return True
 
 

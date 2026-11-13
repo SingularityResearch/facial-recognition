@@ -42,7 +42,7 @@ def timed(name, fn, *a):
 
 
 imp = Importer.__new__(Importer)          # only for its possible-face scan (_low_rows)
-imp._more_lock, imp._more_det = __import__("threading").Lock(), None
+imp._more_lock, imp.faces = __import__("threading").Lock(), faces
 for f in photos:
     data = timed("1 read file", f.read_bytes)
     mb += len(data) / 1e6
