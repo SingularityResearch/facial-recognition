@@ -570,13 +570,19 @@ def make_handler(db, importer):
                     with facedb.connect() as conn:
                         n = dbsync_home.copy_settings(conn, str(body.get("from") or ""), db.sync.parts[-1])
                     return self.send({"ok": True, "copied": n})
-                if path in ("/api/db/passphrase", "/api/db/passphrase/restore"):   # passphrase for keys
+                if path in ("/api/db/passphrase", "/api/db/passphrase/restore", "/api/db/passphrase/ask",
+                            "/api/db/passphrase/approve"):   # passphrase for keys
                     import facedb
                     import secretbox
                     try:
                         with facedb.connect() as conn:
                             if path.endswith("/restore"):
                                 r = secretbox.restore(conn, int(body.get("version") or 0))
+                            elif path.endswith("/ask"):       # this device asks: a code to type on one that has it
+                                r = {"ok": True, "request": secretbox.ask(conn)}
+                            elif path.endswith("/approve"):   # the code a waiting device shows, typed here
+                                r = secretbox.approve(conn, str(body.get("code") or ""),
+                                                      str(body.get("device") or "") or None)
                             else:
                                 r = secretbox.set_passphrase(conn, str(body.get("passphrase") or ""),
                                                              str(body.get("again") or ""))
@@ -689,6 +695,7 @@ def secrets():
         import secretbox
         out["db"] = facedb.saved_login() or {}
         out["passphrase"] = secretbox.saved_passphrase()
+        out["request"] = secretbox.request()      # this device's one-time code while it asks for the passphrase
     except ImportError:
         out["passphrase"] = ""
     return out

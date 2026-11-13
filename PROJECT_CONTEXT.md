@@ -435,7 +435,8 @@ now does that once per version. Its lid was shut, so the integrated camera sent 
 now warns when the picture's brightest and darkest points differ by under 12 of 255 for 6 s, offering the next camera.
 v1.15 (released 2026-11-11, tag at e11b9ca) carries both; older releases deleted. v1.16-v1.20 (2026-11-11/12): the
 shared database, keys, peer photos and the Cameras tab (§4b, §5b, §7 "Releases"); since v1.20 (tag at 6586b77) only
-v1.20.0 and models-v1 remain. v1.20.1 and v1.22 (2026-11-12/13) followed: §7 "Releases".
+v1.20.0 and models-v1 remain. v1.20.1, v1.22 and v1.22.1 (2026-11-12/13) followed (§7 "Releases"); since 2026-11-13
+only the latest release (v1.22.1) and models-v1 are kept on GitHub.
 
 LM Studio across the owner's computers (2026-11-10/11, after v1.10; `lmstudio.py`, `hardware.lmstudio_network`):
 both computers serve LM Studio on 0.0.0.0:1234 (the Linux laptop: headless llmster 0.0.27 + CUDA 12 llama.cpp 2.72.0 as
@@ -503,9 +504,15 @@ device's settings and person signals), released together as v1.16.
   page sends person signals per person and takes in other devices' every half minute (`page_store.js`).
 - Keys (`secretbox.py`; passphrase versions since v1.17): encrypted on the device (scrypt + AES-256-GCM, the key's
   name as associated data) with a key from the owner's passphrase. Every passphrase is a version (db/006
-  `passphrase_versions`: check value, fingerprint, who and when; one current), sealed to each device's X25519 public
-  key (`passphrase_shares`; the private half in `HOME/device-key.json`), so setting, changing (typed twice; every key
-  re-encrypted in one transaction) or restoring an earlier one on any device reaches all the others by itself. A
+  `passphrase_versions`: check value, fingerprint, who and when; one current). Until v1.22.1 each version was sealed
+  to every row in `devices` with an X25519 public key (`passphrase_shares`), so the database password alone was
+  enough to be sent it. Since v1.22.2 (db/011) a device gets it only from the owner: typed there, or asked for with
+  a one-time code typed on a device that has it (`ask`/`approve`, `key_requests`; 8 characters from 32, scrypt
+  2^16, 15 minutes: the code makes check values over the request and the answer, so no short code can be tried
+  offline in time and neither side accepts the other without it). Holders show it (`devices.key_proof`); a change
+  (typed twice; every key re-encrypted in one transaction) or restore is sealed only to devices showing the one it
+  replaces and carries `passphrase_versions.link`, made with that one's key, so no device follows a version made by
+  someone without its passphrase. Restore only versions the device held itself (`secret.key` `known`). A
   device not on the current version neither sends nor reads keys (`push` returns False), so it can't overwrite them
   with an old one. Settings lists each device's fingerprints of the passphrase and the database password.
 - Saved keys shown masked (v1.16.3): the Web search keys, the describe server's key, the database password and (since
@@ -709,6 +716,7 @@ first-start downloads; only the latest app release is kept):
 | v1.21.2 | Nov 12 | Cameras: 20 frames a second instead of 10 (`STREAM_FPS`; the owner's choice), paced by when each frame is due, and drawn on a timer whenever the display hasn't drawn for two frames (a window in a disconnected desktop session sent only 4 a second). 1.21.3: the names and boxes are drawn at most 60 times a second (`DRAW_EVERY`): on a 240 Hz display drawing at its rate left no time to encode stream frames (93 ms a frame instead of 12; 13 frames a second instead of 20). 1.21.4: on Windows camera frames stay in ordinary memory (`MediaFoundationD3D11VideoCapture` off in `KEEP_RUNNING_FLAGS`): in the NAS's disconnected desktop session one read-back from the graphics processor in ten took 165 ms (13 frames a second; 20 without). Not released yet. |
 | v1.22 | Nov 13 | Released for Windows, macOS and Linux: everything in 1.21 to 1.21.4 (built and run on the three devices first), and more from the review: Start again never loads a second copy of a program; the sync follows a change of the connection settings; the window watchdog stops when there is no window; a person left in no label can still be exported and forgotten; the server-side forget is repeated daily and clears photo-tag names; LM Studio model names and model lists from the network are checked; overlapping camera and microphone starts; a merge leaves no face that is and isn't the same person; copies of copies; client disconnects and OpenCV's per-detector warning no longer fill the logs. |
 | v1.22.1 | Nov 13 | **Fully distributed system** (Settings → LM Studio, off for a new copy; the owner's wish): on, the LM Studio search covers every network adapter and Describe all may use servers beyond the local network. Off, only real adapters count, now on Windows (asked from PowerShell on a thread of its own) and macOS too, not just Linux. Linux: numpy's maths (OpenBLAS) kept to one thread, set in `app.py` before numpy loads: in the packed app a matrix product in the labeling tool got stuck for good in 2 starts of 4, freezing the Labeling tab and the sync (6 of 6 clean with one thread). |
+| v1.22.2 | Nov 13 | Released for Windows, macOS and Linux (run on the three devices first). The passphrase for keys is no longer sealed to every row in `devices`: a device gets it typed, or with a one-time code typed on a device that has it (db/011: `key_proof`, version `link`, `key_requests`); a device that typed it reads the shared keys at once; restore only of versions the device held. The LM Studio restart passes `--cors` only when LM Studio's own settings have it on. The three servers keep connections open (HTTP/1.1): on Windows one request in a thousand had failed on a new connection each time (§10). |
 
 ---
 
@@ -983,8 +991,25 @@ helpers); splitting it into a class with route methods is the next step.
 Open after the 2026-11-12 review and v1.22 (not fixed yet):
 - With Share Describe all on, the search for LM Studio servers also runs when a photo is opened, not only while
   Settings is open. (Which adapters it covers is the Fully distributed system setting since v1.22.1.)
-- Any row in `devices` with a public key gets the passphrase for keys sealed to it (`secretbox.share_all`): whoever
-  holds the database password can add one. To decide: confirm a new device on an existing one, or type the passphrase.
+- Passphrase for keys (fixed in v1.22.2, see Releases): still open there: a device on an app before 1.22.2 seals
+  the passphrase to any row in `devices`; someone with the database password can make another version "current",
+  which stops keys syncing until the owner sets it right (no button for that yet); a device waiting for the
+  passphrase is shown only in Settings, not as an alert.
+- Fixed in v1.22.2 (measured 2026-11-13): on Windows about one request in a thousand from a page to its own server
+  failed (app.log "Camera: a frame from the tracker page failed (TypeError: Failed to fetch)", 1,145 in a 12-hour
+  run of 1.22.1; about five a minute counting `/api/recognize` and `/api/cameras/frames`). Each one was seen: the
+  stream to other devices paused half a second, the Cameras tab one second, and the tracker flashed "Lost the
+  recognizer". Cause: the servers spoke HTTP/1.0, so every request (about 90 a second) was a new connection; the
+  browser and the server close a finished connection at the same moment, Windows keeps the closed pair of ports
+  (6,000 to 7,400 in TimeWait for port 8766), hands new connections random local ports out of 16,384, and a new
+  connection that gets such a port again is not answered: the browser's own log shows error 10060 after 1.0 s.
+  Reproduced away from the app (headless Edge against a plain Python server: 2 of 2,069; a Python client that
+  closes as a browser does: 30 time-outs and 587 "address in use" of 14,433; never when the server closes first,
+  nor with connections kept open). Not the accept queue (128 instead of 5: still 15 of 16,075). With HTTP/1.1 and
+  connections kept open (`localguard.Handler`): 26 connections for 26,436 requests in 5 minutes, none failed,
+  nothing in TimeWait. Linux was not affected by the failures, but kept-open connections showed a second thing
+  there: an answer written as headers and then body waited about 40 ms for the page's acknowledgement (41 ms a
+  request, the stream at 15 frames a second); answers now leave in one piece with TCP_NODELAY (0.1 ms).
 - Naming or un-ignoring an Ignored face leaves a face without print or picture; a moved video is never re-pointed;
   a Cameras tile can stay frozen after its tracker restarts in a browser; Ctrl+1..4 don't reach the tab bar from
   inside a tab; an open confirm() dialog looks like a frozen page to the watchdog.

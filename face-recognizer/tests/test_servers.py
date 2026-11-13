@@ -616,3 +616,75 @@ def test_start_again_never_loads_a_second_copy_of_a_program_this_app_runs(monkey
     assert app.restart("label") == "running" and started == []
     monkeypatch.setattr(app, "OWN", {})                      # one that isn't ours (or whose thread ended): started
     assert app.restart("label") == "starting" and started == [("label",)]
+
+
+# --------------------------------------------------------------------------- kept-open connections
+def test_a_connection_is_kept_open_and_used_again(label_url, track, shell_url):
+    """Every request used to be a new connection; on Windows about one in a thousand of those failed (found
+    2026-11-13). Now one connection serves request after request, on each of the three servers."""
+    for url, paths in ((label_url, ["/api/summary", "/thumb/0.jpg", "/api/summary"]),
+                       (track[0], ["/api/people", "/tracker_ui.js", "/api/people"]), (shell_url, ["/status", "/", "/status"])):
+        u = urllib.parse.urlparse(url)
+        c = http.client.HTTPConnection(u.hostname, u.port, timeout=10)
+        ports = set()
+        for path in paths:
+            c.request("GET", path)
+            r = c.getresponse()
+            body = r.read()
+            assert r.status == 200 and r.version == 11 and len(body) == int(r.headers["Content-Length"])
+            assert r.headers.get("Connection") != "close"
+            ports.add(c.sock.getsockname()[1])
+        assert len(ports) == 1, (url, ports)                    # the same connection each time
+        c.request("POST", "/api/nothing-here", body=b'{"a": 1}', headers={"X-Face-Tool": "1", "Content-Type": "application/json"})
+        r = c.getresponse()
+        r.read()
+        c.close()
+
+
+def test_a_request_body_nobody_read_closes_the_connection(label_url, track):
+    """A refused or oversized request is answered without reading what it sent. Left on a kept-open connection,
+    those bytes would be taken for the next request, so the answer says the connection closes, and it does."""
+    u = urllib.parse.urlparse(label_url)
+    sneaked = b"GET /api/summary HTTP/1.1\r\nHost: evil\r\n\r\n"       # a body shaped like a request
+    for headers in ({"Sec-Fetch-Site": "cross-site", "X-Face-Tool": "1"}, {}):         # another site's page; no header
+        c = http.client.HTTPConnection(u.hostname, u.port, timeout=10)
+        c.request("POST", "/api/undo", body=sneaked, headers=headers)
+        r = c.getresponse()
+        assert r.status == 403 and r.headers.get("Connection") == "close"
+        r.read()
+        assert c.sock is None or c.sock.recv(100) == b""         # closed: nothing was answered to the body's "request"
+        c.close()
+    t = urllib.parse.urlparse(track[0])
+    c = http.client.HTTPConnection(t.hostname, t.port, timeout=10)
+    c.putrequest("POST", "/api/capture")
+    c.putheader("X-Face-Tool", "1")
+    c.putheader("Content-Length", str(10 ** 9))                  # far over the limit: refused unread
+    c.endheaders()
+    r = c.getresponse()
+    assert r.status == 413 and r.headers.get("Connection") == "close"
+    c.close()
+    # a body that was read keeps the connection
+    c = http.client.HTTPConnection(u.hostname, u.port, timeout=10)
+    for _ in range(2):
+        c.request("POST", "/api/undo", body=b"{}", headers={"X-Face-Tool": "1"})
+        r = c.getresponse()
+        r.read()
+        assert r.headers.get("Connection") != "close"
+    c.close()
+
+
+def test_an_answer_on_a_kept_open_connection_doesnt_wait(label_url):
+    """Sent as headers and then body, an answer's second piece waited for the page's acknowledgement of the first
+    (about 40 ms on Linux): each request 40 ms slower, the camera stream at 15 frames a second instead of 20."""
+    import time
+    u = urllib.parse.urlparse(label_url)
+    c = http.client.HTTPConnection(u.hostname, u.port, timeout=10)
+    took = []
+    for _ in range(31):
+        t = time.perf_counter()
+        c.request("GET", "/api/fids")
+        c.getresponse().read()
+        took.append(time.perf_counter() - t)
+    c.close()
+    assert sorted(took)[15] < 0.02, sorted(took)[15]
+    assert G.Handler.disable_nagle_algorithm and G.Handler.wbufsize > 0

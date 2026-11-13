@@ -62,6 +62,7 @@ class Device:
                                (websearch, "KEY_FILE", h / "google_vision_key.txt"),
                                (websearch, "AWS_FILE", h / "aws_rekognition.json"), (secretbox, "KEY_FILE", h / "secret.key"),
                                (secretbox, "DEVICE_KEY", h / "device-key.json"),
+                               (secretbox, "REQUEST", h / "key-request.json"),
                                (__import__("peer"), "CERT", h / "peer-cert.pem"), (__import__("peer"), "KEY", h / "peer-key.pem"),
                                (__import__("peer"), "CONF", h / "peer.json")):
             self.mp.setattr(mod, attr, val)
@@ -208,7 +209,15 @@ def test_private_data_keys_and_forgets_reach_the_other_device(shared, tmp_path, 
         row = c.execute("SELECT ciphertext FROM secrets WHERE name = 'google_vision'").fetchone()
         assert row and b"AAAA" not in bytes(row[0])                       # encrypted on the device
 
-    # b takes the passphrase by itself (sealed to its key), and with it the key
+    # b isn't sent it for being in the database: the owner asks on b and types b's code on a; then b has the key
+    b.step()
+    b.switch()
+    assert secretbox.saved_passphrase() == ""
+    with shared.connect() as c:
+        code = secretbox.ask(c)["code"]
+    a.switch()
+    with shared.connect() as c:
+        assert secretbox.approve(c, code)["what"] == "approved"
     b.step()
     b.step()
     b.switch()
@@ -223,10 +232,14 @@ def test_private_data_keys_and_forgets_reach_the_other_device(shared, tmp_path, 
     # b changes it; a takes the new one by itself and still reads the key
     with shared.connect() as c:
         assert secretbox.set_passphrase(c, "a brand new passphrase", "a brand new passphrase")["what"] == "changed"
+    # (a as a device coming from 1.22.1, whose file doesn't list the passphrases it has had: it notes them once)
+    kept = json.loads((a.home / "secret.key").read_text())
+    (a.home / "secret.key").write_text(json.dumps({k: v for k, v in kept.items() if k != "known"}))
     a.step()
     a.step()
     a.switch()
     assert secretbox.saved_passphrase() == "a brand new passphrase" and websearch.key() == "A" * 39
+    assert len(secretbox._known()) == 2
     with shared.connect() as c:
         ov = secretbox.overview(c)
         assert {d["name"]: d["current"] for d in ov["devices"]} == {"a": True, "b": False} or             [d for d in ov["devices"] if d["name"] == "a"][0]["current"]
@@ -267,6 +280,169 @@ def test_private_data_keys_and_forgets_reach_the_other_device(shared, tmp_path, 
     with shared.connect() as c:
         assert c.execute("SELECT count(*) FROM alerts").fetchone()[0] == 0
         assert c.execute("SELECT count(*) FROM presence").fetchone()[0] == 0
+
+
+def test_the_database_password_alone_gets_nobody_the_passphrase(shared, tmp_path, monkeypatch):
+    """Whoever holds the database password can write any row. That must not get them the passphrase for keys or a
+    key: a device is given the passphrase only when the owner types it there, or types that device's one-time code
+    on a device that has it; and no device takes a passphrase that wasn't made by someone holding the one it has."""
+    import secretbox
+    import websearch
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    a = Device(tmp_path / "a", monkeypatch, 2)
+    a.step()
+    a.switch()
+    websearch.save_key("A" * 39)
+    with shared.connect() as c:
+        secretbox.set_passphrase(c, "correct horse battery", "correct horse battery")
+        first = secretbox.current(c)
+    a.sync.note()
+    a.step()
+    a.step()
+
+    # an intruder with the database password adds a "device" with their own key pair, saying it has the passphrase
+    thief = X25519PrivateKey.generate()
+    thief_pub = thief.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    thief_id = str(uuid.uuid4())
+
+    def shares_for_thief(c):
+        return c.execute("SELECT count(*) FROM passphrase_shares WHERE device = %s", (thief_id,)).fetchone()[0]
+    with shared.connect() as c:
+        c.execute("""INSERT INTO devices (id, name, os, app_version, public_key, key_version, key_fingerprint, key_proof)
+                     VALUES (%s, 'thief', 'x', 'x', %s, %s, %s, %s)""",
+                  (thief_id, thief_pub, first["id"], first["fingerprint"], os.urandom(32)))
+    a.step()
+    a.step()
+    with shared.connect() as c:
+        assert shares_for_thief(c) == 0                                   # a row in devices is given nothing
+        # nor does a copy of a real device's proof help: it is bound to that device's id and public key
+        c.execute("UPDATE devices SET key_proof = (SELECT key_proof FROM devices WHERE id = %s) WHERE id = %s",
+                  (a.id, thief_id))
+    a.step()
+    with shared.connect() as c:
+        assert shares_for_thief(c) == 0
+
+    # a second device of the owner's: it isn't sent the passphrase either, until the owner lets it in
+    b = Device(tmp_path / "b", monkeypatch, 2)
+    b.step()
+    a.step()
+    b.step()
+    b.switch()
+    assert secretbox.saved_passphrase() == "" and not websearch.key()
+    with shared.connect() as c:
+        with pytest.raises(secretbox.WrongPassphrase):
+            secretbox.set_passphrase(c, "not the passphrase", "not the passphrase")    # a wrong one changes nothing
+        assert secretbox.current(c)["id"] == first["id"]
+        assert secretbox.set_passphrase(c, "correct horse battery", "correct horse battery")["what"] == "entered"
+    b.step()
+    b.step()
+    b.switch()
+    assert websearch.key() == "A" * 39                                    # typed there: b reads the keys
+
+    # a third asks with a code. The code checks the request: with the intruder's public key put in its place, the
+    # right code gives nothing; neither does a wrong code, nor an answer that wasn't made with the code
+    d = Device(tmp_path / "d", monkeypatch, 2)
+    d.step()
+    d.switch()
+    with shared.connect() as c:
+        code = secretbox.ask(c)["code"]
+        assert len(code) == 9 and secretbox.request()["code"] == code
+        assert code.replace("-", "") not in json.dumps(
+            [list(map(str, r)) for r in c.execute("SELECT * FROM key_requests").fetchall()])   # never in the database
+        real = c.execute("SELECT public_key FROM key_requests WHERE device = %s", (d.id,)).fetchone()[0]
+        c.execute("UPDATE key_requests SET public_key = %s WHERE device = %s", (thief_pub, d.id))
+    a.switch()
+    with shared.connect() as c:
+        assert [w["name"] for w in secretbox.overview(c)["waiting"]] == ["d"]
+        with pytest.raises(secretbox.WrongPassphrase):
+            secretbox.approve(c, code)
+        c.execute("UPDATE key_requests SET public_key = %s WHERE device = %s", (real, d.id))
+        with pytest.raises(secretbox.WrongPassphrase):
+            secretbox.approve(c, "AAAA-AAAA")
+        with pytest.raises(ValueError):
+            secretbox.approve(c, "AAAA")
+        assert c.execute("SELECT sealed FROM key_requests WHERE device = %s", (d.id,)).fetchone()[0] is None
+        # the intruder answers the request themselves, with a passphrase of their own sealed to d
+        c.execute("UPDATE key_requests SET version = %s, sealed = %s, answer_mac = %s WHERE device = %s",
+                  (first["id"], secretbox.seal(real, "the intruder's passphrase"), os.urandom(32), d.id))
+    d.step()
+    d.switch()
+    assert secretbox.saved_passphrase() == ""                             # not taken: it lacks the code's check value
+    with shared.connect() as c:                                           # a request older than 15 minutes is over
+        c.execute("UPDATE key_requests SET sealed = NULL, answer_mac = NULL, version = NULL, "
+                  "asked_at = now() - interval '16 minutes' WHERE device = %s", (d.id,))
+    a.switch()
+    with shared.connect() as c:
+        with pytest.raises(ValueError, match="No device is waiting"):
+            secretbox.approve(c, code)
+    d.switch()
+    with shared.connect() as c:
+        code2 = secretbox.ask(c)["code"]
+    assert code2 != code
+    a.switch()
+    with shared.connect() as c:
+        assert secretbox.approve(c, code2.lower().replace("-", " "))["given"] == "d"   # typed loosely
+    d.step()
+    d.step()
+    d.switch()
+    assert secretbox.saved_passphrase() == "correct horse battery" and websearch.key() == "A" * 39
+    assert secretbox.request() is None
+    with shared.connect() as c:
+        assert c.execute("SELECT count(*) FROM key_requests").fetchone()[0] == 0
+        assert shares_for_thief(c) == 0
+
+    # a change goes to the three devices that showed the passphrase, not to the intruder's row
+    a.step()
+    b.step()
+    b.switch()
+    with shared.connect() as c:
+        assert secretbox.set_passphrase(c, "a brand new passphrase", "a brand new passphrase")["what"] == "changed"
+        assert shares_for_thief(c) == 0
+        assert c.execute("SELECT count(*) FROM passphrase_shares s JOIN passphrase_versions v ON v.id = s.version "
+                         "WHERE v.current").fetchone()[0] == 3
+    for dev in (a, d):
+        dev.step()
+        dev.switch()
+        assert secretbox.saved_passphrase() == "a brand new passphrase" and websearch.key() == "A" * 39
+    # the intruder puts a passphrase of their own in the list, sealed to a: a can't be made to "restore" it (it
+    # restores only passphrases it has had itself)
+    a.switch()
+    with shared.connect() as c:
+        real_id = secretbox.current(c)["id"]
+        salt = os.urandom(16)
+        key = secretbox._derive("the intruder's passphrase", salt, **secretbox.SCRYPT)
+        nonce, ct = secretbox.encrypt(key, "check", secretbox.CHECK)
+        fake = c.execute("""INSERT INTO passphrase_versions (salt, n, r, p, nonce, ciphertext, fingerprint, note,
+                                                             prev, link)
+                            VALUES (%s, %s, 8, 1, %s, %s, %s, 'set', %s, %s) RETURNING id""",
+                         (salt, secretbox.SCRYPT["n"], nonce, ct, secretbox.fingerprint(key), real_id,
+                          os.urandom(32))).fetchone()[0]
+        c.execute("INSERT INTO passphrase_shares (version, device, sealed) VALUES (%s, %s, %s)",
+                  (fake, a.id, secretbox.seal(secretbox.device_public(), "the intruder's passphrase")))
+        ov = secretbox.overview(c)
+        assert {v["id"]: v["known"] for v in ov["versions"]} == {first["id"]: True, real_id: True, fake: False}
+        with pytest.raises(secretbox.WrongPassphrase, match="never had"):
+            secretbox.restore(c, fake)
+        assert secretbox.current(c)["id"] == real_id
+
+        # then they make it "current": a doesn't take it, and sends no key under it; it keeps the one it has and
+        # stops syncing keys until the owner sets things right
+        with c.transaction():
+            c.execute("UPDATE passphrase_versions SET current = false")
+            c.execute("UPDATE passphrase_versions SET current = true WHERE id = %s", (fake,))
+        before = c.execute("SELECT ciphertext FROM secrets WHERE name = 'google_vision'").fetchone()[0]
+    websearch.save_key("B" * 39)
+    a.sync.note()
+    a.step()
+    a.step()
+    a.switch()
+    assert secretbox.saved_passphrase() == "a brand new passphrase" and secretbox.local_version() == real_id
+    assert a.sync.parts[-1].key_current is False
+    with shared.connect() as c:
+        assert bytes(c.execute("SELECT ciphertext FROM secrets WHERE name = 'google_vision'").fetchone()[0]) == bytes(before)
+        with pytest.raises(secretbox.WrongPassphrase):
+            secretbox.approve(c, "AAAA-AAAA")                             # and it gives nobody anything meanwhile
 
 
 def test_settings_stay_each_devices_own_and_signals_are_shared(shared, tmp_path, monkeypatch):

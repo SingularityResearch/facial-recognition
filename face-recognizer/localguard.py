@@ -90,6 +90,7 @@ class _Server(http.server.ThreadingHTTPServer):
     # server sets it), and the old program keeps getting the connections. Without it the bind fails as it
     # should, and the caller's "already running" branch is taken.
     allow_reuse_address = sys.platform != "win32"
+    request_queue_size = 128                    # Python's 5 is few for a page that asks many things at one moment
 
 
 def bind(port):
@@ -103,9 +104,46 @@ class Handler(http.server.BaseHTTPRequestHandler):
     handler subclasses this and defines _get and/or _post, starting each with `if self.refused(...): return`."""
     frame_ancestors = None                      # None: itself and the app's tab page; "'none'": never framed
     policy = None                               # what this server's page needs beyond POLICY: {directive: sources}
+    # Connections are kept open (HTTP/1.1) and used for one request after another. With Python's default, HTTP/1.0,
+    # every request was a new connection: about 90 a second from the tracker page. On Windows about one in a
+    # thousand of those got no answer and failed after a second (found 2026-11-13): the browser and the server each
+    # close a finished connection at the same moment, Windows keeps the closed pair of ports for a while, and a new
+    # connection that is handed the same local port again is not let in. Kept open, a page uses a handful of
+    # connections for hours. Every answer must say its length (send does), and a request body that wasn't read
+    # must close the connection (send does that too): its bytes would be taken for the next request.
+    protocol_version = "HTTP/1.1"
+    timeout = 120                               # a connection nothing was asked on for two minutes is closed
+    # An answer goes out in one piece and at once. Written as headers and then body on a kept-open connection, the
+    # body waited for the page's acknowledgement of the headers, which a page delays about 40 ms: every request
+    # took 40 ms longer and the Linux camera stream fell from 20 to 15 frames a second (measured 2026-11-13).
+    wbufsize = 64 * 1024                        # headers and body together (flushed after each request)
+    disable_nagle_algorithm = True              # and never held back for an acknowledgement
 
     def log_message(self, *args):
         pass
+
+    def handle(self):
+        try:
+            super().handle()
+        except ConnectionError:                 # the page closed or dropped a kept-open connection: nothing to say
+            pass
+
+    def _body_unread(self):
+        """This request came with a body that body() didn't take (refused, too large, or a route without one)."""
+        if getattr(self, "_body_taken", False):
+            return False
+        if self.headers.get("Transfer-Encoding"):
+            return True
+        try:
+            return int(self.headers.get("Content-Length") or 0) != 0
+        except ValueError:
+            return True
+
+    def keep_or_close(self):
+        """Before end_headers: close this connection after the answer when the request's body is still unread."""
+        if self._body_unread():
+            self.close_connection = True
+            self.send_header("Connection", "close")
 
     def send(self, body, ctype="application/json", code=200, cache=False):
         """Answer with bytes (of type ctype) or anything JSON can write. cache: the URL names unchanging content."""
@@ -116,11 +154,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "max-age=31536000, immutable" if cache else "no-store")
         page_headers(self, self.frame_ancestors, self.policy)
+        self.keep_or_close()
         self.end_headers()
         try:
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
-            pass                                # the page was closed or reloaded mid-request
+            self.close_connection = True        # the page was closed or reloaded mid-request
 
     def send_json(self, obj, code=200):
         self.send(obj, code=code)
@@ -128,7 +167,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def body(self, limit, empty=False):
         """The request body (bytes), at most limit - 1 bytes; see body_size. Raises RequestError (a ValueError)."""
         n = body_size(self.headers, limit, empty)
-        return self.rfile.read(n) if n else b""
+        data = self.rfile.read(n) if n else b""
+        self._body_taken = True
+        return data
 
     def refused(self, write):
         """Refuse (403) and return why, or None: see refuse_reason. write: the request changes or starts something."""
@@ -138,9 +179,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return reason
 
     def do_GET(self):
+        self._body_taken = False                # one handler serves a connection's requests one after another
         answer_errors(self, self._get, self.send_json)
 
     def do_POST(self):
+        self._body_taken = False
         answer_errors(self, self._post, self.send_json)
 
     def _get(self):

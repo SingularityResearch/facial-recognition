@@ -14,15 +14,26 @@ def test_settings_are_switched_to_all_interfaces(tmp_path, monkeypatch):
     assert L.serve_everywhere() == []                                    # already so: nothing to do
 
 
-def test_a_server_on_this_computer_only_is_started_again_on_all_interfaces(monkeypatch):
+def test_a_server_on_this_computer_only_is_started_again_on_all_interfaces(tmp_path, monkeypatch):
+    """CORS is LM Studio's own setting: the restart passes it on as it is there, and never switches it on itself."""
     calls = []
+    cfg = tmp_path / "http-server-config.json"
     monkeypatch.setattr(L, "config_path", lambda: None)
     monkeypatch.setattr(L, "running", lambda: True)
     monkeypatch.setattr(L, "on_network", lambda: False)
     monkeypatch.setattr(L.hardware, "own_addresses", lambda: ["192.168.1.18"])
     monkeypatch.setattr(L, "_lms", lambda *a, timeout=60: calls.append(a) or type("R", (), {"returncode": 0})())
+    start = ("server", "start", "--port", str(L.port()), "--bind", "0.0.0.0")
     assert "started again" in L.serve_everywhere()[0]
-    assert calls[-1] == ("server", "start", "--port", str(L.port()), "--bind", "0.0.0.0", "--cors")
+    assert calls[-1] == start                                            # no settings file: LM Studio's default, off
+    monkeypatch.setattr(L, "config_path", lambda: cfg)
+    for saved, flag in ((True, ("--cors",)), (False, ()), ("yes", ())):
+        cfg.write_text(json.dumps({"networkInterface": "0.0.0.0", "cors": saved}))
+        L.serve_everywhere()
+        assert calls[-1] == start + flag
+    cfg.write_text("not json")
+    L.serve_everywhere()
+    assert calls[-1] == start
 
 
 def test_missing_models_are_the_networks_vision_models_this_one_lacks(monkeypatch):

@@ -465,11 +465,12 @@ def make_handler(engine):
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             localguard.page_headers(self, self.frame_ancestors, self.policy)
+            self.keep_or_close()
             self.end_headers()
             try:
                 self.wfile.write(body)
             except (BrokenPipeError, ConnectionResetError):
-                pass
+                self.close_connection = True
 
         def _get(self):
             if self.refused(write=False):

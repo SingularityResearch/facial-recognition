@@ -564,16 +564,31 @@ describer choices and LM Studio shared folder, not its describe server address) 
 The Web search keys and the describe server's API key are shared only once you set a **Passphrase for keys**
 (Settings → Shared database; at least 10 characters, typed twice), on any one device. The keys then go to the
 database encrypted with it, on the device before they're sent: the server never sees the passphrase or the keys.
-The passphrase reaches every other device by itself, sealed to each device's own key so only that device can open
-it. Until it's set, each device's keys stay on that device. Each device keeps it (protected), so the field shows it
+Until it's set, each device's keys stay on that device. Each device keeps it (protected), so the field shows it
 masked; hold the eye button to see it.
-- **To change it,** type a new one twice on any device: every key is encrypted again and every device takes the new
-  one (a device that was off takes it when it's back).
+
+Another device gets the passphrase only from you, in one of two ways (the database password alone gets nobody the
+passphrase or a key):
+- **Type it there**, twice, in the same field (its button reads **Enter**); or
+- **Get the passphrase from another device**: click **Show a code** on the new device. It shows a one-time code (8
+  letters and digits, good for 15 minutes). On a device that has the passphrase, Settings → Shared database shows
+  **A device is asking for the passphrase** with that device's name: type the code there. A few seconds later the
+  new device has the passphrase, sealed so only it could open it. The code is how each device knows the other is
+  yours; it is never sent to the database. If a device asks and you didn't just ask on it yourself, do nothing.
+
+After that:
+- **To change it,** type a new one twice on a device that has it: every key is encrypted again and your devices
+  that have the current one take the new one by themselves (a device that was off takes it when it's back; one that
+  missed two changes needs it typed, or a code, again).
 - **Passphrase on each device** shows each device's fingerprint of it: the same fingerprint means the same
-  passphrase, and a fingerprint can't be turned back into it. It also shows a fingerprint of each device's saved
-  database password.
-- **Restore an earlier passphrase** brings back any earlier one (the list says who set each and when), everywhere,
-  for undoing a wrong change.
+  passphrase, and a fingerprint can't be turned back into it. A device counts as current when it also shows that it
+  holds the passphrase. It also shows a fingerprint of each device's saved database password.
+- **Restore an earlier passphrase** brings back an earlier one this device has had itself (the list says who set
+  each and when), on every device that has the current one, for undoing a wrong change.
+- Someone who has only the database password can still delete or damage what is in the database, the encrypted
+  keys included (keys then stop syncing until you set the passphrase right again); they can't read a key or the
+  passphrase. Update every device to 1.22.2: a device on an older version still hands the passphrase to any
+  device in the database.
 
 ### Original photos on every device
 

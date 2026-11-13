@@ -285,7 +285,7 @@ class HomePart:
                                 [(k, v["device"], v["name"], json.dumps(v["body"])) for k, v in items])
             elif tbl == "secrets":
                 cur_v = secretbox.current(conn)
-                if cur_v is None or secretbox.local_version() != cur_v["id"]:
+                if not secretbox.on_current(cur_v):
                     self.key_current = False          # changed elsewhere meanwhile: take the new one first
                     return False                      # (nothing sent; the sync keeps these as not sent)
                 key = secretbox.local_key()
@@ -539,11 +539,14 @@ class HomePart:
 
     # ---- only sent: the app log, posed expression tests and the expression log, new lines since the last time
     def every_step(self, conn, state):
-        """Each sync step (a few small queries): the passphrase for keys. Take the current one if it was set or
-        changed elsewhere, give it to devices that lack it, and show this device's fingerprints. Taking a new one
-        reads every key again under it."""
+        """Each sync step (a few small queries): the passphrase for keys. Take the current one if it was changed
+        by a device that held the one this device has, or given in answer to this device's request (secretbox.py: the
+        database password alone gets nobody the passphrase), and show this device's fingerprints and proof. Taking a
+        new one reads every key again under it."""
         import secretbox
+        had = self.key_current
         self.key_current, took = secretbox.catch_up(conn)
+        took = took or (self.key_current and not had)    # typed here since the last step (or the first step): read too
         login = facedb.saved_login() or {}
         inst = conn.execute("SELECT id FROM instance").fetchone()[0]
         secretbox.register(conn, login.get("password"), inst)

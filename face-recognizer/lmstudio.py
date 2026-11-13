@@ -76,6 +76,16 @@ def on_network():
     return any(hardware._port_open(port(), ip) for ip in hardware.own_addresses())
 
 
+def _cors():
+    """["--cors"] when LM Studio's own settings have CORS on (its server's "Enable CORS" switch), else nothing: a
+    restart keeps what the owner chose there. The app passes their choice on and never makes one."""
+    try:
+        c = json.loads(config_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError, AttributeError):
+        return []
+    return ["--cors"] if isinstance(c, dict) and c.get("cors") is True else []
+
+
 def serve_everywhere():
     """Make LM Studio serve on all interfaces: its settings, and its running server. Returns what was done."""
     done = []
@@ -91,7 +101,7 @@ def serve_everywhere():
             pass
     if running() and not on_network() and hardware.own_addresses():
         _lms("server", "stop", timeout=30)
-        r = _lms("server", "start", "--port", str(port()), "--bind", "0.0.0.0", "--cors", timeout=90)
+        r = _lms("server", "start", "--port", str(port()), "--bind", "0.0.0.0", *_cors(), timeout=90)
         if r is not None and r.returncode == 0:
             done.append("its server was started again on all network interfaces")
         else:                                        # never leave their server off: back as it was

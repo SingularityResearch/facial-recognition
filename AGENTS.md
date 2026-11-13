@@ -87,10 +87,15 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `localguard.py` — what the three servers share:
   - request checks (`refuse_reason`: Host, `Sec-Fetch-Site`, `X-Face-Tool: 1`, Origin);
   - the `Handler` base class (quiet, `send`/`send_json`, `body(limit)`, `refused`; subclasses define `_get`/`_post`;
-    uncaught errors answered with a JSON 500);
+    uncaught errors answered with a JSON 500). It speaks HTTP/1.1 and keeps connections open (since 1.22.2: with
+    a new connection per request, about one in a thousand failed on Windows, PROJECT_CONTEXT.md section 10). So
+    every answer must say its length: answer through `send`, or call `keep_or_close()` before `end_headers()`
+    (`tracker._frames`); a request body that `body()` didn't read closes the connection after the answer. An answer
+    leaves in one piece and at once (`wbufsize`, `disable_nagle_algorithm`: as headers then body it waited 40 ms
+    for an acknowledgement on Linux);
   - the page headers (`page_headers`: Content-Security-Policy `POLICY` plus each server's `policy`,
     frame-ancestors, CORP, nosniff);
-  - `bind` (no port sharing on Windows).
+  - `bind` (no port sharing on Windows; an accept queue of 128).
 - `settings_bridge.js` — the app window's **Settings** tab reads and changes each page's settings over postMessage.
   - Each page lists its own (`SettingsBridge.init` at the end of its script). The tab shows sections in list order,
     tracker first: keep related rows in one section, and the order in `docs/SETTINGS.md` the same.
@@ -234,7 +239,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     `003_server_ca`, `004_forgotten` (people forgotten on any device), `005_picture_sha` (send a face picture only
     when it differs), `006_passphrase_versions` (`secretbox.py`), `007_peers` (`peer.py`: addresses, port,
     certificate hash), `008_cameras` (`devices.streaming_at`, `sightings`), `009_change_order` (`changes.txid`: the
-    writing transaction), `010_expression_log` (`exprlog.py`).
+    writing transaction), `010_expression_log` (`exprlog.py`), `011_key_trust` (`devices.key_proof`,
+    `passphrase_versions.prev`/`link`, `key_requests`: who is given the passphrase for keys).
 - `dbimport.py` + `tools/db_import.py` — copy a device's `data/` and HOME into the database (reads only; merges by
   face ID and photo hash; a hand label beats an automatic one; Ignored stays Ignored). Join uses it.
 - `dbsync.py` — the sync, in the labeling tool's process (`label_tool.start_sync`). Files stay the working copy.
@@ -253,9 +259,20 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - A new place that keeps data must get a table (new `db/NNN_*.sql`) and a part.
 - `secretbox.py` — keys in the database, encrypted on the device (scrypt + AES-256-GCM, name as associated data).
   - Every passphrase is a version (`passphrase_versions`, db/006: check value, fingerprint, who/when; one current).
-  - Each version is sealed to every device's X25519 public key (`passphrase_shares`; private half in
-    `HOME/device-key.json`, protected), so setting, changing (re-encrypts every key in one transaction) or restoring
-    on one device reaches all. `HomePart.every_step` takes the current one (`catch_up`) and registers fingerprints.
+  - The database password alone gets nobody the passphrase (since 1.22.2, db/011; before, it was sealed to every
+    row in `devices`). A device gets it only from the owner: typed there (`set_passphrase`, "entered"), or asked
+    for (`ask`: a one-time code shown on that device, 8 characters, 15 minutes, never in the database) and the
+    code typed on a device that has it (`approve`). The code's check values prove each side to the other
+    (`key_requests`).
+  - A holder shows it (`devices.key_proof`: a keyed check value over its id and X25519 public key; private half in
+    `HOME/device-key.json`, protected). A change (re-encrypts every key in one transaction) or restore is sealed
+    (`passphrase_shares`) only to devices showing the passphrase it replaces, and carries a check value made with
+    that one's key (`passphrase_versions.link`): `catch_up` (`HomePart.every_step`) follows a new version only then
+    (`_follow`), or takes the answer to its own request (`_take_answer`). A device that missed two changes needs
+    one of the owner's two ways again.
+  - Restore only on a device that held that version itself (`HOME/secret.key` `known`).
+  - Whoever has only the database password can still delete or damage these rows (keys then stop syncing), not
+    read a key or the passphrase. Don't add a path that seals the passphrase to a device on the strength of a row.
   - A device not on the current version neither sends nor reads keys (`push` returns False: not marked sent).
   - The passphrase and its key are kept in `HOME/secret.key` (protected) so Settings shows it masked.
 - `peer.py` — the peer service: devices show each other their original photos (db/007) and live cameras (db/008).
@@ -288,8 +305,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `lmstudio.py` — LM Studio on this computer, kept as the owner wants on every computer with this app and LM Studio
   (`keep()`, every minute from `app.py`; `FACE_LMSTUDIO=off` turns it off).
   - `serve_everywhere`: its `http-server-config.json` `networkInterface` 0.0.0.0; a localhost-only server is
-    restarted with `lms server start --bind 0.0.0.0 --cors` (CORS on, as the owner's LM Studio servers run; if that
-    start fails, it is started again as it was, never left off).
+    restarted with `lms server start --bind 0.0.0.0`, with `--cors` only when LM Studio's own settings have CORS on
+    (`_cors`: LM Studio decides, the owner's choice 2026-11-13; if that start fails, it is started again as it was,
+    never left off).
   - `announce`: mDNS `_lmstudio._tcp` + `_http._tcp` with its port (Windows `DnsServiceRegister`, macOS
     `dns-sd -R`, Linux `avahi-publish-service`); skipped when the computer announces it already.
   - `missing_models` / `get_models`: vision models other servers on the network have, from Settings → LM Studio's
@@ -469,7 +487,7 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - `settings_bridge.js` answers only its parent window, on `127.0.0.1`/`localhost`, and only when that is the origin
   the browser reports for the frame's parent (`location.ancestorOrigins`).
 - `lmstudio.py` changes another program's settings (LM Studio's `networkInterface` to 0.0.0.0, restarting its server
-  on all interfaces with CORS on) and announces it on the local network: the owner's rule for every computer with this app and LM
+  on all interfaces, CORS left as LM Studio's own settings have it) and announces it on the local network: the owner's rule for every computer with this app and LM
   Studio (2026-11-10); `FACE_LMSTUDIO=off` turns it off. Model and CUDA downloads start only from a Settings button.
 - `hardware.ai_apps` asks 127.0.0.1's usual AI ports and the configured describe server (with that server's own key,
   through `describe.server_models`). `hardware.lmstudio_network` (Settings → LM Studio on the network, only while the

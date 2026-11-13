@@ -1266,7 +1266,9 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         sdb = await get("/api/db");
         if (!sdb.available) return sdb.why;
         const c = sdb.config, st = sdb.sync || {};
-        if (st.state === "joining" || st.state === "online" && st.waiting) setTimeout(SettingsBridge.changed, 3000);
+        // while this device asks for the passphrase, or one is asking this device: watch for the answer or the end
+        if (st.state === "joining" || st.state === "online" && st.waiting || sdb.keys?.asking || sdb.keys?.waiting?.length)
+          setTimeout(SettingsBridge.changed, 3000);
         return [c ? `${c.user} on ${c.host}:${c.port}, database ${c.dbname}, schema ${c.schema}` +
                     (c.ca ? " (the server is checked against its own certificate authority)" : "") : "Not set up.",
                 st.text || "", st.waiting ? `${st.waiting} changes on this device wait to be sent.` : "",
@@ -1294,27 +1296,41 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         if (r.error) throw new Error(r.error);
         SettingsBridge.notify({ fs: "reload" }); setTimeout(() => location.reload(), 300); } },
     { section: D, id: "dbpass", label: "Passphrase for keys", type: "form",
-      button: () => sdb.keys?.current ? "Change" : "Set",
+      button: () => !sdb.keys?.current ? "Set" : sdb.keys.here ? "Change" : "Enter",
       hidden: () => !sdb.available || !sdb.config,
-      hint: () => (sdb.keys?.current
-        ? "Set: the Web search keys and the describe server's key are shared with your other devices, encrypted with it. To change it, type the new one in both boxes; every key is encrypted again and every device takes the new one by itself. "
-        : "Not set yet: each device's keys stay on it alone. Type one in both boxes (at least 10 characters) to share them. ") +
-        "It's set once, on any device, and reaches the others by itself, sealed so that only each device can open it. The server never sees it or the keys. Each device keeps it (protected by Windows for your user), so it shows here masked; hold the eye to see it.",
+      hint: () => (!sdb.keys?.current
+        ? "Not set yet: each device's keys stay on it alone. Type one in both boxes (at least 10 characters) to share them. "
+        : sdb.keys.here
+          ? "Set: the Web search keys and the describe server's key are shared with your other devices, encrypted with it. To change it, type the new one in both boxes; every key is encrypted again, and your devices that have the current one take the new one by themselves. "
+          : "This device doesn't have it yet, so it shares no keys. Type the passphrase your other devices have in both boxes, or get it from one of them with a code (below). ") +
+        "A device gets it only from you: typed on it, or approved with a code on a device that has it. The database password alone gets nobody the passphrase or a key, and the server never sees either. Each device keeps the passphrase (protected by Windows for your user), so it shows here masked; hold the eye to see it.",
       fields: () => [{ name: "passphrase", label: "Passphrase", secret: true, value: sec.passphrase || "", placeholder: "at least 10 characters" },
                      { name: "again", label: "Again", secret: true, value: sec.passphrase || "", placeholder: "the same again" }] },
+    { section: D, id: "dbask", label: "Get the passphrase from another device", type: "button",
+      button: () => sdb.keys?.asking ? "Show a new code" : "Show a code",
+      hidden: () => !sdb.keys?.current || !!sdb.keys.here,
+      hint: "Shows a one-time code on this device. Type that code on a device that has the passphrase (its Settings, Shared database) and this device is given it, sealed so only this device can open it. The code is how each device knows the other is yours; it works once, for 15 minutes, and is never sent to the database." },
+    { section: D, id: "dbcode", label: "This device's code", type: "info",
+      hidden: () => !sdb.keys?.asking || !!sdb.keys?.here,
+      hint: "Type it on a device that has the passphrase: Settings, Shared database, \"A device is asking for the passphrase\". This device takes the passphrase a few seconds after.",
+      get: () => sec.request ? `${sec.request.code}\nuntil ${localTime(sec.request.until)}` : "" },
+    { section: D, id: "dbapprove", label: "A device is asking for the passphrase", type: "form", button: "Give it the passphrase",
+      hidden: () => !(sdb.keys?.waiting || []).length,
+      hint: () => `Asking now: ${(sdb.keys?.waiting || []).map(w => `${w.name} (${localTime(w.asked)})`).join(", ")}. If you just asked on that device yourself, type the code it shows: it is given the passphrase, sealed so only it can open it. If you didn't, do nothing: without the code from its screen nobody is given anything.`,
+      fields: () => [{ name: "code", label: "Code", placeholder: "XXXX-XXXX", size: 10, value: "" }] },
     { section: D, id: "dbkeys", label: "Passphrase on each device", type: "info",
       hidden: () => !sdb.keys?.current,
-      hint: "Each device's fingerprint of the passphrase it has: the same fingerprint means the same passphrase (a fingerprint can't be turned back into it). A device that was off when it changed takes the new one when it's back. The database password's fingerprint shows the same for each device's saved password.",
+      hint: "Each device's fingerprint of the passphrase it has: the same fingerprint means the same passphrase (a fingerprint can't be turned back into it). A device counts as current when it also shows that it holds the passphrase, which nobody without it can do. A device that was off when it changed takes the new one when it's back; one that missed two changes needs it typed or a code. The database password's fingerprint shows the same for each device's saved password.",
       get: () => {
         const k = sdb.keys || {};
         return [`Current: ${k.current?.fingerprint || "none"}`,
-                ...(k.devices || []).map(d => `${d.name}${d.me ? " (this device)" : ""}: ${d.fingerprint || "none"} ${d.current ? "✓ current" : d.fingerprint ? "✗ not the current one yet" : ""}` +
+                ...(k.devices || []).map(d => `${d.name}${d.me ? " (this device)" : ""}: ${d.fingerprint || "none"} ${d.current ? "✓ current" : d.unproved ? "✗ says it has the current one but hasn't shown it (an older version of the app?)" : d.fingerprint ? "✗ not the current one" : ""}` +
                                               (d.password ? `; database password ${d.password}` : ""))].join("\n");
       } },
     { section: D, id: "dbrestore", label: "Restore an earlier passphrase", type: "select", def: "",
-      hidden: () => (sdb.keys?.versions || []).filter(v => !v.current).length === 0,
-      hint: "Undoes a wrong change: the chosen passphrase becomes the current one again, every key is encrypted again with it, and every device takes it by itself. The list keeps every passphrase ever set (newest first), with who set it and when.",
-      options: () => [["", "Choose one"], ...(sdb.keys?.versions || []).filter(v => !v.current)
+      hidden: () => !sdb.keys?.here || (sdb.keys?.versions || []).filter(v => !v.current && v.known).length === 0,
+      hint: "Undoes a wrong change: the chosen passphrase becomes the current one again, every key is encrypted again with it, and your devices that have the current one take it by themselves. The list has the passphrases this device has had itself (newest first), with who set each and when.",
+      options: () => [["", "Choose one"], ...(sdb.keys?.versions || []).filter(v => !v.current && v.known)
         .map(v => [String(v.id), `${localTime(v.when)} by ${v.by || "?"}: ${v.fingerprint} (${v.note})`])],
       get: () => "",
       set: async v => { if (!v) return; await post("/api/db/passphrase/restore", { version: +v }); await loadSecrets(); } },
@@ -1323,7 +1339,11 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       hidden: () => !hw.cuda_offer?.offer,
       hint: "Lets this app run its models on the NVIDIA card. Downloads NVIDIA's own CUDA 12 and cuDNN 9 packages and Microsoft's ONNX Runtime with CUDA from PyPI (the public Python package index), for this app's Python 3.12, each checked by size and SHA-256, into the app's data folder (about 3.5 GB unpacked). Used from the next start; the app checks each model gives the same answers on the card before using it." },
   ], {
-    dbpass: saved(a => post("/api/db/passphrase", { passphrase: a.passphrase || "", again: a.again || "" })),
+    dbpass: saved(async a => { const r = await post("/api/db/passphrase", { passphrase: a.passphrase || "", again: a.again || "" });
+      return { ...r, message: { set: "Set", entered: "This device has the passphrase now", changed: "Changed" }[r.what] }; }),
+    dbask: saved(async () => { await post("/api/db/passphrase/ask", {}); return { message: "Code shown below" }; }),
+    dbapprove: saved(async a => { const r = await post("/api/db/passphrase/approve", { code: a.code || "" });
+      return { ...r, message: `${r.given} was given the passphrase` }; }),
     dbsetup: saved(a => post("/api/db/setup", { host: a.host || "", port: +a.port || 5432, dbname: a.dbname || "facerec",
                                                user: a.user || "", password: a.password || "" })),
     wsgoogle: saved(a => post("/api/websearch/key", { key: a.key || "" })),
