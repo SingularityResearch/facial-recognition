@@ -371,7 +371,8 @@ def make_handler(db, importer):
                 # sync and the page's own settings request at load.
                 if path == "/api/lmstudio":                # LM Studio on this computer, and models it lacks
                     st = lmstudio.status()
-                    return self.send({**st, "missing": lmstudio.missing_models() if st.get("installed") else []})
+                    return self.send({**st, "missing": lmstudio.missing_models() if st.get("installed") else [],
+                                      "distributed": hardware.distributed()})
                 if path == "/api/hardware/network":       # LM Studio servers on the local network (Settings)
                     return self.send({"servers": hardware.lmstudio_network()})
                 if path == "/api/hardware":               # this computer, and where each job runs (Settings)
@@ -518,6 +519,9 @@ def make_handler(db, importer):
                     lmstudio.set_share(body.get("folder", ""))
                     threading.Thread(target=lmstudio.publish, daemon=True).start()
                     return self.send({"ok": True, "shared": lmstudio.share_status()})
+                if path == "/api/lmstudio/distributed":   # "Fully distributed system": every adapter, any network
+                    lmstudio.set_distributed(body.get("on") is True)
+                    return self.send({"ok": True, "distributed": hardware.distributed()})
                 if path == "/api/lmstudio/get":           # download the models other LM Studio servers have
                     lmstudio.get_models([m["variant"] for m in lmstudio.missing_models()])
                     return self.send({"ok": True})

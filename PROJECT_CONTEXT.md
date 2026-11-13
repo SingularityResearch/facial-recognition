@@ -708,6 +708,7 @@ first-start downloads; only the latest app release is kept):
 | v1.21.1 | Nov 12 | The Linux window's freeze found and fixed: answers the page scripts never read (`/alive` every 2 s, `/api/inview` every second) each kept a 2 MiB shared-memory descriptor open in the page's renderer, which froze at its limit (1024 after a fresh start: ten minutes; 8192 after the watchdog's restart in place: every 90 minutes). Every fetch now reads or drops its answer (a test checks), and the app raises its open-files limit to 8192. On Windows the same handles grew without a freeze. Not released yet. |
 | v1.21.2 | Nov 12 | Cameras: 20 frames a second instead of 10 (`STREAM_FPS`; the owner's choice), paced by when each frame is due, and drawn on a timer whenever the display hasn't drawn for two frames (a window in a disconnected desktop session sent only 4 a second). 1.21.3: the names and boxes are drawn at most 60 times a second (`DRAW_EVERY`): on a 240 Hz display drawing at its rate left no time to encode stream frames (93 ms a frame instead of 12; 13 frames a second instead of 20). 1.21.4: on Windows camera frames stay in ordinary memory (`MediaFoundationD3D11VideoCapture` off in `KEEP_RUNNING_FLAGS`): in the NAS's disconnected desktop session one read-back from the graphics processor in ten took 165 ms (13 frames a second; 20 without). Not released yet. |
 | v1.22 | Nov 13 | Released for Windows, macOS and Linux: everything in 1.21 to 1.21.4 (built and run on the three devices first), and more from the review: Start again never loads a second copy of a program; the sync follows a change of the connection settings; the window watchdog stops when there is no window; a person left in no label can still be exported and forgotten; the server-side forget is repeated daily and clears photo-tag names; LM Studio model names and model lists from the network are checked; overlapping camera and microphone starts; a merge leaves no face that is and isn't the same person; copies of copies; client disconnects and OpenCV's per-detector warning no longer fill the logs. |
+| v1.22.1 | Nov 13 | **Fully distributed system** (Settings → LM Studio, off for a new copy; the owner's wish): on, the LM Studio search covers every network adapter and Describe all may use servers beyond the local network. Off, only real adapters count, now on Windows (asked from PowerShell on a thread of its own) and macOS too, not just Linux. Linux: numpy's maths (OpenBLAS) kept to one thread, set in `app.py` before numpy loads: in the packed app a matrix product in the labeling tool got stuck for good in 2 starts of 4, freezing the Labeling tab and the sync (6 of 6 clean with one thread). |
 
 ---
 
@@ -980,8 +981,8 @@ the database through a closure) and has kept growing (about 570 lines by v1.20, 
 helpers); splitting it into a class with route methods is the next step.
 
 Open after the 2026-11-12 review and v1.22 (not fixed yet):
-- The search for LM Studio servers isn't limited to real network interfaces on Windows and macOS (`hardware.own_addresses`
-  filters virtual ones on Linux only), and with Share Describe all on it also runs when a photo is opened.
+- With Share Describe all on, the search for LM Studio servers also runs when a photo is opened, not only while
+  Settings is open. (Which adapters it covers is the Fully distributed system setting since v1.22.1.)
 - Any row in `devices` with a public key gets the passphrase for keys sealed to it (`secretbox.share_all`): whoever
   holds the database password can add one. To decide: confirm a new device on an existing one, or type the passphrase.
 - Naming or un-ignoring an Ignored face leaves a face without print or picture; a moved video is never re-pointed;

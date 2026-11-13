@@ -282,8 +282,10 @@ def helpers(name):
     main_here = where(c["url"])[0] == "this computer"
     out = []
     for e in hardware.lmstudio_network():
-        if c["url"] in e["urls"] or (main_here and e["this_computer"]) or where(e["urls"][0])[0] == "the internet":
+        if c["url"] in e["urls"] or (main_here and e["this_computer"]):
             continue
+        if where(e["urls"][0])[0] == "the internet" and not hardware.distributed():
+            continue                             # beyond the local network only as a "Fully distributed system"
         if not any(m["id"] == name and m["vision"] for m in e["models"]):
             continue
         # the address that connects first (a computer on Wi-Fi and wired answers at both)

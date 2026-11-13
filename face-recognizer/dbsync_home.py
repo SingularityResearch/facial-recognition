@@ -172,6 +172,9 @@ class HomePart:
             out[f"{me}|describe|{k}"] = {"app": "describe", "key": k, "value": c.get(k)}
         share = lmstudio.share()
         out[f"{me}|lmstudio|share"] = {"app": "lmstudio", "key": "share", "value": str(share) if share else ""}
+        import hardware
+        out[f"{me}|lmstudio|distributed"] = {"app": "lmstudio", "key": "distributed",
+                                             "value": "1" if hardware.distributed() else "0"}
         return out
 
     @staticmethod
@@ -498,6 +501,8 @@ class HomePart:
                         describe.set_config(**{key: value})
                     except ValueError as e:
                         log(f"Shared database: describe setting {key}: {e}")
+                elif app == "lmstudio" and key == "distributed" and value is not None:
+                    lmstudio.set_distributed(str(value) == "1")
                 elif app == "lmstudio" and key == "share" and value is not None:
                     try:
                         lmstudio.set_share(value)

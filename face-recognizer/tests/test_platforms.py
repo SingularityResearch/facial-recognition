@@ -113,3 +113,14 @@ def test_a_file_that_cant_be_read_is_not_an_empty_file(tmp_path, monkeypatch):
     busy["left"] = 0
     assert devicesettings.settings("track") == {"ft-camera": "abc"}                        # nothing was written over
     assert [a["text"] for a in alerts.listing()["alerts"]] == ["Ann arrived"]
+
+
+def test_the_linux_app_keeps_numpys_maths_to_one_thread():
+    """Set when app.py is loaded, before numpy can be: several OpenBLAS thread pools at once got a matrix product in the
+    packed Linux app stuck for good."""
+    import os
+    import sys
+
+    import app  # noqa: F401
+    if sys.platform.startswith("linux"):
+        assert os.environ.get("OPENBLAS_NUM_THREADS") == "1"

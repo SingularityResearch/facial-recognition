@@ -240,20 +240,81 @@ def lan_addresses():
 VIRTUAL = ("lo", "docker", "br-", "veth", "virbr", "tun", "tap", "wg", "zt", "tailscale", "CloudflareWARP", "vEthernet")
 
 
-def own_addresses():
-    """Every IPv4 address of this computer's real network interfaces (each 10G port, Wi-Fi...), not loopback, VPN
-    tunnels or containers. Linux: `ip -4 -o addr`; elsewhere the system's own list for this computer's name."""
-    found = list(lan_addresses())
-    if platform.system() == "Linux":
+def distributed():
+    """This device's "Fully distributed system" setting (Settings -> LM Studio; kept in HOME/lmstudio.json by
+    lmstudio.set_distributed, off for a new copy): the owner's computers may be anywhere, not on one local network.
+    On, every network adapter counts as the device's own (VPN tunnels and virtual networks too), and LM Studio
+    servers beyond the local network may be used (describe.helpers)."""
+    import paths
+    try:
+        return json.loads((paths.HOME / "lmstudio.json").read_text("utf-8")).get("distributed") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+_adapter_cache = {"at": 0.0, "found": None}
+_adapter_lock = threading.Lock()
+MAC_VIRTUAL = ("lo", "utun", "bridge", "vmnet", "awdl", "llw", "tap", "tun", "feth", "ipsec", "ppp", "gif", "stf")
+
+
+def _adapters(max_age=300):
+    """[(IPv4 address, is the adapter virtual?)] for every address of this computer, or None when the system doesn't
+    say (then own_addresses falls back to the addresses of the computer's name). Virtual: a VPN tunnel, a virtual
+    switch (Hyper-V, WSL, VirtualBox), a container bridge. Linux: `ip`; macOS: `ifconfig`; Windows: PowerShell's
+    Get-NetAdapter, which takes seconds to start: it is asked on a thread of its own and the last answer is given
+    meanwhile (None until the first one is in, a few seconds after the program starts), so nothing waits for it."""
+    system = platform.system()
+    if system == "Linux":
+        out = []
         for line in _run(["ip", "-4", "-o", "addr", "show", "scope", "global"]).splitlines():
             parts = line.split()
-            if len(parts) > 3 and not parts[1].startswith(VIRTUAL) and "/32" not in parts[3]:
-                found.append(parts[3].split("/")[0])
-    else:
+            if len(parts) > 3:
+                out.append((parts[3].split("/")[0], parts[1].startswith(VIRTUAL) or "/32" in parts[3]))
+        return out or None
+    if system == "Darwin":
+        out, name = [], ""
+        for line in _run(["ifconfig"]).splitlines():
+            if line and not line[0].isspace():
+                name = line.split(":")[0]
+            elif line.strip().startswith("inet ") and len(line.split()) > 1:
+                out.append((line.split()[1], name.startswith(MAC_VIRTUAL)))
+        return out or None
+    if system != "Windows":
+        return None
+    with _adapter_lock:
+        if time.time() - _adapter_cache["at"] >= max_age and not _adapter_cache.get("asking"):
+            _adapter_cache["asking"] = True
+            threading.Thread(target=_ask_windows_adapters, daemon=True, name="network adapters").start()
+        return _adapter_cache["found"]
+
+
+def _ask_windows_adapters():
+    ask = ("Get-NetIPAddress -AddressFamily IPv4 | ForEach-Object { $a = Get-NetAdapter -InterfaceIndex "
+           "$_.InterfaceIndex -ErrorAction SilentlyContinue; if ($a) { '{0} {1}' -f $_.IPAddress, [int]$a.Virtual } }")
+    out = []
+    for line in _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ask], timeout=30).splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1] in ("0", "1") and parts[0].count(".") == 3:
+            out.append((parts[0], parts[1] == "1"))
+    with _adapter_lock:                          # no answer (PowerShell missing or slow): the last one stays
+        _adapter_cache.update(at=time.time(), asking=False, found=out or _adapter_cache["found"])
+
+
+def own_addresses(every=None):
+    """Every IPv4 address of this computer's real network adapters (each 10G port, Wi-Fi...): not loopback, and not
+    VPN tunnels, virtual switches or containers unless every is true. every defaults to the "Fully distributed
+    system" setting (distributed()). When the system doesn't say which adapter an address belongs to, the addresses
+    of the computer's name are taken as they are."""
+    every = distributed() if every is None else every
+    known = _adapters()
+    if known is None:
+        found = list(lan_addresses())
         try:
             found += socket.gethostbyname_ex(socket.gethostname())[2]
         except OSError:
             pass
+    else:
+        found = [ip for ip, virtual in known if every or not virtual]
     return sorted({ip for ip in found if not ip.startswith(("127.", "169.254."))},
                   key=lambda a: tuple(int(x) for x in a.split(".")))
 
@@ -351,6 +412,12 @@ def ai_apps(max_age=60):
 # --------------------------------------------------------------------------- LM Studio on the local network
 LMS_PORTS = (1234,)           # LM Studio's server port (its default; this project's devices all use it)
 _net_cache = {"at": 0.0, "found": None}
+
+
+def _net_forget():
+    """Forget the last search for LM Studio servers (the setting that says where to look has changed)."""
+    with _ai_lock:
+        _net_cache.update(at=0.0, found=None)
 
 
 def _lms_models(url, timeout=3):

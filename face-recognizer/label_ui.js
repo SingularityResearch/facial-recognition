@@ -1216,6 +1216,10 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       hidden: () => !lms.installed,
       get: () => lms.shared?.share || "",
       set: v => post("/api/lmstudio/share", { folder: v }) },
+    { section: M, id: "lmsdist", label: "Fully distributed system", type: "toggle", def: false,
+      hint: "On: your computers may be anywhere, not only on one local network. The search for LM Studio servers then covers every network adapter of this computer (VPNs and virtual networks too, not only its real network ports), this computer tells your other devices those addresses as well, and Describe all (with Share Describe all on) may send photos to LM Studio servers beyond your local network, over the internet. Off (as a new copy starts): the real adapters of your local network only.",
+      get: () => !!lms.distributed,
+      set: v => post("/api/lmstudio/distributed", { on: !!v }) },
     { section: M, id: "hwnet", label: "LM Studio on the network", type: "info",
       hint: "Every LM Studio server on this computer's local network: each computer's name, the addresses and port to reach it at, and the models it serves (which read pictures, which are loaded now). Found two ways, only while Settings is open: servers that announce themselves on the network (mDNS, _lmstudio._tcp) say their own address and port; the rest are found by trying LM Studio's port (1234, this computer's own LM Studio port, and any port announced) on each address of this computer's networks; Describe photo can use any of them (put its address in Server address).",
       get: async () => { const s = (await get("/api/hardware/network")).servers || [];

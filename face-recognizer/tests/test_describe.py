@@ -157,3 +157,18 @@ def test_no_key_goes_to_a_helper(home, serve):
     assert D.ask(b"jpeg", "m1")["text"]
     by_port = {p: k for p, path, k in _Describer.seen}
     assert by_port == {int(helper.rsplit(":", 1)[1]): None, int(main.rsplit(":", 1)[1]): "Bearer SECRET"}
+
+
+def test_a_server_beyond_the_local_network_helps_only_in_a_fully_distributed_system(home, tmp_path, monkeypatch):
+    import hardware
+    import paths
+    monkeypatch.setattr(paths, "HOME", tmp_path)
+    model = [{"id": "qwen/qwen3.6-35b-a3b", "vision": True}]
+    net = [{"host": "lan-box", "this_computer": False, "urls": ["http://192.168.1.18:1234"], "models": model},
+           {"host": "far-box", "this_computer": False, "urls": ["http://100.90.1.7:1234"], "models": model}]
+    monkeypatch.setattr(hardware, "lmstudio_network", lambda: net)
+    monkeypatch.setattr(D, "_connect_secs", lambda u: 0.001)
+    D.set_config(spread=True)
+    assert [h["host"] for h in D.helpers("qwen/qwen3.6-35b-a3b")] == ["lan-box"]
+    (tmp_path / "lmstudio.json").write_text('{"distributed": true}')
+    assert [h["host"] for h in D.helpers("qwen/qwen3.6-35b-a3b")] == ["lan-box", "far-box"]

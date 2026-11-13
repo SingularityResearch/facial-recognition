@@ -54,6 +54,7 @@ def test_lan_addresses_are_this_computers_own():
 def test_lmstudio_network_merges_one_computers_addresses(monkeypatch):
     monkeypatch.setattr(hardware, "mdns_services", lambda timeout=1.5: [])       # no question to the real network,
     monkeypatch.setattr(hardware, "lmstudio_port", lambda: None)                 # no look at a real LM Studio
+    monkeypatch.setattr(hardware, "_adapters", lambda max_age=300: None)         # as on a system that doesn't say
     monkeypatch.setattr(hardware, "lan_addresses", lambda: ["192.168.1.13"])
     monkeypatch.setattr(hardware.socket, "gethostbyname_ex", lambda h: (h, [], ["192.168.1.13", "192.168.1.6"]))
     up = {"192.168.1.6", "192.168.1.13", "192.168.1.18"}
@@ -104,3 +105,24 @@ def test_a_model_list_that_isnt_one_is_not_lm_studio(serve):
     got = hardware._lms_models(answering({"data": [{"id": "a/b", "type": "vlm", "quantization": 7}, {"id": 5}, "x",
                                                     {"id": "c" * 300}]}))
     assert got == [{"id": "a/b", "vision": True, "loaded": False, "quant": None, "kind": "vlm"}]
+
+
+def test_only_real_adapters_count_unless_the_system_is_fully_distributed(tmp_path, monkeypatch):
+    """A VPN tunnel or a virtual switch isn't this computer's local network: its addresses are searched for LM Studio
+    servers (and told to the other devices) only with the "Fully distributed system" setting on."""
+    import lmstudio
+    import paths
+    monkeypatch.setattr(paths, "HOME", tmp_path)
+    monkeypatch.setattr(lmstudio, "CONF", tmp_path / "lmstudio.json")
+    monkeypatch.setattr(hardware, "_adapters", lambda max_age=300: [("192.168.1.13", False), ("100.90.1.2", True),
+                                                                    ("172.28.0.1", True), ("127.0.0.1", False)])
+    assert hardware.distributed() is False and hardware.own_addresses() == ["192.168.1.13"]
+    lmstudio.set_share(tmp_path / "share")
+    lmstudio.set_distributed(True)
+    assert hardware.distributed() is True and lmstudio.share() == tmp_path / "share"     # each keeps the other
+    assert hardware.own_addresses() == ["100.90.1.2", "172.28.0.1", "192.168.1.13"]
+    assert hardware.own_addresses(every=False) == ["192.168.1.13"]
+    lmstudio.set_share(tmp_path / "other")
+    assert hardware.distributed() is True
+    lmstudio.set_distributed(False)
+    assert hardware.own_addresses() == ["192.168.1.13"] and lmstudio.share() == tmp_path / "other"

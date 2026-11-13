@@ -386,9 +386,26 @@ def set_share(folder):
             Path(folder).mkdir(parents=True, exist_ok=True)
         except OSError as e:
             raise ValueError(f"Can't use {folder}: {e}") from e
-    CONF.parent.mkdir(parents=True, exist_ok=True)
-    paths.atomic_write(CONF, json.dumps({"share": folder}).encode())
+    _save_conf(share=folder)
     STATE["share"] = None
+
+
+def _save_conf(**changes):
+    """Change some of this computer's own LM Studio settings (HOME/lmstudio.json), keeping the others."""
+    try:
+        c = json.loads(CONF.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        c = {}
+    c = {**(c if isinstance(c, dict) else {}), **changes}
+    CONF.parent.mkdir(parents=True, exist_ok=True)
+    paths.atomic_write(CONF, json.dumps(c).encode())
+
+
+def set_distributed(on):
+    """The "Fully distributed system" setting (hardware.distributed reads it): the search for LM Studio servers
+    covers every network adapter, and servers beyond the local network may be used. Off for a new copy."""
+    _save_conf(distributed=bool(on))
+    hardware._net_forget()                       # the next search looks again, at the adapters that count now
 
 
 def models_dir():

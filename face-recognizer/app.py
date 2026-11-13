@@ -31,8 +31,16 @@ import desktop
 import localguard
 import paths
 
+# One thread for numpy's own maths (OpenBLAS) on Linux, set before anything loads numpy. The packed Linux app carries
+# three copies of OpenBLAS (numpy's, SciPy's, OpenCV's); with their thread pools, a matrix product in the labeling tool
+# while the tracker's models loaded got stuck for good in 2 starts of 4 (2026-11-13: the Labeling tab and the sync
+# waited behind it). With one thread: 6 starts of 6 clean. The matrices here are small, and the models run in ONNX
+# Runtime, which this doesn't touch.
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
 TITLE = "Face Recognizer"
-VERSION = "1.22"                                      # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.22.1"                                    # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 

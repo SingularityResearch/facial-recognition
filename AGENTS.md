@@ -72,6 +72,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     from the graphics processor stalled the page in a disconnected desktop session).
   - `allow_more_open_files`: Linux, macOS: the app and its window's processes may have 8192 files open (systemd
     starts programs with 1024).
+  - Linux: `OPENBLAS_NUM_THREADS=1` is set at the top of `app.py`, before numpy loads (several OpenBLAS thread
+    pools in the packed app got a matrix product in the labeling tool stuck for good).
   - Without a console (the built app) messages go to `HOME/app.log`, each line stamped with the UTC time (`Stamped`;
     `tests/test_app_log.py`).
   - On Linux the window is first tried in a child process (`--probe-window`); without a working window the app uses
@@ -475,7 +477,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   - takes announced servers from mDNS (`mdns_services`: `_lmstudio._tcp`, or `_http._tcp` with `app=LM Studio`;
     their own port);
   - tries port 1234, this computer's LM Studio port and announced ports on every address of the /24 of each real
-    interface (`own_addresses`: no loopback, containers or VPN tunnels);
+    interface (`own_addresses`: no loopback, and no containers, virtual switches or VPN tunnels unless the owner switched on
+    **Fully distributed system**, `hardware.distributed()`, off for a new copy: then every adapter counts, the peer
+    service publishes those addresses too, and `describe.helpers` may use servers beyond the local network);
   - reads each server's model list (`/api/v0/models`) and names computers by mDNS reverse lookup or NetBIOS name
     status; nothing is sent but those questions.
 - Describe photo: the API key belongs to its server address (changing the address clears it; Test sends it only to

@@ -23,6 +23,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 
+import hardware  # noqa: E402
+
+# No test asks the real system which network adapters it has (on Windows that starts PowerShell): "it doesn't say",
+# unless a test gives its own list.
+hardware._adapters = lambda max_age=300: None
+
 
 @pytest.fixture
 def data(tmp_path, monkeypatch):
