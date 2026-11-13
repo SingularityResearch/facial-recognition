@@ -435,8 +435,8 @@ now does that once per version. Its lid was shut, so the integrated camera sent 
 now warns when the picture's brightest and darkest points differ by under 12 of 255 for 6 s, offering the next camera.
 v1.15 (released 2026-11-11, tag at e11b9ca) carries both; older releases deleted. v1.16-v1.20 (2026-11-11/12): the
 shared database, keys, peer photos and the Cameras tab (§4b, §5b, §7 "Releases"); since v1.20 (tag at 6586b77) only
-v1.20.0 and models-v1 remain. v1.20.1, v1.22 and v1.22.1 (2026-11-12/13) followed (§7 "Releases"); since 2026-11-13
-only the latest release (v1.22.1) and models-v1 are kept on GitHub.
+v1.20.0 and models-v1 remain. v1.20.1 and v1.22 to v1.22.2 (2026-11-12/13) followed (§7 "Releases"); since 2026-11-13
+only the latest release and models-v1 are kept on GitHub.
 
 LM Studio across the owner's computers (2026-11-10/11, after v1.10; `lmstudio.py`, `hardware.lmstudio_network`):
 both computers serve LM Studio on 0.0.0.0:1234 (the Linux laptop: headless llmster 0.0.27 + CUDA 12 llama.cpp 2.72.0 as
