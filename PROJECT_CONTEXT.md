@@ -130,7 +130,8 @@ facial-recognition\
     │   ├── face_recognition_sface_2021dec.onnx         SFace, fallback recognizer (38.7 MB)
     │   ├── ediffiqa_tiny_jun2024.onnx                  eDifFIQA face quality (optional)
     │   ├── facial_expression_recognition_mobilefacenet_2022july.onnx   7-class expression model (optional)
-    │   ├── adaface_ir101_webface12m.onnx, adaface_src\  AdaFace, evaluated and not used
+    │   ├── (adaface_ir101_webface12m.onnx, adaface_src\: AdaFace, evaluated and not used; made by
+    │   │    tools\get_adaface.py when wanted, not kept since 2026-11-14)
     │   ├── face_landmarker.task                        MediaPipe blendshapes (optional)
     │   ├── wav2small.onnx, wav2small_src\              voice arousal/dominance/valence, 69 KB (optional; CC BY-NC-SA)
     │   ├── pose_landmarker_lite.task                   MediaPipe body posture, 5.8 MB (optional; Apache 2.0)
@@ -1052,6 +1053,18 @@ Open after the 2026-11-12 review and v1.22 (not fixed yet):
   minimized (`KEEP_RUNNING_FLAGS` are Chromium's and do nothing in WebKit, which slows hidden pages, and macOS
   naps hidden apps: cameras are never to be slowed, section 8); the CoreML check at start; the watchdog's restart
   in place; photos and cameras to and from the other devices. `window_memory` gives nothing on macOS yet.
+- Library versions, reviewed 2026-11-14: every pin in `requirements*.txt` is the newest release (psycopg 3.3.9,
+  mediapipe 1.2.3, boto3 1.44.3 and ruff 0.17.5 moved that day) except ONNX Runtime, which stays at 1.24.4 on
+  purpose (1.32.0 was the newest). 1.24.4 is the last release with a DirectML package (Windows). On Linux
+  `onnxruntime-gpu` 1.25.0 to 1.26.0 still use CUDA 12; from 1.27.0 it needs CUDA 13 (`nvidia-*` 13.x,
+  `nvidia-cudnn-cu13`: read from each release's own list on PyPI), and CUDA 13 needs NVIDIA driver 580 or later
+  and drops cards older than the RTX 20 series (Maxwell, Pascal, Volta), where CUDA 12 runs from driver 525.60
+  and the GTX 900 series (`cudasupport.check`). One version on every system keeps the answers comparable; moving
+  Linux (to 1.26.0 at most without losing cards) means new pins in `setup.sh` and `cudasupport.py` and the
+  comparison with the CPU again, for no known gain. Open: measure 1.24.4 against the newest `onnxruntime` with
+  CoreML on the first Mac, and move macOS alone if it is better (the two pins are per system already).
+  CI's actions moved to their v7 releases (Node 24; the v4 and v5 ones ran with GitHub's "Node.js 20 is
+  deprecated" warning), and CI's Node tests run on Node 24.
 - The changes log is never pruned; `photo_paths` has no index on `hash`; devices on different recognition models
   overwrite each other's prints; a failed local forget is recorded as done.
 - Linux: after the watchdog's restart in place the window's DevTools port stays dead (testing only), and one camera

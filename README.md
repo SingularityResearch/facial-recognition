@@ -20,8 +20,9 @@ you send them on purpose:
 
 ## Goals
 
-1. **Recognize the people who matter, live.** Learn specific people from a personal photo library, then
-   show their name and match confidence on their face in the browser.
+1. **Recognize the people who matter, live, on every device.** A cluster of your own devices learns specific
+   people together, from the photos, videos and camera pictures each of them holds, and shows each person's
+   name and match confidence on their face on any camera stream in the cluster.
 2. **Read expression honestly.** Report what a face *looks like* ("this face currently looks happy"),
    never claim to know what someone *feels*, and say how sure the reading is.
 3. **Find out what actually works.** Treat every new signal (face shape, motion, talking, voice, pulse) as
