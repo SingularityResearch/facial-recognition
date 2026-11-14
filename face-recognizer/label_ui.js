@@ -317,7 +317,7 @@ function viewPerson(d) {
   const n = d.name, p = person(n);
   if (!d.faces.length) return head(esc(label(n))) + `<div class="empty"><b>No faces named ${esc(label(n))}</b></div>`;
   const autoN = d.faces.filter(f => f[3] === "auto").length;
-  const lede = n === IGN ? "Strangers, artwork and other faces that are never recognized. Select faces and press <kbd>N</kbd> to give them a name instead."
+  const lede = n === IGN ? "Strangers, artwork and other faces that are never recognized. Their pictures and face prints were deleted. Select faces and press <kbd>N</kbd> to give them a name instead: each one's picture and print are then made again from its photo, if that is still on this computer."
     : `${p ? plural(p.usable, "clear face") + " used for recognition" : ""}${autoN ? `, ${autoN} named automatically` : ""}. Faces that look least like ${esc(n)} come first, so mistakes surface at the top.`;
   return `<div class="head">${n !== IGN ? avatar(n).replace("<img", '<img style="width:44px;height:44px;border-radius:50%;object-fit:cover"') : ""}<h2>${esc(label(n))}</h2>
       <span style="color:var(--muted)">${plural(d.faces.length, "face")}</span>
@@ -444,7 +444,9 @@ async function act(action, faces, name, quiet) {
   try {
     const r = await post("/api/act", { action, faces, name });
     faces.forEach(i => sel.delete(i));
-    if (!quiet) done(r.undo);
+    // Ignored faces have no picture or print left; one whose photo isn't here to make them again stays as it is
+    const left = r.skipped ? ` ${plural(r.skipped, "face")} couldn't be changed: ignoring deleted ${r.skipped === 1 ? "its picture, and its photo isn't" : "their pictures, and their photos aren't"} on this computer to make ${r.skipped === 1 ? "it" : "them"} again.` : "";
+    if (!quiet || left) done(r.undo + (left && ".") + left);
   } catch (e) { toast(e.message, true); render(); }
 }
 async function done(msg) { await loadSummary(); await render(); toast(msg, false, true); }
@@ -580,7 +582,7 @@ $("#pdexport").onclick = async () => {
 $("#pdforget").onclick = async () => {
   const typed = $("#pdconfirm").value.trim();
   if (typed !== pdName) return ($("#pderr").textContent = `Type ${pdName} exactly to confirm.`);
-  if (!confirm(`Forget ${pdName} everywhere? This deletes their face prints, pictures and every record naming them, and can't be undone.`)) return;
+  if (!await askUser(`Forget ${pdName} everywhere? This deletes their face prints, pictures and every record naming them, and can't be undone.`, "Forget")) return;
   try {
     const r = await post("/api/person/forget", { name: pdName, confirm: typed });
     $("#persondlg").classList.remove("on");

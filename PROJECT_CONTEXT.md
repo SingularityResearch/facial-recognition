@@ -717,6 +717,7 @@ first-start downloads; only the latest app release is kept):
 | v1.22 | Nov 13 | Released for Windows, macOS and Linux: everything in 1.21 to 1.21.4 (built and run on the three devices first), and more from the review: Start again never loads a second copy of a program; the sync follows a change of the connection settings; the window watchdog stops when there is no window; a person left in no label can still be exported and forgotten; the server-side forget is repeated daily and clears photo-tag names; LM Studio model names and model lists from the network are checked; overlapping camera and microphone starts; a merge leaves no face that is and isn't the same person; copies of copies; client disconnects and OpenCV's per-detector warning no longer fill the logs. |
 | v1.22.1 | Nov 13 | **Fully distributed system** (Settings → LM Studio, off for a new copy; the owner's wish): on, the LM Studio search covers every network adapter and Describe all may use servers beyond the local network. Off, only real adapters count, now on Windows (asked from PowerShell on a thread of its own) and macOS too, not just Linux. Linux: numpy's maths (OpenBLAS) kept to one thread, set in `app.py` before numpy loads: in the packed app a matrix product in the labeling tool got stuck for good in 2 starts of 4, freezing the Labeling tab and the sync (6 of 6 clean with one thread). |
 | v1.22.2 | Nov 13 | Released for Windows, macOS and Linux (run on the three devices first). The passphrase for keys is no longer sealed to every row in `devices`: a device gets it typed, or with a one-time code typed on a device that has it (db/011: `key_proof`, version `link`, `key_requests`); a device that typed it reads the shared keys at once; restore only of versions the device held. The LM Studio restart passes `--cors` only when LM Studio's own settings have it on. The three servers keep connections open (HTTP/1.1): on Windows one request in a thousand had failed on a new connection each time (§10). |
+| v1.22.3 | Nov 14 | Released for Windows, macOS and Linux, with installers for the first time (the Windows and Linux ones run on the three devices first; the macOS .dmg only built, as there is no Mac to try it on). Five bugs from §10's list: an Ignored face that is named, or taken off the Ignored list, gets its print and picture made again from its photo (and faces left without them by older versions are mended at start); a moved video is found again like a photo; a Cameras page left open in a browser shows frames again after its tracker restarts; Ctrl+1 to Ctrl+4 work from inside a tab; questions are asked in the page (`ask.js`) instead of with `confirm()`, which stopped the camera and made the watchdog restart the app. Also (the owner's wish, 2026-11-14): the app's own icon (`icons/`, drawn by `tools/make_icon.py`: a faceted face, half solid and half mesh, in a camera's corner marks) on the .exe, the .app, the Linux window and each page's browser tab, and installers that put the app in place with icons, none needing administrator rights (`build_exe.py --installer`): `FaceRecognizer-Setup-x64.exe` (Inno Setup; Start menu and desktop icons; into `%LOCALAPPDATA%\Programs\FaceRecognizer` or a folder the user picks, as the app writes `models\` and `data\` beside itself), `FaceRecognizer-macos-arm64.dmg` (drag to Applications) and `FaceRecognizer-linux-x64.run` (installs itself for the user, with a menu entry and a desktop icon). No installer ever deletes `models` or `data`. The portable .zip and .tar.gz stay beside them. And from the NAS's camera gone for six hours that day (§10): **Keep this camera running** counts a camera as running only when its picture arrives, escalates starts that are refused as well as ones that hang, and says in `app.log` what it did (`/api/page-note`); `app.log` gets the memory of the window's processes every half hour (`note_memory`). |
 
 ---
 
@@ -1010,9 +1011,40 @@ Open after the 2026-11-12 review and v1.22 (not fixed yet):
   nothing in TimeWait. Linux was not affected by the failures, but kept-open connections showed a second thing
   there: an answer written as headers and then body waited about 40 ms for the page's acknowledgement (41 ms a
   request, the stream at 15 frames a second); answers now leave in one piece with TCP_NODELAY (0.1 ms).
-- Naming or un-ignoring an Ignored face leaves a face without print or picture; a moved video is never re-pointed;
-  a Cameras tile can stay frozen after its tracker restarts in a browser; Ctrl+1..4 don't reach the tab bar from
-  inside a tab; an open confirm() dialog looks like a frozen page to the watchdog.
+- Fixed in v1.22.3 (2026-11-14; see Releases), five from this list:
+  - Naming an Ignored face, or taking it off the Ignored list, left it without print or picture. `LabelDB.act` now
+    makes both again from the photo (`remake`: `rebuild_crop`, then the models; checked with the real models: the
+    new print's cosine to the deleted one was 0.977, 0.07 s). A face whose photo isn't here, or isn't found in it
+    again, stays as it is and the page says so; Undo deletes both again. Faces already left like that are listed at
+    the labeling tool's start, before the sync starts (while it runs, a face another device just ignored is for a
+    moment printless and not yet Ignored), and mended after the search for moved photos (`lost_prints`, `mend`).
+    Still open: one whose photo is gone can only be Ignored again, and without a name it shows in no list.
+  - A moved video was never found again: the search by name and size in the photo folders listed pictures only.
+  - A Cameras tile stayed frozen after its tracker started again while the page stayed open in a browser: frame
+    numbers start again with the program (and a relay's when it is made again after `IDLE`), and the page kept
+    asking for frames after its old, higher number. `peek` now takes a number above its own as none.
+  - Ctrl+1 to Ctrl+4 pressed inside a tab never reached the tab page: the pages in the tabs pass them on
+    (`settings_bridge.js`, `fs: "key"`; the Cameras page loads the bridge for this). Opening Settings that way
+    also takes the keyboard out of the now hidden tab.
+  - `confirm()` stopped every script of the window (the tabs share one process): the camera, its stream, and the
+    tab page's `/alive`, so a question left open 30 s looked like a frozen page to the watchdog (a restart on
+    Windows after 60 s). The six questions are asked in the page now (`ask.js`, `askUser`), and a test keeps
+    `confirm`, `alert` and `prompt` out of the page scripts.
+- 2026-11-14, the NAS's camera gone for six hours (v1.22.2, started 20:50 UTC the day before; its desktop session
+  disconnected as usual). At 11:31:40 UTC the window's page renderer ran out of memory (WebView2 `ProcessFailed`,
+  reason OutOfMemory; Windows Error Reporting: msedgewebview2.exe, renderer, 0xe0000008), after frame gaps of 5 to
+  8 s in the minute before. The app loaded the page again and logged that; after it, no frame came from the page
+  until the app was restarted at 18:09 (the other devices were answered "not streaming"), and nothing more was
+  logged. The window watchdog saw nothing wrong, so the tab page ran. Ending the renderer by hand recovers within
+  3 s on the PC and on the NAS (tried on both), so the out-of-memory case took a path the tests don't: the camera
+  check trusted any opened camera, and never escalated a start that is refused at once. Fixed in 1.22.3: running
+  means the picture arrives, refused starts escalate too, and each step is logged (`/api/page-note`).
+  **Still open: why the page grows.** `app.log` now has a memory line every half hour (`note_memory`); read the
+  slope there after a day. First numbers: the renderer holds about 1 GB of working set within ten minutes of a
+  start on the PC and the NAS.
+- The Windows installer run while the app was open (first try, on the NAS): Restart Manager closed the app's
+  second process, could not close the first, and Setup stopped ("unable to automatically close all applications"),
+  leaving the app dead. `CloseApplications=no` and the script's own `CloseApp` since.
 - The changes log is never pruned; `photo_paths` has no index on `hash`; devices on different recognition models
   overwrite each other's prints; a failed local forget is recorded as done.
 - Linux: after the watchdog's restart in place the window's DevTools port stays dead (testing only), and one camera

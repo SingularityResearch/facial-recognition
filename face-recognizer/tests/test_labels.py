@@ -56,12 +56,95 @@ def test_bad_changes_are_refused(data, action, idx, name):
     assert db.labels == {}
 
 
-def test_ignore_and_clear(data):
+class Models:                                    # stands in for face_id.Faces: a print and a quality from a picture
+    def embed(self, crop):
+        v = np.zeros(512, np.float32)
+        v[int(crop[0, 0, 0])] = 1.0
+        return v
+
+    def quality(self, crop):
+        return 0.8
+
+
+def photos_here(db, monkeypatch, here=None):
+    """The photos of faces `here` (every face, when None) are on this computer: their faces are found in them again."""
+    monkeypatch.setattr(F, "rebuild_crop", lambda store, i, faces=None:
+                        None if here is not None and i not in here else np.full((112, 112, 3), 40 + i, np.uint8))
+    db.models = Models
+
+
+def test_ignore_and_clear(data, monkeypatch):
     db = db_with_faces(data)
+    photos_here(db, monkeypatch)
     db.act("ignore", [3], None)
     assert db.name(3) == L.IGNORE
     db.act("clear", [3], None)
-    assert db.rec(3) == {}
+    assert db.rec(3) == {} and not db.printless(3) and db.store.thumbs[3]     # a new face again, with its picture
+
+
+def test_naming_an_ignored_face_makes_its_print_and_picture_again(data, monkeypatch):
+    """Ignore deletes both. A face named afterwards stayed a grey placeholder that never taught the recognizer."""
+    emb = make_faces(data, 6)
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    photos_here(db, monkeypatch)
+    db.act("ignore", [2, 3], None)
+    assert db.act("name", [2], "Ann") == 1
+    assert db.name(2) == "Ann" and not db.printless(2) and db.usable(2) and db.gallery() == {"Ann": [2]}
+    assert db.store.emb[2][42] == 1 and db.store.thumb(2) is not None            # from the photo, by the models
+    s = F.Store()
+    assert s.emb[2][42] == 1 and s.thumbs[2] and s.printless(3)                   # saved; the other stays Ignored
+    assert list(_npz(data / "people.npz")["name"]) == ["Ann"]
+    assert db.undo() == "Named 1 face Ann"                       # Undo: Ignored again, so both are deleted again
+    assert db.name(2) == L.IGNORE and db.printless(2) and db.store.thumbs[2] == b"" and F.Store().printless(2)
+    assert db.undo() == "Ignored 2 faces" and np.allclose(db.store.emb[2], emb[2])    # and the Ignore undone
+
+
+def test_an_ignored_face_whose_photo_is_gone_stays_ignored(data, monkeypatch):
+    db = db_with_faces(data)
+    photos_here(db, monkeypatch, here={3})
+    db.act("ignore", [2, 3], None)
+    assert db.act("name", [2, 3], "Ann") == 1                    # the one that can be made again is named
+    assert db.name(3) == "Ann" and db.name(2) == L.IGNORE and db.printless(2)
+    for action, name in (("name", "Ann"), ("clear", None)):
+        with pytest.raises(ValueError, match="can't be made again"):
+            db.act(action, [2], name)
+    assert db.name(2) == L.IGNORE and db.act("ignore", [2], None) == 1           # Ignoring it is always possible
+    with pytest.raises(ValueError):
+        db.rename(L.IGNORE, "Ann")                               # Ignored isn't a person to rename or merge
+    assert db.act("name", [0, 0], "Bob") == 1 and db.undo() and db.rec(0) == {}   # a face given twice: once
+
+
+def test_faces_left_without_prints_by_older_versions_are_mended(data, monkeypatch):
+    make_faces(data, 6)
+    z = _npz(data / "faces.npz")
+    z["emb"][[2, 3, 4]] = 0                                      # ignored once; then 2 was named, 3 un-ignored
+    np.savez(data / "faces.npz", **z)
+    (data / "labels.json").write_text(json.dumps({"f2": {"n": "Ann", "by": "me"}, "f4": {"n": L.IGNORE, "by": "me"}}))
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    assert db.lost_prints() == [2, 3] and db.gallery() == {}
+    photos_here(db, monkeypatch, here={2, 4})
+    assert db.mend(db.lost_prints()) == 1                        # 3's photo isn't here
+    assert not db.printless(2) and db.gallery() == {"Ann": [2]} and list(_npz(data / "people.npz")["name"]) == ["Ann"]
+    assert db.lost_prints() == [3] and db.printless(4) and F.Store().thumbs[2]
+
+
+def test_a_moved_video_is_found_again_like_a_photo(data, tmp_path, monkeypatch):
+    """Only pictures were looked for by name in the photo folders, so a moved video kept its old path for good."""
+    import relocate
+    new = tmp_path / "library" / "2024"
+    new.mkdir(parents=True)
+    for name in ("clip.mp4", "photo.jpg", "other.mp4"):
+        (new / name).write_bytes(b"x" * (100 if name != "other.mp4" else 7))
+    old = tmp_path / "gone"
+    store = F.Store()
+    store.photos = {"hv": {"path": str(old / "clip.mp4"), "size": 100, "video": True},
+                    "hp": {"path": str(old / "photo.jpg"), "size": 100},
+                    "ho": {"path": str(old / "other.mp4"), "size": 100}}        # same name, another size: not it
+    monkeypatch.setattr(relocate, "_drives", lambda: [])
+    r = relocate.relocate(store, [str(tmp_path / "library")], log=lambda *a: None)
+    assert (r["missing"], r["found"]) == (3, 2)
+    assert store.photos["hv"]["path"] == str(new / "clip.mp4") and store.photos["hp"]["path"] == str(new / "photo.jpg")
+    assert store.photos["ho"]["path"] == str(old / "other.mp4")
 
 
 def _npz(path):

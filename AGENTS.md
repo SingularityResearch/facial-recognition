@@ -38,9 +38,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - `checks`: Node tests, ruff and pytest (no LFS, no models).
   - `database`: the shared-database tests (`pytest -k "facedb or sync"`) against a pgvector service, with
     `FACE_TEST_PG`.
-  - `build`: the app on Windows, macOS and Linux (`build_exe.py --no-copy`, macOS signing when its secrets are set);
-    keeps the `FaceRecognizer-windows-x64`, `-macos-arm64` and `-linux-x64` artifacts 14 days, each with
-    `BUILD-INFO.json` (commit, run, SHA-256, signed).
+  - `build`: the app on Windows, macOS and Linux (`build_exe.py --no-copy`, macOS signing when its secrets are set),
+    then its installer (`--installer-only`; the Linux one is tried there: install, icons, uninstall);
+    keeps the `FaceRecognizer-windows-x64`, `-macos-arm64` and `-linux-x64` artifacts 14 days, each with the app,
+    its installer and `BUILD-INFO.json` (commit, run, both files' SHA-256, signed).
   - Actions are pinned to full commit SHAs, the release in a comment; look new ones up with
     `git ls-remote https://github.com/actions/<name> refs/tags/<tag>`.
 
@@ -65,6 +66,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - A camera that won't start even after a page reload: the tracker page tells the tab page (`fs: "camstuck"`),
     which asks `/restart-app`; `restart_soon` restarts the app at most once every `RESTART_EVERY` (an hour,
     `HOME/restarted.json`), and only in the app window.
+  - `note_memory`: every `MEMORY_EVERY` (30 min) the log gets what the window's processes hold (`window_memory`:
+    this process's descendants; Windows and Linux), so a page that keeps growing shows before it runs out of memory.
   - `clear_graphics_caches`: before the window opens, removes its compiled graphics caches once per new version (a
     stale one froze a newer Qt WebEngine: white window); never Local Storage.
   - `KEEP_RUNNING_FLAGS`: the window's browser runs pages unthrottled in the background (the camera stream needs it),
@@ -84,6 +87,24 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   libraries out, `LINUX_SYSTEM_LIBS`). Run by `build_app.bat` on Windows, by hand on macOS and Linux, and by CI's
   `build` job. Uses `models/` and `data/` beside the app (`face_id.ROOT`). Release steps: face-recognizer/README.md,
   "Building the app".
+  - `--installer` (after the build) and `--installer-only` (from the app in `build/dist`; CI, after signing) make
+    the system's installer (`INSTALLERS`), which puts the app in place and gives it icons, without administrator
+    rights:
+    - Windows `FaceRecognizer-Setup-x64.exe`: Inno Setup 6 (`packaging/windows/FaceRecognizer.iss`; `inno_setup`
+      finds ISCC). Into `%LOCALAPPDATA%\Programs\FaceRecognizer` or a folder the user picks (the app writes
+      `models\` and `data\` beside itself, so never Program Files); Start menu and desktop icons. It installs only
+      the .exe and never deletes anything of the user's: no `[UninstallDelete]`, no deleting code (a test). It
+      closes an open app itself (`CloseApp`: as closing the window does, then by ending it): Windows' Restart
+      Manager can't (the .exe's first process has no window), and closed half of it instead.
+    - macOS `FaceRecognizer-macos-arm64.dmg`: the app beside a link to Applications (`hdiutil`).
+    - Linux `FaceRecognizer-linux-x64.run`: `packaging/linux/install.sh`, the line `__APP__`, then the app's
+      folder as .tar.gz (`linux_installer`). `sh` it: the app in `~/.local/lib/FaceRecognizer`, a menu entry, icons
+      and a desktop icon; `uninstall.sh` there removes them and leaves `~/.local/share/FaceRecognizer`.
+- `icons/` — the app's icon, drawn by `tools/make_icon.py` (a faceted face, half solid and half mesh, in a camera's
+  corner marks; small sizes drawn again with fewer marks) and kept in git: `icon.ico` (the .exe, the installer, each
+  server's `/favicon.ico`: `localguard.Handler.favicon`), `icon.icns` (the .app), `icon.png` and two smaller (the
+  Linux window, `app.WINDOW_ICON`, and launcher). Packed into every build (`ICONS`). Change the drawing, run the
+  script, commit the files.
 - `localguard.py` — what the three servers share:
   - request checks (`refuse_reason`: Host, `Sec-Fetch-Site`, `X-Face-Tool: 1`, Origin);
   - the `Handler` base class (quiet, `send`/`send_json`, `body(limit)`, `refused`; subclasses define `_get`/`_post`;
@@ -103,6 +124,12 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Setting types: toggle, range, select, text, multi, info, button, form. The tab owns no settings itself.
   - Pages also send the tab page notices this way (`SettingsBridge.notify`: alerts, `camstuck`). Served by both
     servers.
+  - It also passes Ctrl+1 to Ctrl+4 pressed inside a tab on to the tab page (`fs: "key"`; a key pressed in a tab
+    never reaches the page around it). The Cameras page loads it for this alone.
+- `ask.js` — `askUser(text, yes)`: a yes-or-no question asked in the page itself (a `<dialog>`), served by all
+  three servers. Pages never use `confirm()`, `alert()` or `prompt()`: those stop every script of the window (the
+  tab page and its tabs share one process), so the camera and its stream stopped and the watchdog took the window
+  for frozen (a test keeps them out).
 - `devicesettings.py` + `page_store.js` — what each page remembers, kept by the page's own server
   (`/api/settings`, `/api/signals`): its settings in `HOME/settings.json`, and each person's usual look and signal
   normals in `HOME/person_signals.json`. `page_store.js` restores them into localStorage first thing (one synchronous
@@ -131,8 +158,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - `photofiles.py` — content hashes, picture fingerprints, online-only cloud files (Windows only), camera dates,
     photo folders.
   - `photofacts.py` — `PhotoFacts`: camera dates + people tags (XMP, Google Takeout), in `data/photo_facts.json`.
-  - `relocate.py` — `migrate` (one-time upgrade to per-face labels) and `relocate` (finds photos that moved, e.g. a
-    changed drive letter, at start).
+  - `relocate.py` — `migrate` (one-time upgrade to per-face labels) and `relocate` (finds photos and videos that
+    moved, e.g. a changed drive letter, at start).
   - `importer.py` — the background photo/video `Importer`:
     - one job at a time (`Importer.begin`); unreadable files kept with the reason (`note_problem`, the page's
       **Why?**);
@@ -178,9 +205,14 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - **Collect faces** saves each collected face + the tracker's verdict to `HOME/webcam/` (`face_id.WEBCAM`); never
     the whole frame: the face with `CAPTURE_MARGIN` (0.6 face widths) around it, the room `face_id.rebuild_crop`
     re-detects in, other faces greyed out. `label_tool.py` imports them by itself and shows the verdict as a clue.
-  - "Keep this camera running" starts the camera within 10 s whenever it isn't running. A start that hangs 30 s
-    counts as failed; after two the page reloads, and if it still hangs the app starts again (`camstuck`, see
-    `app.py`).
+  - "Keep this camera running" starts the camera within 10 s whenever it isn't running. Running means its picture
+    arrives (`stream && running && video.readyState >= 2`), never just that it was opened: a camera opened but not
+    playing was once left like that for six hours. Failed tries: a start that hangs 30 s, a camera on with no
+    picture for 30 s (two of these), or starts refused at once (six: a minute). Then the page reloads, and if the
+    camera still isn't running the app is asked to start again (`camstuck`, see `app.py`; asked at most every
+    `STUCK_EVERY`). Not for a camera that isn't there or isn't allowed (`camAbsent`: "not found" counts only when
+    no camera is listed); a busy one gets the reload only. Each step goes to the log through
+    `/api/page-note` (`tracker.page_note`: printable text, 200 characters, `NOTES_AN_HOUR`).
 - `expression.js` — expression voting, state model, confidence flags, evidence, per-person usual look (browser; served
   by `tracker.py`).
 - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
@@ -348,6 +380,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `setup.sh`, `start.sh`, `label.sh`, `recognize.sh`, `FaceRecognizer.command` — macOS and Linux: a `.venv` with the
   pinned libraries (Linux adds `pywebview[qt]` for the app window), the models, and starting the app (`--browser`
   for the web browser).
+- `packaging/windows/FaceRecognizer.iss`, `packaging/linux/install.sh` — the Windows and Linux installers (see
+  `build_exe.py`).
 - `packaging/macos/` — the app's entitlements (camera, microphone) and `sign_and_notarize.sh`, which CI runs when the
   signing secrets are set (MACOS_CERT_P12_BASE64, MACOS_CERT_PASSWORD, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID,
   APPLE_API_KEY_P8_BASE64).
@@ -359,23 +393,26 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     via `/api/who`), `websearch_check.py`;
   - making models: `get_adaface.py`, `get_wav2small.py`, `get_yunet_dynamic.py` (YuNet with free input sizes, for
     GPU face finding; published in models-v1);
+  - `make_icon.py` (draws the app's icon and writes `icons/`; needs Pillow);
   - shared database: `db_certs.py` (the server's CA and certificate), `db_setup.py` (once per new server: the
     tables and `server_ca`, over verify-ca with that CA), `db_import.py`.
 - `tests/` — `conftest.py` points `FACE_ROOT`/`FACE_HOME` at a temp folder before anything is imported: no models, no
   real data.
   - Node (`*.test.js`): `expression.js`, `signals.js`, `settings_bridge.js`, `page_store.js` (person signals sent
     per person, `refresh`); `pages.test.js`: every page script
-    parses and is served and packed, no inline handlers, no internet fonts.
+    parses and is served and packed, no inline handlers, no internet fonts, no `confirm()`/`alert()`/`prompt()`,
+    and `askUser` (`ask.js`).
   - Servers and security: `test_servers.py` (the three servers on test servers: CSP, CORP, cross-site refusals,
     request sizes, Collect faces, presence log, feeling reports, `/api/who`, no page loading from the internet),
     `test_localguard.py`, `test_certificates.py`.
-  - Labeling and people: `test_labels.py` (naming, Ignore and undo, rename/merge, the empty new-user start, the
-    face-picture migration), `test_persondata.py` (one person's export and forget; Describe all past an unreadable
+  - Labeling and people: `test_labels.py` (naming, Ignore and undo, naming an Ignored face, rename/merge, the empty
+    new-user start, the face-picture migration, a moved video), `test_persondata.py` (one person's export and forget; Describe all past an unreadable
     photo and spread among LM Studio servers), `test_self_attributes.py`.
   - Services and downloads: `test_describe.py`, `test_websearch.py` (keys, caps), `test_fetch_models.py` (against a
     local server), `test_cudasupport.py`, `test_lmstudio.py`, `test_hardware.py`, `test_gpu_choice.py`.
   - App window and tracker: `test_window_watchdog.py`, `test_window_caches.py`, `test_app_log.py`,
-    `test_tracker_reload.py`, `test_skeleton.py`, `test_platforms.py`.
+    `test_tracker_reload.py`, `test_skeleton.py`, `test_platforms.py` (also the icon files, the build's icon
+    options, the Windows installer's rules, and the Linux installer run for real on Linux).
   - Shared database: `test_facedb.py`, `test_sync.py`, with `FACE_TEST_PG` (CI job `database`; each test makes and
     drops its own schema).
   - `test_thresholds.py`: a tripwire on the measured thresholds.
@@ -428,6 +465,8 @@ CI runs all of these (the database tests only with its PostgreSQL service; local
 Every `fetch` in a page script must read its answer (`json()`, `text()`, `arrayBuffer()`) or let it go (`drop(r)`,
 `r.body?.cancel()`): an unread answer keeps a file descriptor open in the page's process, and on Linux the window
 froze when they ran out (ten minutes after a start, found 2026-11-12; `tests/pages.test.js` checks every fetch).
+A page asks a question with `askUser` (`ask.js`), never `confirm()`, `alert()` or `prompt()`: those stop the camera
+and every other script of the window until answered (a test fails on them).
 Keep page code in the `.js` files (no inline `<script>` blocks: a test fails on them), and add any new page file to
 its server and to `PAGES` in `build_exe.py` (a test checks both). Change a measured threshold only together with
 `tests/test_thresholds.py`, after re-measuring.
@@ -557,14 +596,20 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   the older local-time text.
 - Describe photo is local by default. Pointing it at another device (Settings) sends each described photo there; the
   Settings tab must say so (`describe.where`). Descriptions and `describe.json` live in `HOME`.
-- Releases: `FaceRecognizer-win64.zip` (`FaceRecognizer.exe` and a new-user `README.txt`),
+- Releases: the three installers (`FaceRecognizer-Setup-x64.exe`, `FaceRecognizer-macos-arm64.dmg`,
+  `FaceRecognizer-linux-x64.run`), `FaceRecognizer-win64.zip` (`FaceRecognizer.exe` and a new-user `README.txt`),
   `FaceRecognizer-macos-arm64.zip`, `FaceRecognizer-linux-x64.tar.gz` and `SHA256SUMS.txt`, from one CI run's
-  builds of the tagged commit; never `data\`. The macOS app is signed and notarized only once the Apple secrets
+  builds of the tagged commit; never `data\`. An installer never deletes `models` or `data`, on install, update
+  or uninstall. The macOS app is signed and notarized only once the Apple secrets
   are set; say so in the notes until then.
 - The presence log (who was in view, when) is opt-in, names and times only, in `HOME/presence/`, never `data/`.
 - Webcam faces named automatically don't enter the recognition gallery until confirmed (`LabelDB.gallery`).
 - Ignore deletes the face's print and picture (`LabelDB.forget_faces`, `Store.forget`; Undo restores them from memory
   in the same session); only its ID, photo and box stay, which keep the photo from being read again. Faces ignored
   before v1.9 are converted at the labeling tool's start. Code that uses prints must skip `printless` faces.
+  An Ignored face that is given a name or taken off the Ignored list gets both made again from its photo
+  (`LabelDB.act` → `remake`; Undo deletes them again); when the photo isn't on the computer the face stays as it is
+  and the page says so. Only an Ignored face may be without a print (`lost_prints`, `mend`: faces older versions
+  left that way, mended at the labeling tool's start).
 - Collect faces never saves whole frames, only each face with room around it and the others greyed out.
 - InsightFace ArcFace and audEERING Wav2Small weights are non-commercial; note this if the project is ever redistributed.

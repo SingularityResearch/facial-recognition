@@ -11,23 +11,43 @@ On macOS and Linux the models and data live in the user's application data (path
 The one place the build is described: build_app.bat runs it on Windows, and CI's build jobs run it on GitHub's
 Windows, macOS and Linux machines, so all make the same app.
 
-    python build_exe.py            -> build, and on Windows copy FaceRecognizer.exe beside this file
-    python build_exe.py --no-copy  -> build only (CI)
+    python build_exe.py                   -> build, and on Windows copy FaceRecognizer.exe beside this file
+    python build_exe.py --no-copy         -> build only (CI)
+    python build_exe.py --installer       -> build, then make this system's installer too
+    python build_exe.py --installer-only  -> the installer from the app already in build/dist (CI: after signing)
 
-Needs requirements-build.txt installed (on Linux also pywebview[qt], for the app window).
+The installers put the app where it belongs and give it icons (the app's own: icons/, drawn by tools/make_icon.py):
+
+    Windows  build\\dist\\FaceRecognizer-Setup-x64.exe    Inno Setup (packaging/windows/FaceRecognizer.iss): Start menu
+                                                        and desktop icons, no administrator rights
+    macOS    build/dist/FaceRecognizer-macos-arm64.dmg  the app beside a link to Applications, to drag across
+    Linux    build/dist/FaceRecognizer-linux-x64.run    "sh FaceRecognizer-linux-x64.run": the app for this user, in the
+                                                        applications menu and on the desktop (packaging/linux/install.sh)
+
+Needs requirements-build.txt installed (on Linux also pywebview[qt], for the app window); the Windows installer
+needs Inno Setup 6 (winget install -e --id JRSoftware.InnoSetup; GitHub's Windows machines have it).
 """
 import argparse
+import io
+import os
 import plistlib
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 # Every page file the three servers send: packed into the app (a test checks each page's scripts are listed here)
 PAGES = ["tracker_ui.html", "label_ui.html", "app_ui.html", "tracker_ui.js", "label_ui.js", "app_ui.js",
-         "expression.js", "signals.js", "settings_bridge.js", "page_store.js", "cameras_ui.html", "cameras_ui.js"]
+         "expression.js", "signals.js", "settings_bridge.js", "page_store.js", "cameras_ui.html", "cameras_ui.js",
+         "ask.js"]
+# The app's icon, made by tools/make_icon.py: packed into the app too (the pages' favicon, the Linux window and
+# launcher), in a folder of the same name
+ICONS = ["icon.ico", "icon.png", "icon-256.png", "icon-64.png"]
+INSTALLERS = {"win32": "FaceRecognizer-Setup-x64.exe", "darwin": "FaceRecognizer-macos-arm64.dmg",
+              "linux": "FaceRecognizer-linux-x64.run"}
 EXCLUDE = ["torch", "torchvision", "torchaudio", "torchgen", "tensorflow", "pandas", "IPython"]
 BUNDLE_ID = "io.github.singularityresearch.facerecognizer"
 MACOS_MIN = "14.0"                     # onnxruntime's macOS wheels need macOS 14 (Apple Silicon only)
@@ -47,11 +67,13 @@ def command(platform=sys.platform):
            "--name", "FaceRecognizer", "--workpath", "build", "--distpath", str(Path("build") / "dist"),
            "--specpath", "build"]
     if platform == "win32":
-        cmd.append("--onefile")
+        cmd += ["--onefile", "--icon", str(HERE / "icons" / "icon.ico")]
     elif platform == "darwin":
-        cmd += ["--osx-bundle-identifier", BUNDLE_ID]
+        cmd += ["--osx-bundle-identifier", BUNDLE_ID, "--icon", str(HERE / "icons" / "icon.icns")]
     for f in PAGES:
         cmd += ["--add-data", f"{HERE / f}{sep}."]
+    for f in ICONS:
+        cmd += ["--add-data", f"{HERE / 'icons' / f}{sep}icons"]
     cmd += ["--add-data", f"{HERE / 'db'}{sep}db"]          # the shared database's schema (facedb.migrate)
     cmd += ["--collect-all", "mediapipe", "--collect-all", "onnxruntime", "--collect-submodules", "webview",
             "--hidden-import", "sklearn.cluster", "--collect-all", "psycopg_binary", "--hidden-import", "pgvector.psycopg"]
@@ -93,15 +115,77 @@ def finish_macos_app(app, ver):
     plist.write_bytes(plistlib.dumps(info))
 
 
+# ---- installers -------------------------------------------------------------------------------------------------
+def inno_setup(env=os.environ):
+    """Inno Setup's compiler (ISCC.exe), or None: on the PATH, or where its own installer puts it."""
+    places = [Path(env[v]) / "Inno Setup 6" / "ISCC.exe" for v in ("ProgramFiles(x86)", "ProgramFiles") if env.get(v)]
+    if env.get("LOCALAPPDATA"):                      # installed for one user (winget --scope user)
+        places.append(Path(env["LOCALAPPDATA"]) / "Programs" / "Inno Setup 6" / "ISCC.exe")
+    return shutil.which("iscc") or next((str(p) for p in places if p.is_file()), None)
+
+
+def windows_installer(dist, ver):
+    """FaceRecognizer-Setup-x64.exe from dist/FaceRecognizer.exe (packaging/windows/FaceRecognizer.iss)."""
+    iscc = inno_setup()
+    if not iscc:
+        sys.exit("The Windows installer needs Inno Setup 6: winget install -e --id JRSoftware.InnoSetup")
+    subprocess.run([iscc, "/Qp", f"/DAppVersion={ver}", f"/O{dist}",
+                    str(HERE / "packaging" / "windows" / "FaceRecognizer.iss")], cwd=HERE, check=True)
+    return dist / INSTALLERS["win32"]
+
+
+def macos_installer(dist):
+    """FaceRecognizer-macos-arm64.dmg: the app beside a link to Applications, the usual way to install on a Mac.
+    Made after signing: the .app inside carries the signature and Apple's ticket."""
+    out, stage = dist / INSTALLERS["darwin"], dist / "dmg"
+    shutil.rmtree(stage, ignore_errors=True)
+    stage.mkdir(parents=True)
+    subprocess.run(["ditto", str(dist / "FaceRecognizer.app"), str(stage / "FaceRecognizer.app")], check=True)
+    os.symlink("/Applications", stage / "Applications")
+    out.unlink(missing_ok=True)
+    subprocess.run(["hdiutil", "create", "-volname", "Face Recognizer", "-srcfolder", str(stage), "-ov",
+                    "-format", "UDZO", str(out)], check=True)
+    shutil.rmtree(stage, ignore_errors=True)
+    return out
+
+
+def linux_installer(folder, out):
+    """A file that installs itself: packaging/linux/install.sh, the line __APP__, then `folder` (the built app) as
+    a .tar.gz. The user's computer needs only sh and tar. Plain Python: made the same on any system."""
+    script = (HERE / "packaging" / "linux" / "install.sh").read_bytes().replace(b"\r\n", b"\n")
+    packed = io.BytesIO()
+    with tarfile.open(fileobj=packed, mode="w:gz") as tar:
+        tar.add(folder, arcname="FaceRecognizer")
+    out = Path(out)
+    out.write_bytes(script.rstrip(b"\n") + b"\n__APP__\n" + packed.getvalue())
+    os.chmod(out, 0o755)
+    return out
+
+
+def installer(dist, platform=sys.platform):
+    """This system's installer, from the app already built in dist."""
+    if platform == "win32":
+        return windows_installer(dist, version())
+    if platform == "darwin":
+        return macos_installer(dist)
+    return linux_installer(dist / "FaceRecognizer", dist / INSTALLERS["linux"])
+
+
 def main():
     ap = argparse.ArgumentParser(description="Build the face recognizer app for this system")
     ap.add_argument("--no-copy", action="store_true", help="leave it in build/dist (don't copy the .exe beside this file)")
+    ap.add_argument("--installer", action="store_true", help="also make this system's installer (see the top of this file)")
+    ap.add_argument("--installer-only", action="store_true", help="only the installer, from the app already in build/dist")
     args = ap.parse_args()
     missing = [f for f in PAGES if not (HERE / f).exists()]
+    missing += [f"icons/{f}" for f in ICONS + ["icon.icns"] if not (HERE / "icons" / f).exists()]
     if missing:
-        sys.exit(f"Missing page files: {', '.join(missing)}")
-    subprocess.run(command(), cwd=HERE, check=True)
+        sys.exit(f"Missing files: {', '.join(missing)}")
     dist = HERE / "build" / "dist"
+    if args.installer_only:
+        print(f"Built {installer(dist)}")
+        return
+    subprocess.run(command(), cwd=HERE, check=True)
     if sys.platform == "win32":
         out = dist / "FaceRecognizer.exe"
     elif sys.platform == "darwin":
@@ -117,6 +201,8 @@ def main():
     if sys.platform == "win32" and not args.no_copy:
         shutil.copy2(out, HERE / out.name)
     print(f"Built {out}")
+    if args.installer:
+        print(f"Built {installer(dist)}")
 
 
 if __name__ == "__main__":

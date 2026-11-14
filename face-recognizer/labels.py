@@ -34,6 +34,9 @@ import face_id as F
 import paths
 
 IGNORE = "#ignore"
+# naming an Ignored face, or taking it off the Ignored list, when its print and picture can't be made again
+NO_PRINT = ("Ignoring a face deleted its picture and face print, and they can't be made again: the photo isn't on "
+            "this computer any more, or the face wasn't found in it again. The face stays as it is.")
 MATCH = F.MATCH          # same setting the live recognizer uses
 AUTO = 0.45              # name a new face automatically at or above this score (measured: 89% of
                          # your labeled faces named with no mistakes; no stranger scored above 0.35) ...
@@ -87,6 +90,7 @@ class LabelDB:
         self.version_faces = 0           # bumps when faces or their prints change (the faceness model trains again)
         self._fj_thread = None
         self.faceness_inline = False     # tests: train the faceness model in the calling thread
+        self.models = F.Faces            # gives the models (remake); the Importer hands over its own, loaded once
         if backup:
             self.backup()
         kept = [i for i in range(self.n) if self.name(i) == IGNORE and not self.store.printless(i)]
@@ -136,6 +140,51 @@ class LabelDB:
         self.version_faces += 1          # the faceness model trains again, in the background (kept meanwhile)
         self.groups = None
         self.changed()
+
+    def remake(self, idx):
+        """Prints and pictures made again from the original photos, for faces that lost theirs to Ignore and are now
+        given a name or taken off the Ignored list: {face: (print, picture, quality)} for those whose photo is on
+        this computer and whose face is found in it again (F.rebuild_crop, about half a second each). Nothing is
+        stored here, and no lock is held."""
+        out, models = {}, None
+        for i in idx:
+            try:
+                crop = F.rebuild_crop(self.store, i)
+            except Exception:
+                crop = None
+            if crop is None:
+                continue
+            if models is None:
+                models = self.models()
+            out[i] = (np.asarray(models.embed(crop), np.float32), crop, float(models.quality(crop)))
+        return out
+
+    def _put_back(self, made):
+        """Store what remake() made and save (under self.lock)."""
+        for i, (emb, crop, q) in made.items():
+            self.store.emb[i] = emb
+            self.store.set_thumb(i, crop)
+            self.store.quality[i] = q
+        self._forgot()
+        self.store.save()
+
+    def lost_prints(self):
+        """Faces without print or picture that aren't Ignored. Before v1.22.3, naming an Ignored face or taking it
+        off the Ignored list left it like that: a grey placeholder that never taught the recognizer, or, without a
+        name, a face in no list at all."""
+        with self.lock:
+            return [i for i in range(self.n) if self.printless(i) and self.name(i) != IGNORE]
+
+    def mend(self, idx):
+        """Give the faces lost_prints() listed their prints and pictures back, from their photos where those are on
+        this computer. Returns how many."""
+        made = self.remake(idx)
+        with self.lock:
+            made = {i: m for i, m in made.items() if self.printless(i) and self.name(i) != IGNORE}
+            if made:
+                self._put_back(made)
+                self.build_people()
+        return len(made)
 
     def rec(self, i):
         return self.labels.get(self.store.fid[i], {})
@@ -680,52 +729,74 @@ class LabelDB:
         name = (name or "").strip() or None
         if action in ("name", "reject") and not name:
             raise ValueError("a name is needed")
-        if action == "name" and name.startswith("#") and name != IGNORE:
+        if action == "name" and name == IGNORE:
+            action = "ignore"                    # the same thing: the print and picture go too
+        if action == "name" and name.startswith("#"):
             raise ValueError("names can't start with #")
+        idx = list(dict.fromkeys(idx))           # a face given twice would be undone to its changed label
         with self.lock:
-            before = []
             for i in idx:                        # all of them first: a bad one mustn't leave the others half done
                 if not (0 <= i < self.n):
                     raise ValueError(f"no face {i}")
+            new = {i: self._relabel(action, self.rec(i), name) for i in idx}
+            # An Ignored face has no print or picture left. One that gets a name, or comes off the Ignored list,
+            # needs them again: else it's a grey placeholder that teaches nothing, or shows in no list at all.
+            lost = [i for i in idx if self.printless(i) and new[i].get("n") not in (IGNORE, self.name(i))]
+        made = self.remake(lost) if lost else {}
+        if len(made) < len(lost):                # those stay as they are; the others are still changed
+            idx = [i for i in idx if i in made or i not in lost]
+            if not idx:
+                raise ValueError(NO_PRINT)
+        with self.lock:
+            if made:
+                self._put_back(made)
+            before = []
             for i in idx:
                 fid = self.store.fid[i]
                 old = self.labels.get(fid)
                 before.append((fid, dict(old) if old else None))
-                r = dict(old or {})
-                if action in ("name", "ignore"):
-                    r["n"] = name if action == "name" else IGNORE
-                    r["by"] = "me"
-                    for k in ("s", "ok"):
-                        r.pop(k, None)
-                    if r.get("not"):
-                        r["not"] = [x for x in r["not"] if x != r["n"]] or None
-                elif action == "reject":
-                    r["not"] = sorted(set(r.get("not") or []) | {name})
-                    if r.get("n") == name:
-                        for k in ("n", "by", "s", "ok"):
-                            r.pop(k, None)
-                elif action == "clear":
-                    for k in ("n", "by", "s", "ok"):
-                        r.pop(k, None)
-                elif action == "confirm":
-                    if r.get("n"):
-                        r["by"] = "me"
-                        r.pop("s", None)
-                elif action == "ok":
-                    r["ok"] = True
-                else:
-                    raise ValueError(f"unknown action {action}")
-                r = {k: v for k, v in r.items() if v}
+                r = self._relabel(action, old, name)
                 if r:
                     self.labels[fid] = r
                 else:
                     self.labels.pop(fid, None)
             self._commit(before, text or self._describe(action, len(idx), name))
+            if made and before:                  # Undo makes them Ignored again: the print and picture go again
+                self.undo_stack[-1]["remade"] = [self.store.fid[i] for i in made]
             if action == "ignore" and before:    # an ignored face's print and picture aren't kept
                 self.undo_stack[-1]["prints"] = self.forget_faces(idx)
         if action == "name" and idx:
             _named_again(name)
         return len(idx)
+
+    @staticmethod
+    def _relabel(action, old, name):
+        """A face's label after `action`, from its label now (old, or None): {} when nothing is left of it."""
+        r = dict(old or {})
+        if action in ("name", "ignore"):
+            r["n"] = name if action == "name" else IGNORE
+            r["by"] = "me"
+            for k in ("s", "ok"):
+                r.pop(k, None)
+            if r.get("not"):
+                r["not"] = [x for x in r["not"] if x != r["n"]] or None
+        elif action == "reject":
+            r["not"] = sorted(set(r.get("not") or []) | {name})
+            if r.get("n") == name:
+                for k in ("n", "by", "s", "ok"):
+                    r.pop(k, None)
+        elif action == "clear":
+            for k in ("n", "by", "s", "ok"):
+                r.pop(k, None)
+        elif action == "confirm":
+            if r.get("n"):
+                r["by"] = "me"
+                r.pop("s", None)
+        elif action == "ok":
+            r["ok"] = True
+        else:
+            raise ValueError(f"unknown action {action}")
+        return {k: v for k, v in r.items() if v}
 
     @staticmethod
     def _describe(action, n, name):
@@ -738,6 +809,8 @@ class LabelDB:
         new = (new or "").strip()
         if not new or new.startswith("#"):
             raise ValueError("give a new name")
+        if str(old).startswith("#"):             # Ignored isn't a person: those faces have no prints to be someone with
+            raise ValueError("that isn't a person's name")
         with self.lock:
             merge = new in self.people_faces()
             before = []
@@ -768,11 +841,14 @@ class LabelDB:
                     self.labels[fid] = old
                 else:
                     self.labels.pop(fid, None)
-            if step.get("prints"):               # Undo of Ignore: the print and picture come back (kept in memory)
+            if step.get("prints") or step.get("remade"):
                 idx_of = {f: i for i, f in enumerate(self.store.fid)}
-                for fid, kept in step["prints"].items():
-                    if fid in idx_of:
+                for fid, kept in (step.get("prints") or {}).items():
+                    if fid in idx_of:            # Undo of Ignore: the print and picture come back (kept in memory)
                         self.store.restore(idx_of[fid], kept)
+                for fid in step.get("remade") or ():
+                    if fid in idx_of and self.labels.get(fid, {}).get("n") == IGNORE:
+                        self.store.forget(idx_of[fid])          # Ignored again: without print or picture, as before
                 self._forgot()
                 self.store.save()
             self._save(f"Undo: {step['text']}", [f for f, _ in step["before"]])

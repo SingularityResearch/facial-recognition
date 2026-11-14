@@ -36,6 +36,33 @@ def test_windows_restarts_without_kill(monkeypatch):
     assert "kill" not in out and "restart" in out
 
 
+def test_the_windows_memory_goes_to_the_log(capsys, monkeypatch):
+    """A page that keeps growing runs out in the end (the NAS's did after 14 hours): the log now says, every half
+    hour, what the window's processes hold. They are this process's descendants."""
+    import subprocess
+    import sys
+    tree = {10: 1, 11: 10, 12: 10, 13: 12, 20: 1, 21: 20, 30: 13, 10_000: 10_000}   # 10: the app; 20: another program
+    assert app.descendants(tree, 10) == [11, 12, 13, 30] and app.descendants(tree, 21) == []
+    assert app.descendants({1: 2, 2: 1}, 1) == [2]                               # a loop in the table ends
+    monkeypatch.setattr(app, "_processes", lambda: (tree, {11: 200 << 20, 12: 50 << 20, 13: 1024 << 20, 10: 3000 << 20}.get))
+    monkeypatch.setattr(app.os, "getpid", lambda: 10)
+    assert app.window_memory() == (3, 1274.0, 1024.0, 3000.0)                     # 30 can't be read: left out
+    app.note_memory()
+    assert capsys.readouterr().out == ("Memory: the window's 3 processes hold 1,274 MB (the largest 1,024 MB), "
+                                       "the app itself 3,000 MB.\n")
+    monkeypatch.setattr(app, "_processes", lambda: ({}, None))                   # a system it can't be read on
+    app.note_memory()
+    assert app.window_memory() is None and capsys.readouterr().out == ""
+    monkeypatch.undo()
+    if sys.platform == "win32" or sys.platform.startswith("linux"):              # for real: this test and a child
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            n, total, largest, own = app.window_memory()
+            assert n >= 1 and 1 < largest <= total < 4000 and 5 < own < 8000
+        finally:
+            child.kill()
+
+
 def test_sleep_is_not_a_freeze(monkeypatch):
     monkeypatch.setattr(app.sys, "platform", "linux")
     st = {}

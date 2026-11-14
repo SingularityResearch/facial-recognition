@@ -51,6 +51,8 @@ def peek(after, watcher):
     Notes the watcher like wait_next."""
     with _cv:
         _watchers[watcher] = time.time()
+        if after > _frame["seq"]:               # a number from before this program started again (a Cameras page
+            after = 0                           # left open in a browser): any frame is new to that page
         if _frame["seq"] > after and _frame["jpeg"] is not None and time.time() - _frame["at"] < FRESH:
             return _frame["seq"], _frame["jpeg"]
         return after, None

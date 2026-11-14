@@ -23,7 +23,13 @@ Everything runs locally. No photos leave your computer, with one exception you s
 
 ## Getting it
 
-- **Just to run it:** download it from the project's GitHub **Releases**: `FaceRecognizer-win64.zip` (Windows: unzip it anywhere and double-click **FaceRecognizer.exe**), `FaceRecognizer-macos-arm64.zip` (macOS 14+ on Apple Silicon: **FaceRecognizer.app**) or `FaceRecognizer-linux-x64.tar.gz` (Ubuntu 22.04+: unpack it and run `FaceRecognizer/FaceRecognizer`). No Python needed. It starts with no faces or names: add your own photos in the Labeling tab (**Add photos**). On first start it downloads the face models (about 243 MB): on Windows into the `models\` folder beside it, on macOS and Linux into your application-data folder (see **macOS and Linux**). After that it works offline.
+- **Just to run it:** download the installer for your system from the project's GitHub **Releases**. Each puts the app in place and gives it icons to start it from; none needs administrator rights or Python.
+  - **Windows:** `FaceRecognizer-Setup-x64.exe`. It installs into `%LOCALAPPDATA%\Programs\FaceRecognizer` (you can choose another folder you may write to) and adds **Face Recognizer** to the Start menu and the desktop. Windows SmartScreen may warn, as the installer isn't code-signed (**More info → Run anyway**). If you already use FaceRecognizer.exe from a folder of your own, choose that folder in the installer: your `data` there is kept and only the program is replaced. If Face Recognizer is open, the installer closes it (and offers to start it again at the end). Uninstall from Windows' **Installed apps**; that leaves the face models and your `data` where they are and tells you where.
+  - **macOS 14+ on Apple Silicon:** `FaceRecognizer-macos-arm64.dmg`. Open it and drag **FaceRecognizer** onto **Applications**; it is then in Launchpad.
+  - **Linux (Ubuntu 22.04+, x86_64):** `sh FaceRecognizer-linux-x64.run`. It installs for you alone into `~/.local/lib/FaceRecognizer` and adds **Face Recognizer** to the applications menu and the desktop (`--no-desktop`: menu only). `sh ~/.local/lib/FaceRecognizer/uninstall.sh` removes it and leaves your data.
+  - **Without installing:** `FaceRecognizer-win64.zip` (unzip it anywhere and double-click **FaceRecognizer.exe**), `FaceRecognizer-macos-arm64.zip` (**FaceRecognizer.app**) or `FaceRecognizer-linux-x64.tar.gz` (unpack it and run `FaceRecognizer/FaceRecognizer`).
+
+  It starts with no faces or names: add your own photos in the Labeling tab (**Add photos**). On first start it downloads the face models (about 243 MB): on Windows into the `models\` folder beside it, on macOS and Linux into your application-data folder (see **macOS and Linux**). After that it works offline.
 - **The code:** install [Git LFS](https://git-lfs.com) first, then `git clone` the repo. The face models are stored with Git LFS. Without it you get small placeholder files instead, and the programs stop with *"Model files weren't downloaded: install Git LFS and run git lfs pull"*. Run `git lfs install` and `git lfs pull` to fix that. `python fetch_models.py` (which setup.bat also runs) downloads just the models.
 - **Download ZIP** on GitHub includes the models: the repository's *Include Git LFS objects in archives* setting is on (since 2026-11-08). Unzip it and run `setup.bat` as above.
 
@@ -32,9 +38,10 @@ Everything runs locally. No photos leave your computer, with one exception you s
 The app also runs on **macOS 14 or later on Apple Silicon** (M1 and later; the recognition libraries have no Intel
 Mac builds) and on **Linux** (built and tested on Ubuntu; x86_64, and ARM from source).
 
-- **Ready-made:** the release's `FaceRecognizer-macos-arm64.zip` (`FaceRecognizer.app`; not yet signed by Apple:
-  right-click it and choose **Open** the first time) and `FaceRecognizer-linux-x64.tar.gz` (unpack it, then run
-  `FaceRecognizer/FaceRecognizer`). To build them yourself, see **Building the app** below.
+- **Ready-made:** the release's `FaceRecognizer-macos-arm64.dmg` (drag the app onto Applications; not yet signed by
+  Apple: right-click it and choose **Open** the first time) and `FaceRecognizer-linux-x64.run`
+  (`sh FaceRecognizer-linux-x64.run` installs it for you with its menu and desktop icons); see **Getting it**. To
+  build them yourself, see **Building the app** below.
 - **From the code:** `./setup.sh` once (a Python 3.12 environment in `.venv` with the pinned libraries and, on Linux,
   the Qt app window; then the models), then `./start.sh`, or double-click `FaceRecognizer.command` on a Mac.
   Python 3.12 first: `brew install python@3.12` (macOS) or `sudo apt install python3.12 python3.12-venv` (Ubuntu).
@@ -64,13 +71,15 @@ Mac builds) and on **Linux** (built and tested on Ubuntu; x86_64, and ARM from s
 
 ## One window: FaceRecognizer.exe (FaceRecognizer.app, FaceRecognizer on Linux)
 
-**FaceRecognizer.exe** opens the face tracker and the labeling tool in one window, with a **Face tracking** tab, a **Labeling** tab, a **Cameras** tab and a **Settings** tab at the top, and the **Alerts** bell beside them (**Ctrl+1** Face tracking, **Ctrl+2** Labeling, **Ctrl+3** Settings, **Ctrl+4** Alerts; the Cameras tab has no shortcut). The Cameras tab shows the live cameras of all your devices and needs a shared database (see [Every camera in one place](#every-camera-in-one-place-cameras-tab)). Inside, the two are still separate programs on their usual ports (8766 and 8765) with the same pages as `recognize.bat` and `label.bat`. The tracker keeps running while you're on the Labeling tab, so **Collect faces for labeling** goes on collecting. If either is already open from its .bat, the tab says so and asks you to close that copy (a copy started on its own doesn't let other pages show it, so the window can't), rather than starting a second one on the same data. Both tabs are ready about 10 seconds after starting; closing the window stops everything.
+**FaceRecognizer.exe** opens the face tracker and the labeling tool in one window, with a **Face tracking** tab, a **Labeling** tab, a **Cameras** tab and a **Settings** tab at the top, and the **Alerts** bell beside them (**Ctrl+1** Face tracking, **Ctrl+2** Labeling, **Ctrl+3** Settings, **Ctrl+4** Alerts, from any tab; the Cameras tab has no shortcut). The Cameras tab shows the live cameras of all your devices and needs a shared database (see [Every camera in one place](#every-camera-in-one-place-cameras-tab)). Inside, the two are still separate programs on their usual ports (8766 and 8765) with the same pages as `recognize.bat` and `label.bat`. The tracker keeps running while you're on the Labeling tab, so **Collect faces for labeling** goes on collecting. If either is already open from its .bat, the tab says so and asks you to close that copy (a copy started on its own doesn't let other pages show it, so the window can't), rather than starting a second one on the same data. Both tabs are ready about 10 seconds after starting; closing the window stops everything.
 
 - **Build it** with **build_app.bat**; see **Building the app** below for the full steps on Windows, macOS and Linux. Or download a ready-made one from GitHub **Releases**.
-- **Keep it in this folder.** The .exe carries only the code and pages. It uses the `models\` and `data\` folders beside it, so it shares labels with the .bat launchers and git. Rebuild it after changing any `.py`, `.html` or `.js` file.
+- **Keep it in this folder.** The .exe carries only the code and pages. It uses the `models\` and `data\` folders beside it, so it shares labels with the .bat launchers and git. (The installer's copy lives in the folder you installed into, with its own `models\` and `data\` beside it.)
+- **Its icon** (a face, half solid and half mesh, inside a camera's corner marks) is drawn by `tools/make_icon.py` into `icons/`: the .exe and the installer on Windows, the .app on macOS, the window and launcher on Linux, and the browser tab of each page. Rebuild it after changing any `.py`, `.html` or `.js` file.
 - **The window** is Edge WebView2 (part of Windows 11), WebKit on macOS, and Qt's web view on Linux. On Windows the camera and microphone are allowed for the Face tracking page without a prompt; macOS asks once for the app. The window remembers each page's options and the per-person baselines in `%APPDATA%\FaceLabels\webview\`, separately from your browser's. Messages and errors go to `%APPDATA%\FaceLabels\app.log`, each line starting with its time in UTC (hours, minutes, seconds), so you can match a freeze or a restart with what else happened then. If a tab couldn't start (for example the first-start model download failed) or stopped answering, its **Start again** button starts that program again inside the window, without closing the app.
 - **The window doesn't stay frozen.** The window's page tells the app every 2 seconds that it's running. If it says nothing for 30 seconds, the app brings it back by itself: on Linux it first stops the page's renderer so the page loads again (the macOS window is WebKit, which has no such step); if the page is still silent 30 seconds later (on Windows, 30 seconds after the first 30), the whole app starts again in place. If it keeps freezing, each restart waits longer than the one before (2 minutes, then 4, 8 ... at most an hour). If the page's renderer crashes, the page is loaded again at once. A computer waking from sleep doesn't count as a freeze. Each of these is noted in `app.log`.
-- **A camera that won't start** with **Keep this camera running** on: after two tries that hang for 30 seconds each, the Face tracking page loads again; if the camera still hangs, the app starts again (at most once an hour, so a camera that is really broken can't keep restarting it).
+- **A camera that won't run** with **Keep this camera running** on. Running means its picture arrives; the page tries again every 10 seconds, and each of these counts as a failed try: a start that doesn't finish in 30 seconds, a camera that was opened but never plays or sends no picture for 30 seconds, and a start that is refused at once. After two of the first kinds, or a minute of refusals, the Face tracking page loads again; if the camera still isn't running after that, the app starts again (at most once an hour, so a camera that is really broken can't keep restarting it). A camera that isn't there or isn't allowed is only tried again, and one that is busy in another program gets the page reload but no restart. What the page did goes to `app.log` as lines starting **Tracker page:**, since nobody may be looking at the page.
+- **Memory in the log.** Every half hour `app.log` gets a line with what the window's processes hold (**Memory: the window's 8 processes hold ... MB**), so a page that keeps growing shows long before it runs out.
 - **Settings** gathers every option in sections: App (version, Check for updates, and buttons that open the `data` folder and `%APPDATA%\FaceLabels`), Face tracking (camera, display, expression, voice/pulse/posture, recognition, which also has **Keep this camera running** and **Stream this camera to my other devices**, alerts: tick who to be alerted about in a list of everyone known, plus Unknown; and the presence log), Labeling (the face lists), Labeling: Web search (enter or remove your own keys), Labeling: Describe photo (which model describes photos, sharing Describe all with your other computers; download the built-in one), LM Studio (this computer's and the network's LM Studio servers, getting the same models, the shared models folder, the AI model apps found), This computer (the processor, memory, graphics processors and NPU the app found, and where each job runs: see **Your hardware: what the app uses**; on Linux with an NVIDIA card, **Download CUDA support**) and Shared database (connecting to it, sharing photos with your other devices, copying settings from another device, the passphrase for keys: see **Sharing between your devices**). Changes apply at once and are remembered between runs; sections with switches and choices have **Reset to defaults**. Saved keys and the database password show masked; hold the eye button beside one to see it. Every setting, what it is for and its default: [docs/SETTINGS.md](../docs/SETTINGS.md). The same options stay on the Face tracking and Labeling tabs too, and the two always agree.
 - **Check for updates** (top right of the window) asks GitHub for the latest release, only when you click it, and offers to open its download page if it's newer.
 - **If the camera is "busy" or missing**, another app has it, often the tracker still open in a browser tab, which starts the camera by itself. Close that tab (or the other app) and press **Start camera** again.
@@ -106,7 +115,14 @@ real ones (`fetch_models.py`). `data` isn't in the repository: it's created empt
 4. **Try it.** Double-click `FaceRecognizer.exe`. Both tabs should be ready in about 10 seconds. If a tab says it
    couldn't start, the reason is in `%APPDATA%\FaceLabels\app.log`.
 
-The .exe isn't code-signed, so Windows SmartScreen may warn the first time it runs (**More info → Run anyway**).
+5. **The installer (optional):** `python build_exe.py --no-copy --installer` also makes
+   `build\dist\FaceRecognizer-Setup-x64.exe` with [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+   (`winget install -e --id JRSoftware.InnoSetup`; the script is `packaging\windows\FaceRecognizer.iss`).
+   `--installer-only` makes it from the .exe already in `build\dist`. The installer copies only the .exe, makes the
+   Start menu and desktop icons, and never touches `models\` or `data\`.
+
+Neither the .exe nor the installer is code-signed, so Windows SmartScreen may warn the first time each runs
+(**More info → Run anyway**).
 
 #### macOS 14+ on Apple Silicon → `FaceRecognizer.app`
 
@@ -128,6 +144,9 @@ The .exe isn't code-signed, so Windows SmartScreen may warn the first time it ru
    camera and microphone entitlements in `packaging/macos/entitlements.plist`) and has Apple notarize it. It reads the
    certificate and an App Store Connect API key from the environment variables listed at its top; CI does this by
    itself once they're set as repository secrets.
+6. **The installer (optional):** `.venv/bin/python build_exe.py --installer-only` makes
+   `build/dist/FaceRecognizer-macos-arm64.dmg` from the app in `build/dist` (after signing, if you sign): the app
+   beside a link to Applications.
 
 The built app keeps its models and `data` in `~/Library/Application Support/FaceRecognizer` and what's private to you
 in `~/Library/Application Support/FaceLabels` (a signed app can't change itself).
@@ -152,6 +171,10 @@ in `~/Library/Application Support/FaceLabels` (a signed app can't change itself)
 4. **Try it:** `build/dist/FaceRecognizer/FaceRecognizer`. To share it, pack the folder:
    `tar czf FaceRecognizer-linux-x64.tar.gz -C build/dist FaceRecognizer`. A build runs on the Ubuntu release it was
    built on and later ones, so build on the oldest you want to support (CI uses 22.04).
+5. **The installer (optional):** `.venv/bin/python build_exe.py --installer-only` makes
+   `build/dist/FaceRecognizer-linux-x64.run`: `packaging/linux/install.sh` with the app's folder packed behind it.
+   `sh FaceRecognizer-linux-x64.run` installs it for the user who runs it (no sudo): the app in
+   `~/.local/lib/FaceRecognizer`, a menu entry, icons and a desktop icon.
 
 The built app keeps its models and `data` in `~/.local/share/FaceRecognizer` and what's private to you in
 `~/.local/share/FaceLabels`. If its window can't draw (no working OpenGL), it opens in your web browser instead.
@@ -159,9 +182,11 @@ The built app keeps its models and `data` in `~/.local/share/FaceRecognizer` and
 #### Builds on GitHub, and making a release
 
 Every push builds the app on GitHub's Windows, macOS and Linux machines once the tests pass on all three
-(`.github/workflows/checks.yml`). Each run keeps, for 14 days, `FaceRecognizer-windows-x64` (the .exe),
-`FaceRecognizer-macos-arm64` (the zipped .app; signed and notarized when the repository's signing secrets are set) and
-`FaceRecognizer-linux-x64` (the .tar.gz), each with `BUILD-INFO.json` (commit, run, SHA-256). Download one with
+(`.github/workflows/checks.yml`). Each run keeps, for 14 days, `FaceRecognizer-windows-x64` (the .exe and
+`FaceRecognizer-Setup-x64.exe`), `FaceRecognizer-macos-arm64` (the zipped .app and the .dmg; signed and notarized when
+the repository's signing secrets are set) and `FaceRecognizer-linux-x64` (the .tar.gz and the .run installer, which
+the run also tries: install, check the menu entry and icons, uninstall), each with `BUILD-INFO.json` (commit, run,
+and the SHA-256 of both files). Download one with
 `gh run download <run id> -R SingularityResearch/facial-recognition -n FaceRecognizer-linux-x64`, or, with an older
 `gh` that refuses that ("would result in path traversal"), with
 `gh api repos/SingularityResearch/facial-recognition/actions/artifacts/<artifact id>/zip > build.zip`.
@@ -169,10 +194,11 @@ Every push builds the app on GitHub's Windows, macOS and Linux machines once the
 To make a release:
 1. Raise `VERSION` in `app.py` (for example `"1.22"`), commit, push, and wait for the run to pass. Test its builds.
 2. From that run's artifacts: zip `FaceRecognizer.exe` with a short `README.txt` for new users (it isn't in the repository: take it from the previous release's zip and bring it up to date) as
-   `FaceRecognizer-win64.zip`; take `FaceRecognizer-macos-arm64.zip` and `FaceRecognizer-linux-x64.tar.gz` as they
-   are; list their SHA-256 in `SHA256SUMS.txt`. **Never include `data`**: it holds your faces, names and labels. A new
-   user's copy starts empty.
-3. Attach the four files to a release tagged `v1.22` (`v` and the version) at that commit, with notes saying how to start it on each system.
+   `FaceRecognizer-win64.zip`; take the three installers (`FaceRecognizer-Setup-x64.exe`,
+   `FaceRecognizer-macos-arm64.dmg`, `FaceRecognizer-linux-x64.run`), `FaceRecognizer-macos-arm64.zip` and
+   `FaceRecognizer-linux-x64.tar.gz` as they are; list every file's SHA-256 in `SHA256SUMS.txt`. **Never include
+   `data`**: it holds your faces, names and labels. A new user's copy starts empty.
+3. Attach the seven files to a release tagged `v1.22` (`v` and the version) at that commit, with notes saying how to start it on each system.
 
 Leave out the models: the app downloads them on first start (`fetch_models.py`): YuNet, eDifFIQA and the expression
 model from OpenCV Zoo on Hugging Face, the face, pose and hand landmarkers from Google's MediaPipe storage (the hand landmarker only from there; it's optional), ArcFace from
@@ -370,7 +396,7 @@ Double-click **label.bat** (macOS, Linux: `./label.sh`), or run `python label_to
 **Add photos** reads a folder (subfolders too, photos and videos) in the background, using the GPU. It skips photos it has already read, even renamed or moved ones, and copies of photos (re-saved or resized) whose faces match. When a new face clearly matches someone you've named, it's named automatically. The rest wait for you in two lists:
 
 - **Suggestions**: faces the model thinks it knows, per person, least certain first. Click the wrong ones (or drag a box across them), press **R** ("not this person"), then **Accept** the rest.
-- **New faces**: faces that look like nobody you've named, in groups of look-alikes. Name a group, or select some of its faces to name only those. **Ignore** strangers, artwork and tattoos so they aren't asked about again. An ignored face's print and picture are deleted (**Undo** brings them back until the labeling tool is closed); only where it is in its photo is kept, so the photo, or a copy of it, isn't read again and the face doesn't come back. So look-alikes of ignored faces aren't suggested as "ignore" any more, and the ignored list shows grey placeholders. Faces ignored before v1.9 lose their prints and pictures the first time the labeling tool starts. One copy of the face files from just before is kept in `data\backups\before-v1.9-ignore-<date>\` (delete it once you are happy; forgetting a person deletes it too, since it holds everyone's prints).
+- **New faces**: faces that look like nobody you've named, in groups of look-alikes. Name a group, or select some of its faces to name only those. **Ignore** strangers, artwork and tattoos so they aren't asked about again. An ignored face's print and picture are deleted (**Undo** brings them back until the labeling tool is closed); only where it is in its photo is kept, so the photo, or a copy of it, isn't read again and the face doesn't come back. If you later give an ignored face a name (open **Ignored**, select it, **N**), or take it off the Ignored list, its picture and print are made again from its photo; a face whose photo is no longer on this computer can't be made again and stays Ignored, and the message says so. So look-alikes of ignored faces aren't suggested as "ignore" any more, and the ignored list shows grey placeholders. Faces ignored before v1.9 lose their prints and pictures the first time the labeling tool starts. One copy of the face files from just before is kept in `data\backups\before-v1.9-ignore-<date>\` (delete it once you are happy; forgetting a person deletes it too, since it holds everyone's prints).
 
 **Webcam faces**: while it's open, the labeling tool checks `%APPDATA%\FaceLabels\webcam\` every 20 seconds and imports any new face pictures the tracker saved with **Collect faces for labeling**. It does this the same way as **Add photos**: faces it's sure of are named automatically, the rest appear in **Suggestions** or **New faces**, and near-identical pictures are skipped. A webcam face nobody has named shows a **Live tracker** clue with who the tracker thought it was and its match percentage. **Webcam faces named automatically don't teach the recognizer until you confirm them** (in **Named automatically**). Many snapshots of one visit arrive at once, so one wrong automatic name would otherwise make the next snapshots of that person look like the wrong person too.
 

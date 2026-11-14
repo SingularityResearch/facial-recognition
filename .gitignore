@@ -12,6 +12,8 @@ __pycache__/
 # FaceRecognizer.exe build (build_app.bat)
 face-recognizer/build/
 face-recognizer/FaceRecognizer.exe
+# left beside it by the installer (FaceRecognizer-Setup-x64.exe), when this folder is installed into
+face-recognizer/unins000.*
 
 # AdaFace: evaluation only, made locally by tools/get_adaface.py (not shipped)
 face-recognizer/models/adaface_ir101_webface12m.onnx

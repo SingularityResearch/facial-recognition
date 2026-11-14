@@ -37,8 +37,11 @@ under *Face tracking: alerts*.
 
 Not settings, but the app looks after itself: a program that failed or stopped shows **Start again**; a window whose
 page stops answering for 30 s is brought back (and the app starts again in place if it stays silent); and when
-**Keep this camera running** finds the camera start hanging (over 30 s, twice), the tracker page loads again, and if
-it still hangs the app starts again (at most once an hour, in the app window only).
+**Keep this camera running** finds the camera not running (a start hanging over 30 s or a camera on with no picture
+for 30 s, twice; or a minute of starts refused at once), the tracker page loads again, and if it still isn't running
+the app starts again (at most once an hour, in the app window only; not for a camera that isn't there, isn't allowed
+or is busy in another program). What it did is in `app.log` (**Tracker page:** lines), which also gets a line every
+half hour with the memory the window's processes hold.
 
 ---
 
@@ -95,7 +98,7 @@ Signals besides the face's expression, each with its own normal per person when 
 |---|---|---|
 | **Match strictness** | 0.35 (0.20 to 0.60) | How alike a face must be to a known person to be named. Higher: fewer wrong names, more Unknown. 0.35 is the measured best for ArcFace. |
 | **Collect faces for labeling** | off | While a face stays in view, saves a sharp picture of that face every few seconds (up to 12 per face) with who the tracker thinks it is; never the whole frame, other faces greyed out. The Labeling tab adds them by itself, for you to confirm. |
-| **Keep this camera running** | on | Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. A start that hangs is retried as described under [App](#app). Clicking Stop camera turns this off. |
+| **Keep this camera running** | on | Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. A camera that won't run (a start that hangs or is refused, or a camera that is on with no picture) is retried as described under [App](#app). Clicking Stop camera turns this off. |
 | **Stream this camera to my other devices** | on | Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on), with its live readout. Sent all the time at full rate (about 20 frames a second), watched or not, also while the window is minimized; over your local network, encrypted, to your devices only; never stored. Needs a shared database and **Share my photos with my other devices** on (the peer service). |
 
 ## Face tracking: alerts

@@ -7,6 +7,7 @@
 // reports it on this computer (location.ancestorOrigins, which a page can't fake). Which pages may frame this
 // one at all is set by the servers (localguard.FRAME_PARENTS: the app's tab page). Opened on its own
 // (recognize.bat, label.bat) the page has no such window and this does nothing.
+// It also passes the app window's own shortcuts (Ctrl+1 to Ctrl+4) on to the tab page: see the keydown listener.
 //
 // A setting is {section, id, label, type, hint?, def?, get(), set(v)}; type is "toggle", "range" (min, max,
 // step), "select" (options [[value, text]]), "text", "info" (read-only text), "button" or "form" (fields
@@ -81,6 +82,17 @@ const SettingsBridge = (() => {
     const o = origin || framer();
     if (parent !== window && o && local(o)) parent.postMessage({ ...msg, app }, o);
   }
+
+  // Ctrl+1 to Ctrl+4 (the app window's tabs and its Alerts) pressed while this page has the keyboard: the tab page
+  // never sees a key pressed inside one of its tabs, so the page passes it on. Every page in a tab loads this file
+  // for that, the Cameras page too (which has no settings). Opened on its own, the browser keeps its shortcuts.
+  addEventListener("keydown", e => {
+    if (!e.ctrlKey || e.altKey || e.metaKey || !/^[1-4]$/.test(e.key) || parent === window) return;
+    const o = origin || framer();
+    if (!o || !local(o)) return;
+    e.preventDefault();
+    parent.postMessage({ fs: "key", key: e.key, app }, o);
+  });
 
   function init(name, list, acts = {}) {
     app = name; items = list; actions = acts;

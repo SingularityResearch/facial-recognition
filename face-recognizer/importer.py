@@ -51,6 +51,12 @@ class Importer:
         self.job_lock = threading.Lock()          # imports, possible-face scans and Describe all: one at a time
         self._more_cache = {}                     # (photo, frame) -> (image, possible-face rows)
         self._more_lock = threading.Lock()        # a drawn face's detector: one at a time (_points_in)
+        db.models = self._models                  # an Ignored face that's named gets its print from the same models
+
+    def _models(self):
+        if self.faces is None:
+            self.faces = F.Faces()
+        return self.faces
 
     def start(self, folder):
         folder = Path(str(folder).strip().strip('"'))

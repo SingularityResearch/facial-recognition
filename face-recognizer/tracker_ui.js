@@ -315,7 +315,7 @@ function closeAlerts() { $("alertsPanel").hidden = true; $("bellBtn").setAttribu
 $("bellBtn").onclick = () => ($("alertsPanel").hidden ? openAlerts() : closeAlerts());
 $("alertsClose").onclick = closeAlerts;
 document.querySelectorAll("[data-astate]").forEach(b => b.addEventListener("click", () => { alertView = b.dataset.astate; loadAlerts(); }));
-$("alertItems").addEventListener("click", e => {
+$("alertItems").addEventListener("click", async e => {
   const d = e.target.closest("button[data-detail]");
   if (d) {
     openDetail = openDetail === d.dataset.detail ? null : d.dataset.detail;
@@ -324,11 +324,12 @@ $("alertItems").addEventListener("click", e => {
     return;
   }
   const b = e.target.closest("button[data-id]");
-  if (b && (b.dataset.to !== "delete" || confirm("Delete this alert for good?"))) setAlerts({ ids: [b.dataset.id], state: b.dataset.to });
+  // askUser (ask.js), not confirm(): that would stop the camera and its stream until it's answered
+  if (b && (b.dataset.to !== "delete" || await askUser("Delete this alert for good?", "Delete"))) setAlerts({ ids: [b.dataset.id], state: b.dataset.to });
 });
-$("alertsBulk").onclick = () => {
-  const [label, to] = BULK[alertView];
-  if (to !== "delete" || confirm(`${label}? This can't be undone.`)) setAlerts({ where: alertView, state: to });
+$("alertsBulk").onclick = async () => {
+  const where = alertView, [label, to] = BULK[where];          // the list shown when it was asked
+  if (to !== "delete" || await askUser(`${label}? This can't be undone.`, "Delete")) setAlerts({ where, state: to });
 };
 addEventListener("keydown", e => { if (e.key === "Escape" && !$("alertsPanel").hidden) closeAlerts(); });
 function beep() {
@@ -432,7 +433,7 @@ async function listCameras(activeId) {
 // Starts can overlap (the page's own start, the Start button, a change of camera, Keep this camera running): the
 // newest wins, and an earlier one that gets its camera afterwards hands it straight back. Before, that camera stayed
 // open with nothing showing it (its light on after Stop camera), and the two fought over the picture.
-let camGen = 0;
+let camGen = 0, camError = "";             // camError: why the last start failed (an error's name), "" once it runs
 async function startCamera() {
   if (stream) { stopCamera(); return; }
   const mine = ++camGen;
@@ -459,11 +460,13 @@ async function startCamera() {
     // unplugged, or taken by another program: stopped, so "Keep this camera running" starts it again
     stream.getVideoTracks()[0]?.addEventListener("ended", () => { if (stream) stopCamera(); });
     $("camBtn").textContent = "Stop camera";
+    camError = "";
     begin();
   } catch (e) {
     got?.getTracks().forEach(t => t.stop());
     if (mine !== camGen) return;
     stream = null;
+    camError = e?.name || "Error";                        // why, for "Keep this camera running" and the log
     setStatus(e.name === "NotReadableError" ? "That camera is busy in another app. Close it there, or pick another camera."
             : e.name === "NotAllowedError" ? "Camera blocked. Allow camera access for this page and try again."
             : "Couldn't start that camera. Try another one from the list.", "err");
@@ -1234,22 +1237,65 @@ setInterval(async () => {
 }, 5000);
 
 // "Keep this camera running": start it again within 10 s whenever it isn't running (not while a video file plays).
-// A start that never finishes (seen on Linux: the window's camera service didn't start) counts as failed after 30 s;
-// after two, the page loads again, and if the camera still hangs after that, the app starts again (app.py).
-let keepStarting = false, keepHung = 0;
+// Running means its picture arrives. Each of these is a failed try, and what the page does about it goes to the
+// app's log (pageNote), since nobody may be looking at this page:
+//   - a start that never finishes (seen on Linux: the window's camera service didn't start): failed after 30 s;
+//   - a camera that was opened but never played, or is on and sends no picture for 30 s. Before 1.22.3 an opened
+//     camera counted as running, so one that never played was left like that for good (seen on the NAS after its
+//     page ran out of memory and was loaded again: no picture for six hours, and nothing in the log);
+//   - a start that is refused at once (busy, or an error), six times in a row: a minute.
+// After two of the first kinds, or a minute of the last, the page loads again; if the camera still isn't running
+// after that, the app is asked to start again (app.py does at most hourly; asked again every STUCK_EVERY). Not for
+// a camera that isn't there or isn't allowed (camAbsent: nothing here can change that), and a camera busy in
+// another program gets the page reload only.
+const STUCK_EVERY = 600000;
+let keepStarting = false, keepHung = 0, keepFailed = 0, noPicture = 0, camNoted = "", stuckAt = 0;
+// No camera to start: the system refuses it to this page, or says there is none and lists none. "Not found" while
+// one is listed is the camera service gone wrong, which loading the page or starting the app again does cure.
+async function camAbsent() {
+  if (camError === "NotAllowedError") return true;
+  if (camError !== "NotFoundError" && camError !== "OverconstrainedError") return false;
+  try { return !(await navigator.mediaDevices.enumerateDevices()).some(d => d.kind === "videoinput"); } catch { return true; }
+}
+function pageNote(text) {
+  fetch("/api/page-note", { method: "POST", headers: { "Content-Type": "application/json", "X-Face-Tool": "1" },
+                            body: JSON.stringify({ text }) }).then(drop, () => {});
+}
 setInterval(async () => {
-  if (stream) { keepHung = 0; try { sessionStorage.removeItem("camHung"); } catch {} }
-  if (!$("optKeepCam").checked || stream || keepStarting || video.src) return;
-  keepStarting = true;
+  if (!$("optKeepCam").checked || keepStarting || video.src) return;
   let hung = false;
-  try {
-    await Promise.race([startCamera(), new Promise((_, no) => setTimeout(() => { hung = true; no(new Error("hung")); }, 30000))]);
-  } catch {} finally { keepStarting = false; }
-  if (!hung || stream || ++keepHung < 2) return;
-  let reloads = 0;
-  try { reloads = +sessionStorage.getItem("camHung") || 0; sessionStorage.setItem("camHung", String(reloads + 1)); } catch {}
-  if (reloads >= 1) SettingsBridge.notify({ fs: "camstuck" });     // the app window starts the app again
-  else location.reload();
+  if (stream) {
+    if (running && video.readyState >= 2) {              // its picture arrives: all is well
+      if (camNoted) { pageNote("The camera is running again."); camNoted = ""; }
+      noPicture = keepHung = keepFailed = 0;
+      try { sessionStorage.removeItem("camHung"); } catch {}
+      return;
+    }
+    if (++noPicture < 3) return;
+    noPicture = 0; hung = true;
+    const what = running ? "The camera was on but sent no picture for 30 s: starting it again."
+                         : "The camera was opened but didn't start playing in 30 s: starting it again.";
+    if (what !== camNoted) pageNote(camNoted = what);    // once, not every round while it lasts
+    camGen++;                                            // a start still waiting gives up quietly
+    stopCamera();
+  } else {
+    keepStarting = true;
+    try {
+      await Promise.race([startCamera(), new Promise((_, no) => setTimeout(() => { hung = true; no(new Error("hung")); }, 30000))]);
+    } catch {} finally { keepStarting = false; }
+    if (stream) return;                                  // opened: the next rounds look for its picture
+    const why = hung ? "Starting the camera didn't finish in 30 s." : `The camera wouldn't start (${camError || "no reason given"}).`;
+    if (why !== camNoted) pageNote((camNoted = why) + " Trying again every 10 s.");
+  }
+  if (hung ? ++keepHung < 2 : await camAbsent() || ++keepFailed < 6) return;
+  let reloaded = false;
+  try { reloaded = sessionStorage.getItem("camHung") === "1"; sessionStorage.setItem("camHung", "1"); } catch {}
+  if (!reloaded) { pageNote("The camera still isn't running: loading the Face tracking page again."); location.reload(); }
+  else if ((hung || camError !== "NotReadableError") && Date.now() - stuckAt >= STUCK_EVERY) {
+    stuckAt = Date.now();                                // the app window starts the app again
+    pageNote("The camera isn't running after the page was loaded again: asking the app to start again.");
+    SettingsBridge.notify({ fs: "camstuck" });
+  }
 }, 10000);
 
 function applyMirror() { $("stage").classList.toggle("mirror", $("optMirror").checked); }
@@ -1302,9 +1348,9 @@ $("peopleCard").open = recall("people") === "1";             // collapsed unless
 $("peopleCard").ontoggle = () => remember("people", $("peopleCard").open ? "1" : "0");
 $("exprHint").dataset.on = $("exprHint").textContent;
 $("optExpr").onchange = $("optCalib").onchange = $("optEvidence").onchange = renderList;
-$("calibReset").onclick = () => {
+$("calibReset").onclick = async () => {
   const who = $("forgetWho").value;
-  if (!confirm(who ? `Forget everything learned about ${who} (usual look and normal signals)?` : "Forget everything learned about everyone?")) return;
+  if (!await askUser(who ? `Forget everything learned about ${who} (usual look and normal signals)?` : "Forget everything learned about everyone?", "Forget")) return;
   usualLooks.forget(who || undefined); baselines.forget(who || undefined);
   renderForget(); renderList();
 };
@@ -1321,7 +1367,7 @@ $("feelA").oninput = e => $("feelAOut").textContent = e.target.value;
 $("feelEvery").value = recall("feel") || "0";
 $("feelEvery").onchange = () => { remember("feel", $("feelEvery").value); lastAsk = performance.now(); };
 $("testDelete").onclick = async () => {
-  if (!confirm("Delete all saved expression test sessions and feeling reports?")) return;
+  if (!await askUser("Delete all saved expression test sessions and feeling reports?", "Delete")) return;
   try { drop(await fetch("/api/expr-eval/delete", { method: "POST", headers: { "X-Face-Tool": "1" } })); } catch {}
   loadPeople();
 };

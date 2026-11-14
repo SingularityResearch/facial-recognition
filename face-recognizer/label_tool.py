@@ -339,8 +339,10 @@ def make_handler(db, importer):
             try:
                 if path in ("/", "/index.html"):
                     return self.send(PAGE.read_bytes(), "text/html; charset=utf-8")
-                if path in ("/label_ui.js", "/settings_bridge.js", "/page_store.js"):   # the page's script; the Settings tab's bridge
+                if path in ("/label_ui.js", "/settings_bridge.js", "/page_store.js", "/ask.js"):   # the page's scripts
                     return self.send((HERE / path[1:]).read_bytes(), "text/javascript; charset=utf-8")
+                if path == "/favicon.ico":
+                    return self.favicon()
                 if path.startswith("/thumb/"):
                     i = int(path[7:].split(".")[0])
                     if 0 <= i < db.n:
@@ -457,7 +459,9 @@ def make_handler(db, importer):
                     if not (isinstance(faces, list) and all(isinstance(i, int) for i in faces)):
                         raise ValueError("faces must be a list of numbers")
                     n = db.act(str(body.get("action")), faces, body.get("name"))
-                    return self.send({"ok": True, "changed": n, "undo": db.undo_stack[-1]["text"] if db.undo_stack else ""})
+                    # skipped: Ignored faces whose print and picture couldn't be made again (LabelDB.act)
+                    return self.send({"ok": True, "changed": n, "skipped": len(set(faces)) - n,
+                                      "undo": db.undo_stack[-1]["text"] if db.undo_stack else ""})
                 if path == "/api/morefaces":              # look again for faces in one photo (photo view)
                     new = importer.find_more(face_index(body), body.get("box"))
                     return self.send({"ok": True, "new": new})
@@ -772,6 +776,9 @@ def attach(srv):
     db.web_saved, db.web_lock = F.load_json(WEB_SAVED, {}), threading.Lock()
     importer = L.Importer(db)
     srv.RequestHandlerClass = make_handler(db, importer)
+    # Listed before the sync starts: while it runs, a face another device just ignored is for a moment without print
+    # and not yet Ignored here, and must not get its print back.
+    lost = db.lost_prints()
     start_sync(db)
     def find_then_read():
         try:                               # photos that moved (e.g. a drive letter changed): find them first
@@ -784,6 +791,15 @@ def attach(srv):
                 print(f"{r['missing']} photos aren't where they were and weren't found in your photo folders.")
         except Exception as e:             # never stop the tool over this
             print(f"Couldn't look for moved photos: {e}")
+        if lost:                           # Ignored faces named or un-ignored before v1.22.3 (LabelDB.lost_prints)
+            try:
+                n = db.mend(lost)
+                print(f"{len(lost)} faces had no face print or picture left (they were ignored once, then named or "
+                      f"taken off the Ignored list): made again from the photos for {n}"
+                      + ("." if n == len(lost) else f"; the photos of the other {len(lost) - n} aren't on this "
+                         "computer, or the face wasn't found in them again."))
+            except Exception as e:
+                print(f"Couldn't make the missing face prints again: {e}")
         db.facts.start()                   # camera dates and people tags, read in the background
     threading.Thread(target=find_then_read, daemon=True).start()
     threading.Thread(target=watch_webcam, args=(importer,), daemon=True).start()

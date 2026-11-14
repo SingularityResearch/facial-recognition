@@ -178,7 +178,7 @@ def relocate(store, folders, lock=None, log=print):
         for folder in folders:
             if Path(folder).is_dir():
                 log(f"Looking for {len(left)} moved photos in {folder} ...")
-                for p in F.list_media(folder, F.IMAGE_EXT):
+                for p in F.list_media(folder, F.IMAGE_EXT | F.VIDEO_EXT):   # videos too: only photos were looked for
                     index.setdefault(p.name.lower(), []).append(p)
         for h in left:
             for p in index.get(Path(missing[h]["path"]).name.lower(), []):

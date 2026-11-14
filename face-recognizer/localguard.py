@@ -18,8 +18,10 @@ import http.server
 import json
 import sys
 import traceback
+from pathlib import Path
 
 HEADER = "X-Face-Tool"
+ICON = Path(__file__).resolve().parent / "icons" / "icon.ico"    # the app's icon (tools/make_icon.py)
 
 # Pages may be shown in a frame only by themselves and, when app.py started the program in its window, by the
 # window's tab page: app.py adds the tab page's address here (shell_server) before it starts the programs. A
@@ -163,6 +165,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def send_json(self, obj, code=200):
         self.send(obj, code=code)
+
+    def favicon(self):
+        """/favicon.ico: the app's icon (icons/icon.ico), for a browser's tab when a page is opened there."""
+        try:
+            self.send(ICON.read_bytes(), "image/x-icon")
+        except OSError:
+            self.send({"error": "not found"}, code=404)
 
     def body(self, limit, empty=False):
         """The request body (bytes), at most limit - 1 bytes; see body_size. Raises RequestError (a ValueError)."""

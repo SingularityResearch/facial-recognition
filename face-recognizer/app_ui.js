@@ -10,7 +10,9 @@ function show(k) {
   const f = document.getElementById("f-" + k);
   document.getElementById("settings").hidden = k !== "set";
   document.getElementById("wait").hidden = k === "set" || !!f.src;
-  if (k === "set") askAll(); else if (f.src) f.focus();
+  // the keyboard follows the tab: left in a tab that is now hidden, typing would still act on that page
+  if (k !== "set") { if (f.src) f.focus(); }
+  else { askAll(); if (document.activeElement?.tagName === "IFRAME") document.getElementById("tab-set").focus(); }
   try { localStorage.setItem("tab", k); } catch {}
 }
 try { const t = localStorage.getItem("tab"); if (t === "label" || t === "set" || t === "cams") current = t; } catch {}
@@ -67,11 +69,14 @@ async function startAgain(k) {
   }
   poll();
 }
-addEventListener("keydown", e => {               // Ctrl+1 / Ctrl+2 / Ctrl+3 switch tabs, Ctrl+4 the alerts
-  const t = { "1": "track", "2": "label", "3": "set" }[e.key];
-  if (e.ctrlKey && t) { show(t); e.preventDefault(); }
-  if (e.ctrlKey && e.key === "4") { viewAlerts(); e.preventDefault(); }
-});
+// Ctrl+1 / Ctrl+2 / Ctrl+3 switch tabs, Ctrl+4 the alerts. A key pressed inside a tab goes to that tab's page, not
+// to this one: those pages pass these four on (settings_bridge.js, { fs: "key" }; the message listener below).
+function hotkey(key) {
+  const t = { "1": "track", "2": "label", "3": "set" }[key];
+  if (t) show(t); else if (key === "4") viewAlerts();
+  return !!t || key === "4";
+}
+addEventListener("keydown", e => { if (e.ctrlKey && hotkey(e.key)) e.preventDefault(); });
 let newer = false;                               // a newer release was found: the buttons open its download page
 async function checkUpdate() {
   if (newer) return fetch("/open-release", { headers: { "X-Face-Tool": "1" } }).then(drop);
@@ -103,9 +108,11 @@ function act(k, id, args) {
     setTimeout(() => { if (waiting[r]) { delete waiting[r]; res({ ok: false, error: "No answer" }); } }, 30000); });
 }
 addEventListener("message", e => {
-  const k = ["track", "label"].find(k => frame(k).contentWindow === e.source && originOf(k) === e.origin);
+  const k = ["track", "label", "cams"].find(k => frame(k).contentWindow === e.source && originOf(k) === e.origin);
   const m = e.data;
   if (!k || !m) return;
+  if (m.fs === "key") { hotkey(String(m.key)); return; }                 // Ctrl+1 to Ctrl+4 pressed inside a tab
+  if (k === "cams") return;                                               // the Cameras page says nothing else
   if (m.fs === "state") { STATE[k] = m.items; drawPrograms(); }
   if (k === "track" && m.fs === "alerts") alerts(m);
   // a person forgotten in the labeling tool: the tracker page forgets what it learned about them (its browser storage)
@@ -266,7 +273,7 @@ function drawPrograms() {
         const resetable = items.filter(x => x.section === it.section && x.def != null && !x.noReset && ["toggle", "range", "select"].includes(x.type));
         const h = el("h2", { textContent: it.section });
         if (resetable.length) h.append(el("button", { className: "b", textContent: "Reset to defaults", type: "button",
-          onclick: () => { if (confirm(`Reset "${it.section}" to the default settings?`)) for (const x of STATE[k].filter(x => x.section === it.section && x.def != null && !x.noReset && ["toggle", "range", "select"].includes(x.type))) tell(k, { fs: "set", id: x.id, value: x.def }); } }));
+          onclick: async () => { if (await askUser(`Reset "${it.section}" to the default settings?`, "Reset")) for (const x of STATE[k].filter(x => x.section === it.section && x.def != null && !x.noReset && ["toggle", "range", "select"].includes(x.type))) tell(k, { fs: "set", id: x.id, value: x.def }); } }));
         sec.append(h);
       }
       const key = k + ":" + it.id;

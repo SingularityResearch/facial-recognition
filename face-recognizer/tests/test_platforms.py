@@ -61,6 +61,107 @@ def test_the_linux_build_leaves_graphics_libraries_to_the_system(tmp_path):
     assert sorted(p.name for p in tmp_path.iterdir()) == sorted(names[4:])   # private copies and Qt stay
 
 
+def test_the_app_is_built_with_its_own_icon_on_every_system():
+    """icons/ (tools/make_icon.py): the .exe's and the .app's icon, and packed into every build for the pages'
+    favicon, the Linux window and its launcher. Read here without Pillow, as the checks run without it."""
+    import struct
+
+    import build_exe
+    icons = build_exe.HERE / "icons"
+    ico = (icons / "icon.ico").read_bytes()
+    reserved, kind, count = struct.unpack("<HHH", ico[:6])
+    sizes = {ico[6 + 16 * k] or 256 for k in range(count)}
+    assert (reserved, kind) == (0, 1) and sizes == {16, 20, 24, 32, 40, 48, 64, 128, 256}     # small to large: sharp everywhere
+    icns = (icons / "icon.icns").read_bytes()
+    assert icns[:4] == b"icns" and struct.unpack(">I", icns[4:8])[0] == len(icns)
+    for name, side in (("icon.png", 512), ("icon-256.png", 256), ("icon-64.png", 64)):
+        png = (icons / name).read_bytes()
+        assert png[:8] == b"\x89PNG\r\n\x1a\n" and struct.unpack(">II", png[16:24]) == (side, side)
+
+    def after(cmd, flag):
+        return [cmd[i + 1] for i, c in enumerate(cmd) if c == flag]
+    win, mac, linux = (build_exe.command(p) for p in ("win32", "darwin", "linux"))
+    assert after(win, "--icon") == [str(icons / "icon.ico")] and after(mac, "--icon") == [str(icons / "icon.icns")]
+    assert after(linux, "--icon") == []                       # no icon inside a Linux program: the launcher has it
+    for cmd, sep in ((win, ";"), (mac, ":"), (linux, ":")):
+        assert {f"{icons / f}{sep}icons" for f in build_exe.ICONS} <= set(after(cmd, "--add-data"))
+
+
+def test_the_windows_installer_needs_no_administrator_and_never_deletes_data(tmp_path):
+    import build_exe
+    iss = (build_exe.HERE / "packaging" / "windows" / "FaceRecognizer.iss").read_text("utf-8")
+    code = "\n".join(line for line in iss.splitlines() if not line.lstrip().startswith((";", "//")))
+    assert "PrivilegesRequired=lowest" in code and r"{localappdata}\Programs\FaceRecognizer" in code   # the app writes beside itself
+    assert "{autoprograms}" in code and "{autodesktop}" in code and r"SetupIconFile=..\..\icons\icon.ico" in code
+    assert f"OutputBaseFilename={build_exe.INSTALLERS['win32'][:-4]}" in code
+    for never in ("[UninstallDelete]", "[InstallDelete]", "DelTree", "DeleteFile", "RemoveDir"):
+        assert never not in code                               # models\ and data\ are the user's: an uninstall leaves them
+    # the app open while installing: Windows' Restart Manager can't close it (the install stopped), so the script does
+    assert "CloseApplications=no" in code and "function CloseApp" in code and "PrepareToInstall" in code
+    assert [line for line in code.splitlines() if line.startswith("Source:")] == \
+        [r'Source: "..\..\build\dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion']        # only the program
+    made = tmp_path / "Programs" / "Inno Setup 6"
+    made.mkdir(parents=True)
+    (made / "ISCC.exe").write_bytes(b"")
+    assert build_exe.inno_setup({"LOCALAPPDATA": str(tmp_path)}) in (str(made / "ISCC.exe"), build_exe.shutil.which("iscc"))
+
+
+def test_the_linux_installer_is_one_file_that_installs_for_this_user(tmp_path):
+    """build_exe.linux_installer: install.sh, the line __APP__, the app as .tar.gz. Run for real on Linux: the app,
+    its menu entry, icons and desktop icon appear in a home folder of its own; an update replaces the app; the
+    uninstall removes all of it and leaves the models and data alone."""
+    import io
+    import os
+    import subprocess
+    import sys
+    import tarfile
+
+    import build_exe
+    app = tmp_path / "built" / "FaceRecognizer"
+    (app / "_internal" / "icons").mkdir(parents=True)
+    (app / "FaceRecognizer").write_bytes(b"#!/bin/sh\necho started\n")
+    os.chmod(app / "FaceRecognizer", 0o755)
+    for f in build_exe.ICONS:
+        (app / "_internal" / "icons" / f).write_bytes((build_exe.HERE / "icons" / f).read_bytes())
+    run = build_exe.linux_installer(app, tmp_path / build_exe.INSTALLERS["linux"])
+    script, _, packed = run.read_bytes().partition(b"\n__APP__\n")
+    assert script.startswith(b"#!/bin/sh\n") and b"\r" not in script and b"sudo" not in script.replace(b"(no sudo)", b"")
+    with tarfile.open(fileobj=io.BytesIO(packed), mode="r:gz") as tar:
+        assert "FaceRecognizer/FaceRecognizer" in tar.getnames() and "FaceRecognizer/_internal/icons/icon.png" in tar.getnames()
+    if not sys.platform.startswith("linux"):
+        return
+    import platform
+    home = tmp_path / "home"
+    share = home / ".local" / "share"
+    (home / "Desktop").mkdir(parents=True)
+    (share / "FaceRecognizer" / "data").mkdir(parents=True)             # the user's models and data, from before
+    (share / "FaceRecognizer" / "data" / "labels.json").write_text("{}")
+    env = {"HOME": str(home), "PATH": os.environ["PATH"]}
+
+    def sh(*args):
+        return subprocess.run(["sh", *args], env=env, capture_output=True, text=True, timeout=60)
+    r = sh(str(run))
+    if platform.machine() != "x86_64":
+        assert r.returncode == 1 and "x86_64" in r.stdout
+        return
+    assert r.returncode == 0, r.stdout + r.stderr
+    installed, entry = home / ".local" / "lib" / "FaceRecognizer", share / "applications" / "FaceRecognizer.desktop"
+    icon = share / "icons" / "hicolor" / "512x512" / "apps" / "FaceRecognizer.png"
+    text = entry.read_text()
+    assert f'Exec="{installed}/FaceRecognizer"' in text and f"Icon={icon}" in text and "Name=Face Recognizer" in text
+    assert icon.read_bytes() == (build_exe.HERE / "icons" / "icon.png").read_bytes()
+    assert (home / "Desktop" / "FaceRecognizer.desktop").read_text() == text
+    assert subprocess.run([str(home / ".local" / "bin" / "facerecognizer")], capture_output=True, text=True).stdout == "started\n"
+    (installed / "old-file").write_text("from the version before")
+    assert sh(str(run), "--no-desktop").returncode == 0 and not (installed / "old-file").exists()   # an update: all new
+    assert sh(str(run), "--what").returncode == 2
+    r = sh(str(installed / "uninstall.sh"))
+    assert r.returncode == 0 and "left in" in r.stdout
+    assert not installed.exists() and not entry.exists() and not icon.exists()
+    assert not (home / "Desktop" / "FaceRecognizer.desktop").exists() and not (home / ".local" / "bin" / "facerecognizer").exists()
+    assert (share / "FaceRecognizer" / "data" / "labels.json").read_text() == "{}"                 # never touched
+
+
 def test_private_files_are_this_users_alone(tmp_path):
     """Keys and passwords: mode 600 outside Windows (there the folder is the user's own), made that way rather
     than written first and restricted afterwards."""

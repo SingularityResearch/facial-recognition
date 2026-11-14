@@ -27,8 +27,23 @@ function page({ ancestor = "http://127.0.0.1:8764", alone = false } = {}) {
     await listeners.message({ data, origin, source });
     await new Promise(r => setTimeout(r, 0));
   };
-  return { send, posted, get value() { return value; }, parent, bridge: ctx.SettingsBridge };
+  const key = (key, more = {}) => { const e = { key, ctrlKey: true, prevented: false, preventDefault() { e.prevented = true; }, ...more }; listeners.keydown(e); return e.prevented; };
+  return { send, posted, key, get value() { return value; }, parent, bridge: ctx.SettingsBridge };
 }
+
+test("Ctrl+1 to Ctrl+4 pressed inside a tab go to the app window's tab page, and only there", () => {
+  const p = page();
+  assert.deepStrictEqual(["1", "2", "3", "4"].map(k => p.key(k)), [true, true, true, true]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p.posted.map(m => [m.msg.fs, m.msg.key, m.origin]))),
+                         ["1", "2", "3", "4"].map(k => ["key", k, "http://127.0.0.1:8764"]));
+  assert.deepStrictEqual([p.key("5"), p.key("a"), p.key("1", { ctrlKey: false }), p.key("1", { altKey: true })], [false, false, false, false]);
+  assert.strictEqual(p.posted.length, 4);                           // other keys stay with the page
+  const alone = page({ alone: true });                              // opened on its own: the browser's shortcut
+  assert.strictEqual(alone.key("1"), false);
+  const framed = page({ ancestor: "https://evil.example" });        // framed by another site: nothing is told
+  assert.strictEqual(framed.key("1"), false);
+  assert.strictEqual(alone.posted.length + framed.posted.length, 0);
+});
 
 test("answers the app window: state, set and actions", async () => {
   const p = page();

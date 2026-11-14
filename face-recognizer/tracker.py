@@ -39,7 +39,7 @@ HERE = Path(__file__).resolve().parent
 PAGE = HERE / "tracker_ui.html"
 SCRIPTS = {"/expression.js": HERE / "expression.js", "/signals.js": HERE / "signals.js",
            "/settings_bridge.js": HERE / "settings_bridge.js", "/page_store.js": HERE / "page_store.js", "/tracker_ui.js": HERE / "tracker_ui.js",
-           "/cameras_ui.js": HERE / "cameras_ui.js"}
+           "/cameras_ui.js": HERE / "cameras_ui.js", "/ask.js": HERE / "ask.js"}
 CAMERAS_PAGE = HERE / "cameras_ui.html"            # the other devices' live cameras, in a grid (camstream.py, peer.py)
 PEOPLE = F.DATA / "people.npz"
 CALIBRATION = F.DATA / "expr_calibration.json"   # written by tools/expr_eval.py
@@ -191,6 +191,28 @@ def camera_frames(after, watcher, wait=3.0, gather=0.02):
             got = collect()
     errors = {d: r.error for d, r in relays.items() if r.error and not any(g[0] == d for g in got)}
     return got, errors
+
+
+NOTES_AN_HOUR = 60                                 # lines the page may put in the log (page_note)
+_notes = {"lock": threading.Lock(), "hour": None, "n": 0}
+
+
+def page_note(text, now=None):
+    """A line in the log from the tracker page: what it does about a camera that won't run ("Keep this camera
+    running"), which nobody may be there to read on the page. Plain text only (what isn't printable ASCII becomes
+    "?"), at most 200 characters, and at most NOTES_AN_HOUR lines an hour, so a page gone wrong can't fill the
+    log. True if it was logged."""
+    if not isinstance(text, str) or not text.strip():
+        return False
+    hour = int((time.time() if now is None else now) // 3600)
+    with _notes["lock"]:
+        if _notes["hour"] != hour:
+            _notes["hour"], _notes["n"] = hour, 0
+        _notes["n"] += 1
+        if _notes["n"] > NOTES_AN_HOUR:
+            return False
+    print("Tracker page: " + re.sub(r"[^\x20-\x7e]", "?", text.strip())[:200])
+    return True
 
 
 def _forgotten():
@@ -482,6 +504,8 @@ def make_handler(engine):
                 return self.send(SCRIPTS[path].read_bytes(), "text/javascript; charset=utf-8")
             if path == "/cameras":
                 return self.send(CAMERAS_PAGE.read_bytes(), "text/html; charset=utf-8")
+            if path == "/favicon.ico":
+                return self.favicon()
             if path == "/api/cameras":                  # the devices whose cameras can be watched
                 return self.send_json(cameras())
             if path == "/api/cameras/frames":           # every watched camera's next frame, in one request
@@ -534,6 +558,9 @@ def make_handler(engine):
                     if why:                             # the page's last frame didn't get here: why, in the log
                         print(f"Camera: a frame from the tracker page failed ({why[:200]})")
                     return self.send_json({"stream": True, "watchers": camstream.put(self.body(camstream.MAX_FRAME))})
+                if path == "/api/page-note":            # the page's own trouble (its camera won't start), for the log
+                    said = page_note(json.loads(self.body(2000) or b"{}").get("text"))
+                    return self.send_json({"logged": said})
                 if path == "/api/inview":               # who this camera sees now (moved-between-cameras alerts)
                     import camstream
                     b = json.loads(self.body(camstream.MAX_READOUT + 30_000) or b"{}")

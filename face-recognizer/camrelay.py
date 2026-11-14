@@ -48,6 +48,8 @@ class Relay:
         """(seq, jpeg) when there's a frame newer than `after`, else (after, None); never waits."""
         self.used = time.time()
         with self.cv:
+            if after > self.seq:                 # a number from an earlier relay (this one was made after the app
+                after = 0                        # started again, or after IDLE s unwatched): any frame is new
             if self.seq > after and self.jpeg is not None:
                 return self.seq, self.jpeg
             return after, None

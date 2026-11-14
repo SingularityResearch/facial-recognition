@@ -122,6 +122,31 @@ def test_every_answer_says_what_the_page_may_load(label_url, track, shell_url):
         assert h["Cross-Origin-Resource-Policy"] == "same-origin" and h["X-Content-Type-Options"] == "nosniff"
 
 
+def test_the_tracker_page_can_put_its_camera_trouble_in_the_log(track, capsys, monkeypatch):
+    """What "Keep this camera running" does about a camera that won't run (tracker_ui.js pageNote): nobody may be
+    looking at the page, and before, a camera left off for hours left nothing in the log. Plain text, short, capped."""
+    url, _ = track
+    monkeypatch.setitem(tracker._notes, "hour", None)
+    code, _, body = request(url, "/api/page-note", json.dumps({"text": "The camera wouldn't start (NotReadableError)."}).encode())
+    assert code == 200 and json.loads(body) == {"logged": True}
+    assert "Tracker page: The camera wouldn't start (NotReadableError)." in capsys.readouterr().out
+    assert tracker.page_note("line\nbreak \x1b[31m café " + "x" * 500, now=0) is True
+    out = capsys.readouterr().out.strip()
+    assert out.startswith("Tracker page: line?break ?[31m caf? xxx") and len(out) == len("Tracker page: ") + 200
+    assert [tracker.page_note(t) for t in (None, "", "  ", 5, {"a": 1})] == [False] * 5         # not text: nothing
+    said = [tracker.page_note("again", now=7200.0) for _ in range(tracker.NOTES_AN_HOUR + 5)]
+    assert said.count(True) == tracker.NOTES_AN_HOUR and tracker.page_note("next hour", now=10800.0) is True
+    assert request(url, "/api/page-note", b"{}", {"Sec-Fetch-Site": "cross-site"})[0] == 403    # as every POST
+    assert request(url, "/api/page-note", b'{"text": "x"}', {"X-Face-Tool": ""})[0] == 403
+
+
+def test_every_server_shows_the_apps_icon_in_a_browser_tab(label_url, track, shell_url):
+    for url in (label_url, track[0], shell_url):
+        code, h, body = request(url, "/favicon.ico")
+        assert code == 200 and h["Content-Type"] == "image/x-icon" and body == (HERE / "icons" / "icon.ico").read_bytes()
+        assert request(url, "/favicon.ico", headers={"Sec-Fetch-Site": "cross-site"})[0] == 403   # as everything else
+
+
 def test_each_page_gets_only_what_it_uses(label_url, track, shell_url):
     lab, trk, shell = (csp(request(u, "/")[1]) for u in (label_url, track[0], shell_url))
     assert lab["script-src"] == ["'self'"] and lab["img-src"] == ["'self'", "blob:"] and "media-src" not in lab
@@ -533,6 +558,25 @@ def test_one_request_for_every_cameras_frames(monkeypatch):
     assert 0.25 < time.time() - t0 < 2.0                  # woken by the frames, not by the timeout
     assert len(got) == 20 and not errors
     assert tracker.camera_ids("x:1," + ",".join(f"{d}:7" for d in fakes)) == {d: 7 for d in fakes}
+
+
+def test_a_cameras_page_left_open_gets_frames_again_after_a_restart():
+    """Frame numbers start again when the program does (and a relay's when it is made again). A Cameras page left
+    open in a browser still asked for frames after its old, higher number: its tiles stayed frozen."""
+    import threading
+
+    import camrelay
+    import camstream
+    camstream.reset()
+    jpg = b"\xff\xd8 a frame"
+    camstream.put(jpg)                                    # the first frame since the restart: number 1
+    assert camstream.peek(50_000, "page") == (1, jpg)     # the page's number is from before: this frame is new to it
+    assert camstream.peek(1, "page") == (1, None)         # and from then on only newer ones
+    camstream.reset()
+
+    relay = camrelay.Relay.__new__(camrelay.Relay)        # no connection: only what peek looks at
+    relay.cv, relay.seq, relay.jpeg, relay.used = threading.Condition(), 3, jpg, 0.0
+    assert relay.peek(50_000) == (3, jpg) and relay.peek(3) == (3, None) and relay.peek(2) == (3, jpg)
 
 
 def test_settings_and_hardware_answer_while_the_labeling_data_is_busy(data, serve, monkeypatch):

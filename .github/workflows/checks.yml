@@ -132,25 +132,45 @@ jobs:
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
         run: packaging/macos/sign_and_notarize.sh build/dist/FaceRecognizer.app
+      # The installer, which puts the app in place and gives it icons (build_exe.py: Inno Setup on Windows, which
+      # GitHub's Windows machines have; a .dmg on macOS, after signing; a file that installs itself on Linux)
+      - name: Installer
+        run: python build_exe.py --installer-only
+      - name: Try the Linux installer (install, start entry and icons there, uninstall; in a home folder of its own)
+        if: runner.os == 'Linux'
+        run: |
+          export HOME="$RUNNER_TEMP/home" XDG_DATA_HOME=
+          mkdir -p "$HOME/Desktop" "$HOME/.local/share/FaceRecognizer/data"
+          sh build/dist/FaceRecognizer-linux-x64.run
+          test -x "$HOME/.local/lib/FaceRecognizer/FaceRecognizer"
+          grep -q '^Icon=.*FaceRecognizer.png$' "$HOME/.local/share/applications/FaceRecognizer.desktop"
+          test -s "$HOME/.local/share/icons/hicolor/512x512/apps/FaceRecognizer.png" -a -f "$HOME/Desktop/FaceRecognizer.desktop"
+          sh "$HOME/.local/lib/FaceRecognizer/uninstall.sh"
+          test ! -e "$HOME/.local/lib/FaceRecognizer" -a ! -e "$HOME/.local/share/applications/FaceRecognizer.desktop"
+          test -d "$HOME/.local/share/FaceRecognizer/data"
       - name: Package
         shell: bash
         run: |
           cd build/dist
           case "${{ runner.os }}" in
-            Windows) PKG=FaceRecognizer.exe ;;
-            macOS)   PKG=FaceRecognizer-macos-arm64.zip; ditto -c -k --keepParent FaceRecognizer.app "$PKG" ;;
-            Linux)   PKG=FaceRecognizer-linux-x64.tar.gz; tar czf "$PKG" FaceRecognizer ;;
+            Windows) PKG=FaceRecognizer.exe; SETUP=FaceRecognizer-Setup-x64.exe ;;
+            macOS)   PKG=FaceRecognizer-macos-arm64.zip; SETUP=FaceRecognizer-macos-arm64.dmg
+                     ditto -c -k --keepParent FaceRecognizer.app "$PKG" ;;
+            Linux)   PKG=FaceRecognizer-linux-x64.tar.gz; SETUP=FaceRecognizer-linux-x64.run
+                     tar czf "$PKG" FaceRecognizer ;;
           esac
-          python - "$PKG" <<'PY'
+          python - "$PKG" "$SETUP" <<'PY'
           import hashlib, json, os, sys
-          pkg = sys.argv[1]
+          pkg, setup = sys.argv[1:3]
+          sha = lambda f: hashlib.sha256(open(f, "rb").read()).hexdigest()
           info = {"project": "facial-recognition", "system": os.environ["SYSTEM"], "file": pkg,
                   "commit": os.environ["GITHUB_SHA"], "ref": os.environ["GITHUB_REF_NAME"],
                   "run": os.environ["GITHUB_RUN_ID"], "signed": os.environ["SIGNED"] == "true",
-                  "sha256": hashlib.sha256(open(pkg, "rb").read()).hexdigest()}
+                  "sha256": sha(pkg), "installer": setup, "installer_sha256": sha(setup)}
           json.dump(info, open("BUILD-INFO.json", "w"), indent=1)
           PY
           echo "PKG=$PKG" >> "$GITHUB_ENV"
+          echo "SETUP=$SETUP" >> "$GITHUB_ENV"
         env:
           SYSTEM: ${{ matrix.name }}
           SIGNED: ${{ runner.os == 'macOS' && env.HAS_MAC_SIGNING == 'true' }}
@@ -159,6 +179,7 @@ jobs:
           name: FaceRecognizer-${{ matrix.name }}
           path: |
             face-recognizer/build/dist/${{ env.PKG }}
+            face-recognizer/build/dist/${{ env.SETUP }}
             face-recognizer/build/dist/BUILD-INFO.json
           retention-days: 14
           if-no-files-found: error

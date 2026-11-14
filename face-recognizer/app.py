@@ -40,11 +40,12 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 TITLE = "Face Recognizer"
-VERSION = "1.22.2"                                    # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.22.3"                                   # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
 HERE = paths.HERE                                  # the page files (inside the .exe when built)
+WINDOW_ICON = HERE / "icons" / "icon.png"          # the app's icon (tools/make_icon.py), for the Linux window
 
 
 def ports(env=os.environ):
@@ -64,7 +65,8 @@ TOOL_PORTS = range(LABEL_PORT, TRACK_PORT + PORT_TRIES)     # every port the two
 
 # The tab page: app_ui.html (layout and style) and app_ui.js (tabs, status, Settings tab)
 PAGES = {"/": (HERE / "app_ui.html", "text/html; charset=utf-8"),
-         "/app_ui.js": (HERE / "app_ui.js", "text/javascript; charset=utf-8")}
+         "/app_ui.js": (HERE / "app_ui.js", "text/javascript; charset=utf-8"),
+         "/ask.js": (HERE / "ask.js", "text/javascript; charset=utf-8")}      # questions asked in the page (no confirm())
 
 
 def answering(url, app):
@@ -170,6 +172,8 @@ def shell_handler():
             path = self.path.split("?", 1)[0]
             if self.refused(write=path in acts):
                 return
+            if path == "/favicon.ico":
+                return self.favicon()
             if path in PAGES:
                 file, ctype = PAGES[path]
                 return self.send(file.read_text("utf-8").replace("{{VERSION}}", VERSION).encode(), ctype)
@@ -402,6 +406,115 @@ def restart_soon(why):
 
 
 WATCHING = {"on": True}                     # off once there is no app window to watch (the browser is used instead)
+MEMORY_EVERY = 1800                         # s: how often the window's memory goes to the log (note_memory)
+
+
+def descendants(table, root):
+    """The process ids below root in table {pid: parent pid} (root itself not among them)."""
+    kids = {}
+    for pid, parent in table.items():
+        kids.setdefault(parent, []).append(pid)
+    out, todo = set(), list(kids.get(root, []))
+    while todo:
+        p = todo.pop()
+        if p != root and p not in out:
+            out.add(p)
+            todo += kids.get(p, [])
+    return sorted(out)
+
+
+def _processes():
+    """({pid: parent pid} of every process, memory(pid) -> the bytes that process has to itself, or None when it
+    can't be read). Windows and Linux; ({}, None) elsewhere."""
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+
+        class Entry(ctypes.Structure):               # PROCESSENTRY32W
+            _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                        ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD),
+                        ("cntThreads", wintypes.DWORD), ("th32ParentProcessID", wintypes.DWORD),
+                        ("pcPriClassBase", wintypes.LONG), ("dwFlags", wintypes.DWORD),
+                        ("szExeFile", wintypes.WCHAR * 260)]
+
+        class Counters(ctypes.Structure):            # PROCESS_MEMORY_COUNTERS_EX
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [
+                (n, ctypes.c_size_t) for n in ("PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
+                                               "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage",
+                                               "QuotaNonPagedPoolUsage", "PagefileUsage", "PeakPagefileUsage",
+                                               "PrivateUsage")]
+        k.CreateToolhelp32Snapshot.restype = k.OpenProcess.restype = wintypes.HANDLE
+        k.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        k.Process32FirstW.argtypes = k.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(Entry)]
+        k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k.CloseHandle.argtypes = [wintypes.HANDLE]
+        k.K32GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+        snap = k.CreateToolhelp32Snapshot(2, 0)      # TH32CS_SNAPPROCESS
+        if not snap or snap == wintypes.HANDLE(-1).value:
+            return {}, None
+        table, e = {}, Entry()
+        e.dwSize = ctypes.sizeof(Entry)
+        more = k.Process32FirstW(snap, ctypes.byref(e))
+        while more:
+            table[e.th32ProcessID] = e.th32ParentProcessID
+            more = k.Process32NextW(snap, ctypes.byref(e))
+        k.CloseHandle(snap)
+
+        def memory(pid):
+            h = k.OpenProcess(0x1000, False, pid)    # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return None
+            try:
+                c = Counters()
+                c.cb = ctypes.sizeof(Counters)
+                return c.PrivateUsage if k.K32GetProcessMemoryInfo(h, ctypes.byref(c), c.cb) else None
+            finally:
+                k.CloseHandle(h)
+        return table, memory
+    if sys.platform.startswith("linux"):
+        table = {}
+        for d in Path("/proc").iterdir():
+            if d.name.isdigit():
+                try:                                 # "pid (name) state parent ...": the name may hold spaces and )
+                    table[int(d.name)] = int((d / "stat").read_text().rsplit(")", 1)[1].split()[1])
+                except (OSError, ValueError, IndexError):
+                    pass
+
+        def memory(pid):
+            try:
+                for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+                    if line.startswith("RssAnon:"):
+                        return int(line.split()[1]) * 1024
+            except (OSError, ValueError, IndexError):
+                pass
+            return None
+        return table, memory
+    return {}, None
+
+
+def window_memory():
+    """What the app's window uses: (how many processes it has, the MB they have to themselves in all, the MB of the
+    largest, the MB of this process). The window's processes are this one's descendants (the web view's browser,
+    page renderer, graphics and camera processes). None where it can't be read (macOS)."""
+    try:
+        table, memory = _processes()
+        if not table:
+            return None
+        sizes = [m for m in (memory(p) for p in descendants(table, os.getpid())) if m]
+        mb = 1024 * 1024
+        return len(sizes), sum(sizes) / mb, max(sizes, default=0) / mb, (memory(os.getpid()) or 0) / mb
+    except Exception:
+        return None
+
+
+def note_memory():
+    """A line in the log, every MEMORY_EVERY s: a page that keeps growing shows here long before it runs out. The
+    NAS's page did after 14 hours (2026-11-14, a renderer "OutOfMemory"), and nothing had recorded how it grew."""
+    m = window_memory()
+    if m:
+        print(f"Memory: the window's {m[0]} processes hold {m[1]:,.0f} MB (the largest {m[2]:,.0f} MB), "
+              f"the app itself {m[3]:,.0f} MB.")
 
 
 def watch_window():
@@ -410,9 +523,13 @@ def watch_window():
 
     def run():
         st = {}
+        noted = time.monotonic() - MEMORY_EVERY + 120    # the first memory line two minutes after the start
         while WATCHING["on"]:
             time.sleep(5)
             now = time.monotonic()
+            if now - noted >= MEMORY_EVERY:
+                noted = now
+                note_memory()
             what = watch_step(st, now, ALIVE["at"])
             if what == "reset" and ALIVE["at"] is not None:
                 ALIVE["at"] = now
@@ -816,7 +933,12 @@ def main(argv=None):
         allow_more_open_files()
         keep_running_in_background()
         watch_window()                              # a page that stops answering is brought back
-        webview.start(private_mode=False, storage_path=str(HOME / "webview"))
+        # private_mode and storage_path: see above. The window's icon: Windows and macOS take the app's own (set
+        # when it is built); Linux's window toolkits are given it here.
+        start = {"private_mode": False, "storage_path": str(HOME / "webview")}
+        if sys.platform.startswith("linux") and WINDOW_ICON.is_file():
+            start["icon"] = str(WINDOW_ICON)
+        webview.start(**start)
     except Exception:                               # no window toolkit here (e.g. Linux without GTK or Qt)
         traceback.print_exc()
         print("No app window could open here: using the web browser instead.")
