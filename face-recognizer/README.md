@@ -146,7 +146,34 @@ Neither the .exe nor the installer is code-signed, so Windows SmartScreen may wa
    itself once they're set as repository secrets.
 6. **The installer (optional):** `.venv/bin/python build_exe.py --installer-only` makes
    `build/dist/FaceRecognizer-macos-arm64.dmg` from the app in `build/dist` (after signing, if you sign): the app
-   beside a link to Applications.
+   beside a link to Applications. `packaging/macos/sign_and_notarize.sh` takes the .dmg too.
+
+##### Signing the macOS app (once, no Mac needed)
+
+Signed and notarized, the app and its .dmg open on any Mac without the "can't be opened" warning. Apple wants a
+paid developer membership for that; everything after it can be done from Windows or Linux:
+
+1. **Join the Apple Developer Program** at <https://developer.apple.com/programs/enroll/> with your Apple Account
+   (two-factor sign-in on; 99 USD a year). As an individual, your own legal name is what Macs show as the app's
+   developer; as an organization, the organization's (that needs a legal entity, a D-U-N-S number and a website).
+2. **Make the certificate request:** `python tools/apple_signing.py request --email <your Apple Account's address>`.
+   It makes a private key, which stays on this computer (in `%APPDATA%\FaceLabels\apple-signing`, kept as passwords
+   are), and `developer-id.csr` beside it.
+3. **Get the certificate:** at <https://developer.apple.com/account/resources/certificates/add> choose **Developer
+   ID Application**, upload `developer-id.csr`, and download the certificate (`developerID_application.cer`). Only
+   the membership's Account Holder can make this kind.
+4. **Get a key for notarizing:** in [App Store Connect](https://appstoreconnect.apple.com/access/integrations/api),
+   Users and Access → Integrations → App Store Connect API (ask for access there the first time), make a **team
+   key** with the Developer role. Download `AuthKey_<key id>.p8` (it can be downloaded once) and note the **Issuer
+   ID** above the list.
+5. **Hand both to CI:** `python tools/apple_signing.py secrets developerID_application.cer --p8 AuthKey_<key id>.p8
+   --issuer <issuer id>` checks them and sets the repository's five secrets with `gh` (`--check` only checks). From
+   the next push, CI signs the app, has Apple notarize it, builds the .dmg from it and does the same for the .dmg.
+   If Apple refuses, the run prints Apple's log, which names each file it objects to.
+
+Every CI build also runs the built app's own check (`FaceRecognizer --self-test`: it loads every library the app is
+made of and uses each once, and exits with an error if one fails), on macOS after signing: a signed app runs under
+macOS's hardened runtime, which can refuse what an unsigned app loads.
 
 The built app keeps its models and `data` in `~/Library/Application Support/FaceRecognizer` and what's private to you
 in `~/Library/Application Support/FaceLabels` (a signed app can't change itself).

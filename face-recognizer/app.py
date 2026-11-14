@@ -897,8 +897,103 @@ class Stamped:
         return getattr(self.f, name)
 
 
+def self_test():
+    """--self-test: load everything the app is made of and use each part once, with no window, camera, model or
+    network. For trying a build where it was made (CI does, for all three systems): a library left out of the
+    package, or one a signed macOS app's hardened runtime refuses to load, fails here instead of on someone's
+    computer. One line per part in HOME/self-test.txt (and on the console, where there is one). True if all passed."""
+    import importlib
+    lines, good = [], True
+
+    def part(what, use):
+        nonlocal good
+        try:
+            lines.append(f"ok      {what}: {use()}")
+        except BaseException as e:               # a library that can't load may raise anything
+            good = False
+            lines.append(f"FAILED  {what}: {type(e).__name__}: {str(e)[:300]}")
+
+    def numbers():
+        import numpy as np
+        return f"numpy {np.__version__}, {float((np.ones((64, 64), np.float32) @ np.ones((64, 64), np.float32)).sum()):.0f}"
+
+    def pictures():
+        import cv2
+        import numpy as np
+        done, jpg = cv2.imencode(".jpg", np.zeros((32, 32, 3), np.uint8))
+        return f"OpenCV {cv2.__version__}, a {len(jpg)}-byte JPEG, face detector class {hasattr(cv2, 'FaceDetectorYN') and done}"
+
+    def models():
+        import onnxruntime
+        return f"ONNX Runtime {onnxruntime.__version__}: {', '.join(onnxruntime.get_available_providers())}"
+
+    def landmarks():
+        import mediapipe
+        from mediapipe.tasks.python import vision
+        return f"MediaPipe {mediapipe.__version__}, {vision.FaceLandmarker.__name__}"
+
+    def secrets_():
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        box = AESGCM(bytes(32))
+        return "AES-GCM round trip " + str(box.decrypt(bytes(12), box.encrypt(bytes(12), b"text", None), None) == b"text")
+
+    def callback():                              # a function made at run time: what a hardened runtime may forbid
+        import ctypes
+        return f"ctypes callback gives {ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(lambda n: n + 1)(41)}"
+
+    def own():
+        names = ("face_id", "labels", "label_tool", "tracker", "facedb", "dbsync", "dbsync_home", "peer", "secretbox",
+                 "describe", "websearch", "hardware", "lmstudio", "persondata", "exprlog", "camrelay", "cudasupport")
+        for n in names:
+            importlib.import_module(n)
+        return f"{len(names)} modules"
+
+    def packed():                                # every file the three servers send, and the database's steps
+        import facedb
+        import label_tool
+        import tracker
+        files = {f for f, _ in PAGES.values()} | set(tracker.SCRIPTS.values()) | {
+            tracker.PAGE, tracker.CAMERAS_PAGE, label_tool.PAGE, HERE / "label_ui.js", localguard.ICON, WINDOW_ICON}
+        steps = len(list(facedb.SQL_DIR.glob("*.sql")))
+        missing = sorted(f.name for f in files if not f.is_file()) + ([] if steps else ["db/*.sql"])
+        if missing:
+            raise FileNotFoundError(", ".join(missing))
+        return f"{len(files)} page and icon files, {steps} database steps"
+
+    def window():
+        import webview
+        if sys.platform == "darwin":             # the window toolkit itself only where signing may stop it
+            importlib.import_module("webview.platforms.cocoa")
+        return f"pywebview {getattr(webview, '__version__', '')}".strip()
+
+    for what, use in (("numbers", numbers), ("pictures", pictures), ("recognition models", models),
+                      ("face landmarks", landmarks), ("clustering", lambda: importlib.import_module("sklearn.cluster").__name__),
+                      ("database", lambda: f"psycopg {importlib.import_module('psycopg').__version__}, "
+                                           f"{importlib.import_module('pgvector.psycopg').__name__}"),
+                      ("encryption", secrets_), ("photo formats", lambda: f"Pillow {importlib.import_module('PIL').__version__}, "
+                                                                           f"{importlib.import_module('pillow_heif').__name__}"),
+                      ("certificates", lambda: importlib.import_module("truststore").__name__),
+                      ("run-time functions", callback), ("the app's own code", own), ("pages", packed),
+                      ("window", window)):
+        part(what, use)
+    lines.append(f"{TITLE} {VERSION} on {sys.platform}: " + ("everything loads" if good else "SOMETHING FAILED"))
+    text = "\n".join(lines) + "\n"
+    try:
+        HOME.mkdir(parents=True, exist_ok=True)
+        (HOME / "self-test.txt").write_text(text, "utf-8")
+    except OSError:
+        pass
+    try:
+        print(text, end="", flush=True)
+    except Exception:                            # a windowed build has no console
+        pass
+    return good
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
+    if "--self-test" in args:
+        os._exit(0 if self_test() else 1)        # at once: libraries loaded for the test may keep threads running
     if "--probe-window" in args:
         probe_window()
     wait_for_previous()                             # Windows, started again by restart_app: its ports free first

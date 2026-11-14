@@ -39,7 +39,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - `database`: the shared-database tests (`pytest -k "facedb or sync"`) against a pgvector service, with
     `FACE_TEST_PG`.
   - `build`: the app on Windows, macOS and Linux (`build_exe.py --no-copy`, macOS signing when its secrets are set),
-    then its installer (`--installer-only`; the Linux one is tried there: install, icons, uninstall);
+    the built app's own check (`--self-test`, `app.self_test`: every library loads and works once; on macOS under
+    its signature), then its installer (`--installer-only`; the Linux one is tried there: install, icons,
+    uninstall; the .dmg signed and notarized too);
     keeps the `FaceRecognizer-windows-x64`, `-macos-arm64` and `-linux-x64` artifacts 14 days, each with the app,
     its installer and `BUILD-INFO.json` (commit, run, both files' SHA-256, signed).
   - Actions are pinned to full commit SHAs, the release in a comment; look new ones up with
@@ -382,7 +384,13 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   for the web browser).
 - `packaging/windows/FaceRecognizer.iss`, `packaging/linux/install.sh` — the Windows and Linux installers (see
   `build_exe.py`).
-- `packaging/macos/` — the app's entitlements (camera, microphone) and `sign_and_notarize.sh`, which CI runs when the
+- `tools/apple_signing.py` — signing the macOS builds without a Mac: `request` makes the private key (in
+  `HOME/apple-signing`, protected, never in git) and the certificate request to upload to Apple; `secrets` checks
+  Apple's Developer ID Application certificate against that key and sets the five repository secrets with `gh`
+  (values on standard input; the .p12 in the older encryption macOS's `security import` reads). Steps:
+  face-recognizer/README.md, "Signing the macOS app".
+- `packaging/macos/` — the app's entitlements (camera, microphone) and `sign_and_notarize.sh` (the .app, then the
+  .dmg made from it; prints Apple's log when it refuses), which CI runs when the
   signing secrets are set (MACOS_CERT_P12_BASE64, MACOS_CERT_PASSWORD, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID,
   APPLE_API_KEY_P8_BASE64).
 - `tools/` — measuring and one-off scripts:
@@ -408,6 +416,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Labeling and people: `test_labels.py` (naming, Ignore and undo, naming an Ignored face, rename/merge, the empty
     new-user start, the face-picture migration, a moved video), `test_persondata.py` (one person's export and forget; Describe all past an unreadable
     photo and spread among LM Studio servers), `test_self_attributes.py`.
+  - Signing: `test_apple_signing.py` (the request, the secrets from a made-up certificate, what is refused; on
+    macOS the .p12 goes through the system's own `security import`).
   - Services and downloads: `test_describe.py`, `test_websearch.py` (keys, caps), `test_fetch_models.py` (against a
     local server), `test_cudasupport.py`, `test_lmstudio.py`, `test_hardware.py`, `test_gpu_choice.py`.
   - App window and tracker: `test_window_watchdog.py`, `test_window_caches.py`, `test_app_log.py`,

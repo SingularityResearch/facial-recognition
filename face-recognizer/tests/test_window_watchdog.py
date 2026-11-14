@@ -63,6 +63,41 @@ def test_the_windows_memory_goes_to_the_log(capsys, monkeypatch):
             child.kill()
 
 
+def test_the_self_test_loads_what_the_app_is_made_of_and_says_what_failed(tmp_path, monkeypatch, capsys):
+    """app.py --self-test, which CI runs on each built app: every part on its own line, and a part that can't load
+    (a library left out of the package, or refused by a signed Mac app's hardened runtime) fails the whole test."""
+    import importlib
+
+    import pytest
+    monkeypatch.setattr(app, "HOME", tmp_path)
+    real = importlib.import_module
+
+    def without(missing):
+        def load(name, *a, **k):
+            if name == missing:
+                raise ImportError(f"No module named '{missing}'")
+            return real(name, *a, **k)
+        return load
+    try:
+        import mediapipe  # noqa: F401
+        import onnxruntime  # noqa: F401
+    except ImportError:                                     # the light test environment (CI's checks job)
+        monkeypatch.setattr(importlib, "import_module", without("truststore"))
+        assert app.self_test() is False and "FAILED" in (tmp_path / "self-test.txt").read_text("utf-8")
+        return
+    assert app.self_test() is True
+    text = (tmp_path / "self-test.txt").read_text("utf-8")
+    assert capsys.readouterr().out == text and "FAILED" not in text and text.count("\nok ") + 1 == 13
+    assert text.splitlines()[-1] == f"{app.TITLE} {app.VERSION} on {app.sys.platform}: everything loads"
+    monkeypatch.setattr(importlib, "import_module", without("truststore"))
+    assert app.self_test() is False
+    text = (tmp_path / "self-test.txt").read_text("utf-8")
+    assert "FAILED  certificates: ImportError: No module named 'truststore'" in text and text.rstrip().endswith("SOMETHING FAILED")
+    with pytest.raises(SystemExit):                          # (main() leaves through os._exit: stood in for here)
+        monkeypatch.setattr(app.os, "_exit", lambda code: (_ for _ in ()).throw(SystemExit(code)))
+        app.main(["--self-test"])
+
+
 def test_sleep_is_not_a_freeze(monkeypatch):
     monkeypatch.setattr(app.sys, "platform", "linux")
     st = {}

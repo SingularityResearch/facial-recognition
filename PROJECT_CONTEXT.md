@@ -1054,6 +1054,11 @@ Open after the 2026-11-12 review and v1.22 (not fixed yet):
 
 Other open items (2026-11-12):
 - The macOS app is still not signed or notarized: the Apple secrets aren't set in CI, and the release notes say so.
+  Being set up since 2026-11-14 (the owner is joining the Apple Developer Program; a Mac to try builds on arrives
+  the week after): `tools/apple_signing.py` makes the certificate request and the secrets without a Mac, CI signs
+  and notarizes the app and the .dmg, and runs the built app's `--self-test` under the signature. Not tried against
+  Apple yet: the entitlements are only the camera and microphone; if the hardened runtime refuses a library, the
+  self-test in that run says which, and `entitlements.plist` is where to allow it.
 - `hand_landmarker.task` is fetched from MediaPipe storage only (optional in `fetch_models.py`); not yet in
   `models-v1`.
 - Asked for on 2026-11-12, for later: a setting on each picture of the Cameras tab (a gear on the tile, as on
