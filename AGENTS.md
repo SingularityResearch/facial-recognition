@@ -85,7 +85,7 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     the web browser. `FACE_UI=browser` (or `--browser`) opens the browser instead; `FACE_UI=none` opens nothing.
 - `build_exe.py` — the one description of the app build (PyInstaller options, page files packed in `PAGES`), for the
   system it runs on: `FaceRecognizer.exe` (Windows, one file), `FaceRecognizer.app` (macOS: Info.plist
-  camera/microphone text, macOS 14 minimum), the `FaceRecognizer` folder (Linux: leaves the system's graphics
+  camera, microphone and local-network text, macOS 14 minimum), the `FaceRecognizer` folder (Linux: leaves the system's graphics
   libraries out, `LINUX_SYSTEM_LIBS`). Run by `build_app.bat` on Windows, by hand on macOS and Linux, and by CI's
   `build` job. Uses `models/` and `data/` beside the app (`face_id.ROOT`). Release steps: face-recognizer/README.md,
   "Building the app".
@@ -451,7 +451,8 @@ macOS (14+, Apple Silicon) and Linux (Ubuntu 22.04+), from `face-recognizer/`:
 ```
 Platform differences live in:
 - `paths.py` (folders) and `desktop.py` (open a folder, attention);
-- `app.py` (WebView2 camera hook on Windows only; on Linux the window is first tried in a child process,
+- `app.py` (the tracker's camera without a question: WebView2's permission hook on Windows, `allow_camera_macos`
+  on macOS, where WebKit otherwise asks at every page load; on Linux the window is first tried in a child process,
   `--probe-window`, falling back to the browser; the watchdog stops a hung renderer on Linux and macOS only);
 - `face_id.py`: `auto` decides from the hardware: DirectML on Windows; CUDA or CoreML per model after a start-up check
   against the CPU (`_gpu_check`); face finding too (`_yunet_runner`, with `DET_DYNAMIC` and a session per input
@@ -512,7 +513,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   the tab page's frames on other 127.0.0.1 ports. Request bodies go through `Handler.body(limit)` (negative or
   non-numeric `Content-Length` 400, too large 413).
 - In the app window only the tracker this window shows gets the camera and microphone without a prompt
-  (`app.camera_allowed`).
+  (`app.camera_allowed`; Windows `allow_camera`, macOS `allow_camera_macos` → `camera_answer`). Any other page
+  is left to the window's own question.
 - Servers bind with `localguard.bind` (no address reuse on Windows, so a second copy fails instead of sharing the
   port) and wrap handlers in `localguard.answer_errors` (an uncaught error still gets a JSON 500).
 - Anything put into `innerHTML` goes through `esc()` (names, paths, descriptions, web results, tags, errors).

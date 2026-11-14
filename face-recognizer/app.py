@@ -40,7 +40,7 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 TITLE = "Face Recognizer"
-VERSION = "1.22.3"                                   # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.22.4"                                 # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -589,7 +589,8 @@ def camera_allowed(uri):
 def allow_camera(window):
     """Let this window's tracker page use the camera and microphone without asking each time (WebView2 asks by
     default). Any other page, including other programs on 127.0.0.1, still gets WebView2's prompt. Windows only: on
-    macOS the system asks once for the app (the .app's NSCameraUsageDescription), and on Linux the window toolkit."""
+    macOS the system asks once for the app (the .app's NSCameraUsageDescription) and the window's own question is
+    answered by allow_camera_macos; on Linux the window toolkit asks."""
     if sys.platform != "win32" or getattr(window, "_camera_ok", False):
         return
     window._camera_ok = True
@@ -608,6 +609,59 @@ def allow_camera(window):
     except Exception:
         print("Camera permission: WebView2 will ask (couldn't pre-allow):")
         traceback.print_exc()
+
+
+CAMERA_ASKED = b"webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:"
+ASK_USER, GRANT = 0, 1                           # WebKit's WKPermissionDecision: prompt, grant
+_MAC_CAMERA = []                                 # the window's delegate class with the answer, once made
+
+
+def camera_answer(origin):
+    """What the macOS window answers a page that asks for the camera or microphone: GRANT to the tracker this
+    window started or found (camera_allowed), ASK_USER for any other page. `origin` is WebKit's WKSecurityOrigin."""
+    try:
+        uri = f"{origin.protocol()}://{origin.host()}:{int(origin.port())}"
+    except Exception:
+        return ASK_USER
+    return GRANT if camera_allowed(uri) else ASK_USER
+
+
+def allow_camera_macos():
+    """macOS: let this window's tracker page use the camera and microphone without the window asking. WebKit asks
+    its window about every page that wants them, and a window that doesn't answer shows "Allow 127.0.0.1 to use
+    your camera?" each time the page loads (it never remembers): after a restart or a reload nobody is there to
+    answer, and the camera stays off. pywebview's window doesn't answer, so its delegate class is given the answer
+    here, before the window is made. The system's own question for the app (once, remembered) stays. True if it is
+    in place."""
+    if sys.platform != "darwin":
+        return False
+    if _MAC_CAMERA:
+        return True
+    try:
+        import objc
+        from webview.platforms import cocoa
+        # the last argument is a block taking the decision (an integer)
+        objc.registerMetaDataForSelector(b"NSObject", CAMERA_ASKED, {
+            "required": False, "retval": {"type": b"v"},
+            "arguments": {2: {"type": b"@"}, 3: {"type": b"@"}, 4: {"type": b"@"}, 5: {"type": b"q"},
+                          6: {"type": b"@?", "callable": {"retval": {"type": b"v"},
+                                                         "arguments": {0: {"type": b"^v"}, 1: {"type": b"q"}}}}}})
+
+        class FaceRecognizerBrowserDelegate(cocoa.BrowserView.BrowserDelegate):
+            @objc.typedSelector(b"v@:@@@q@?")
+            def webView_requestMediaCapturePermissionForOrigin_initiatedByFrame_type_decisionHandler_(
+                    self, webview, origin, frame, kind, handler):
+                handler(camera_answer(origin))
+
+        if not FaceRecognizerBrowserDelegate.instancesRespondToSelector_(CAMERA_ASKED):
+            raise RuntimeError("the window's delegate didn't take the answer")
+        cocoa.BrowserView.BrowserDelegate = FaceRecognizerBrowserDelegate
+        _MAC_CAMERA.append(FaceRecognizerBrowserDelegate)
+        return True
+    except Exception:
+        print("Camera permission: the window will ask each time the page loads (couldn't pre-allow):")
+        traceback.print_exc()
+        return False
 
 
 def recover_renderer(window):
@@ -964,6 +1018,9 @@ def self_test():
         import webview
         if sys.platform == "darwin":             # the window toolkit itself only where signing may stop it
             importlib.import_module("webview.platforms.cocoa")
+            if not allow_camera_macos():         # the tracker's camera without a question at each page load
+                raise RuntimeError("the window can't answer a page's camera request (see the lines above)")
+            return f"pywebview {getattr(webview, '__version__', '')}, answers the tracker's camera request".strip()
         return f"pywebview {getattr(webview, '__version__', '')}".strip()
 
     for what, use in (("numbers", numbers), ("pictures", pictures), ("recognition models", models),
@@ -1017,6 +1074,7 @@ def main(argv=None):
         in_browser(shell)
     try:
         import webview
+        allow_camera_macos()                        # before the window is made: its delegate class answers
         window = webview.create_window(TITLE, shell, width=1440, height=920, min_size=(900, 600),
                                        background_color="#0d1512")
         global WINDOW

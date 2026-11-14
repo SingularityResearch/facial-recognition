@@ -50,6 +50,52 @@ def test_the_window_is_tried_in_a_child_process_on_linux_only(monkeypatch):
     assert app.window_works() is True and len(ran) == n      # macOS and Windows: not tried, always their web view
 
 
+def test_the_macos_app_says_why_it_wants_the_camera_and_the_local_network(tmp_path):
+    """Info.plist: without the camera and microphone texts macOS refuses them; macOS 15+ asks before the app reaches
+    the shared database or another device, with the local-network text."""
+    import plistlib
+
+    import build_exe
+    app = tmp_path / "FaceRecognizer.app"
+    (app / "Contents").mkdir(parents=True)
+    (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": build_exe.BUNDLE_ID}))
+    build_exe.finish_macos_app(app, "1.2.3")
+    info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+    for key in ("NSCameraUsageDescription", "NSMicrophoneUsageDescription", "NSLocalNetworkUsageDescription"):
+        assert len(info[key]) > 40, key
+    assert info["NSBonjourServices"] == ["_lmstudio._tcp", "_http._tcp"]
+    assert (info["CFBundleShortVersionString"], info["LSMinimumSystemVersion"]) == ("1.2.3", "14.0")
+    assert info["CFBundleIdentifier"] == build_exe.BUNDLE_ID                # what PyInstaller wrote stays
+
+
+def test_the_macos_window_lets_only_this_apps_tracker_use_the_camera_unasked(monkeypatch):
+    """app.camera_answer: WebKit asks the window about each page that wants the camera; the tracker this window
+    started is granted, anything else is left to the user."""
+    import app
+
+    class Origin:                                    # as WebKit's WKSecurityOrigin
+        def __init__(self, host, port, scheme="http"):
+            self.parts = scheme, host, port
+
+        def protocol(self):
+            return self.parts[0]
+
+        def host(self):
+            return self.parts[1]
+
+        def port(self):
+            return self.parts[2]
+    monkeypatch.setitem(app.STATUS, "track", {})
+    assert app.camera_answer(Origin("127.0.0.1", 8766)) == app.ASK_USER         # no tracker yet
+    monkeypatch.setitem(app.STATUS, "track", {"url": "http://127.0.0.1:8766/"})
+    assert app.camera_answer(Origin("127.0.0.1", 8766)) == app.GRANT
+    for other in (Origin("127.0.0.1", 8765), Origin("127.0.0.1", 0), Origin("localhost", 8766),
+                  Origin("127.0.0.1", 8766, "https"), Origin("example.com", 8766), object()):
+        assert app.camera_answer(other) == app.ASK_USER
+    monkeypatch.setattr(app.sys, "platform", "linux")
+    assert app.allow_camera_macos() is False                                # the Mac's window only
+
+
 def test_the_linux_build_leaves_graphics_libraries_to_the_system(tmp_path):
     import build_exe
     names = ["libgbm.so.1", "libX11.so.6", "libGLX_mesa.so.0", "libwayland-client.so.0",      # the system's own

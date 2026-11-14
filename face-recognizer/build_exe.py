@@ -55,6 +55,10 @@ CAMERA_WHY = ("The live tracker recognizes the people you have named, from the c
               "only numbers are kept, unless you turn on Collect faces.")
 MIC_WHY = ("The live tracker can measure voice signals (loudness, pitch, speaking rate) from the microphone. "
            "Nothing is recorded.")
+# macOS 15 and later ask before an app reaches anything on the local network; until allowed, the connection fails
+NETWORK_WHY = ("Face Recognizer reaches the shared database you set up and your other devices (their photos and live "
+               "cameras), and finds LM Studio on your network for Describe photo.")
+BONJOUR = ["_lmstudio._tcp", "_http._tcp"]      # the services hardware.mdns_services asks for, lmstudio.py announces
 
 
 def version():
@@ -106,10 +110,12 @@ def drop_system_libs(internal):
 
 def finish_macos_app(app, ver):
     """What macOS needs in the app's Info.plist: why it asks for the camera and microphone (without these the
-    system refuses them), the oldest macOS it runs on, and its version. Signing comes after (CI)."""
+    system refuses them) and for the local network (the shared database, other devices, LM Studio), the oldest
+    macOS it runs on, and its version. Signing comes after (CI)."""
     plist = app / "Contents" / "Info.plist"
     info = plistlib.loads(plist.read_bytes())
     info.update({"NSCameraUsageDescription": CAMERA_WHY, "NSMicrophoneUsageDescription": MIC_WHY,
+                 "NSLocalNetworkUsageDescription": NETWORK_WHY, "NSBonjourServices": BONJOUR,
                  "LSMinimumSystemVersion": MACOS_MIN, "CFBundleShortVersionString": ver, "CFBundleVersion": ver,
                  "CFBundleDisplayName": "Face Recognizer", "NSHighResolutionCapable": True})
     plist.write_bytes(plistlib.dumps(info))

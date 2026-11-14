@@ -61,7 +61,9 @@ Mac builds) and on **Linux** (built and tested on Ubuntu; x86_64, and ARM from s
   an NVIDIA card on Linux (`./setup.sh` installs ONNX Runtime with CUDA when `nvidia-smi` works) or Apple Silicon's
   CoreML, when a check at start shows it gives the same results and is faster; otherwise the CPU (OpenCV). The labeling tool's handling of
   online-only cloud files (iCloud, OneDrive) is Windows-only for now. On first use, macOS asks once whether the app
-  may use the camera and microphone.
+  may use the camera and microphone, and (macOS 15 and later) once whether it may find devices on your local
+  network: allow that if you use a shared database, other devices or LM Studio on another computer; until you do,
+  those connections fail. Both can be changed in System Settings → Privacy & Security.
 
 ## Setup (once)
 
@@ -135,7 +137,8 @@ Neither the .exe nor the installer is code-signed, so Windows SmartScreen may wa
    .venv/bin/python build_exe.py
    ```
    The app is `build/dist/FaceRecognizer.app`. `build_exe.py` writes into its `Info.plist` why it asks for the camera
-   and microphone (without that, macOS refuses them), that it needs macOS 14, and its version.
+   and microphone (without that, macOS refuses them) and for the local network, that it needs macOS 14, and its
+   version.
 4. **Try it:** `open build/dist/FaceRecognizer.app`. macOS asks once for the camera and microphone. A build made
    on your own Mac runs there as it is; to give it to others, sign and notarize it (next step), or they must
    right-click it and choose **Open** the first time.
