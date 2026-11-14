@@ -612,8 +612,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   `FaceRecognizer-linux-x64.run`), `FaceRecognizer-win64.zip` (`FaceRecognizer.exe` and a new-user `README.txt`),
   `FaceRecognizer-macos-arm64.zip`, `FaceRecognizer-linux-x64.tar.gz` and `SHA256SUMS.txt`, from one CI run's
   builds of the tagged commit; never `data\`. An installer never deletes `models` or `data`, on install, update
-  or uninstall. The macOS app is signed and notarized only once the Apple secrets
-  are set; say so in the notes until then.
+  or uninstall. The macOS app and its .dmg are signed and notarized by CI (since 1.22.4, with the
+  repository's Apple secrets): release only a run whose macOS build says so (`BUILD-INFO.json` `signed`).
 - The presence log (who was in view, when) is opt-in, names and times only, in `HOME/presence/`, never `data/`.
 - Webcam faces named automatically don't enter the recognition gallery until confirmed (`LabelDB.gallery`).
 - Ignore deletes the face's print and picture (`LabelDB.forget_faces`, `Store.forget`; Undo restores them from memory

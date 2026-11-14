@@ -2,8 +2,10 @@
 
 A fully local system that recognizes specific people on webcams (any camera the computer sees, including a
 phone used as a webcam) and reads facial expression, voice and other signals live. Imported photos and videos
-are recognized the same way: the same face prints and matching, with faces named in the labeling tool. The expression side is also a small, honest research testbed: it measures what each
-signal is actually worth on your own face before letting it influence anything.
+are recognized the same way: the same face prints and matching, with faces named in the labeling tool. The
+expression side is original research: it reads each recognized person against their own normal, across face,
+voice, body and several cameras, and measures what each signal is actually worth on that person before letting
+it influence anything.
 
 Everything runs on your own computers: Windows, macOS (14+, Apple Silicon) or Linux (Ubuntu 22.04+). One computer
 is enough; it identifies its processor, graphics processors and NPU at start and runs each job the fastest way that

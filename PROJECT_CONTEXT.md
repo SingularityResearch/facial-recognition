@@ -1046,6 +1046,12 @@ Open after the 2026-11-12 review and v1.22 (not fixed yet):
 - The Windows installer run while the app was open (first try, on the NAS): Restart Manager closed the app's
   second process, could not close the first, and Setup stopped ("unable to automatically close all applications"),
   leaving the app dead. `CloseApplications=no` and the script's own `CloseApp` since.
+- macOS (v1.22.4): the app has been built, signed, notarized and self-tested on GitHub's Macs only, never used on
+  a Mac with a camera. To check on the first one: the window (WebKit) opens; the camera starts with no question
+  after a reload and after a restart (`allow_camera_macos`); the stream's frame rate with the window hidden or
+  minimized (`KEEP_RUNNING_FLAGS` are Chromium's and do nothing in WebKit, which slows hidden pages, and macOS
+  naps hidden apps: cameras are never to be slowed, section 8); the CoreML check at start; the watchdog's restart
+  in place; photos and cameras to and from the other devices. `window_memory` gives nothing on macOS yet.
 - The changes log is never pruned; `photo_paths` has no index on `hash`; devices on different recognition models
   overwrite each other's prints; a failed local forget is recorded as done.
 - Linux: after the watchdog's restart in place the window's DevTools port stays dead (testing only), and one camera

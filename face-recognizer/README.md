@@ -38,8 +38,8 @@ Everything runs locally. No photos leave your computer, with one exception you s
 The app also runs on **macOS 14 or later on Apple Silicon** (M1 and later; the recognition libraries have no Intel
 Mac builds) and on **Linux** (built and tested on Ubuntu; x86_64, and ARM from source).
 
-- **Ready-made:** the release's `FaceRecognizer-macos-arm64.dmg` (drag the app onto Applications; not yet signed by
-  Apple: right-click it and choose **Open** the first time) and `FaceRecognizer-linux-x64.run`
+- **Ready-made:** the release's `FaceRecognizer-macos-arm64.dmg` (drag the app onto Applications; signed and
+  notarized by Apple since 1.22.4, so it opens like any other app) and `FaceRecognizer-linux-x64.run`
   (`sh FaceRecognizer-linux-x64.run` installs it for you with its menu and desktop icons); see **Getting it**. To
   build them yourself, see **Building the app** below.
 - **From the code:** `./setup.sh` once (a Python 3.12 environment in `.venv` with the pinned libraries and, on Linux,
