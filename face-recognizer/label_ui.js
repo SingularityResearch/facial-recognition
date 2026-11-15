@@ -1192,7 +1192,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         const p = mus.picture, pct = x => `${Math.round(x * 100)}%`;
         return [
           mus.playing ? `Playing now: ${mus.playing.artist} - ${mus.playing.song}` : "No song is playing in Spotify on this computer.",
-          mus.logging ? `Logging for ${mus.who}.${mus.waiting ? ` ${mus.waiting} song${mus.waiting === 1 ? "" : "s"} wait to be sent.` : ""}`
+          mus.logging ? `Logging for ${mus.who}: ${mus.today} song${mus.today === 1 ? "" : "s"} today.${mus.earlier ? ` ${mus.earlier} from earlier days wait to be sent to the shared database.` : ""}`
             : !mus.on ? "Not logging: switched off." : !mus.who ? "Not logging: choose whose music this is." : "Not logging: no shared database to keep it in.",
           mus.interfaces?.length ? "Audio interfaces here:" : `No audio interface can be listened to here (${mus.interfaces_why || "none found"}): song names only.`,
           mus.interfaces?.length && mus.interfaces_why ? `  (${mus.interfaces_why})` : null,

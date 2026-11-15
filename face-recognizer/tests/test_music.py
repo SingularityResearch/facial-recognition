@@ -262,7 +262,11 @@ def test_music_heard_in_the_room_is_logged_without_a_player_naming_it(home, monk
     mic = d["interfaces"]["Room microphone"]
     assert mic["what"] == "music" and mic["families"] == {"music": 0.7} and mic["ambient"]["floor"] == -55.0
     assert "Headset" not in d["interfaces"]                         # quiet: not in the row
-    assert musiclog.status()["waiting"] == 1
+    st = musiclog.status()
+    assert st["today"] == 1 and st["earlier"] == 0 and "waiting" not in st      # today's songs, sent or not
+    old = musiclog.folder() / "2020-01-01.jsonl"                     # a past day's file is there only while unsent
+    old.write_text(json.dumps({"t": 1, "name": "Ann", "artist": "x", "song": "y"}) + "\n", "utf-8")
+    assert musiclog.status()["earlier"] == 1
 
 
 def test_a_background_is_named_by_family_and_described_by_its_numbers():

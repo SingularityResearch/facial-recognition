@@ -306,7 +306,11 @@ def status():
     except Exception as e:
         sp = {"connected": False, "client_id": "", "error": str(e)[:200], "redirect": ""}
     t = _listener["thread"]
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    with _lock:                                  # today's file holds today's songs, sent or not; an older file
+        counts = {f.stem: len(_rows(f)) for f in _files()}       # is still here only while some of it isn't sent
     return {"on": _settings().get(OPTION) == "1", "who": name, "listen": _settings().get(LISTEN) or "all",
+            "today": counts.get(today, 0), "earlier": sum(n for day, n in counts.items() if day < today),
             "logging": enabled(), "playing": music.now_playing(),
             "current": {k: t.song[k] for k in ("artist", "song")} | {"heard": len(t.song["heard"])} if t and t.song else None,
             # what each interface heard at the last listening, in a word (the numbers stay here)
@@ -315,7 +319,7 @@ def status():
             "model": music.sound_model() is not None,
             "interfaces": [{k: i[k] for k in ("name", "kind", "default")} for i in music.interfaces()],
             "interfaces_why": "; ".join(music.WHY),
-            "waiting": len(waiting()), "spotify": sp, "job": dict(JOB),
+            "spotify": sp, "job": dict(JOB),
             "picture": None if not pic else {k: pic.get(k) for k in (
                 "songs", "artists", "made", "source", "top_artists", "genres", "decades", "year", "popularity", "spread")}}
 
