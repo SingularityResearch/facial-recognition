@@ -513,7 +513,7 @@ def make_handler(engine):
             if path == "/api/cameras/readouts":         # their live readouts (faces, names, readings), as data
                 ids = camera_ids(dict(parse_qsl(self.path.partition("?")[2])).get("ids"))
                 return self.send_json(camera_readouts(ids))
-            if path == "/api/screen":                   # is the screen locked? (Windows: no camera until it isn't)
+            if path == "/api/screen":                   # is the screen locked? (Windows stops running cameras then)
                 import desktop
                 return self.send_json({"locked": desktop.screen_locked()})
             if path == "/api/presence":

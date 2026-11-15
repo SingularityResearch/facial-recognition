@@ -30,9 +30,10 @@ def test_attention_never_raises_where_the_window_cant_do_it():
 
 
 def test_a_locked_screen_is_told_from_what_windows_says_about_the_session():
-    """Windows gives no program the camera behind a locked screen, so the tracker page asks before it starts the
-    camera, itself or the app again. The answer is read from the start of WTSINFOEXW: as measured on an unlocked
-    console (flags 1) and on a locked session (flags 0), 2026-11-15."""
+    """Windows stops running cameras when the screen is locked, so the tracker page asks before it decides what to
+    do about a camera that isn't running. The answer is read from the start of WTSINFOEXW: as measured on an
+    unlocked console and a connected Remote Desktop session (flags 1), and on a session locked at the console
+    and one locked by a Remote Desktop disconnect (flags 0, state 4), 2026-11-15."""
     import struct
     import sys
 

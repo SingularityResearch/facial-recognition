@@ -217,14 +217,20 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     no camera is listed); a busy one gets the reload only. Each step goes to the log through
     `/api/page-note` (`tracker.page_note`: printable text, 200 characters, `NOTES_AN_HOUR`).
   - A camera that is on but sends no new picture is paused (`camPaused`; Windows does this to every program
-    while the screen is locked, and the video keeps its last picture). Told from the browser's count of frames
+    about 20 s after the screen is locked, and the video keeps its last picture). Told from the browser's count of frames
     (`getVideoPlaybackQuality().totalVideoFrames`) standing still while a 32x18 sample of the picture is the very
     same three times in a row (`stillCheck`, 6 s; a flat picture is left to the flat check), or the track being
     muted. While it lasts no face is read from the still picture, the page and the log say so, and the other
     devices are told with the readout (`paused` seconds in `/api/inview`, `camstream.readout`; the Cameras page
     shows "paused · no new picture for …" though the frames keep arriving). After 30 s the camera is started
-    again, and no more than that. While the screen is locked (`/api/screen`, `desktop.screen_locked`: Windows'
-    session flags) nothing is started, loaded or restarted: the page waits for the unlock.
+    again, and no more than that.
+  - A locked screen on Windows (`/api/screen`, `desktop.screen_locked`: the session's flags). Every Remote
+    Desktop disconnect locks the session too. A camera started after the lock runs in a session locked by a
+    disconnect, and never starts in one locked at the computer's own screen; Windows calls both "locked", so
+    the page tries: a camera paused under a lock is started again at once (within 10 s, no 30 s wait), one
+    start is left open however long it takes (`startOut`), and against a lock the page is never loaded again
+    nor the app asked to start again. Before 1.23.0 a disconnect left the last picture streamed as live until
+    the app was next started (once for 21 hours).
 - `expression.js` — expression voting, state model, confidence flags, evidence, per-person usual look (browser; served
   by `tracker.py`).
 - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
@@ -451,9 +457,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     GPU face finding; published in models-v1);
   - `make_icon.py` (draws the app's icon and writes `icons/`; needs Pillow);
   - `keep_session_on_console.ps1` (Windows computers used through Remote Desktop: `-Install` makes a scheduled
-    task that puts the session back on the computer's console at every disconnect, unlocked: Windows gives no
-    program the camera behind a locked screen. A Remote Desktop session has no sound devices of the computer's
-    own, and its page is drawn only now and then);
+    task that puts the session back on the computer's console at every disconnect, unlocked: locked at the
+    computer's own screen, a session gets no camera. A Remote Desktop session has no sound devices of the
+    computer's own, and its page is drawn only now and then);
   - shared database: `db_certs.py` (the server's CA and certificate), `db_setup.py` (once per new server: the
     tables and `server_ca`, over verify-ca with that CA), `db_import.py`.
 - `tests/` — `conftest.py` points `FACE_ROOT`/`FACE_HOME` at a temp folder before anything is imported: no models, no
