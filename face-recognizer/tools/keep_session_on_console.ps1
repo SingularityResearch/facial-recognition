@@ -13,13 +13,13 @@
 #   powershell -ExecutionPolicy Bypass -File keep_session_on_console.ps1 -Now         (once, now; as SYSTEM)
 #
 # -Install copies this script to %ProgramData%\FaceRecognizer and makes two scheduled tasks:
-#   "Face Recognizer: session to console"  as SYSTEM, each time a Remote Desktop session is disconnected (and at
+#   "Face Recognizer session to console"   as SYSTEM, each time a Remote Desktop session is disconnected (and at
 #                                          start): runs this script with -Now
-#   "Face Recognizer: lock the console"    as the user who installed it: locks the screen (started by the first)
+#   "Face Recognizer lock the console"     as the user who installed it: locks the screen (started by the first)
 # Nothing else is changed. With no user signed in, nothing happens.
 param([switch]$Install, [switch]$Uninstall, [switch]$Now, [string]$User)
 $ErrorActionPreference = 'Stop'
-$move, $lock = 'Face Recognizer: session to console', 'Face Recognizer: lock the console'
+$move, $lock = 'Face Recognizer session to console', 'Face Recognizer lock the console'    # no colon: not allowed in a task's name
 $home_ = Join-Path $env:ProgramData 'FaceRecognizer'
 $here = Join-Path $home_ 'keep_session_on_console.ps1'
 
