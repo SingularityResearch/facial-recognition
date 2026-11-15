@@ -480,13 +480,50 @@ async function startCamera() {
 const FLAT_SPREAD = 12, FLAT_CHECKS = 3, FLAT_EVERY = 2000;
 let flatRun = 0, flatShown = false;
 const flatGrab = Object.assign(document.createElement("canvas"), { width: 32, height: 18 });
-function pictureSpread() {
+function pictureSpread() {                 // [brightest minus darkest, a number that differs when any point does]
   const g = flatGrab.getContext("2d", { willReadFrequently: true });
   g.drawImage(video, 0, 0, 32, 18);
   const d = g.getImageData(0, 0, 32, 18).data;
-  let lo = 255, hi = 0;
-  for (let i = 0; i < d.length; i += 4) { const y = (d[i] + d[i + 1] + d[i + 2]) / 3; if (y < lo) lo = y; if (y > hi) hi = y; }
-  return hi - lo;
+  let lo = 255, hi = 0, sum = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const y = (d[i] + d[i + 1] + d[i + 2]) / 3; if (y < lo) lo = y; if (y > hi) hi = y;
+    sum = (Math.imul(sum, 31) + d[i] + 3 * d[i + 1] + 7 * d[i + 2]) | 0;
+  }
+  return [hi - lo, sum];
+}
+
+// A camera that is on but sends no new picture. Windows does this to every program while the screen is locked, and
+// the video keeps its last picture: on 2026-11-15 one device's camera was shown as live for an hour that way, its
+// last face still "in view". It is told two ways: the browser says the camera is muted, or the picture sampled
+// above is the very same STILL_CHECKS times in a row (6 s) while the browser counts no new frame. A real camera's
+// picture never repeats exactly (its noise changes it); a flat one can, and is left to the check above; a made-up
+// camera showing one still picture keeps delivering frames, which the browser counts. (Measured in Edge 157:
+// totalVideoFrames follows the frames delivered, shown or hidden; currentTime follows the clock and "muted" wasn't
+// set by a stream whose frames stopped.) While it lasts no face is read from the still picture, the other devices
+// are told (paused, with the readout) and the log says so.
+const STILL_CHECKS = 3;
+let stillSum = null, stillFrames = null, stillRun = 0, pausedAt = 0;      // pausedAt: when it was noticed (0: its picture arrives)
+const camPaused = () => pausedAt > 0;
+function stillCheck(spread, sum) {
+  let frames = null;
+  try { frames = video.getVideoPlaybackQuality?.().totalVideoFrames ?? null; } catch {}
+  const same = sum === stillSum && spread >= FLAT_SPREAD && (frames === null || frames === stillFrames);
+  stillRun = same ? stillRun + 1 : 0;
+  stillSum = sum; stillFrames = frames;
+  setPaused(stream.getVideoTracks()[0]?.muted === true || stillRun >= STILL_CHECKS);
+}
+function setPaused(on) {
+  if (on === camPaused()) return;
+  pausedAt = on ? performance.now() : 0;
+  if (on) {
+    for (const name of Object.keys(visitsOpen)) closeVisit(name);        // nobody is seen in a picture that stands still
+    tracks = []; shown = null; renderList(); renderPeople();
+    setStatus("The camera is on but sends no new picture. On Windows a locked screen does this.", "err");
+    pageNote("The camera is on but sends no new picture (on Windows a locked screen does this): no faces are read until it does.");
+  } else {
+    setStatus("Tracking", "live");
+    pageNote("The camera's picture arrives again.");
+  }
 }
 function showFlat(on) {
   flatShown = on; $("camFlat").hidden = !on;
@@ -502,8 +539,9 @@ function showFlat(on) {
 }
 setInterval(() => {
   if (!stream || video.readyState < 2 || !video.videoWidth) { flatRun = 0; if (flatShown) showFlat(false); return; }
-  let spread;
-  try { spread = pictureSpread(); } catch { return; }
+  let spread, sum;
+  try { [spread, sum] = pictureSpread(); } catch { return; }
+  stillCheck(spread, sum);
   flatRun = spread < FLAT_SPREAD ? flatRun + 1 : 0;
   if (flatRun >= FLAT_CHECKS && !flatShown) showFlat(true);
   else if (flatRun === 0 && flatShown) showFlat(false);
@@ -515,6 +553,7 @@ $("camFlatTry").onclick = () => {
 
 function stopCamera() {
   flatRun = 0; showFlat(false);
+  pausedAt = 0; stillRun = 0; stillSum = null;                    // stopped, not paused
   stream?.getTracks().forEach(t => t.stop());
   stream = null; video.srcObject = null; running = false;
   $("camBtn").textContent = "Start camera";
@@ -540,7 +579,7 @@ function begin() {
 // ---------------------------------------------------------------- recognition requests
 async function sendLoop() {
   while (running) {
-    if (video.readyState < 2 || busy) { await new Promise(r => setTimeout(r, 30)); continue; }
+    if (video.readyState < 2 || busy || camPaused()) { await new Promise(r => setTimeout(r, 30)); continue; }
     const vw = video.videoWidth, vh = video.videoHeight, s = Math.min(1, SEND_MAX / Math.max(vw, vh));
     grab.width = Math.round(vw * s); grab.height = Math.round(vh * s);
     const sync = !!meshTris && $("optMesh").checked;
@@ -573,6 +612,7 @@ async function sendLoop() {
       const r = await fetch(`/api/recognize?${want}`, { method: "POST", body: blob, headers: { "Content-Type": "image/jpeg", "X-Face-Tool": "1" } });
       const res = await r.json();
       if (!r.ok) throw new Error(res.error || r.status);
+      if (camPaused()) continue;           // the picture stopped while this was asked: not a face in view
       updateTracks(res.faces.map(f => ({ ...f, box: f.box.map(v => v / s), kps: f.kps.map(([x, y]) => [x / s, y / s]),
                                          pose: f.pose && f.pose.map(([x, y, v]) => [x / s, y / s, v]),
                                          body: f.body && f.body.map(([x, y, v]) => [x / s, y / s, v]),
@@ -1200,8 +1240,9 @@ setInterval(() => {                       // who this camera sees, and its reado
   const names = tracks.filter(t => !t.missed && t.name !== "Unknown").map(t => t.name);
   let readout = [];
   try { readout = $("optStream").checked ? readoutData() : []; } catch {}
+  const paused = camPaused() ? Math.max(1, Math.round((performance.now() - pausedAt) / 1000)) : 0;   // no new picture for
   fetch("/api/inview", { method: "POST", headers: { "Content-Type": "application/json", "X-Face-Tool": "1" },
-                         body: JSON.stringify({ names, readout }) }).then(drop, () => {});
+                         body: JSON.stringify({ names, readout, paused }) }).then(drop, () => {});
 }, 1000);
 // The expression log (exprlog.py): what each named face looks like, every EXPR_LOG_EVERY, sent to this page's
 // server, which keeps it in the shared database for reports (nothing is kept without one). The owner's decision of
@@ -1248,7 +1289,16 @@ setInterval(async () => {
 // after that, the app is asked to start again (app.py does at most hourly; asked again every STUCK_EVERY). Not for
 // a camera that isn't there or isn't allowed (camAbsent: nothing here can change that), and a camera busy in
 // another program gets the page reload only.
-const STUCK_EVERY = 600000;
+//   - a camera that is on but sends no new picture for 30 s (camPaused) is started again, and no more than that:
+//     its next start counts as any start does.
+// Nothing is tried while the screen is locked (screenLocked): Windows gives no program the camera then, a start
+// would only hang, and loading the page or starting the app again changes nothing. The camera is started within
+// 10 s of the unlock if its picture hasn't come back by itself.
+const STUCK_EVERY = 600000, LOCKED = "The screen is locked: Windows gives no program the camera until it is unlocked. Waiting for that.";
+async function screenLocked() {
+  try { return (await (await fetch("/api/screen", { cache: "no-store", signal: AbortSignal.timeout(3000) })).json()).locked === true; }
+  catch { return false; }
+}
 let keepStarting = false, keepHung = 0, keepFailed = 0, noPicture = 0, camNoted = "", stuckAt = 0;
 // No camera to start: the system refuses it to this page, or says there is none and lists none. "Not found" while
 // one is listed is the camera service gone wrong, which loading the page or starting the app again does cure.
@@ -1264,20 +1314,32 @@ function pageNote(text) {
 setInterval(async () => {
   if (!$("optKeepCam").checked || keepStarting || video.src) return;
   let hung = false;
+  if (stream && running && video.readyState >= 2 && !camPaused()) {   // its picture arrives: all is well
+    if (camNoted) { pageNote("The camera is running again."); camNoted = ""; }
+    noPicture = keepHung = keepFailed = 0;
+    try { sessionStorage.removeItem("camHung"); } catch {}
+    return;
+  }
+  keepStarting = true;                                   // one round at a time, also while the question is out
+  const locked = await screenLocked();
+  keepStarting = false;
+  if (locked) {
+    if (camNoted !== LOCKED) pageNote(camNoted = LOCKED);
+    noPicture = keepHung = keepFailed = 0;
+    return;
+  }
   if (stream) {
-    if (running && video.readyState >= 2) {              // its picture arrives: all is well
-      if (camNoted) { pageNote("The camera is running again."); camNoted = ""; }
-      noPicture = keepHung = keepFailed = 0;
-      try { sessionStorage.removeItem("camHung"); } catch {}
-      return;
-    }
     if (++noPicture < 3) return;
-    noPicture = 0; hung = true;
-    const what = running ? "The camera was on but sent no picture for 30 s: starting it again."
+    noPicture = 0;
+    const still = camPaused();
+    const what = still ? "The camera sent no new picture for 30 s: starting it again."
+               : running ? "The camera was on but sent no picture for 30 s: starting it again."
                          : "The camera was opened but didn't start playing in 30 s: starting it again.";
     if (what !== camNoted) pageNote(camNoted = what);    // once, not every round while it lasts
     camGen++;                                            // a start still waiting gives up quietly
     stopCamera();
+    if (still) return;                                   // started again next round; no more than that for this
+    hung = true;
   } else {
     keepStarting = true;
     try {

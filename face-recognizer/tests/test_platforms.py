@@ -29,6 +29,26 @@ def test_attention_never_raises_where_the_window_cant_do_it():
         desktop.attention(NoWindow(), platform)          # prints why, doesn't raise
 
 
+def test_a_locked_screen_is_told_from_what_windows_says_about_the_session():
+    """Windows gives no program the camera behind a locked screen, so the tracker page asks before it starts the
+    camera, itself or the app again. The answer is read from the start of WTSINFOEXW: as measured on an unlocked
+    console (flags 1) and on a locked session (flags 0), 2026-11-15."""
+    import struct
+    import sys
+
+    def info(flags, level=1, state=0):
+        return struct.pack("<IIIIi", level, 0, 1, state, flags)
+    assert desktop.screen_locked("win32", lambda: info(0)) is True
+    assert desktop.screen_locked("win32", lambda: info(0, state=4)) is True          # locked and disconnected
+    assert desktop.screen_locked("win32", lambda: info(1)) is False
+    assert desktop.screen_locked("win32", lambda: info(-1)) is None                  # Windows doesn't know
+    assert desktop.screen_locked("win32", lambda: info(0, level=2)) is None          # not the layout read here
+    assert desktop.screen_locked("win32", lambda: b"") is None                       # the question failed
+    assert desktop.screen_locked("win32", lambda: 1 / 0) is None                     # never raises
+    assert desktop.screen_locked("darwin") is None and desktop.screen_locked("linux") is None
+    assert desktop.screen_locked() in ((True, False, None) if sys.platform == "win32" else (None,))   # the real one
+
+
 def test_the_window_is_tried_in_a_child_process_on_linux_only(monkeypatch):
     import subprocess
     import types

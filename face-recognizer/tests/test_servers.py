@@ -503,6 +503,19 @@ def test_the_camera_stream_takes_frames_only_while_it_can_go_somewhere(track, mo
     assert request(url, "/api/inview", json.dumps({"names": ["Ann", "Unknown"], "readout": readout}).encode())[0] == 200
     assert set(camstream.in_view()) == {"Ann"} and camstream.readout()["faces"] == readout
     assert request(url, "/api/inview", json.dumps({"names": [], "readout": "<b>x</b>"}).encode())[0] == 400
+    # a camera that is on but sends no new picture (a locked screen on Windows): the page says for how long, and the
+    # readout the other devices get says so, since the frames still arrive
+    assert "paused" not in camstream.readout()
+    assert request(url, "/api/inview", json.dumps({"names": [], "readout": [], "paused": 42}).encode())[0] == 200
+    assert camstream.readout()["paused"] == 42 and camstream.readout()["faces"] == []
+    code, _, body = request(url, f"/api/cameras/readouts?ids={__import__('facedb').device()['id']}")
+    assert code == 200 and list(json.loads(body).values())[0]["paused"] == 42
+    for bad in ("long", True, -1, [3], 1e12):
+        assert request(url, "/api/inview", json.dumps({"names": [], "readout": [], "paused": bad}).encode())[0] == 400
+    assert request(url, "/api/inview", json.dumps({"names": [], "readout": readout}).encode())[0] == 200   # its picture again
+    assert "paused" not in camstream.readout() and camstream.readout()["faces"] == readout
+    code, _, body = request(url, "/api/screen")           # locked or not, or null where the system doesn't say
+    assert code == 200 and json.loads(body)["locked"] in (True, False, None)
     code, _, body = request(url, "/cameras")
     assert code == 200 and b"cameras_ui.js" in body
     import facedb                                         # every camera's next frame in one request

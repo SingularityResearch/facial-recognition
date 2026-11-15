@@ -158,6 +158,7 @@ function faceBlock(f) {
   }
   return li;
 }
+const howLong = s => s < 90 ? `${Math.round(s)} s` : s < 5400 ? `${Math.round(s / 60)} min` : `${Math.round(s / 3600)} h`;
 let readoutsBusy = false;
 async function loadReadouts() {                  // every camera's readout in one request
   const ids = Object.keys(tiles);
@@ -171,8 +172,14 @@ async function loadReadouts() {                  // every camera's readout in on
       const faces = Array.isArray(r.faces) ? r.faces : [];
       // frozen picture: the camera's device sent no new frame lately (its camera stopped, or its window was asleep)
       const stale = typeof r.frameAge === "number" && r.frameAge > 5 && !(t.lastFrame && Date.now() - t.lastFrame < 2000);
-      if (stale) { t.st.className = "st off"; t.st.textContent = `paused · no new frame for ${Math.round(r.frameAge)} s`; t.paused = true; }
-      else if (t.paused) { t.paused = false; }                       // frames again
+      // still picture: its frames arrive, each the same one, because its camera sends no new picture (on Windows a
+      // locked screen does this; its tracker page says so with the readout)
+      const still = typeof r.paused === "number" && r.paused > 0;
+      if (still) {
+        t.st.className = "st off"; t.st.textContent = `paused · no new picture for ${howLong(r.paused)}`; t.paused = true;
+        t.st.title = "Its camera is on but sends no new picture. On Windows a locked screen does this.";
+      } else if (stale) { t.st.className = "st off"; t.st.textContent = `paused · no new frame for ${howLong(r.frameAge)}`; t.st.title = ""; t.paused = true; }
+      else if (t.paused) { t.paused = false; t.st.title = ""; }      // its picture again
       t.faces.replaceChildren(...(faces.length ? faces.map(faceBlock) : [el("li", { className: "none", textContent: r.error ? "Readout unavailable" : "No faces in view" })]));
     }
   } catch {} finally { readoutsBusy = false; }

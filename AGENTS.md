@@ -142,7 +142,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     and every half minute takes in what other devices learned or forgot (`PageStore.signals.refresh`,
     `GET /api/signals?v=`). A forgotten name is refused until it is given to someone again.
 - `desktop.py` — what the app asks of the operating system on Windows, macOS and Linux: show a folder, draw the eye
-  to the window for an alert. `paths.user_data` gives each system's application-data folder.
+  to the window for an alert, whether the screen is locked (`screen_locked`; Windows only, None elsewhere).
+  `paths.user_data` gives each system's application-data folder.
 - `paths.py` — `ROOT` (`FACE_ROOT` overrides), `HOME` (`FACE_HOME` overrides), `atomic_write`/`replace_file`,
   `read_json` (a file that is there but can't be read raises instead of counting as empty: for files that are
   rewritten whole), `utc_now`/`utc_stamp`/`parse_time`. Every module takes its folders from here. Importing it also makes HTTPS check
@@ -215,6 +216,15 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     `STUCK_EVERY`). Not for a camera that isn't there or isn't allowed (`camAbsent`: "not found" counts only when
     no camera is listed); a busy one gets the reload only. Each step goes to the log through
     `/api/page-note` (`tracker.page_note`: printable text, 200 characters, `NOTES_AN_HOUR`).
+  - A camera that is on but sends no new picture is paused (`camPaused`; Windows does this to every program
+    while the screen is locked, and the video keeps its last picture). Told from the browser's count of frames
+    (`getVideoPlaybackQuality().totalVideoFrames`) standing still while a 32x18 sample of the picture is the very
+    same three times in a row (`stillCheck`, 6 s; a flat picture is left to the flat check), or the track being
+    muted. While it lasts no face is read from the still picture, the page and the log say so, and the other
+    devices are told with the readout (`paused` seconds in `/api/inview`, `camstream.readout`; the Cameras page
+    shows "paused · no new picture for …" though the frames keep arriving). After 30 s the camera is started
+    again, and no more than that. While the screen is locked (`/api/screen`, `desktop.screen_locked`: Windows'
+    session flags) nothing is started, loaded or restarted: the page waits for the unlock.
 - `expression.js` — expression voting, state model, confidence flags, evidence, per-person usual look (browser; served
   by `tracker.py`).
 - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
@@ -440,9 +450,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - making models: `get_adaface.py`, `get_wav2small.py`, `get_yunet_dynamic.py` (YuNet with free input sizes, for
     GPU face finding; published in models-v1);
   - `make_icon.py` (draws the app's icon and writes `icons/`; needs Pillow);
-  - `keep_session_on_console.ps1` (Windows computers used through Remote Desktop: `-Install` makes two scheduled
-    tasks that put the session back on the computer's console, locked, at every disconnect. A Remote Desktop
-    session has no sound devices of the computer's own, and its page is drawn only now and then);
+  - `keep_session_on_console.ps1` (Windows computers used through Remote Desktop: `-Install` makes a scheduled
+    task that puts the session back on the computer's console at every disconnect, unlocked: Windows gives no
+    program the camera behind a locked screen. A Remote Desktop session has no sound devices of the computer's
+    own, and its page is drawn only now and then);
   - shared database: `db_certs.py` (the server's CA and certificate), `db_setup.py` (once per new server: the
     tables and `server_ca`, over verify-ca with that CA), `db_import.py`.
 - `tests/` — `conftest.py` points `FACE_ROOT`/`FACE_HOME` at a temp folder before anything is imported: no models, no
@@ -654,6 +665,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - Cameras are never paused (the owner's rule, 2026-11-12): the app never stops or slows a camera or its stream by
   itself, whether or not a face is in view, the window is shown, or anyone is watching. Only the owner's own
   Stop camera does. The Cameras page keeps fetching every stream while its tab is hidden; don't add a pause.
+  ("Paused" on a page means the system stopped the camera's picture, a locked screen on Windows: the app says
+  so, it never does it.) Never lock a screen to tidy up: on Windows that stops the camera.
 - **They move between cameras** (and so camera sightings) is off until switched on.
 - Times are stored in UTC everywhere (files, file names, log lines, the database: `paths.utc_now`, `paths.utc_stamp`,
   timestamptz with the session in UTC) and shown in local time only on the pages; `paths.parse_time` also reads

@@ -17,7 +17,7 @@ _cv = threading.Condition()
 _frame = {"seq": 0, "jpeg": None, "at": 0.0, "size": None}
 _watchers = {}              # watcher id -> last time it got a frame
 _in_view = {}               # name -> last time the page said the camera sees them
-_readout = {"at": 0.0, "faces": []}   # the tracker page's live readout as data (readoutData in tracker_ui.js)
+_readout = {"at": 0.0, "faces": [], "paused": 0.0}# the tracker page's live readout as data (readoutData in tracker_ui.js)
 MAX_READOUT = 200_000       # bytes of JSON
 
 
@@ -103,22 +103,32 @@ def set_in_view(names):
                 _in_view[n] = now
 
 
-def set_readout(faces):
-    """The live readout of the faces in view (from the tracker page), checked: a list of plain JSON values."""
+def set_readout(faces, paused=0):
+    """The live readout of the faces in view (from the tracker page), checked: a list of plain JSON values.
+    paused: for how many seconds the camera has sent no new picture though it is on (a locked screen does this on
+    Windows; the page still sends its last picture), 0 while its picture arrives."""
     import json
     if not isinstance(faces, list) or len(faces) > 50 or len(json.dumps(faces)) > MAX_READOUT:
         raise ValueError("bad readout")
+    if paused is None:
+        paused = 0
+    if isinstance(paused, bool) or not isinstance(paused, (int, float)) or not 0 <= paused < 1e9:
+        raise ValueError("bad readout")
     with _cv:
-        _readout.update(at=time.time(), faces=faces)
+        _readout.update(at=time.time(), faces=faces, paused=round(float(paused), 1))
 
 
 def readout():
     """{faces, age, frameAge}: the newest readout (no faces when it's older than FRESH seconds), and how old the
-    newest camera frame is (the watching page shows "paused" when it's old)."""
+    newest camera frame is (the watching page shows "paused" when it's old). Also paused (seconds) while the
+    camera is on but sends no new picture: its frames still arrive, each the same picture."""
     with _cv:
         age = time.time() - _readout["at"]
         frame_age = round(time.time() - _frame["at"], 1) if _frame["jpeg"] is not None else None
-        return {"faces": _readout["faces"] if age < FRESH else [], "age": round(age, 1), "frameAge": frame_age}
+        out = {"faces": _readout["faces"] if age < FRESH else [], "age": round(age, 1), "frameAge": frame_age}
+        if _readout["paused"] and age < FRESH:
+            out["paused"] = _readout["paused"]
+        return out
 
 
 def in_view(within=6.0):
@@ -166,6 +176,6 @@ def reset():
     """Forget everything (tests)."""
     with _cv:
         _frame.update(seq=0, jpeg=None, at=0.0, size=None)
-        _readout.update(at=0.0, faces=[])
+        _readout.update(at=0.0, faces=[], paused=0.0)
         _watchers.clear()
         _in_view.clear()

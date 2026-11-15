@@ -513,6 +513,9 @@ def make_handler(engine):
             if path == "/api/cameras/readouts":         # their live readouts (faces, names, readings), as data
                 ids = camera_ids(dict(parse_qsl(self.path.partition("?")[2])).get("ids"))
                 return self.send_json(camera_readouts(ids))
+            if path == "/api/screen":                   # is the screen locked? (Windows: no camera until it isn't)
+                import desktop
+                return self.send_json({"locked": desktop.screen_locked()})
             if path == "/api/presence":
                 try:
                     day = dict(parse_qsl(self.path.partition("?")[2])).get("day") or time.strftime("%Y-%m-%d")
@@ -566,7 +569,7 @@ def make_handler(engine):
                     b = json.loads(self.body(camstream.MAX_READOUT + 30_000) or b"{}")
                     camstream.set_in_view(b.get("names") or [])
                     if b.get("readout") is not None:
-                        camstream.set_readout(b["readout"])
+                        camstream.set_readout(b["readout"], b.get("paused"))
                     return self.send_json({"ok": True})
                 if path == "/api/settings":             # page_store.js: changed settings of this page
                     import devicesettings

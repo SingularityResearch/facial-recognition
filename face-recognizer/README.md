@@ -457,10 +457,16 @@ A person's songs and usual music are in **Their data…** (export) and go when t
 
 **On a Windows computer you use through Remote Desktop** (a server, a NAS): a Remote Desktop session, connected
 or disconnected, has none of the computer's own sound devices, so the app there finds no microphone and no
-speakers, and its camera's picture reaches your other devices with a short pause every few seconds. Run
-`tools\keep_session_on_console.ps1 -Install` once on that computer, as an administrator: from then on, whenever
-you disconnect, your session goes back to the computer's own console, locked, where the app has its camera,
-microphone and speakers. (`-Uninstall` removes it.)
+speakers, and its camera's picture reaches your other devices with a short pause every few seconds.
+`tools\keep_session_on_console.ps1 -Install`, run once on that computer as an administrator, changes that: from
+then on, whenever you disconnect, your session goes back to the computer's own console, where the app has its
+camera, microphone and speakers (`-Uninstall` removes it). The session is **not locked** there, and can't be:
+Windows gives no program the camera while the screen is locked. So use it only where anyone who can reach that
+computer's own screen and keyboard may be in your session.
+
+**A locked screen stops the camera** on Windows (Win+L, or the lock after a time without input): the picture
+stays as it was until you unlock. The app says so in its log and tells your other devices that the camera is
+paused, and reads no faces from the still picture.
 
 ## Label people: label_tool.py (separate app)
 
