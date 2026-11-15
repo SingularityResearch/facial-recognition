@@ -71,6 +71,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     instead (see the tracker's locked-screen bullet).
   - `note_memory`: every `MEMORY_EVERY` (30 min) the log gets what the window's processes hold (`window_memory`:
     this process's descendants; Windows and Linux), so a page that keeps growing shows before it runs out of memory.
+  - `drop_request_hooks` (`unhook_requests`): Windows: takes pywebview's two request handlers off the window once
+    its page has loaded. They passed every request of the pages through Python, and the second switched on the
+    browser's network inspection, which keeps a record of every request while the page lives: the page grew 1.5
+    to 2 GB an hour until 1.23.0. A test trips when a new pywebview hooks requests another way.
   - `clear_graphics_caches`: before the window opens, removes its compiled graphics caches once per new version (a
     stale one froze a newer Qt WebEngine: white window); never Local Storage.
   - `KEEP_RUNNING_FLAGS`: the window's browser runs pages unthrottled in the background (the camera stream needs it),

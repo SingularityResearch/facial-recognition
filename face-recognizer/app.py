@@ -693,6 +693,43 @@ def allow_camera_macos():
         return False
 
 
+def unhook_requests(core, browser, every):
+    """Take pywebview's two request handlers off the window's WebView2 (core: its CoreWebView2; browser:
+    pywebview's object holding the handlers; every: WebView2's value for "all kinds of request")."""
+    core.WebResourceResponseReceived -= browser.on_web_resource_response
+    core.WebResourceRequested -= browser.on_web_resource_request
+    core.RemoveWebResourceRequestedFilter("*", every)
+
+
+def drop_request_hooks(window):
+    """Windows: stop pywebview (6.2.1) passing every request of the window's pages through its own two handlers.
+    They serve its request_sent and response_received events, which this app doesn't use, and the second
+    (WebResourceResponseReceived) switches on the browser's network inspection in the page's process, which keeps
+    a record of every request for as long as the page lives. With tens of requests a second (camera frames out
+    and in) the page grew by 1.5 to 2 GB an hour and ran out of memory after 14 hours on one device. Found
+    2026-11-15 in Chromium's own memory dump of the page (blink::NetworkResourcesData::ResourceData); the same
+    page in the same window without the handlers stayed at 50 MB where it had 431 MB after five minutes with
+    them, and got a fifth more camera frames through. Once per window, when its page has loaded.
+    tests/test_window_watchdog.py checks that pywebview still hooks requests this way."""
+    if sys.platform != "win32" or getattr(window, "_requests_unhooked", False):
+        return
+    window._requests_unhooked = True
+    try:
+        from System import Action
+        from Microsoft.Web.WebView2.Core import CoreWebView2WebResourceContext as Context
+
+        def hook():
+            try:
+                unhook_requests(window.native.webview.CoreWebView2, window.native.browser, Context.All)
+            except Exception:
+                print("The window's request handlers stay on (its page's memory will grow):")
+                traceback.print_exc()
+        window.native.Invoke(Action(hook))
+    except Exception:
+        print("The window's request handlers stay on (its page's memory will grow):")
+        traceback.print_exc()
+
+
 def recover_renderer(window):
     """When the window's page renderer dies (crashed, killed, out of memory) the window stays black or white with
     nothing drawn (seen on the Linux laptop): log why and load the page again. Qt WebEngine (Linux, macOS):
@@ -1122,6 +1159,7 @@ def main(argv=None):
         WINDOW = window
         window.events.loaded += lambda: allow_camera(window)
         window.events.loaded += lambda: recover_renderer(window)
+        window.events.loaded += lambda: drop_request_hooks(window)
         # private_mode=False keeps each page's remembered options and per-person baselines between runs
         clear_graphics_caches(HOME / "webview")
         allow_more_open_files()

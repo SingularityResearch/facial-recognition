@@ -255,3 +255,68 @@ def test_the_windows_browser_flags_keep_what_is_set_and_are_added_once():
     before = dict(env)
     app.keep_running_in_background(env)
     assert env == before
+
+
+def test_the_window_librarys_request_handlers_are_taken_off(monkeypatch):
+    """pywebview's WebView2 window passes every request of the pages through two handlers of its own, and the
+    second switches on the browser's network inspection, which keeps a record of every request while the page
+    lives: the page grew 1.5 to 2 GB an hour (2026-11-15). The app takes both off, and the filter that feeds them;
+    a handler of the app's own stays."""
+    import inspect
+    import sys
+
+    import app
+
+    class Event:
+        def __init__(self, *handlers):
+            self.handlers = list(handlers)
+
+        def __isub__(self, handler):
+            self.handlers.remove(handler)
+            return self
+
+    class Browser:
+        def on_web_resource_response(self, *a):
+            pass
+
+        def on_web_resource_request(self, *a):
+            pass
+
+    browser = Browser()
+
+    class Core:
+        def __init__(self):
+            self.WebResourceResponseReceived = Event(browser.on_web_resource_response, "the app's own")
+            self.WebResourceRequested = Event(browser.on_web_resource_request)
+            self.filters = [("*", "all kinds")]
+
+        def RemoveWebResourceRequestedFilter(self, uri, kinds):
+            self.filters.remove((uri, kinds))
+
+    core = Core()
+    app.unhook_requests(core, browser, "all kinds")
+    assert core.WebResourceResponseReceived.handlers == ["the app's own"]
+    assert core.WebResourceRequested.handlers == [] and core.filters == []
+    assert "drop_request_hooks(window)" in inspect.getsource(app.main)       # done for the app's window
+    monkeypatch.setattr(sys, "platform", "linux")                            # only WebView2 has them
+    window = type("Window", (), {})()
+    app.drop_request_hooks(window)
+    assert not hasattr(window, "_requests_unhooked")
+
+
+def test_pywebview_still_hooks_requests_the_way_the_app_undoes():
+    """A tripwire: app.unhook_requests names pywebview's handlers. When a new pywebview hooks requests another way
+    (or no longer), this fails and the app's undoing is looked at again, before a window's memory grows unseen."""
+    import importlib.util
+    from pathlib import Path
+
+    import pytest
+
+    spec = importlib.util.find_spec("webview")
+    if spec is None or not spec.origin:
+        pytest.skip("pywebview isn't installed here")
+    text = (Path(spec.origin).parent / "platforms" / "edgechromium.py").read_text(encoding="utf-8")
+    for line in ("AddWebResourceRequestedFilter('*', CoreWebView2WebResourceContext.All)",
+                 "WebResourceResponseReceived += self.on_web_resource_response",
+                 "WebResourceRequested += self.on_web_resource_request"):
+        assert line in text, line
