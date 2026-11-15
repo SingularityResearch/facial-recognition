@@ -273,6 +273,45 @@ def test_a_persons_expression_readings_are_exported_and_forgotten(data, home, tm
     assert [r["name"] for r in exprlog.waiting()] == ["Bo"]
 
 
+def test_a_persons_music_is_exported_and_forgotten(data, home, tmp_path, monkeypatch):
+    """The music log (musiclog.py): the songs that played for a person are in their export (a file of its own),
+    their usual music is among their person signals, and all of it goes when they are forgotten, with their name
+    as this device's music setting."""
+    import time
+    from pathlib import Path
+
+    import devicesettings
+    import facedb
+    import musiclog
+    monkeypatch.setattr(paths, "HOME", home)
+    monkeypatch.setattr(F, "PRESENCE", home / "presence")
+    monkeypatch.setattr(F, "ALERTS", home / "alerts.json")
+    monkeypatch.setattr(F, "WEBCAM", home / "webcam")
+    make_faces(data, 6)
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    db.act("name", [0, 1], "Ann")
+    db.act("name", [2], "Bo")
+    devicesettings.update("label", {musiclog.WHO: "Ann", musiclog.OPTION: "1"})
+    musiclog.set_picture("Ann", {"songs": 3, "artists": 2, "top_artists": [{"name": "X", "songs": 2, "share": 0.67}]})
+    now = int(time.time() * 1000)
+    for k, n in enumerate(["Ann", "Bo", "Ann"]):
+        assert musiclog.add({"t": now + k, "name": n, "artist": "X", "song": f"song {k}", "seconds": 200,
+                             "data": {"app": "Spotify", "heard": {"tempo": 90, "mode": "minor"}}})
+    monkeypatch.setattr(facedb, "configured", lambda: True)
+    out = P.export(db, "Ann", tmp_path / "out")
+    where = Path(out["folder"])
+    lines = [json.loads(ln) for ln in (where / "music_log.jsonl").read_text("utf-8").splitlines()]
+    assert [ln["song"] for ln in lines] == ["song 0", "song 2"] and all(ln["waitingToBeSent"] for ln in lines)
+    d = json.loads((where / "data.json").read_text("utf-8"))
+    assert d["musicLog"]["songs"] == 2 and "couldn't be read" in d["musicLog"]["note"]          # no server here
+    assert json.dumps(d).count('"top_artists"') == 1                     # their usual music, among their signals
+    monkeypatch.setattr(facedb, "configured", lambda: False)
+    done = P.forget(db, "Ann")
+    assert done["musicLog"] == 2 and done["musicWho"] == 1 and done["personSignals"] == 1
+    assert [r["name"] for r in musiclog.waiting()] == ["Bo"] and musiclog.who() == ""
+    assert musiclog.picture_of("Ann") is None
+
+
 def test_someone_left_in_no_label_can_still_be_forgotten(data, home, monkeypatch):
     """After a rename, or once their last face was cleared, a person is in no label. What is still kept under the
     name (alerts, learned signals, the alert list) must stay exportable and forgettable."""

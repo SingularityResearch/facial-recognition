@@ -39,3 +39,5 @@ face-recognizer/data/
 face-recognizer/.venv/
 
 face-recognizer/FaceRecognizer.exe.*
+
+face-recognizer/models/yamnet.tflite

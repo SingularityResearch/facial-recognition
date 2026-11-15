@@ -183,6 +183,25 @@ private folder (`descriptions.json`).
 
 ---
 
+## Music
+
+Music as one more signal about a person: which song a music app on this computer shows as playing (Spotify), how
+it sounds on each of this computer's audio interfaces, and the person's usual music. The numbers describe the
+sound (how loud, tempo, how bright or bassy, major or minor), never what anyone feels. The sound itself is never
+kept. Nothing is listened to or logged until the switch is on, a person is chosen, and a shared database is set up.
+
+| Setting | Default | What it is for |
+|---|---|---|
+| **Music** | (shown) | What plays now, whether songs are being logged and for whom, every audio interface that can be listened to (each output: what the computer itself plays; each microphone: what sounds in the room) with what it heard at the last listening, in a word (quiet, music, speech, steady background noise and its kind, activity...), and the chosen person's usual music. |
+| **Keep a log of the music that plays** | off | Each song Spotify shows as playing here is kept in the shared database when it ends: artist, song, when, for how long, what each audio interface heard meanwhile (in a word, with the background's numbers, and a song's numbers where music sounded), and how the song sits against the person's usual music. Music that an interface hears with no player naming a song is kept as "music in the room". A song seen for less than 15 seconds isn't kept. While on, the interfaces chosen under Listen on are listened to for 8 seconds every half minute, song or no song. |
+| **This device's music belongs to** | nobody | The named person whose music plays on this computer. Without one, nothing is logged. |
+| **Listen on** | every audio interface | While a song plays, 8 seconds every half minute: every interface (outputs and microphones), outputs only (what this computer itself plays), or none (song names only). A microphone hears the room, so it also hears a song playing on another device; the operating system may show the microphone in use. A Mac can't hear its own outputs: microphones only. |
+| **Spotify** (Connect) | not connected | Your own Spotify key's Client ID (made at developer.spotify.com, with the redirect address the row shows). Connect opens Spotify's page in your browser, where you sign in and agree to read-only access to your library. The tokens are kept protected in the private folder. |
+| **Usual music** (Read my liked songs) | | Reads the connected account's liked songs and makes the chosen person's usual music: artists, genres, decades, how well known the songs are. Kept with the person's other normals; shared with your other devices through the shared database. |
+| **Stop using Spotify** (Disconnect) | | Forgets Spotify's tokens on this computer. The usual music already made stays. |
+
+---
+
 ## LM Studio
 
 LM Studio on this computer and on the local network: the servers Describe photo can use, and the vision models
@@ -255,7 +274,7 @@ Set before starting the app (or a program) to change how it starts.
 | `FACE_LMSTUDIO` | `off` (or `0`, `no`) | Don't keep LM Studio on all interfaces, announce it, or put its models in the shared models folder. |
 | `FACE_LLM_URL` | an address | The default Describe photo server (before one is set in Settings). |
 | `GOOGLE_VISION_API_KEY` | a key | Google key for Web search, instead of saving one. |
-| `FACE_PORTS` | a port n | The app window's ports: n to n+2 instead of 8764 to 8766 (to run a second copy). |
+| `FACE_PORTS` | a port n | The app window's ports: n to n+2 instead of 8764 to 8766 (to run a second copy). The peer service then uses n+3, and Spotify's one-time answer to **Connect** n+4 (8768 by default: the redirect address of your Spotify key must name that port). |
 | `FACE_UI` | `browser`, `none` | browser: open the app in the web browser instead of its window (same as `--browser`). none: start the servers only, with no window and no browser (for test copies; open `http://127.0.0.1:8764/` yourself). |
 | `FACE_ROOT` | a folder | Another folder with `models` and `data`. |
 | `FACE_HOME` | a folder | Another folder instead of the private `FaceLabels` folder. |
@@ -283,6 +302,7 @@ Nothing is sent anywhere by itself except as listed here.
 | **Describe photo** on another computer's server | Each photo described goes to that server. |
 | **Share Describe all with other computers** | During Describe all, photos go to the other LM Studio servers on the local network that have the same model. |
 | **Built-in model**, **NVIDIA CUDA**, **Get the same models** (from the internet) | Downloads, when clicked: Hugging Face, PyPI, LM Studio's sources. |
+| **Music → Spotify** (Connect), **Read my liked songs** | When clicked: Spotify's own sign-in page opens in your browser; then the app asks Spotify (accounts.spotify.com, api.spotify.com, HTTPS) for the connected account's liked songs and their artists' genres. Nothing is sent to Spotify but that question and your key. The music log itself asks nothing of the internet: the song's name comes from the Spotify app's window, the numbers from this computer's own audio interfaces. |
 | **LM Studio → LM Studio on the network** | While Settings is open (and, with Share Describe all on, when a photo is opened and during Describe all): a connection attempt to LM Studio's port on each address of this computer's local networks, each server's model list, each computer's name (mDNS or NetBIOS), and an mDNS question for announced servers. Local network only, on this computer's real adapters; with **Fully distributed system** on, every adapter's network (VPNs and virtual networks too), and servers found beyond the local network may be sent photos by Describe all. |
 | **LM Studio → AI model apps found** | While Settings is open: asks the usual AI ports on this computer, and the Describe photo server set (which may be another device, with its own API key) for its models. |
 | **LM Studio on this computer** | While the app runs (every minute): keeps this computer's LM Studio server listening on all network interfaces (restarting it with `--bind 0.0.0.0` if it listened on this computer only; CORS stays as LM Studio's own **Enable CORS** setting has it: on means a web page open in a browser may call the server too, and the app never switches it on), so other computers on the network can use it, and announces it on the local network (mDNS). `FACE_LMSTUDIO=off` stops both. |
@@ -290,4 +310,4 @@ Nothing is sent anywhere by itself except as listed here.
 | **Share my photos with my other devices** | While on (with a shared database): the peer service listens on the local network (port 8767), TLS. It answers your other devices' requests for its original photos (by content hash) and for this camera's stream. Opening a photo another device has asks that device for it. |
 | **Stream this camera to my other devices** | While on and the camera runs: this device's camera, as its tracker shows it, and its live readout go to your other devices whose Cameras tab shows it, over the peer service. |
 | **Cameras** tab | While it watches: this device's app connects to each streaming device's peer service (TLS, signed requests) for its frames and readout. |
-| **Shared database** | Once connected: every face, name, label, photo record, description, Collect faces picture, alert, presence visit, expression reading (while Keep expression readings is on), per-person signal and this device's settings go to that PostgreSQL server, and come from it, over TLS checked against the server's own certificate authority. Also who on this device's alert list its camera sees (names and times, kept 20 minutes, only while "They move between cameras" is on) and this device's entry in the device list. Keys go only encrypted, and only once the passphrase is set. |
+| **Shared database** | Once connected: every face, name, label, photo record, description, Collect faces picture, alert, presence visit, expression reading (while Keep expression readings is on), song played (while Keep a log of the music that plays is on), per-person signal (a person's usual music among them) and this device's settings go to that PostgreSQL server, and come from it, over TLS checked against the server's own certificate authority. Also who on this device's alert list its camera sees (names and times, kept 20 minutes, only while "They move between cameras" is on) and this device's entry in the device list. Keys go only encrypted, and only once the passphrase is set. |

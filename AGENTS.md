@@ -229,6 +229,29 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Nothing is written without a shared database, or with **Keep expression readings** off (`ft-o-optExprLog`,
     on by default). Named people only, never Unknown; a forgotten name is refused.
   - `persondata.py` exports (`expression_log.jsonl`) and forgets them.
+- Music as a signal (since 1.23; off until the owner switches it on, Settings → Music):
+  - `music.py` — `now_playing` (the song the Spotify app shows: its window title on Windows, AppleScript on macOS,
+    `playerctl` on Linux; nothing asked of the internet); `interfaces` and `listen_all` (every audio interface
+    listened to at once through the optional `soundcard` library: each output by loopback, each microphone;
+    a Mac has inputs only); `measure` (the sound as numbers: level, dynamics, tempo, brightness, bass, key and
+    mode), `combine`, `best` (an output before a microphone); `picture` (a person's usual music from liked songs)
+    and `place` (one song against it).
+    What a room sounds like: `sounds` (YAMNet through MediaPipe's audio classifier, `models/yamnet.tflite`:
+    521 kinds of sound with scores), `families` (those gathered into quiet, music, speech, television or radio,
+    steady background noise, activity, alert sounds, animal sounds: `FAMILIES`, by words in the kind's name),
+    `ambient` (the background as numbers: floor, events over it, steadiness, flatness, hum, rumble and hiss
+    shares, speech-like modulation), `background` and `what` (those in a word, with how sure). The words and
+    their cut-offs are not measured against anything: evidence, shown with the score.
+  - `musiclog.py` — the music log (`music_log`, db/012): the `Listener` thread (started by the labeling tool) looks
+    every 5 s at what plays and listens 8 s every half minute; a song is one row when it ends (artist, song, when,
+    seconds, and in `data` what each interface heard). Rows wait in `HOME/music/<UTC day>.jsonl` until
+    `HomePart.after_push` sends them. Settings `fl-music` (off), `fl-musicWho` (the person), `fl-musicListen`
+    (all | outputs | none). A person's usual music is their person signal of kind `music`
+    (`devicesettings.OWN_KINDS`: kept by the programs, never handed to a page). Routes `/api/music`,
+    `/api/music/spotify`, `/api/music/liked`, `/api/music/disconnect` in `label_tool.py`.
+  - `spotify.py` — the owner's Spotify library, read with their permission: authorization code with PKCE (their
+    own client id, no client secret), the one-time answer taken by `wait_for_code` on 127.0.0.1 (port: tab page
+    port + 4, 8768), read-only scope, tokens protected in `HOME/spotify.json`. Only on the owner's click.
 - `alerts.py` — the tracker's alert inbox (`HOME/alerts.json`): add, list, acknowledge / archive / delete, and each
   alert's measured details (numbers and short text only, checked by `check_details`); routes `/api/alerts`,
   `/api/alerts/state`, `/api/alerts/details` in `tracker.py`. The bell and banner in the app window come from the
@@ -277,7 +300,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     when it differs), `006_passphrase_versions` (`secretbox.py`), `007_peers` (`peer.py`: addresses, port,
     certificate hash), `008_cameras` (`devices.streaming_at`, `sightings`), `009_change_order` (`changes.txid`: the
     writing transaction), `010_expression_log` (`exprlog.py`), `011_key_trust` (`devices.key_proof`,
-    `passphrase_versions.prev`/`link`, `key_requests`: who is given the passphrase for keys).
+    `passphrase_versions.prev`/`link`, `key_requests`: who is given the passphrase for keys), `012_music_log`
+    (`musiclog.py`).
 - `dbimport.py` + `tools/db_import.py` — copy a device's `data/` and HOME into the database (reads only; merges by
   face ID and photo hash; a hand label beats an automatic one; Ignored stays Ignored). Join uses it.
 - `dbsync.py` — the sync, in the labeling tool's process (`label_tool.start_sync`). Files stay the working copy.
@@ -383,6 +407,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - `pose_landmarker_lite.task` (MediaPipe body posture, optional; all 33 points drawn with Full body skeleton);
   - `hand_landmarker.task` (MediaPipe hands, 21 points each, optional, display only: Hand skeleton; in
     `fetch_models.py` from MediaPipe storage only, OPTIONAL until added to models-v1);
+  - `yamnet.tflite` (YAMNet, Apache 2.0: 521 kinds of sound, for what a room sounds like, `music.sounds`; not
+    in git; in `fetch_models.py` from MediaPipe storage only, OPTIONAL until added to models-v1);
   - local only, not in git: AdaFace (evaluated, unused; made by `tools/get_adaface.py`) and `florence2/`
     (`florence.py`). The Linux app's downloaded CUDA is in `ROOT/cuda`, beside `models/`.
 
@@ -414,6 +440,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - making models: `get_adaface.py`, `get_wav2small.py`, `get_yunet_dynamic.py` (YuNet with free input sizes, for
     GPU face finding; published in models-v1);
   - `make_icon.py` (draws the app's icon and writes `icons/`; needs Pillow);
+  - `keep_session_on_console.ps1` (Windows computers used through Remote Desktop: `-Install` makes two scheduled
+    tasks that put the session back on the computer's console, locked, at every disconnect. A Remote Desktop
+    session has no sound devices of the computer's own, and its page is drawn only now and then);
   - shared database: `db_certs.py` (the server's CA and certificate), `db_setup.py` (once per new server: the
     tables and `server_ca`, over verify-ca with that CA), `db_import.py`.
 - `tests/` — `conftest.py` points `FACE_ROOT`/`FACE_HOME` at a temp folder before anything is imported: no models, no
@@ -437,6 +466,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     options, the Windows installer's rules, and the Linux installer run for real on Linux).
   - Shared database: `test_facedb.py`, `test_sync.py`, with `FACE_TEST_PG` (CI job `database`; each test makes and
     drops its own schema).
+  - Device to device: `test_peer.py` (no database needed: which address is tried first, what a refusal says about
+    the clocks, a running service on this computer, a long computer name).
+  - Music: `test_music.py` (a sound with a known beat and key measured, usual music from liked songs, what is
+    logged when and for whom, Spotify's permission against a stand-in on this computer).
   - `test_thresholds.py`: a tripwire on the measured thresholds.
 
 ## Running
@@ -542,6 +575,13 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - The shared database is reached only over TLS checked against its own CA (`verify-ca`); LAN connections without
   TLS are refused by its pg_hba. The app's role (`facerec`) is not a superuser and owns only its schema.
 - Only the two fixed folders may be opened (`/open?what=data|private`); photos are addressed by face index, never by path.
+- Spotify's answer to **Connect** arrives on a listener of its own (`spotify.wait_for_code`), not on the three
+  servers (their rule refuses requests from another site): 127.0.0.1 only, open for five minutes at most after the
+  owner's click, and it takes exactly one request, the one carrying the state that click gave out. Spotify's tokens
+  are kept with `paths.protect` and reach no page.
+- The music log listens to audio interfaces (outputs and microphones) only while its switch is on, and keeps
+  numbers only: the sound of any interface is analysed in memory and never stored (`music.record`), like the
+  tracker's microphone.
 - Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`, `cudasupport.py`); the
   CUDA download starts only from its Settings button, and only `onnxruntime/` and `nvidia/` are unpacked from the
   wheels. `lmstudio.from_share` checks each file against the shared folder's own list (a damaged copy, not a

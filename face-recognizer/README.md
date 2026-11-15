@@ -419,6 +419,49 @@ On the first test session (Oct 30), "happy" and "neutral" were read right 98% of
 
 Keep the black **Face Tracker** window open while you use it.
 
+### Music
+
+Music is one more signal about a person, kept beside the expression readings so that reports can later set the two
+side by side. It is off until you switch it on (**Settings → Music**), choose whose music this computer's is, and
+have a shared database to keep it in.
+
+- **What plays.** The app reads the song from the Spotify app's own window on this computer (artist and song; on
+  macOS it asks the Spotify app, on Linux `playerctl`). Nothing is asked of the internet for this. The Spotify app
+  shows the song even when the sound comes out of another device (a phone, a speaker).
+- **How it sounds, on every audio interface.** While a song plays, the app listens for 8 seconds every half minute
+  to every audio interface of the computer at once, and measures each by itself: each output (what the computer
+  itself plays through speakers, a headset, a display) and each microphone (what sounds in the room, from any
+  device). For each interface that sounds: how loud, how much the loudness changes, the tempo and how clear the
+  beat is, how bright or bassy the sound is, and its key, major or minor. A song's own numbers are taken from an
+  output when one sounds (the song exactly as played), otherwise from the loudest microphone (the song through a
+  room, with whatever else sounds there). Choose **Outputs only** or **None** under **Listen on** to leave the
+  microphones, or all listening, out. A Mac can't hear its own outputs, so there only microphones count.
+- **What the room is playing.** Each interface's sound is also named: a sound-recognition model (YAMNet, 521
+  kinds of sound, downloaded with the other models) says what it hears, gathered into a few plain families:
+  quiet, music, speech, television or radio, steady background noise, activity, alert sounds, animal sounds. A
+  steady background gets its own numbers and a word for its kind: the level it rarely drops below, how much
+  happens over it, how steady it is, low rumble or hiss, mains hum. Settings → Music shows what each interface
+  hears now. Music that a microphone hears twice in a row with no player naming a song is logged as "music in the
+  room". A song's own numbers (tempo, key) are only taken where music is what sounds: a fan has no key.
+- **Only numbers.** The sound is analysed and thrown away, like the tracker's microphone: no recording is ever
+  kept. A row in the log is the artist, the song, when and for how long, and those numbers and words.
+- **Your usual music.** With **Spotify → Connect** you let the app read your Spotify library (read-only; you make
+  the key yourself at developer.spotify.com and agree on Spotify's own page). **Read my liked songs** then makes
+  your usual music from them: your artists, genres, decades, how well known the songs are. Each song that plays
+  is set against it: one of your artists, your kind of music, or not your usual.
+- **What it does not say.** The numbers describe the music ("slow, dark, in a minor key"), not you. Whether what
+  you play says anything about how you feel is a question for your own feeling reports, like every other signal
+  here.
+
+A person's songs and usual music are in **Their data…** (export) and go when they are forgotten.
+
+**On a Windows computer you use through Remote Desktop** (a server, a NAS): a Remote Desktop session, connected
+or disconnected, has none of the computer's own sound devices, so the app there finds no microphone and no
+speakers, and its camera's picture reaches your other devices with a short pause every few seconds. Run
+`tools\keep_session_on_console.ps1 -Install` once on that computer, as an administrator: from then on, whenever
+you disconnect, your session goes back to the computer's own console, locked, where the app has its camera,
+microphone and speakers. (`-Uninstall` removes it.)
+
 ## Label people: label_tool.py (separate app)
 
 Double-click **label.bat** (macOS, Linux: `./label.sh`), or run `python label_tool.py`. Your browser opens **Face Labels**. Every change is saved at once, and **Undo** (or Z) takes back the last one.

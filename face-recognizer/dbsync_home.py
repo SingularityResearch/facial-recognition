@@ -181,7 +181,7 @@ class HomePart:
     def _signals():
         import devicesettings
         return {f"{name}|{kind}": {"name": name, "kind": kind, "data": d}
-                for kind, m in devicesettings.signals().items() for name, d in m.items()}
+                for kind, m in devicesettings.signals(every=True).items() for name, d in m.items()}
 
     # ---- readers of this device's files
     @staticmethod
@@ -519,8 +519,11 @@ class HomePart:
             import devicesettings
             for k, v in rows.items():
                 name, kind = k.rsplit("|", 1)
-                if kind in devicesettings.KINDS:
-                    devicesettings.put_signal(kind, name, None if v is None else v["data"])
+                if kind in devicesettings.ALL_KINDS:
+                    try:
+                        devicesettings.put_signal(kind, name, None if v is None else v["data"])
+                    except ValueError as e:
+                        log(f"Shared database: person signals: {e}")
             now = self._signals()
             return {k: _h(now[k]) if k in now else None for k in rows}
         # forgotten on another device: forget here too, once; named again there (the row is gone): no longer forgotten
@@ -620,6 +623,8 @@ class HomePart:
         import face_id as F
         me = facedb.device()["id"]
         exprlog.send(conn, state, me)          # the expression log: readings waiting in HOME/expression
+        import musiclog
+        musiclog.send(conn, state, me)         # the music log: songs waiting in HOME/music
         lp = paths.HOME / "app.log"
         try:
             size = lp.stat().st_size
@@ -731,4 +736,5 @@ def _forget_on_server(cur, name):
     cur.execute("DELETE FROM alerts WHERE name = %s", (name,))
     cur.execute("DELETE FROM sightings WHERE name = %s", (name,))
     cur.execute("DELETE FROM expression_log WHERE name = %s", (name,))
+    cur.execute("DELETE FROM music_log WHERE name = %s", (name,))
 

@@ -18,6 +18,9 @@ The labeling tool's person view (**Their data…**) uses it through label_tool.p
   private\presence\*.jsonl     their visits (presence log)
   private\expression\*.jsonl   their expression readings waiting to be sent to the shared database, and there the
            expression_log table (exprlog.py: what their face looked like, every few seconds in view)
+  private\music\*.jsonl        the songs that played for them, waiting to be sent to the shared database, and there
+           the music_log table (musiclog.py: artist, song, when, and how it sounded); their usual music is among
+           their person signals below (kind "music"); and their name as this device's music setting (fl-musicWho)
   private\alerts.json          the tracker's alerts about them arriving (alerts.py)
   private\webcam\              Collect faces pictures of them, and the tracker's verdicts naming them
   private\descriptions.json    photo descriptions whose text names them
@@ -52,6 +55,7 @@ import devicesettings
 import exprlog
 import face_id as F
 import labels as L
+import musiclog
 import paths
 
 WEB_SAVED = "web_suggestions.json"     # in data\: Web search answers by face ID (label_tool.WEB_SAVED)
@@ -74,7 +78,8 @@ def _kept_elsewhere(name):
     cleared, the person is in no label, and their alerts, visits, learned signals and expression readings could
     neither be exported nor forgotten."""
     try:
-        if devicesettings.of(name) or alerts.about(name) or exprlog.waiting(name):
+        if devicesettings.of(name) or alerts.about(name) or exprlog.waiting(name) or musiclog.waiting(name) \
+                or musiclog.who() == name:
             return True
         who = devicesettings.settings("track").get("ft-alertWho") or ""
         if name in [x.strip() for x in who.split(",")]:
@@ -242,6 +247,13 @@ def export(db, name, folder, web_saved=None):
         (where / "expression_log.jsonl").unlink(missing_ok=True)
         if log["note"]:
             out["expressionLog"] = log
+    songs = musiclog.export_to(where / "music_log.jsonl", name)         # the songs that played for them
+    if songs["songs"]:
+        out["musicLog"] = {"file": "music_log.jsonl", **songs}
+    else:
+        (where / "music_log.jsonl").unlink(missing_ok=True)
+        if songs["note"]:
+            out["musicLog"] = songs
     paths.atomic_write(where / "data.json", json.dumps(out, indent=1, ensure_ascii=False))
     return {"folder": str(where), "faces": len(faces), "pictures": len(pictures)}
 
@@ -329,6 +341,10 @@ def forget(db, name, web_saved=None, web_lock=None, known=False):
         if F.PRESENCE.is_dir() else 0
     done["alerts"] = alerts.forget(name)
     done["expressionLog"] = exprlog.forget(name)
+    done["musicLog"] = musiclog.forget(name)
+    if musiclog.who() == name:                   # this device's music was theirs: it is nobody's now (nothing logged)
+        devicesettings.update("label", {musiclog.WHO: None})
+        done["musicWho"] = 1
     for s in snaps:
         s.unlink(missing_ok=True)
         s.with_suffix(".json").unlink(missing_ok=True)

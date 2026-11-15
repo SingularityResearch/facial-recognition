@@ -40,7 +40,7 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 TITLE = "Face Recognizer"
-VERSION = "1.22.5"                               # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.23.0"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -995,9 +995,20 @@ def self_test():
         import ctypes
         return f"ctypes callback gives {ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(lambda n: n + 1)(41)}"
 
+    def sound():                                 # the music log's listening: optional, so its absence isn't a failure
+        import music
+        try:
+            import soundcard
+        except Exception as e:                   # e.g. Linux without PulseAudio's library: song names only
+            return f"no sound library here ({type(e).__name__}): the music log keeps song names only"
+        found = music.interfaces()
+        return (f"soundcard {getattr(soundcard, '__version__', '')}: {sum(i['kind'] == 'output' for i in found)} outputs, "
+                f"{sum(i['kind'] == 'input' for i in found)} inputs can be listened to")
+
     def own():
         names = ("face_id", "labels", "label_tool", "tracker", "facedb", "dbsync", "dbsync_home", "peer", "secretbox",
-                 "describe", "websearch", "hardware", "lmstudio", "persondata", "exprlog", "camrelay", "cudasupport")
+                 "describe", "websearch", "hardware", "lmstudio", "persondata", "exprlog", "camrelay", "cudasupport",
+                 "music", "musiclog", "spotify")
         for n in names:
             importlib.import_module(n)
         return f"{len(names)} modules"
@@ -1031,6 +1042,7 @@ def self_test():
                                                                            f"{importlib.import_module('pillow_heif').__name__}"),
                       ("certificates", lambda: importlib.import_module("truststore").__name__),
                       ("run-time functions", callback), ("the app's own code", own), ("pages", packed),
+                      ("sound", sound),
                       ("window", window)):
         part(what, use)
     lines.append(f"{TITLE} {VERSION} on {sys.platform}: " + ("everything loads" if good else "SOMETHING FAILED"))

@@ -87,7 +87,8 @@ def test_the_self_test_loads_what_the_app_is_made_of_and_says_what_failed(tmp_pa
         return
     assert app.self_test() is True
     text = (tmp_path / "self-test.txt").read_text("utf-8")
-    assert capsys.readouterr().out == text and "FAILED" not in text and text.count("\nok ") + 1 == 13
+    assert capsys.readouterr().out == text and "FAILED" not in text and text.count("\nok ") + 1 == 14
+    assert "\nok      sound: " in text                       # the music log's listening: there, or said to be absent
     assert text.splitlines()[-1] == f"{app.TITLE} {app.VERSION} on {app.sys.platform}: everything loads"
     monkeypatch.setattr(importlib, "import_module", without("truststore"))
     assert app.self_test() is False

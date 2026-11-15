@@ -1099,7 +1099,8 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
 // this computer's hardware, each group in its own section, in that order
 {
   const c = SettingsBridge.control, L = "Labeling", W = "Labeling: Web search", P = "Labeling: Describe photo",
-        M = "LM Studio", H = "This computer", D = "Shared database";
+        U = "Music", M = "LM Studio", H = "This computer", D = "Shared database";
+  let mus = {};
   const flag = (section, id, key, label, def, hint) => ({ section, id, label, type: "toggle", def, hint,
     get: () => (store.get(key) ?? (def ? "1" : "0")) === "1",
     set: v => { store.set(key, v ? "1" : "0"); const el = $("#" + id); if (el) el.checked = !!v; } });
@@ -1183,6 +1184,54 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       button: () => `Download the built-in model (${((desc.builtin?.size_mb || 831) / 1000).toFixed(1)} GB)`,
       hidden: () => !!(desc.builtin?.ready || desc.builtin?.running),
       hint: "Florence-2 large, from Hugging Face; runs inside this app on the processor, so photos stay on this computer. Plainer descriptions than LM Studio's." },
+    { section: U, id: "musicstate", label: "Music", type: "info",
+      hint: "Music as one more signal about a person: which song a music app on this computer shows as playing (Spotify), and how it sounds on every audio interface of this computer, each one measured by itself: every output (what the computer itself plays through speakers, a headset, a display) and every microphone (what sounds in the room, from any device). Only numbers are kept (how loud, tempo, how bright or bassy, major or minor), never the sound; they describe the music, not what anyone feels. Nothing is listened to or logged until the switch below is on, a person is chosen, and a shared database is set up to keep it in.",
+      get: async () => {
+        mus = await get("/api/music");
+        if (["connecting", "reading"].includes(mus.job?.state)) setTimeout(SettingsBridge.changed, 1500);
+        const p = mus.picture, pct = x => `${Math.round(x * 100)}%`;
+        return [
+          mus.playing ? `Playing now: ${mus.playing.artist} - ${mus.playing.song}` : "No song is playing in Spotify on this computer.",
+          mus.logging ? `Logging for ${mus.who}.${mus.waiting ? ` ${mus.waiting} song${mus.waiting === 1 ? "" : "s"} wait to be sent.` : ""}`
+            : !mus.on ? "Not logging: switched off." : !mus.who ? "Not logging: choose whose music this is." : "Not logging: no shared database to keep it in.",
+          mus.interfaces?.length ? "Audio interfaces here:" : `No audio interface can be listened to here (${mus.interfaces_why || "none found"}): song names only.`,
+          mus.interfaces?.length && mus.interfaces_why ? `  (${mus.interfaces_why})` : null,
+          ...(mus.interfaces || []).map(i => {
+            const r = (mus.room?.interfaces || []).find(x => x.name === i.name && x.kind === i.kind);
+            return `  ${i.kind === "output" ? "output" : "microphone"}: ${i.name}${i.default ? " (default)" : ""}` +
+              (r ? `: ${r.what}${r.background ? ` (${r.background})` : ""}${r.what !== "quiet" && r.sure != null ? `, ${Math.round(r.sure * 100)}% sure` : ""}` : "");
+          }),
+          mus.room ? `  (heard ${mus.room.ago} s ago; listened to every half minute while the log is on)` : null,
+          mus.logging && !mus.model ? "  The sound-recognition model isn't downloaded yet: sounds aren't named, music in the room isn't noticed." : null,
+          p ? `${mus.who}'s usual music (${p.source || "liked songs"}, ${localTime(p.made)}): ${p.songs.toLocaleString()} songs by ${p.artists.toLocaleString()} artists` : null,
+          p?.top_artists?.length ? `  Most liked: ${p.top_artists.slice(0, 8).map(a => `${a.name} (${a.songs})`).join(", ")}` : null,
+          p?.genres?.length ? `  Genres: ${p.genres.slice(0, 8).map(g => `${g.name} ${pct(g.share)}`).join(", ")}` : null,
+          p?.decades?.length ? `  Decades: ${p.decades.map(d => `${d.name} ${pct(d.share)}`).join(", ")}` : null,
+          mus.job && mus.job.state !== "idle" ? `Spotify: ${mus.job.text}` : null,
+        ].filter(Boolean).join("\n");
+      } },
+    flag(U, "music", "music", "Keep a log of the music that plays", false,
+         "While on: each song Spotify shows as playing on this computer is kept in your shared database when it ends (artist, song, when, for how long, and how it sounded on each audio interface), under the person chosen below. Exported and forgotten with that person like everything else."),
+    { section: U, id: "musicWho", label: "This device's music belongs to", type: "select", def: "",
+      hint: "The person whose music plays on this computer. Their liked songs become their usual music, and each song is set against it (one of their artists, their kind of music, or not their usual).",
+      options: () => [["", "Nobody: nothing is logged"], ...names().map(n => [n, n])],
+      get: () => store.get("musicWho") || "",
+      set: v => { store.set("musicWho", v); SettingsBridge.changed(); } },
+    { section: U, id: "musicListen", label: "Listen on", type: "select", def: "all",
+      hint: "Which audio interfaces are listened to while a song plays (a few seconds every half minute). A microphone hears the room, so it also hears a song that plays on another device; your operating system may show that the microphone is in use.",
+      options: () => [["all", "Every audio interface: outputs and microphones"], ["outputs", "Outputs only: what this computer itself plays"],
+                      ["none", "None: song names only"]],
+      get: () => store.get("musicListen") || "all",
+      set: v => store.set("musicListen", v) },
+    { section: U, id: "spotify", label: "Spotify", type: "form", button: () => mus.spotify?.connected ? "Connect again" : "Connect",
+      hint: () => `To read your liked songs, Spotify wants a key of your own: at developer.spotify.com/dashboard create an app (any name), give it the redirect address ${mus.spotify?.redirect || "(shown here in a moment)"}, tick Web API, and copy its Client ID here. Connect opens Spotify's own page in your browser, where you sign in and agree; this app can then read your library and nothing else, and can change nothing. ${mus.spotify?.connected ? `Connected since ${localTime(mus.spotify.since)}.` : "Not connected."} What is kept from Spotify stays on this computer, protected; the app contacts Spotify only when you click here or Read my liked songs.`,
+      fields: () => [{ name: "client_id", label: "Client ID", placeholder: "32 letters and digits", value: mus.spotify?.client_id || "" }] },
+    { section: U, id: "musicLiked", label: "Usual music", type: "button", button: "Read my liked songs",
+      hidden: () => !mus.spotify?.connected,
+      hint: "Reads the liked songs of the connected Spotify account and makes the usual music of the person chosen above from them: artists, genres, decades, how well known the songs are. Kept with that person's other normals and shared with your other devices." },
+    { section: U, id: "spotifyOff", label: "Stop using Spotify", type: "button", button: "Disconnect",
+      hidden: () => !mus.spotify?.connected,
+      hint: "Forgets Spotify's permission on this computer (the usual music already made is kept). To take the permission back at Spotify too: your Spotify account, Apps." },
     { section: M, id: "lmshere", label: "LM Studio on this computer", type: "info",
       hint: "While this app runs, LM Studio here is kept serving on all network interfaces and announced on the network (mDNS: LM Studio on <this computer>, with its port), so the other computers find it. FACE_LMSTUDIO=off turns that off.",
       get: async () => { const s = lms = await get("/api/lmstudio");
@@ -1355,6 +1404,10 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     lmsget: () => post("/api/lmstudio/get", {}),
     describeTest: () => post("/api/describe/test", { url: desc.config?.url || "" }),
     describeKey: saved(a => post("/api/describe/config", { key: a.key || "" })),
+    spotify: async a => { await post("/api/music/spotify", { client_id: a.client_id || "" });
+      return { message: "Spotify's page is opening in your browser: agree there" }; },
+    musicLiked: async () => { await post("/api/music/liked", {}); return { message: "Reading your liked songs" }; },
+    spotifyOff: async () => { await post("/api/music/disconnect", {}); return { message: "Disconnected" }; },
   });
 }
 

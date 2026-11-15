@@ -79,6 +79,7 @@ def command(platform=sys.platform):
     for f in ICONS:
         cmd += ["--add-data", f"{HERE / 'icons' / f}{sep}icons"]
     cmd += ["--add-data", f"{HERE / 'db'}{sep}db"]          # the shared database's schema (facedb.migrate)
+    cmd += ["--collect-all", "soundcard"]                   # its interface descriptions (.h files) are read at run time
     cmd += ["--collect-all", "mediapipe", "--collect-all", "onnxruntime", "--collect-submodules", "webview",
             "--hidden-import", "sklearn.cluster", "--collect-all", "psycopg_binary", "--hidden-import", "pgvector.psycopg"]
     if platform.startswith("linux"):

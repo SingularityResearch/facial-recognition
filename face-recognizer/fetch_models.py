@@ -69,6 +69,8 @@ ORIGIN = {
     "face_landmarker.task": MP.format("face_landmarker", "face_landmarker", "face_landmarker.task"),
     "pose_landmarker_lite.task": MP.format("pose_landmarker", "pose_landmarker_lite", "pose_landmarker_lite.task"),
     "hand_landmarker.task": MP.format("hand_landmarker", "hand_landmarker", "hand_landmarker.task"),
+    # YAMNet (Google, Apache 2.0): 521 kinds of sound, for what the room sounds like (music.sounds)
+    "yamnet.tflite": "https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite",
     # (zip, file in it): only that file's bytes are downloaded
     "arcface_w600k_r50.onnx":
         ("https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip", "w600k_r50.onnx"),
@@ -85,6 +87,7 @@ FILES = {
     "face_landmarker.task": (3758596, "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"),
     "pose_landmarker_lite.task": (5777746, "59929e1d1ee95287735ddd833b19cf4ac46d29bc7afddbbf6753c459690d574a"),
     "hand_landmarker.task": (7819105, "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1"),
+    "yamnet.tflite": (4126810, "4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf"),
     "wav2small.onnx": (71332, "c9df50bb1e7a4f1f5010279fcebe2110717ff94a3cc6fe66e1b151e177a91210"),
     # YuNet with any input size, for face finding on a GPU (tools/get_yunet_dynamic.py; only in models-v1)
     "face_detection_yunet_2023mar_dynamic.onnx": (229738, "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0"),
@@ -158,7 +161,8 @@ def is_good(name):
 # Files the programs work without (another way is used instead): one that can't be downloaded is skipped with a note,
 # not an error, and tried again next time.
 OPTIONAL = {"face_detection_yunet_2023mar_dynamic.onnx",     # without it faces are found on the CPU (OpenCV)
-            "hand_landmarker.task"}                          # without it the Hand skeleton option is greyed out
+            "hand_landmarker.task",                          # without it the Hand skeleton option is greyed out
+            "yamnet.tflite"}                                 # without it the room's sound isn't named (music.sounds)
 
 
 def needed():

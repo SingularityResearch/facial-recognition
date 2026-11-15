@@ -92,6 +92,40 @@ def test_short_questions_share_one_kept_connection(pg, monkeypatch):
     assert facedb._kept["conn"] is None
 
 
+@needs_pg
+def test_songs_reach_the_music_log_once_and_go_with_a_forget(pg, tmp_path, monkeypatch):
+    """musiclog.send: waiting songs become rows of music_log (db/012), one per device, person and moment, so sending
+    a file again changes nothing; a forgotten person's rows are deleted on the server."""
+    import time
+
+    import dbsync_home
+    import musiclog
+    import paths
+    monkeypatch.setattr(paths, "HOME", tmp_path)
+
+    class State(dict):
+        put = dict.__setitem__
+
+        def drop(self, k):
+            self.pop(k, None)
+    now = int(time.time() * 1000)
+    for k, (who, artist) in enumerate([("Ann", "Mad Season"), ("Bo", "Nina Simone"), ("Ann", "")]):
+        assert musiclog.add({"t": now + k * 1000, "name": who, "artist": artist, "song": f"song {k}", "seconds": 200.5,
+                             "data": {"app": "Spotify", "via": "output", "heard": {"tempo": 72.0, "mode": "minor"},
+                                      "interfaces": {"Headset": {"kind": "output", "what": "music", "ambient": {"floor": -60.0}}}}})
+    me, state = facedb.device()["id"], State()
+    assert musiclog.send(pg, state, me) == 3 and musiclog.send(pg, state, me) == 0
+    state.clear()                                                    # as after a rewritten file: all of it again
+    assert musiclog.send(pg, state, me) == 3
+    rows = pg.execute("SELECT name, artist, song, seconds, data FROM music_log ORDER BY at").fetchall()
+    assert [(r[0], r[1], r[2]) for r in rows] == [("Ann", "Mad Season", "song 0"), ("Bo", "Nina Simone", "song 1"),
+                                                  ("Ann", "", "song 2")]
+    assert rows[0][3] == 200.5 and rows[0][4]["interfaces"]["Headset"]["ambient"]["floor"] == -60.0
+    with pg.transaction():
+        dbsync_home._forget_on_server(pg.cursor(), "Ann")
+    assert [r[0] for r in pg.execute("SELECT name FROM music_log")] == ["Bo"]
+
+
 def make_device(folder, faces, labels):
     """A made-up device: data/ with faces.npz, thumbs.npz, photos.json, labels.json; HOME with a webcam snapshot."""
     data, home = folder / "data", folder / "home"

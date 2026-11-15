@@ -3,7 +3,8 @@
 one set per device; person_signals, shared by every device).
 
   HOME/settings.json        {app: {key: value}}   app: "track" (ft-... keys) or "label" (fl-... keys)
-  HOME/person_signals.json  {kind: {name: data}}  kind: "usual" (Expression.UsualLooks) or "baseline" (Signals.Baselines)
+  HOME/person_signals.json  {kind: {name: data}}  kind: "usual" (Expression.UsualLooks), "baseline" (Signals.Baselines),
+                            or "music" (music.picture: the person's usual music; kept by the programs, not a page)
 
 Values are the pages' own localStorage strings. Nothing here is a measured threshold or a default: the pages keep
 those. Without a shared database these files are this device's own copy, as browser storage was before."""
@@ -17,6 +18,8 @@ SETTINGS = "settings.json"
 SIGNALS = "person_signals.json"
 APPS = {"track": "ft-", "label": "fl-"}
 KINDS = {"usual": "ft-usual", "baseline": "ft-baselines"}       # kind -> the page's localStorage key
+OWN_KINDS = ("music",)          # kinds the programs keep themselves, never handed to a page: a person's usual music
+ALL_KINDS = tuple(KINDS) + OWN_KINDS                            # (music.picture; set by musiclog.set_picture)
 NOT_SETTINGS = set(KINDS.values()) | {"ft-forgot-done"}         # person data or page bookkeeping, never a setting
 MAX_VALUE = 20_000
 MAX_SIGNALS = 5_000_000
@@ -66,10 +69,12 @@ def replace_settings(all_settings):
         _write(SETTINGS, {a: dict(v) for a, v in all_settings.items() if a in APPS and isinstance(v, dict)})
 
 
-def signals():
+def signals(every=False):
+    """{kind: {name: data}} of the kinds the tracker page keeps; every=True: the programs' own kinds too (the sync,
+    which shares them all)."""
     with _lock:
         s = _read(SIGNALS)
-    return {k: dict(s.get(k) or {}) for k in KINDS}
+    return {k: dict(s.get(k) or {}) for k in (ALL_KINDS if every else KINDS)}
 
 
 def _forgotten():
@@ -131,7 +136,10 @@ def set_signals(kind, people):
 
 
 def put_signal(kind, name, data):
-    """One person's row (the sync); data None removes it."""
+    """One person's row (the sync, and the programs' own kinds); data None removes it."""
+    if kind not in ALL_KINDS or not isinstance(name, str) or not name or name.startswith("#") \
+            or (data is not None and (not isinstance(data, dict) or len(json.dumps(data)) > MAX_SIGNALS)):
+        raise ValueError("bad signals")
     with _lock:
         s = _read(SIGNALS)
         m = s.setdefault(kind, {})
@@ -146,8 +154,8 @@ def forget(name):
     """Drop name from every kind (persondata.forget). Returns how many rows went."""
     with _lock:
         s = _read(SIGNALS)
-        n = sum(1 for k in KINDS if name in (s.get(k) or {}))
-        for k in KINDS:
+        n = sum(1 for k in ALL_KINDS if name in (s.get(k) or {}))
+        for k in ALL_KINDS:
             (s.get(k) or {}).pop(name, None)
         if n:
             _write(SIGNALS, s)
@@ -156,8 +164,8 @@ def forget(name):
 
 def of(name):
     """{kind: data} held about name (persondata.export)."""
-    s = signals()
-    return {k: s[k][name] for k in KINDS if name in s[k]}
+    s = signals(every=True)
+    return {k: s[k][name] for k in ALL_KINDS if name in s[k]}
 
 
 def page_state(app):

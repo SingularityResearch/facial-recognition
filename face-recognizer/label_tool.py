@@ -381,6 +381,9 @@ def make_handler(db, importer):
                     return self.send({"has": hardware.describe(), "uses": hardware.uses(), "ai": hardware.ai_apps()})
                 if path == "/api/websearch/key":
                     return self.send({"set": bool(websearch.key()), "services": websearch.services()})
+                if path == "/api/music":                 # the music log and a person's usual music (Settings)
+                    import musiclog
+                    return self.send(musiclog.status())
                 if path == "/api/secrets":               # the Settings tab's saved keys, shown masked
                     if self.refused(write=True):         # only to the tool's own page (its header), never cross-site
                         return
@@ -510,6 +513,18 @@ def make_handler(db, importer):
                         describe_all()
                     except describe.Unavailable as e:
                         raise ValueError(str(e)) from e
+                    return self.send({"ok": True})
+                if path == "/api/music/spotify":         # Settings: connect Spotify (opens its page in the browser)
+                    import musiclog
+                    musiclog.connect_spotify(body.get("client_id") or "")
+                    return self.send({"ok": True})
+                if path == "/api/music/liked":           # Settings: read the liked songs, make the person's picture
+                    import musiclog
+                    musiclog.read_liked()
+                    return self.send({"ok": True})
+                if path == "/api/music/disconnect":
+                    import spotify
+                    spotify.disconnect()
                     return self.send({"ok": True})
                 if path == "/api/describe/config":       # Settings: which describer, server, model, API key
                     describe.set_config(**{k: body[k] for k in ("use", "url", "model", "key", "spread") if k in body})
@@ -780,6 +795,8 @@ def attach(srv):
     # and not yet Ignored here, and must not get its print back.
     lost = db.lost_prints()
     start_sync(db)
+    import musiclog
+    musiclog.start()                       # the music log: does nothing until the owner switches it on (Settings)
     def find_then_read():
         try:                               # photos that moved (e.g. a drive letter changed): find them first
             r = L.relocate(db.store, L.settings()["folders"], db.lock)
