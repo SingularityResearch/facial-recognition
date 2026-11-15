@@ -468,9 +468,9 @@ reach that computer's own screen and keyboard may be in your session.
 The app notices within a few seconds, says so in its log, tells your other devices that the camera is paused,
 and reads no faces from the still picture. What happens next depends on the lock:
 
-- **Disconnecting from Remote Desktop** locks the session too. There the app starts the camera again by itself
-  within about half a minute, and it runs as before. (Before 1.23.0 the last picture stayed, shown as live,
-  until the app was next started.)
+- **Disconnecting from Remote Desktop** locks the session too. There Windows gives the camera back only to a
+  newly started app, so the app starts itself again, once, and its camera runs as before about a minute after
+  the disconnect. (Before 1.23.0 the last picture stayed, shown as live, until the app was next started.)
 - **Locked at the computer itself** (Win+L, or the lock after a time without input): Windows gives the camera
   back only when you unlock. The app waits for that and has the camera running a few seconds later.
 

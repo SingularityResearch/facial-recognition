@@ -1,5 +1,7 @@
 """The window watchdog: a page that stops answering gets its renderer stopped, then the app started again; a page
 that answers, a page not loaded yet and a computer waking from sleep are left alone."""
+import json
+
 import app
 
 
@@ -122,8 +124,45 @@ def test_camera_restart_at_most_hourly_and_only_in_the_window(monkeypatch, tmp_p
     monkeypatch.setattr(app, "WINDOW", None)
     assert app.restart_soon("test") is False and not started          # browser or test copy: never
     monkeypatch.setattr(app, "WINDOW", object())
+    monkeypatch.setattr(app.desktop, "screen_locked", lambda: False)
     assert app.restart_soon("test") is True and started == [1]
     assert app.restart_soon("test") is False and started == [1]       # again within the hour: no
+
+
+def test_camera_restart_under_a_locked_screen_is_once_per_lock(monkeypatch, tmp_path):
+    """A Remote Desktop disconnect locks the session, Windows stops the camera, and only the app started again
+    gets it back (seen 2026-11-15): so under a lock the app starts again once, whatever the hour says, and not a
+    second time until the screen has been seen unlocked (locked at the computer's own screen it changes nothing)."""
+    started, locked = [], [True]
+    monkeypatch.setattr(app, "HOME", tmp_path)
+    monkeypatch.setattr(app, "restart_app", lambda: started.append(1))
+    monkeypatch.setattr(app, "WINDOW", object())
+    monkeypatch.setattr(app.desktop, "screen_locked", lambda: locked[0])
+
+    class Now:
+        def __init__(self, _s, fn):
+            self.fn = fn
+
+        def start(self):
+            self.fn()
+    monkeypatch.setattr(app.threading, "Timer", Now)
+    locked[0] = False
+    assert app.restart_soon("test") is True and started == [1]         # unlocked: the hourly rule
+    locked[0] = True
+    assert app.unlock_seen() is False                                  # nothing to clear, and it is locked
+    assert app.restart_soon("test") is True and started == [1, 1]      # locked: once, though the hour isn't over
+    assert json.loads((tmp_path / "restarted.json").read_text("utf-8"))["camera"]["locked"] is True
+    assert app.restart_soon("test") is False and started == [1, 1]     # the same lock: not again
+    assert app.unlock_seen() is False and app.restart_soon("test") is False
+    locked[0] = None                                                   # Windows doesn't say: not taken for an unlock
+    assert app.unlock_seen() is False
+    locked[0] = False
+    assert app.unlock_seen() is True and app.unlock_seen() is False    # unlocked: cleared, once
+    assert app.restart_soon("test") is False and started == [1, 1]     # unlocked again: the hourly rule
+    locked[0] = True
+    assert app.restart_soon("test") is True and started == [1, 1, 1]   # the next lock gets its one restart
+    (tmp_path / "restarted.json").write_text("not json", "utf-8")      # a damaged record never stops the watchdog
+    assert app.unlock_seen() is False
 
 
 def test_restart_keeps_program_and_arguments(monkeypatch):

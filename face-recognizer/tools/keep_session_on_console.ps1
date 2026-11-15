@@ -14,7 +14,8 @@
 # keyboard is in your session. Use it only where that is acceptable (a locked room, a computer with no screen and
 # keyboard attached).
 # Without it the camera still works in a disconnected Remote Desktop session, with the two limits above: a
-# disconnect locks the session and Windows stops the camera 20 s later, and the app (1.23.0 on) starts it again.
+# disconnect locks the session and Windows stops the camera 20 s later; the app (1.23.0 on) then starts itself
+# again, once, and has its camera back.
 #
 #   powershell -ExecutionPolicy Bypass -File keep_session_on_console.ps1 -Install     (as an administrator, once)
 #   powershell -ExecutionPolicy Bypass -File keep_session_on_console.ps1 -Uninstall

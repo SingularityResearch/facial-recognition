@@ -15,11 +15,11 @@ import traceback
 def screen_locked(platform=sys.platform, info=None):
     """True while this desktop session's screen is locked, False while it isn't, None where that can't be told
     (macOS, Linux, or Windows didn't say). On Windows a lock stops every running camera about 20 s later (its
-    picture stays where it was), and every Remote Desktop disconnect locks the session. A camera started after
-    that runs in a session locked by a disconnect; in one locked at the computer's own screen the start never
-    finishes (both seen on one computer, 2026-11-15). Windows says "locked" for both, so the tracker page starts
-    a paused camera again at once under a lock, and never loads itself or the app again against one
-    (/api/screen)."""
+    picture stays where it was), and every Remote Desktop disconnect locks the session. Locked by a disconnect,
+    the running app doesn't get the camera back, but the app started again has it within seconds; locked at the
+    computer's own screen no start finishes until the unlock (all seen on one computer, 2026-11-15). Windows
+    says "locked" for both, so under a lock the tracker page asks for one new start of the app and no more
+    (/api/screen, app.restart_soon)."""
     if platform != "win32":
         return None
     try:

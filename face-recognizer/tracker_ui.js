@@ -1292,19 +1292,23 @@ setInterval(async () => {
 //   - a camera that is on but sends no new picture for 30 s (camPaused) is started again, and no more than that:
 //     its next start counts as any start does.
 // A locked screen (screenLocked; Windows): about 20 s after the lock Windows stops every running camera, and the
-// video keeps its last picture. Every Remote Desktop disconnect locks the session too. What a start does then
-// depends on the lock (both seen on the NAS, 2026-11-15): in a session locked by a disconnect the camera starts
-// and runs as ever; locked at the computer's own screen, the start never finishes. The page can't tell the two
-// apart, so it tries: a camera paused under a lock is started again at once (no 30 s wait: Windows stopped it for
-// good), one start is left waiting however long it takes, and against a lock the page is never loaded again nor
-// the app started again (neither changes anything). Unlocked, the camera is started within 10 s as always.
-const STUCK_EVERY = 600000, LOCKED = "The camera doesn't start while the screen is locked like this: waiting for the unlock, the one start left open.";
+// video keeps its last picture. Every Remote Desktop disconnect locks the session too. What helps depends on the
+// lock (all seen on the NAS, 2026-11-15):
+//   - locked by a disconnect: a start from this page fails at once, but the app started again has the camera
+//     within seconds, and it runs as ever;
+//   - locked at the computer's own screen: no start finishes, in this app or a new one, until the unlock.
+// The page can't tell the two apart, so: a camera paused under a lock is stopped and started at once (no 30 s
+// wait: Windows stopped it for good); when that start fails or doesn't finish, the app is asked to start again,
+// once (lockAsked; app.py does it once per lock); after that one start is left open, and nothing more is loaded
+// or started against the lock. Unlocked, the camera is started within 10 s as always.
+const STUCK_EVERY = 600000;
 async function screenLocked() {
   try { return (await (await fetch("/api/screen", { cache: "no-store", signal: AbortSignal.timeout(3000) })).json()).locked === true; }
   catch { return false; }
 }
 let keepStarting = false, keepHung = 0, keepFailed = 0, noPicture = 0, camNoted = "", stuckAt = 0;
 let startOut = null;                       // the start this loop made that hasn't finished yet
+let lockAsked = false;                     // the app was asked to start again under this lock
 // No camera to start: the system refuses it to this page, or says there is none and lists none. "Not found" while
 // one is listed is the camera service gone wrong, which loading the page or starting the app again does cure.
 async function camAbsent() {
@@ -1328,6 +1332,7 @@ setInterval(async () => {
   keepStarting = true;                                   // one round at a time, also while the question is out
   const locked = await screenLocked();
   keepStarting = false;
+  if (!locked) lockAsked = false;
   if (stream) {
     const still = camPaused();
     if (!(still && locked) && ++noPicture < 3) return;   // under a lock a paused camera doesn't come back by itself
@@ -1342,7 +1347,7 @@ setInterval(async () => {
     if (still) return;                                   // started again next round; no more than that for this
     hung = true;
   } else {
-    if (locked && startOut) return;                      // the one start left open: it finishes when Windows lets it
+    if (locked && lockAsked && startOut) return;         // the one start left open: it finishes when Windows lets it
     keepStarting = true;
     try {
       const start = startOut = startCamera();
@@ -1350,10 +1355,16 @@ setInterval(async () => {
       await Promise.race([start, new Promise((_, no) => setTimeout(() => { hung = true; no(new Error("hung")); }, 30000))]);
     } catch {} finally { keepStarting = false; }
     if (stream) return;                                  // opened: the next rounds look for its picture
-    const why = locked ? LOCKED : hung ? "Starting the camera didn't finish in 30 s." : `The camera wouldn't start (${camError || "no reason given"}).`;
-    if (why !== camNoted) pageNote((camNoted = why) + (locked ? "" : " Trying again every 10 s."));
+    const why = hung ? "Starting the camera didn't finish in 30 s." : `The camera wouldn't start (${camError || "no reason given"}).`;
+    if (locked) {
+      if (!lockAsked) {                                  // once: the app decides (once per lock)
+        lockAsked = true;
+        pageNote(camNoted = `${why} The screen is locked: asking the app to start again, which it does once per lock.`);
+        SettingsBridge.notify({ fs: "camstuck" });
+      }
+    } else if (why !== camNoted) pageNote((camNoted = why) + " Trying again every 10 s.");
   }
-  if (locked) { keepHung = keepFailed = 0; return; }     // no page reload or app restart against a lock
+  if (locked) { keepHung = keepFailed = 0; return; }     // no page reload against a lock, and no second app restart
   if (hung ? ++keepHung < 2 : await camAbsent() || ++keepFailed < 6) return;
   let reloaded = false;
   try { reloaded = sessionStorage.getItem("camHung") === "1"; sessionStorage.setItem("camHung", "1"); } catch {}

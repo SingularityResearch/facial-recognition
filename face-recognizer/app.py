@@ -384,25 +384,53 @@ def window_restart_due(rec, now):
     return now - at >= wait, n
 
 
-def restart_soon(why):
+def restart_soon(why, locked=None):
     """Start the app again in a moment (the answer goes out first): only in the app window, and at most once every
-    RESTART_EVERY s, so a camera that's really broken can't keep the app restarting. True when it will."""
+    RESTART_EVERY s, so a camera that's really broken can't keep the app restarting. True when it will.
+
+    Under a locked screen (Windows; `locked`: asked of the system here when not given) the rule is once per lock
+    instead, whatever the hour says. A Remote Desktop disconnect locks the session, Windows stops the camera 20 s
+    later, and the running app doesn't get it back: a start from its page fails at once, while the app started
+    again has it within seconds (seen 2026-11-15). Locked at the computer's own screen that changes nothing, so
+    it isn't done twice: the record keeps `locked` until the screen is seen unlocked (unlock_seen)."""
     if WINDOW is None:
         return False
+    rec = _restarts().get("camera", {})
     try:
-        last = float(_restarts().get("camera", {}).get("at", 0))
+        last = float(rec.get("at", 0))
     except (AttributeError, TypeError, ValueError):
-        last = 0.0
-    if time.time() - last < RESTART_EVERY:
+        rec, last = {}, 0.0
+    if locked is None:
+        locked = desktop.screen_locked() is True
+    if locked:
+        if rec.get("locked"):
+            print(f"Not starting the app again ({why}): it did so once since the screen was locked.")
+            return False
+    elif time.time() - last < RESTART_EVERY:
         print(f"Not starting the app again ({why}): it did so less than {RESTART_EVERY // 60} min ago.")
         return False
     try:
-        _note_restart("camera", {"at": time.time(), "why": why})
+        _note_restart("camera", {"at": time.time(), "why": why, "locked": bool(locked)})
     except OSError:
         return False
-    print(f"Starting the app again: {why}.")
+    print(f"Starting the app again: {why}{' (the screen is locked)' if locked else ''}.")
     threading.Timer(1.0, restart_app).start()
     return True
+
+
+def unlock_seen(locked=None):
+    """The screen isn't locked (any more): the next lock gets its one restart again (restart_soon). Asked by the
+    window's watchdog every few seconds; reads the record only, and writes it when there is something to clear."""
+    try:
+        rec = _restarts().get("camera", {})
+        if not isinstance(rec, dict) or not rec.get("locked"):
+            return False
+        if (desktop.screen_locked() if locked is None else locked) is not False:
+            return False
+        _note_restart("camera", {**rec, "locked": False})
+        return True
+    except Exception:
+        return False
 
 
 WATCHING = {"on": True}                     # off once there is no app window to watch (the browser is used instead)
@@ -530,6 +558,7 @@ def watch_window():
             if now - noted >= MEMORY_EVERY:
                 noted = now
                 note_memory()
+            unlock_seen()
             what = watch_step(st, now, ALIVE["at"])
             if what == "reset" and ALIVE["at"] is not None:
                 ALIVE["at"] = now
@@ -1104,6 +1133,9 @@ def main(argv=None):
         if sys.platform.startswith("linux") and WINDOW_ICON.is_file():
             start["icon"] = str(WINDOW_ICON)
         webview.start(**start)
+        # in the log, so an app that is gone can be told from one that crashed (2026-11-15: an app that had
+        # ended with nothing logged, and no way to say whether its window had been closed)
+        print("The app window was closed: the app ends.", flush=True)
     except Exception:                               # no window toolkit here (e.g. Linux without GTK or Qt)
         traceback.print_exc()
         print("No app window could open here: using the web browser instead.")

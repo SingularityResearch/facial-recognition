@@ -67,7 +67,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     `recover_renderer` reloads a page whose renderer died.
   - A camera that won't start even after a page reload: the tracker page tells the tab page (`fs: "camstuck"`),
     which asks `/restart-app`; `restart_soon` restarts the app at most once every `RESTART_EVERY` (an hour,
-    `HOME/restarted.json`), and only in the app window.
+    `HOME/restarted.json`), and only in the app window. Under a locked screen the rule is once per lock
+    instead (see the tracker's locked-screen bullet).
   - `note_memory`: every `MEMORY_EVERY` (30 min) the log gets what the window's processes hold (`window_memory`:
     this process's descendants; Windows and Linux), so a page that keeps growing shows before it runs out of memory.
   - `clear_graphics_caches`: before the window opens, removes its compiled graphics caches once per new version (a
@@ -225,12 +226,15 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     shows "paused · no new picture for …" though the frames keep arriving). After 30 s the camera is started
     again, and no more than that.
   - A locked screen on Windows (`/api/screen`, `desktop.screen_locked`: the session's flags). Every Remote
-    Desktop disconnect locks the session too. A camera started after the lock runs in a session locked by a
-    disconnect, and never starts in one locked at the computer's own screen; Windows calls both "locked", so
-    the page tries: a camera paused under a lock is started again at once (within 10 s, no 30 s wait), one
-    start is left open however long it takes (`startOut`), and against a lock the page is never loaded again
-    nor the app asked to start again. Before 1.23.0 a disconnect left the last picture streamed as live until
-    the app was next started (once for 21 hours).
+    Desktop disconnect locks the session too. Locked by a disconnect, the running app doesn't get the camera
+    back (a start from the page fails at once) but the app started again has it within seconds; locked at the
+    computer's own screen no start finishes until the unlock. Windows calls both "locked", so: a camera
+    paused under a lock is stopped and started at once (no 30 s wait); when that fails or doesn't finish the
+    page asks the app to start again, once (`lockAsked`, `fs: "camstuck"`), and `app.restart_soon` does it
+    once per lock, whatever its hourly rule says (`restarted.json` `camera.locked`, cleared by `unlock_seen`
+    when the watchdog sees the screen unlocked); after that one start is left open (`startOut`) and the page
+    is never loaded again against a lock. Before 1.23.0 a disconnect left the last picture streamed as live
+    until the app was next started (once for 21 hours).
 - `expression.js` — expression voting, state model, confidence flags, evidence, per-person usual look (browser; served
   by `tracker.py`).
 - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
@@ -547,10 +551,13 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - The owner's app holds ports 8764-8767. Start a test copy from source on spare ports (tracker/labeling `--port`,
   or the app with `FACE_PORTS`), with `FACE_HOME` (or `APPDATA`) pointed at a temp folder and `FACE_ROOT` (or
   `face_id.DATA`) at an empty or copied folder, so it can't touch the real `data/` or `HOME`.
-- Start a built test copy with `FACE_UI=none` (servers only): `FACE_UI=browser` opens the owner's default browser,
-  and that tab says the program stopped once the test copy is killed.
-- Headless Edge over CDP works for page checks. Kill leftover `msedge --remote-debugging-port` processes first:
-  an old one keeps old tabs (and their errors) alive.
+- Start a built test copy with `FACE_UI=none` (servers only), and `tracker.py` or `label_tool.py` from source
+  with `--no-browser`: otherwise the program opens its page in the owner's default browser. A tracker tab left
+  there keeps running after the test copy is stopped and, with "Keep this camera running", takes the camera the
+  moment the owner's app lets go of it: the app then gets "camera busy" at every start (2026-11-15).
+- Headless Edge over CDP works for page checks: a browser of its own each run (its own port and profile), ended
+  with its whole process tree (`taskkill /PID <pid> /T /F`; ending only the process that was started leaves the
+  rest running, with its tabs). Check that none is left over before and after.
 - Importing `face_id` works without models; each program calls `face_id.require_models()` when it starts, which
   stops with `NotDownloaded` (what to run) if they're missing.
 
