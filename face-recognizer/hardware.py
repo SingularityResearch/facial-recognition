@@ -238,6 +238,9 @@ def lan_addresses():
 
 
 VIRTUAL = ("lo", "docker", "br-", "veth", "virbr", "tun", "tap", "wg", "zt", "tailscale", "CloudflareWARP", "vEthernet")
+# Of those, the bridges a computer keeps for its own containers and virtual machines (Linux names): their addresses
+# exist on every such computer alike (Docker's 172.17.0.1) and no other machine can reach them.
+CONTAINER = ("docker", "br-", "veth", "virbr", "cni", "podman", "lxc", "lxd")
 
 
 def distributed():
@@ -268,8 +271,9 @@ def _adapters(max_age=300):
         out = []
         for line in _run(["ip", "-4", "-o", "addr", "show", "scope", "global"]).splitlines():
             parts = line.split()
-            if len(parts) > 3:
-                out.append((parts[3].split("/")[0], parts[1].startswith(VIRTUAL) or "/32" in parts[3]))
+            if len(parts) > 3:                 # "container" counts as virtual wherever only true or false is asked
+                out.append((parts[3].split("/")[0], "container" if parts[1].startswith(CONTAINER)
+                            else parts[1].startswith(VIRTUAL) or "/32" in parts[3]))
         return out or None
     if system == "Darwin":
         out, name = [], ""
@@ -317,6 +321,15 @@ def own_addresses(every=None):
         found = [ip for ip, virtual in known if every or not virtual]
     return sorted({ip for ip in found if not ip.startswith(("127.", "169.254."))},
                   key=lambda a: tuple(int(x) for x in a.split(".")))
+
+
+def reachable_addresses(every=None):
+    """own_addresses() without the addresses no other machine can reach: this computer's container and
+    virtual-machine bridges, which "Fully distributed system" otherwise counts. What a device tells the others
+    (peer.py): a device that listed its Docker bridge had every other device wait for it in vain."""
+    known = _adapters()
+    local = {ip for ip, kind in known or [] if kind == "container"}
+    return [ip for ip in own_addresses(every) if ip not in local]
 
 
 def _installed_ai_apps():

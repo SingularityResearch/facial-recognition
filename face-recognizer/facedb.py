@@ -19,6 +19,7 @@ import re
 import socket
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -180,6 +181,47 @@ def connect(autocommit=True):
     except Exception:
         conn.close()
         raise
+
+
+KEEP = 60                      # seconds an unused kept connection stays open (ask)
+_kept = {"conn": None, "key": None, "used": 0.0}
+_kept_lock = threading.Lock()
+
+
+def ask(fn):
+    """fn(conn) on a connection kept open for short questions that read (who has this photo, where a device is,
+    which cameras stream): one at a time. Connecting takes about 0.1 s (TLS and a login that is slow on purpose),
+    a question about a millisecond, and a new connection for each one made every photo from another device and
+    every list of cameras wait for it (measured 2026-11-14: 126 ms a request, 20 of them the request). The
+    connection is made again when it has gone, went unused for KEEP seconds (a server that vanished is then
+    noticed while connecting, within CONNECT_TIMEOUT, not in the middle of a question), or the connection
+    settings or this device changed. A question that fails on the kept connection is asked once more on a new
+    one. Raises what connect() raises."""
+    import psycopg
+    key = (_conninfo(), device()["id"])
+    with _kept_lock:
+        for again in (False, True):
+            conn = _kept["conn"]
+            fresh = conn is None or conn.closed or _kept["key"] != key or time.time() - _kept["used"] > KEEP
+            if fresh:
+                _drop_kept()
+                _kept.update(conn=connect(), key=key)
+            _kept["used"] = time.time()
+            try:
+                return fn(_kept["conn"])
+            except (psycopg.OperationalError, psycopg.InterfaceError):
+                _drop_kept()
+                if fresh or again:
+                    raise
+
+
+def _drop_kept():
+    conn, _kept["conn"] = _kept["conn"], None
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def migrations():

@@ -1,0 +1,116 @@
+"""The peer service (peer.py) without a database: which of a device's addresses is tried first, what the service is
+set up to stand, what a refused request says about the clocks, and the warning before the clocks are too far apart.
+The parts that need the shared database are in test_sync.py."""
+import hashlib
+import json
+import socket
+import ssl
+import time
+
+import pytest
+
+import peer
+
+
+def test_a_devices_addresses_are_tried_in_the_order_most_likely_to_answer(monkeypatch):
+    """A device lists every address it has (a VPN's too, with "Fully distributed system"); each one that doesn't
+    answer costs CONNECT seconds. First the one that answered last, then those on a network this computer is on."""
+    monkeypatch.setattr(peer, "addresses", lambda: ["192.168.1.13"])
+    monkeypatch.setattr(peer, "_good", {})
+    listed = ["10.8.0.2", "100.96.0.1", "192.168.1.20"]
+    assert peer._order("fp", listed) == ["192.168.1.20", "10.8.0.2", "100.96.0.1"]
+    peer._answered("fp", "100.96.0.1")
+    assert peer._order("fp", listed) == ["100.96.0.1", "192.168.1.20", "10.8.0.2"]
+    assert peer._order("another device", listed)[0] == "192.168.1.20"          # remembered per device
+    peer._answered("fp", "10.8.0.2", False)                                    # another address failing changes nothing
+    assert peer._order("fp", listed)[0] == "100.96.0.1"
+    peer._answered("fp", "100.96.0.1", False)                                  # the remembered one stopped answering
+    assert peer._order("fp", listed) == ["192.168.1.20", "10.8.0.2", "100.96.0.1"]
+    assert peer._order("fp", None) == [] and peer.CONNECT < peer.TIMEOUT
+
+
+def test_a_device_tells_the_others_only_addresses_they_can_reach(monkeypatch):
+    """Its container bridges (Docker's 172.17.0.1 is the same on every computer) are never told, whatever
+    "Fully distributed system" says; a VPN's address is, when that setting is on."""
+    import hardware
+    monkeypatch.setattr(hardware, "_adapters", lambda max_age=300: [("192.168.1.13", False), ("100.96.0.1", True),
+                                                                    ("172.17.0.1", "container")])
+    monkeypatch.setattr(hardware, "distributed", lambda: True)
+    monkeypatch.setattr(peer, "_addr_cache", {"at": 0.0, "list": []})
+    assert hardware.own_addresses() == ["100.96.0.1", "172.17.0.1", "192.168.1.13"]    # as before: all its own
+    assert peer.addresses() == ["100.96.0.1", "192.168.1.13"]
+    monkeypatch.setattr(hardware, "distributed", lambda: False)
+    assert hardware.reachable_addresses() == ["192.168.1.13"] == hardware.own_addresses()
+    monkeypatch.setattr(hardware, "_adapters", lambda max_age=300: None)               # a system that doesn't say
+    monkeypatch.setattr(hardware, "lan_addresses", lambda: ["192.168.1.13"])
+    assert "192.168.1.13" in hardware.reachable_addresses()
+
+
+def test_the_service_stands_many_requests_at_once_and_answers_without_waiting():
+    assert peer._Server.request_queue_size >= 128        # Python's 5: on Windows the sixth waited a second
+    assert peer._Handler.disable_nagle_algorithm is True
+
+
+def test_a_refusal_for_the_time_says_how_far_apart_the_clocks_are():
+    import re
+    behind = peer._why(json.dumps({"error": "stale or missing time", "now": int(time.time()) - 300}).encode())
+    assert re.search(r"its clock is (299|300|301) s behind this device's", behind) and str(peer.CLOCK_SKEW) in behind
+    assert "ahead of this device's" in peer._why(json.dumps({"error": "x", "now": time.time() + 500}).encode())
+    assert peer._why(b'{"error": "not signed by a device of this cluster"}') == "not signed by a device of this cluster"
+    assert peer._why(b"<html>no</html>") == "<html>no</html>" and peer._why(b"[1]") == "[1]"
+
+
+def test_clocks_drifting_apart_are_said_in_the_log_before_requests_are_refused(capsys, monkeypatch):
+    monkeypatch.setattr(peer, "_clock_said", {})
+    import email.utils
+    head = b"HTTP/1.0 200 OK\r\nServer: FaceRecognizerPeer\r\nDate: Sat, 14 Nov 2026 12:00:00 GMT\r\nContent-Length: 2"
+    at = email.utils.parsedate_to_datetime("Sat, 14 Nov 2026 12:00:00 GMT").timestamp()
+    assert peer._clock_note("192.168.1.20", head, now=at + 5) == -5 and capsys.readouterr().out == ""
+    assert peer._clock_note("192.168.1.20", head, now=at + 81) == -81
+    said = capsys.readouterr().out
+    assert "81 s behind" in said and "192.168.1.20" in said and str(peer.CLOCK_SKEW) in said
+    peer._clock_note("192.168.1.20", head, now=at + 82)
+    assert capsys.readouterr().out == ""                  # once an hour for a device, not at every request
+    peer._clock_note("192.168.1.21", head, now=at - 90)
+    assert "90 s ahead" in capsys.readouterr().out        # another device: its own line
+    peer._clock_note("192.168.1.20", head, now=at + 82 + 3601)
+    assert "behind" in capsys.readouterr().out
+    assert peer._clock_note("x", b"HTTP/1.0 200 OK\r\nServer: s") is None and peer._clock_note("x", b"Date: junk") is None
+
+
+def test_a_running_service_refuses_an_old_request_with_its_own_time(tmp_path, monkeypatch):
+    """The whole way on this computer: TLS with the pinned certificate, a signed request answered, one signed five
+    minutes ago refused with the service's time, so the asker can say how far apart the clocks are."""
+    pytest.importorskip("cryptography")
+    monkeypatch.setattr(peer, "CERT", tmp_path / "peer-cert.pem")
+    monkeypatch.setattr(peer, "KEY", tmp_path / "peer-key.pem")
+    key = b"k" * 32
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    svc = peer.Service(lambda h, f: b"\xff\xd8photo" if h == "ab" * 20 else None, lambda: key,
+                       bind="127.0.0.1", listen_port=port).start()
+    try:
+        fp = peer.certificate()[2]
+        assert peer._get("127.0.0.1", port, fp, "/photo/" + "ab" * 20, key) == b"\xff\xd8photo"
+        assert peer._get("127.0.0.1", port, fp, "/photo/" + "cd" * 20, key) is None          # not one of its photos
+        with pytest.raises(PermissionError, match="not signed"):
+            peer._get("127.0.0.1", port, fp, "/photo/" + "ab" * 20, b"x" * 32)
+        with pytest.raises(ssl.SSLError):
+            peer._get("127.0.0.1", port, "0" * 64, "/photo/" + "ab" * 20, key)                # not its certificate
+        # a request signed five minutes ago, sent as the asking device sends it
+        import facedb
+        me, when, path = facedb.device()["id"], str(int(time.time()) - 300), "/photo/" + "ab" * 20
+        ctx = peer._context(ssl.PROTOCOL_TLS_CLIENT, ssl.CERT_NONE)
+        with ctx.wrap_socket(socket.create_connection(("127.0.0.1", port), timeout=5), server_hostname="127.0.0.1") as c:
+            assert hashlib.sha256(c.getpeercert(binary_form=True)).hexdigest() == fp
+            c.sendall((f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nX-Peer-Device: {me}\r\n"
+                       f"X-Peer-Time: {when}\r\nX-Peer-Sig: {peer.sign(key, 'GET', path, when, me)}\r\n\r\n").encode())
+            data = b""
+            while chunk := c.recv(65536):
+                data += chunk
+        head, _, body = data.partition(b"\r\n\r\n")
+        assert b" 403 " in head.split(b"\r\n")[0] and abs(json.loads(body)["now"] - time.time()) < 5
+        assert "apart is refused" in peer._why(body) and "clocks automatically" in peer._why(body)
+    finally:
+        svc.stop()

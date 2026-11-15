@@ -129,10 +129,10 @@ def cameras():
     camera streams now (a frame within the last half minute)."""
     try:
         import facedb
-        with facedb.connect() as conn:
-            me = facedb.device()["id"]
-            rows = conn.execute("""SELECT id::text, name, peer_share, streaming_at > now() - interval '45 seconds',
-                                          streaming_at FROM devices ORDER BY name""").fetchall()
+        me = facedb.device()["id"]             # the Cameras page asks every 10 s: on a kept connection (facedb.ask)
+        rows = facedb.ask(lambda conn: conn.execute(
+            """SELECT id::text, name, peer_share, streaming_at > now() - interval '45 seconds', streaming_at
+               FROM devices ORDER BY name""").fetchall())
         return {"devices": [{"id": i, "name": n, "me": i == me, "share": bool(sh), "streaming": bool(st),
                              "streamingAt": at.isoformat().replace("+00:00", "Z") if at else None}
                             for i, n, sh, st, at in rows], "why": ""}

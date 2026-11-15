@@ -269,6 +269,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     connection, proves the server at its other end knows the password) and keeps it for verify-ca.
   - Migrations run under an advisory lock; a `changes` log is kept by trigger (deletes as tombstones). Connections
     are autocommit: group writes in `with conn.transaction():`.
+  - A new connection costs about 0.1 s (TLS and the login). Short questions that only read (who has a photo, where
+    a device is, the Cameras page's list of devices) go through `facedb.ask(fn)`: one connection kept for them,
+    made again when it has gone or went unused for `KEEP` (60) s.
   - Migrations: `001_schema` (tables, change log), `002_sync` (database `instance` id, photo facts),
     `003_server_ca`, `004_forgotten` (people forgotten on any device), `005_picture_sha` (send a face picture only
     when it differs), `006_passphrase_versions` (`secretbox.py`), `007_peers` (`peer.py`: addresses, port,
@@ -319,6 +322,15 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     `CLOCK_SKEW` (120) s; photos by hash only (`PHOTO_RE`), from the device's own records.
   - truststore replaces `ssl.SSLContext` app-wide, so `peer.py` uses the original class (`_context`). Started by
     `HomePart._peer`.
+  - Asking: a device's addresses are tried best first (`_order`: the one that answered last, then those on a
+    network both are on), each for `CONNECT` (3) s. A device tells the others only addresses they can reach
+    (`hardware.reachable_addresses`: never its container bridges, even with **Fully distributed system**).
+    Who has a photo and where a device is are asked on the kept database connection (`facedb.ask`).
+  - Serving: an accept queue of 128 and answers sent at once (`request_queue_size`, `disable_nagle_algorithm`),
+    as the three local servers have.
+  - Clocks: a request signed more than `CLOCK_SKEW` from the service's time is refused with that time, so the
+    asker's message says how far apart the two clocks are; `_clock_note` writes to the log, at most once an hour
+    for a device, when its clock is more than half of that away (from the `Date` of its answers).
 
 ### Hardware, models and LM Studio
 

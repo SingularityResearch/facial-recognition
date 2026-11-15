@@ -38,7 +38,10 @@ CERT = paths.HOME / "peer-cert.pem"
 KEY = paths.HOME / "peer-key.pem"
 CONF = paths.HOME / "peer.json"
 CLOCK_SKEW = 120                 # seconds a signed request stays valid
-TIMEOUT = 8                      # seconds to wait for another device
+TIMEOUT = 8                      # seconds to wait for another device's answer
+CONNECT = 3                      # seconds to wait for one of its addresses to take the connection: a device may list
+                                 # addresses the asking one can't reach (a VPN's, another network's), and each was
+                                 # waited for 8 s before the next was tried
 MAX_PHOTO = 60_000_000           # bytes accepted from another device
 STREAM_FOR = 7 * 24 * 3600       # a /stream request lasts until the watching device closes it
 BOUNDARY = "facerecframe"
@@ -159,11 +162,30 @@ _addr_cache = {"at": 0.0, "list": []}
 
 
 def addresses():
-    """This computer's LAN addresses (hardware.own_addresses), looked up at most once a minute."""
+    """The addresses other devices can reach this computer at (hardware.reachable_addresses: its own, without the
+    container bridges no other machine can reach), looked up at most once a minute."""
     if time.time() - _addr_cache["at"] > 60:
         import hardware
-        _addr_cache["list"], _addr_cache["at"] = hardware.own_addresses(), time.time()
+        _addr_cache["list"], _addr_cache["at"] = hardware.reachable_addresses(), time.time()
     return _addr_cache["list"]
+
+
+_good = {}                       # a device's certificate fingerprint -> its address that answered last
+
+
+def _order(fp, addrs):
+    """A device's addresses in the order to try them: the one that answered last, then those on a network this
+    computer is on too, then the rest (each in the order the device listed them)."""
+    mine = {a.rpartition(".")[0] for a in addresses()}
+    return sorted(addrs or [], key=lambda a: (a != _good.get(fp), a.rpartition(".")[0] not in mine))
+
+
+def _answered(fp, addr, ok=True):
+    """Remember (or forget) which of a device's addresses works."""
+    if ok:
+        _good[fp] = addr
+    elif _good.get(fp) == addr:
+        del _good[fp]
 
 
 # --- the service ---------------------------------------------------------------------------------------------------
@@ -174,6 +196,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     sys_version = ""
     service = None
     timeout = 30         # seconds without a byte moving, the TLS handshake included: a silent connection ends
+    disable_nagle_algorithm = True   # an answer's last piece left only when the asker had acknowledged the rest:
+                                     # 6 to 26 ms on every photo, on a network that needs 1 (measured 2026-11-14)
 
     def setup(self):
         # The TLS handshake happens here, on this request's own thread and under the timeout. It used to happen
@@ -185,8 +209,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def _deny(self, code, why):
-        body = json.dumps({"error": why}).encode()
+    def _deny(self, code, why, **more):
+        body = json.dumps({"error": why, **more}).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -202,7 +226,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             when = self.headers.get("X-Peer-Time", "")
             sig = self.headers.get("X-Peer-Sig", "")
             if not when.isdigit() or abs(time.time() - int(when)) > CLOCK_SKEW:
-                return self._deny(403, "stale or missing time")
+                return self._deny(403, "stale or missing time", now=int(time.time()))   # the asker says how far apart
             key = self.service.key_source()
             if key is None or not hmac.compare_digest(sign(key, "GET", self.path, when, dev), sig):
                 return self._deny(403, "not signed by a device of this cluster")
@@ -264,6 +288,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 class _Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = os.name != "nt"         # Windows: a second copy must fail, not share the port
+    request_queue_size = 128                      # Python's 5: on Windows, 16 requests at one moment took a second
+                                                  # (those that found the queue full were sent again a second later)
 
     def handle_error(self, request, client_address):
         if not isinstance(sys.exc_info()[1], OSError):   # a failed or silent handshake, a dropped connection: no news
@@ -307,10 +333,49 @@ def holders(conn, photo):
                            ORDER BY d.last_seen DESC""", (photo, facedb.device()["id"])).fetchall()
 
 
+def _why(body):
+    """What a refusing device said; when it was the time of the request, how far apart the two clocks are."""
+    text = body.decode("utf-8", "replace")[:300]
+    try:
+        said = json.loads(text)
+        if isinstance(said.get("now"), (int, float)):
+            diff = said["now"] - time.time()
+            return (f"its clock is {abs(diff):.0f} s {'ahead of' if diff > 0 else 'behind'} this device's (more than "
+                    f"{CLOCK_SKEW} s apart is refused): check that both set their clocks automatically")
+        return str(said.get("error"))[:100]
+    except (ValueError, AttributeError):
+        return text[:100]
+
+
+_clock_said = {}                 # address -> when the log last said that device's clock is far off
+
+
+def _clock_note(addr, head, now=None):
+    """Say in the log, at most once an hour for a device, that its clock and this one's are more than half of
+    CLOCK_SKEW apart (from the Date line of its answer, to the second): past CLOCK_SKEW the devices refuse each
+    other, and nothing said so beforehand (one device was found 81 s behind, its time service stopped). Returns
+    the difference in seconds, or None when the answer has no date."""
+    import email.utils
+    m = re.search(rb"(?:^|\r\n)date:\s*([^\r\n]+)", head, re.I)
+    try:
+        theirs = email.utils.parsedate_to_datetime(m.group(1).decode("ascii")).timestamp()
+    except (AttributeError, TypeError, ValueError, UnicodeDecodeError):
+        return None
+    now = time.time() if now is None else now
+    diff = theirs - now
+    if abs(diff) > CLOCK_SKEW / 2 and now - _clock_said.get(addr, 0) > 3600:
+        _clock_said[addr] = now
+        print(f"The clock of the device at {addr} is {abs(diff):.0f} s {'ahead of' if diff > 0 else 'behind'} this "
+              f"device's. At {CLOCK_SKEW} s apart the devices stop showing each other photos and cameras: check "
+              "that both set their clocks automatically.")
+    return diff
+
+
 def _get(addr, port_, fp, path, key):
     """GET path from one device: TLS, its certificate checked against fp, signed. Bytes, or None."""
     ctx = _context(ssl.PROTOCOL_TLS_CLIENT, ssl.CERT_NONE)   # self-signed: checked by its SHA-256 below instead
-    with socket.create_connection((addr, port_), timeout=TIMEOUT) as raw:
+    with socket.create_connection((addr, port_), timeout=CONNECT) as raw:
+        raw.settimeout(TIMEOUT)
         with ctx.wrap_socket(raw, server_hostname=addr) as s:
             der = s.getpeercert(binary_form=True)
             if not der or hashlib.sha256(der).hexdigest() != fp:
@@ -329,10 +394,11 @@ def _get(addr, port_, fp, path, key):
     status = head.split(b"\r\n", 1)[0].split()
     if len(status) < 2 or status[1] != b"200":
         if len(status) > 1 and status[1] == b"403":
-            raise PermissionError("refused: " + body.decode("utf-8", "replace")[:100])
+            raise PermissionError("refused: " + _why(body))
         if len(status) > 1 and status[1] != b"404":
             raise OSError(f"answered {status[1].decode()}: " + body.decode("utf-8", "replace")[:100])
         return None
+    _clock_note(addr, head)
     m = re.search(rb"\r\ncontent-length:\s*(\d+)", head, re.I)
     if m and len(body) != int(m.group(1)):
         return None
@@ -348,22 +414,19 @@ def device_peer(conn, device_id):
 
 def fetch_readout(device_id):
     """Another device's live readout ({faces, age}) through the peer service."""
-    conn = facedb.connect()
-    try:
-        found = device_peer(conn, device_id)
-        key = cluster_key(conn)
-    finally:
-        conn.close()
+    found, key = facedb.ask(lambda conn: (device_peer(conn, device_id), cluster_key(conn)))
     if not found:
         raise OSError("that device doesn't share its camera")
     name, addrs, port_, fp = found
     last = "no address"
-    for a in addrs or []:
+    for a in _order(fp, addrs):
         try:
             body = _get(a, port_, fp, "/readout", key)
             if body:
+                _answered(fp, a)
                 return json.loads(body)
         except (OSError, ssl.SSLError, ValueError) as e:
+            _answered(fp, a, False)
             last = f"{a}:{port_}: {e}"
     raise OSError(f"{name} can't be reached ({last})")
 
@@ -371,20 +434,16 @@ def fetch_readout(device_id):
 def open_stream(device_id):
     """Start watching another device's camera: (TLS socket, content type, first bytes of the body) for the caller
     to pass on, or raise OSError with why."""
-    conn = facedb.connect()
-    try:
-        found = device_peer(conn, device_id)
-        key = cluster_key(conn)
-    finally:
-        conn.close()
+    found, key = facedb.ask(lambda conn: (device_peer(conn, device_id), cluster_key(conn)))
     if not found:
         raise OSError("that device doesn't share its camera")
     name, addrs, port_, fp = found
     last = "no address"
-    for a in addrs or []:
+    for a in _order(fp, addrs):
         try:
             ctx = _context(ssl.PROTOCOL_TLS_CLIENT, ssl.CERT_NONE)
-            raw = socket.create_connection((a, port_), timeout=TIMEOUT)
+            raw = socket.create_connection((a, port_), timeout=CONNECT)
+            raw.settimeout(TIMEOUT)
             s = ctx.wrap_socket(raw, server_hostname=a)
             der = s.getpeercert(binary_form=True)
             if not der or hashlib.sha256(der).hexdigest() != fp:
@@ -403,11 +462,16 @@ def open_stream(device_id):
             status = head.split(b"\r\n", 1)[0].split()
             if len(status) < 2 or status[1] != b"200":
                 s.close()
+                if len(status) > 1 and status[1] == b"403":
+                    raise PermissionError(f"{name} refused: " + _why(rest))
                 raise OSError(f"{name} answered {status[1].decode() if len(status) > 1 else '?'}")
+            _clock_note(a, head)
             m = re.search(rb"\r\ncontent-type:\s*([^\r\n]+)", head, re.I)
             s.settimeout(STREAM_READ)                  # the sender writes a readout every second, paused or not
+            _answered(fp, a)
             return s, (m.group(1).decode() if m else "multipart/x-mixed-replace"), rest
         except (OSError, ssl.SSLError) as e:
+            _answered(fp, a, False)
             last = f"{a}:{port_}: {e}"
     raise OSError(f"{name} can't be reached ({last})")
 
@@ -416,26 +480,27 @@ def fetch(photo, frame=None):
     """The photo view's JPEG of photo (a frame of a video) from another device that has it: (jpeg, device name),
     or (None, why)."""
     try:
-        conn = facedb.connect()
+        found, key = facedb.ask(lambda conn: (holders(conn, photo), cluster_key(conn)))
     except Exception as e:
         return None, f"the shared database can't be reached ({e})"
-    try:
-        found = holders(conn, photo)
-        key = cluster_key(conn)
-    finally:
-        conn.close()
     if not found:
         return None, "no other device that shares its photos has it"
     path = f"/photo/{photo}" + (f"?frame={int(frame)}" if frame is not None else "")
     tried, last = [], ""
     for name, addrs, port_, fp in found:
-        for a in addrs or []:
+        for a in _order(fp, addrs):
             try:
                 jpg = _get(a, port_, fp, path, key)
+                _answered(fp, a)                       # it answered, with the photo or without
                 if jpg:
                     return jpg, name
                 last = f"{a}:{port_} didn't send it"
+                break                                  # the same device has no other answer at its other addresses
+            except PermissionError as e:               # reached, and it refused (the key, the clocks)
+                last = f"{a}:{port_}: {e}"
+                break
             except (OSError, ssl.SSLError) as e:
+                _answered(fp, a, False)
                 last = f"{a}:{port_}: {e}"
         tried.append(name)
     return None, "it's on " + ", ".join(tried) + f", which can't be reached now ({last})"

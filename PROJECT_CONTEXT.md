@@ -720,6 +720,7 @@ first-start downloads; only the latest app release is kept):
 | v1.22.2 | Nov 13 | Released for Windows, macOS and Linux (run on the three devices first). The passphrase for keys is no longer sealed to every row in `devices`: a device gets it typed, or with a one-time code typed on a device that has it (db/011: `key_proof`, version `link`, `key_requests`); a device that typed it reads the shared keys at once; restore only of versions the device held. The LM Studio restart passes `--cors` only when LM Studio's own settings have it on. The three servers keep connections open (HTTP/1.1): on Windows one request in a thousand had failed on a new connection each time (§10). |
 | v1.22.3 | Nov 14 | Released for Windows, macOS and Linux, with installers for the first time (the Windows and Linux ones run on the three devices first; the macOS .dmg only built, as there is no Mac to try it on). Five bugs from §10's list: an Ignored face that is named, or taken off the Ignored list, gets its print and picture made again from its photo (and faces left without them by older versions are mended at start); a moved video is found again like a photo; a Cameras page left open in a browser shows frames again after its tracker restarts; Ctrl+1 to Ctrl+4 work from inside a tab; questions are asked in the page (`ask.js`) instead of with `confirm()`, which stopped the camera and made the watchdog restart the app. Also (the owner's wish, 2026-11-14): the app's own icon (`icons/`, drawn by `tools/make_icon.py`: a faceted face, half solid and half mesh, in a camera's corner marks) on the .exe, the .app, the Linux window and each page's browser tab, and installers that put the app in place with icons, none needing administrator rights (`build_exe.py --installer`): `FaceRecognizer-Setup-x64.exe` (Inno Setup; Start menu and desktop icons; into `%LOCALAPPDATA%\Programs\FaceRecognizer` or a folder the user picks, as the app writes `models\` and `data\` beside itself), `FaceRecognizer-macos-arm64.dmg` (drag to Applications) and `FaceRecognizer-linux-x64.run` (installs itself for the user, with a menu entry and a desktop icon). No installer ever deletes `models` or `data`. The portable .zip and .tar.gz stay beside them. And from the NAS's camera gone for six hours that day (§10): **Keep this camera running** counts a camera as running only when its picture arrives, escalates starts that are refused as well as ones that hang, and says in `app.log` what it did (`/api/page-note`); `app.log` gets the memory of the window's processes every half hour (`note_memory`). |
 | v1.22.4 | Nov 14 | Released for Windows, macOS and Linux; the first release whose macOS app and .dmg are signed with a Developer ID and notarized by Apple (`tools/apple_signing.py`, CI's signing steps and the built app's `--self-test` came in after 1.22.3). For the Mac, found by reading the code before there was one to try it on: the app window never answered WebKit's question about the camera, so macOS would have asked "Allow 127.0.0.1 to use your camera?" at every page load, with nobody there to answer after an unattended restart (`app.allow_camera_macos`: the window's delegate grants the tracker this window started, `camera_answer`; any other page is still asked); and the app's `Info.plist` says why it reaches the local network (macOS 15 and later ask first; until allowed, the shared database and the other devices can't be reached). Still not run on a real Mac: the window, the camera, a hidden window's frame rate and CoreML are to be measured on the first one. |
+| v1.22.5 | Nov 14 | From the network review of that day (§10), built and run on the three devices first. The service the devices reach each other through stands many requests at one moment on Windows (accept queue 128: 16 at once took 1.04 s, now about 20 ms). A request to another device, and the Cameras page's list of devices, no longer open a database connection each (`facedb.ask`: 130 ms down to 13 to 32 ms, and 109 ms to 3 ms). A device's addresses are tried best first, each for 3 s instead of 8, and a device no longer tells the others its container bridges. The log says when another device's clock is more than a minute from this one's, before requests are refused at two minutes, and a refusal for the time says how far apart the clocks are (one device's clock was found 81 s slow). Also from that day, without a release of their own: the library versions (psycopg 3.3.9, mediapipe 1.2.3, boto3 1.44.3), CI's actions at v7. |
 
 ---
 
@@ -1044,6 +1045,13 @@ Open after the 2026-11-12 review and v1.22 (not fixed yet):
   **Still open: why the page grows.** `app.log` now has a memory line every half hour (`note_memory`); read the
   slope there after a day. First numbers: the renderer holds about 1 GB of working set within ten minutes of a
   start on the PC and the NAS.
+  The slope, from those lines on 2026-11-14 (v1.22.3 and 1.22.4): on both Windows devices the window's memory
+  grows by 1.5 to 2 GB an hour, all of it in the one page renderer (WebView2 157): 0.9 GB two minutes after a
+  start, 3.6 GB after two hours on one, 0.8 to 5.0 GB in two and a half hours on the other (renderer 4.6 GB
+  private). On Linux (Qt WebEngine) the window stays at 0.2 to 0.3 GB over the same hours, while the app's own
+  process grows there from 1.7 to 2.1 GB in two hours (on Windows it stays at 3.1 GB). So the growth is in the
+  page as WebView2 runs it, not in the page's script as such: look at the heap and at camera frames next (on
+  Windows the app keeps them in ordinary memory, `KEEP_RUNNING_FLAGS`).
 - The Windows installer run while the app was open (first try, on the NAS): Restart Manager closed the app's
   second process, could not close the first, and Setup stopped ("unable to automatically close all applications"),
   leaving the app dead. `CloseApplications=no` and the script's own `CloseApp` since.
@@ -1053,6 +1061,49 @@ Open after the 2026-11-12 review and v1.22 (not fixed yet):
   minimized (`KEEP_RUNNING_FLAGS` are Chromium's and do nothing in WebKit, which slows hidden pages, and macOS
   naps hidden apps: cameras are never to be slowed, section 8); the CoreML check at start; the watchdog's restart
   in place; photos and cameras to and from the other devices. `window_memory` gives nothing on macOS yet.
+- Network review, 2026-11-14 (HTTPS to the internet, mDNS, device to device; measured on the three devices with
+  read-only requests). What was found and fixed in 1.22.5:
+  - One device's clock was 81 s slow (its time service stopped); requests are refused at `CLOCK_SKEW` (120) s
+    apart, and nothing said so beforehand. Its clock is set; the app now writes to the log when another device's
+    clock is more than 60 s away (`peer._clock_note`), and a refusal for the time says how far apart they are.
+  - The peer service's accept queue was Python's 5: on Windows 16 requests at one moment took 1.04 s (those that
+    found it full were sent again after a second); 128 now: 17 to 24 ms.
+  - Every request to another device opened a database connection first (95 to 125 ms of a 126 to 135 ms request),
+    and so did the Cameras page's list of devices every 10 s (109 ms). `facedb.ask` keeps one connection for such
+    questions: 12 to 32 ms a request, 3 ms the list.
+  - A device with **Fully distributed system** on told the others its Docker bridge address too; an address that
+    doesn't answer was waited for 8 s. Bridges are no longer told (`hardware.reachable_addresses`), addresses are
+    tried best first, each for 3 s (`peer._order`, `CONNECT`).
+  - The service's answers are sent without waiting (`disable_nagle_algorithm`), as the local servers' are. This
+    did not change what was measured: a photo of 0.1 to 0.3 MB takes 6 to 28 ms to arrive after its first byte,
+    before and after. That time is a new connection getting up to speed, not held-back pieces.
+  Measured and fine: TLS 1.3 everywhere, each device's certificate the pinned one, a handshake 3 to 4 ms; a camera
+  stream is 960x540, about 56 kB a frame, 20.0 frames a second (9 Mbit/s for each watcher of each camera), the
+  time between frames 50 to 54 ms at the median and 59 to 65 ms at the 95th percentile; three cameras reach the
+  Cameras page at 20 a second each. mDNS found all three LM Studio servers in 20 of 20 tries from two devices,
+  the answers in 2 to 16 ms. Check for updates takes 0.2 s; models download at 112 (Hugging Face), 336 (Google)
+  and 736 to 894 Mbit/s (GitHub); the eight pinned CUDA wheels are all there (1.95 GB at 186 Mbit/s).
+  Still open from it:
+  - requests to another device each make a new connection (on Windows, Python's connect with a time limit alone
+    takes about 15 ms); keeping connections open would save that and the start-up time of each photo;
+  - a photo is read, scaled and encoded for each request (up to 0.7 s for a large one): no cache;
+  - the mDNS search always listens its full 1.5 s though the answers are in within 20 ms; the search for LM
+    Studio servers also tries every address of container and VPN networks (8.4 s on a device with three
+    adapters, 3.3 s with one); Windows computers never answer the reverse mDNS question (1 s waited each);
+  - one device's stream stops for about 0.4 s every 11 to 17 s (19.6 frames a second instead of 20.0): in that
+    device's page, not in the network; cause not found;
+  - 9 Mbit/s for each watcher of each camera is fine on a local network, too much for a slow link;
+  - Describe photo sends a photo to an LM Studio server on another computer over plain HTTP (LM Studio has no TLS).
+- **A minimized app window slows its camera's stream to about 1 frame a second** (found 2026-11-14 on Windows,
+  v1.22.4 and 1.22.5; against section 8's rule that a camera is never slowed). For about 10 s after minimizing
+  the rate holds at 20, then it is 1.2 a second for as long as the window stays minimized (watched 7 minutes);
+  restored, it is 20 again at once. A window that is only covered by others, or in a desktop session nobody is
+  connected to, keeps 20. The keep-running flags are in force (read from the window's processes). Likely cause,
+  not shown yet: `streamFrame` makes each JPEG with `canvas.toBlob`, which the browser encodes in the page's idle
+  time; a hidden page gets none, and the encoder then starts only on its fallback of about a second. To try:
+  encoding that doesn't wait for idle time (`OffscreenCanvas.convertToBlob`, or in a worker), measured minimized
+  for minutes, not seconds (the earlier check of "minimized" must have been shorter than the 10 s). Until then:
+  don't minimize the window.
 - Library versions, reviewed 2026-11-14: every pin in `requirements*.txt` is the newest release (psycopg 3.3.9,
   mediapipe 1.2.3, boto3 1.44.3 and ruff 0.17.5 moved that day) except ONNX Runtime, which stays at 1.24.4 on
   purpose (1.32.0 was the newest). 1.24.4 is the last release with a DirectML package (Windows). On Linux

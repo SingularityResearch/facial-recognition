@@ -73,6 +73,25 @@ def pg(monkeypatch):
     admin.close()
 
 
+@needs_pg
+def test_short_questions_share_one_kept_connection(pg, monkeypatch):
+    """facedb.ask: connecting costs a tenth of a second, a question a millisecond. One connection is kept for
+    them, made again when it has gone, went unused too long, or the settings changed."""
+    seen = []
+    one = lambda conn: (seen.append(conn), conn.execute("SELECT count(*) + 42 FROM devices WHERE false").fetchone()[0])[1]   # noqa: E731
+    assert facedb.ask(one) == facedb.ask(one) == 42 and seen[0] is seen[1]
+    seen[1].close()                                              # the server ended it (a restart, a dropped link)
+    assert facedb.ask(one) == 42 and seen[2] is not seen[1] and not seen[2].closed
+    monkeypatch.setattr(facedb, "KEEP", -1)                      # unused longer than it is kept
+    assert facedb.ask(one) == 42 and seen[3] is not seen[2] and seen[2].closed
+    monkeypatch.setattr(facedb, "KEEP", 60)
+    with pytest.raises(ZeroDivisionError):                       # a question's own mistake isn't asked twice,
+        facedb.ask(lambda conn: 1 / 0)
+    assert facedb.ask(one) == 42 and seen[4] is seen[3]          # and the connection is kept
+    facedb._drop_kept()
+    assert facedb._kept["conn"] is None
+
+
 def make_device(folder, faces, labels):
     """A made-up device: data/ with faces.npz, thumbs.npz, photos.json, labels.json; HOME with a webcam snapshot."""
     data, home = folder / "data", folder / "home"
