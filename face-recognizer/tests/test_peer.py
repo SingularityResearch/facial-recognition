@@ -78,6 +78,22 @@ def test_clocks_drifting_apart_are_said_in_the_log_before_requests_are_refused(c
     assert peer._clock_note("x", b"HTTP/1.0 200 OK\r\nServer: s") is None and peer._clock_note("x", b"Date: junk") is None
 
 
+def test_a_computer_with_a_long_name_still_gets_its_certificate(tmp_path, monkeypatch):
+    """A certificate's name may hold 64 characters; "Face Recognizer " and a long computer name were more, and the
+    device got no certificate and no peer service."""
+    pytest.importorskip("cryptography")
+    import facedb
+    from cryptography import x509
+    monkeypatch.setattr(peer, "CERT", tmp_path / "peer-cert.pem")
+    monkeypatch.setattr(peer, "KEY", tmp_path / "peer-key.pem")
+    monkeypatch.setattr(facedb, "device", lambda: {"id": "0" * 36, "name": "a-computer-with-a-very-long-name-" * 4})
+    cert, key, fp = peer.certificate()
+    made = x509.load_pem_x509_certificate(cert.read_bytes())
+    cn = made.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
+    assert len(cn) == 64 and cn.startswith("Face Recognizer a-computer") and len(fp) == 64 and key.exists()
+    assert peer.certificate()[2] == fp                               # made once, the same afterwards
+
+
 def test_a_running_service_refuses_an_old_request_with_its_own_time(tmp_path, monkeypatch):
     """The whole way on this computer: TLS with the pinned certificate, a signed request answered, one signed five
     minutes ago refused with the service's time, so the asker can say how far apart the clocks are."""

@@ -88,7 +88,9 @@ def certificate():
     from cryptography.x509.oid import NameOID
     if not (CERT.exists() and KEY.exists()):
         key = ec.generate_private_key(ec.SECP256R1())
-        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"Face Recognizer {facedb.device()['name']}")])
+        # a certificate's name holds 64 characters at most: a computer with a long name got no certificate at all,
+        # and so no peer service (found on a Mac, 2026-11-14). The name is for people; devices go by the SHA-256
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"Face Recognizer {facedb.device()['name']}"[:64])])
         now = datetime.datetime.now(datetime.timezone.utc)
         cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
                 .serial_number(x509.random_serial_number()).not_valid_before(now - datetime.timedelta(days=1))
