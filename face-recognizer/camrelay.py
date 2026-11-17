@@ -14,6 +14,7 @@ import time
 
 MAX_PART = 8_000_000        # bytes in one part of a stream: more is a stream out of step, not a frame
 IDLE = 60
+MAX_RELAYS = 64             # relays at a time: as many cameras as one Cameras page request may ask about
 READOUT_STALE = 5.0          # s: a readout older than this isn't shown (the device stopped sending it)
 _relays = {}
 _lock = threading.Lock()
@@ -135,11 +136,28 @@ class Relay:
                 del _relays[self.device]
 
 
+class NoRelay:
+    """Answers for a device no relay was started for: MAX_RELAYS are running already."""
+    error = "too many cameras are being watched from this device"
+
+    def peek(self, after):
+        return after, None
+
+    def wait_next(self, after, timeout=3.0):
+        return after, None
+
+    def live_readout(self):
+        return {"faces": [], "error": self.error}
+
+
 def get(device):
-    """The relay for device, started when it's first asked for."""
+    """The relay for device, started when it's first asked for. At most MAX_RELAYS at a time: a device id is
+    whatever a request says, and each relay is a thread that tries to connect for IDLE seconds."""
     with _lock:
         r = _relays.get(device)
         if r is None or r.stopped:
+            if len(_relays) >= MAX_RELAYS:
+                return NoRelay()
             r = _relays[device] = Relay(device)
         r.used = time.time()
         return r

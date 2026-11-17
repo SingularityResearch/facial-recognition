@@ -40,6 +40,31 @@ LOCAL_EVERY = 60       # seconds between full local checks when nothing called n
 RETRY = (5, 15, 60)    # seconds to wait before connecting again after a failure (then every minute)
 BATCH = 300
 TABLES = ("photos", "faces", "labels", "web_suggestions")   # in the order they're applied
+# A photo record's fields that are this device's own (where its file is, what it read) or have a column of their
+# own. They never go into the `extra` column and are never taken from it: a row in the database could otherwise
+# give a photo a path on this device, and the peer service showed that file to every device that asked.
+PHOTO_FIELDS = frozenset({"path", "size", "mtime", "fp", "faces", "name", "maybe", "dup_of", "video", "fps", "at",
+                          "_facts", "_key"})
+MAX_PICTURE = 1_000_000          # bytes: a face picture is a 112x112 JPEG, a few thousand
+# What a row that can't be used raises when it is checked or applied. Never OSError (a full disk, a locked file):
+# that is this device's trouble, and the same rows are tried again at the next step.
+BAD_ROW = (ValueError, TypeError, LookupError, AttributeError, ArithmeticError)
+BAD_SHOWN = 5                    # rows left out that the log names, per table and step; the rest are counted
+
+
+def _number(v, least=None):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float("inf") \
+        and (least is None or v >= least)
+
+
+def _need(ok, what):
+    if not ok:
+        raise ValueError(what)
+
+
+def printable(v, n=80):
+    """v for a log line: one line, n characters at most (keys and messages from the database are anyone's text)."""
+    return "".join(c if c.isprintable() else "?" for c in str(v))[:n]
 
 
 def _h(*parts):
@@ -246,6 +271,37 @@ class Local:
                                 possible=_f((rec.get("maybe") or {}).get(fid)), frame=(rec.get("at") or {}).get(fid))
         return out
 
+    def check(self, tbl, key, r):
+        """Raises ValueError for a row from the database that this device can't use as it is. The database's
+        columns have types, but its json and array columns hold whatever was written, by a faulty version or by
+        whoever has the database's password: a box of three numbers was saved with the rest and then stopped
+        every later save. Only what would break this device is refused; values it doesn't know are left alone."""
+        _need(isinstance(key, str) and key, "no key")
+        if tbl == "labels":
+            _need(r.get("not") is None or (isinstance(r["not"], list) and all(isinstance(n, str) for n in r["not"])),
+                  "names it is not: not a list of names")
+        elif tbl == "web_suggestions":
+            _need(isinstance(r, dict), "not an object")
+        elif tbl == "photos":
+            _need(isinstance(r.get("extra") or {}, dict), "extra: not an object")
+            f = r.get("facts")
+            _need(f is None or (isinstance(f, dict) and isinstance(f.get("tags") or [], list)
+                                and isinstance(f.get("faces") or {}, dict)), "facts: not as photo facts are")
+            _need(r.get("size") is None or _number(r["size"], 0), "size")
+        else:
+            import face_id as F
+            _need(isinstance(r.get("photo"), str) and r["photo"], "no photo")
+            box = r.get("box")
+            _need(isinstance(box, list) and len(box) >= 5 and all(_number(v) for v in box[:5]),
+                  "box: not five numbers")
+            _need(r.get("frame") is None or _number(r["frame"], 0), "frame")
+            pic = r.get("picture")
+            _need(pic is None or (isinstance(pic, str) and pic == SAME)
+                  or (isinstance(pic, bytes) and pic[:2] == b"\xff\xd8" and len(pic) <= MAX_PICTURE),
+                  "picture: not a small JPEG")
+            if r.get("model") == self.db.store.model and r.get("print") is not None:
+                _need(np.asarray(r["print"], np.float32).shape == (F.REC["dim"],), "print: wrong length")
+
     # rows received: {key: row or None (deleted)}. Returns the new local digests of those keys.
     def apply(self, tbl, rows, log=print):
         db, s = self.db, self.db.store
@@ -281,7 +337,8 @@ class Local:
                             rec[k] = r[k]
                         elif k in ("dup_of", "video", "fps"):
                             rec.pop(k, None)
-                    rec.update(r.get("extra") or {})
+                    # never this device's own fields (where the file is): PHOTO_FIELDS
+                    rec.update({k: v for k, v in (r.get("extra") or {}).items() if k not in PHOTO_FIELDS})
                     if r.get("maybe_read"):
                         rec.setdefault("maybe", {})
                     if r.get("facts") and not (db.facts.facts.get(h) or {}).get("key"):
@@ -351,8 +408,7 @@ def push(conn, tbl, rows, deletes):
                                    ON CONFLICT (fid) DO UPDATE SET data = excluded.data""",
                                 [(k, json.dumps(dbimport.utc_when(r))) for k, r in part])
             elif tbl == "photos":
-                known = {"path", "size", "mtime", "fp", "faces", "name", "maybe", "dup_of", "video", "fps", "at",
-                         "_facts", "_key"}
+                known = PHOTO_FIELDS
                 cur.executemany("""
                     INSERT INTO photos (hash, name, size, fp, faces, dup_of, video, fps, maybe_read, extra, facts,
                                         taken, tags, facts_key)
@@ -469,6 +525,7 @@ class Sync:
         self.info = {"state": "off", "text": "", "waiting": 0, "last": None, "error": None}
         self._last_local = 0.0
         self._dirty = True
+        self._bad = {}                        # rows left out in this pull, per table (_left_out)
 
     # -- outside interface
     def start(self):
@@ -596,10 +653,57 @@ class Sync:
         for tbl, part in owner.items():         # in each part's order (photos before faces before labels)
             if want[tbl]:
                 server = part.fetch(conn, tbl, want[tbl])
-                self.state.set_digests(tbl, part.apply(tbl, server, self.log))
+                now_here = self._apply(part, tbl, server)
+                self.state.set_digests(tbl, now_here)
+                if any(d is None and server.get(k) is not None for k, d in now_here.items()):
+                    self._dirty = True          # a row this device keeps its own way (its settings): sent soon
                 got += len(want[tbl])
+        self._say_left_out()
         self.state.put("snapshot", now)
         return got
+
+    def _apply(self, part, tbl, rows):
+        """part.apply for rows from the database, where a row that can't be used never stops the others. Before
+        1.24.2 one such row (an alert that is no object, a face with a box of three numbers) raised in the middle
+        of a pull, the pull never got past it, and the device took nothing more from the others for good: every
+        device, since they all read the same row. Rows are checked first (part.check); should applying still fail
+        on a row's shape, the rows are halved until the one is found. A row left out is said in the log and
+        stays as it is, here and in the database: nothing is recorded about it, so its next change is read
+        again. Returns the digests part.apply gives."""
+        good = {}
+        for k, r in rows.items():
+            try:
+                if r is not None and hasattr(part, "check"):
+                    part.check(tbl, k, r)
+                good[k] = r
+            except BAD_ROW as e:
+                self._left_out(tbl, k, e)
+        return self._apply_some(part, tbl, good)
+
+    def _apply_some(self, part, tbl, rows):
+        if not rows:
+            return {}
+        try:
+            return part.apply(tbl, rows, self.log)
+        except BAD_ROW as e:
+            if len(rows) == 1:
+                self._left_out(tbl, next(iter(rows)), e)
+                return {}
+        items = list(rows.items())
+        half = len(items) // 2
+        return {**self._apply_some(part, tbl, dict(items[:half])), **self._apply_some(part, tbl, dict(items[half:]))}
+
+    def _left_out(self, tbl, key, why):
+        n = self._bad[tbl] = self._bad.get(tbl, 0) + 1
+        if n <= BAD_SHOWN:
+            self.log(f"Shared database: the {tbl} row {printable(key)} can't be used here and was left out "
+                     f"({type(why).__name__}: {printable(why, 120)}).")
+
+    def _say_left_out(self):
+        for tbl, n in self._bad.items():
+            if n > BAD_SHOWN:
+                self.log(f"Shared database: {n - BAD_SHOWN} more {tbl} rows couldn't be used here and were left out.")
+        self._bad = {}
 
     def _take_all(self, conn, joining=False):
         """Every row of every table, applied here. Returns the snapshot taken before the first: the next pull
@@ -610,10 +714,11 @@ class Sync:
                 keys = part.all_keys(conn, tbl)
                 for b in range(0, len(keys), 2000):
                     got = part.fetch(conn, tbl, keys[b:b + 2000])
-                    self.state.set_digests(tbl, part.apply(tbl, got, self.log))
+                    self.state.set_digests(tbl, self._apply(part, tbl, got))
                 # a row only this device has (added while joining) differs from the digests: it's sent next time
             if joining:
                 part.on_join(self.state)
+        self._say_left_out()
         return snap
 
     def _join(self, conn, inst):

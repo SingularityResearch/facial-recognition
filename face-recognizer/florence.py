@@ -89,6 +89,8 @@ def download():
                         out.write(chunk)
                         h.update(chunk)
                         st["done"] += len(chunk)
+                        if st["done"] - start > size:       # never more on the disk than the file is known to be
+                            raise OSError(f"{name}: the download is larger than the expected file")
                 if h.hexdigest() != sha:
                     raise OSError(f"{name} downloaded, but it isn't the expected file (checksum differs)")
                 paths.replace_file(tmp, dest)

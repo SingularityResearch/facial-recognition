@@ -21,6 +21,11 @@ DEVICE_DOCS = ("model_eval", "hw_bench", "webcam_eval")
 LOG_KEEP_DAYS = 90
 MOVE_WINDOW = 600            # seconds: seen on another camera this recently counts as moving between cameras
 KEEP_SIGHTINGS = 2 * MOVE_WINDOW   # seconds: older sightings are deleted (only the move alert uses them)
+PRESENCE_MAX = 4_102_444_800_000   # ms, the year 2100: a visit's times from the database are below this
+# Settings that say where this device sends photos or fetches files, as (app, key). They are set on the device
+# and never come from the database: not with Copy settings either (copy_settings).
+STAY_HERE = (("describe", "url"), ("describe", "spread"), ("lmstudio", "share"), ("lmstudio", "distributed"))
+NOT_OURS = "not this device's"     # the digest of a settings row this device never wrote: deleted at the next push
 FORGOTTEN = "forgotten.json"                      # HOME: names forgotten here or applied from other devices
 _forgot_lock = threading.Lock()
 
@@ -356,8 +361,9 @@ class HomePart:
                     out[k] = {"nonce": bytes(nonce), "ciphertext": bytes(ct)}
             elif tbl == "device_settings":
                 for k in part:
-                    dev, app, key = k.split("|", 2)
-                    if dev != me:                      # other devices' settings stay theirs
+                    dev, _, rest = k.partition("|")
+                    app, _, key = rest.partition("|")
+                    if dev != me or not key:           # other devices' settings stay theirs (and a key that is none)
                         out.pop(k, None)
                         continue
                     row = conn.execute("SELECT value FROM device_settings WHERE device = %s AND app = %s AND key = %s",
@@ -385,6 +391,40 @@ class HomePart:
         return [r[0] for r in conn.execute(f"SELECT {self.KEYS[tbl]} FROM {tbl}")]
 
     # ---- from the server
+    def check(self, tbl, key, v):
+        """Raises ValueError for a row from the database that this device can't use as it is (dbsync.Sync._apply
+        leaves it out and says so). The json columns hold whatever was written: an alert without its id was
+        saved with the others and then stopped every later sync step. Only what would break this device is
+        refused; values it doesn't know are left alone, so a newer version's rows still pass."""
+        from dbsync import _need, _number
+        _need(isinstance(key, str) and key, "no key")
+        if tbl == "descriptions":
+            _need(isinstance(v, dict), "not an object")
+        elif tbl == "webcam_snapshots":
+            _need(isinstance(v.get("jpeg"), bytes), "no picture")
+            _need(v.get("verdict") is None or isinstance(v["verdict"], dict), "verdict: not an object")
+        elif tbl == "alerts":
+            _need(isinstance(v, dict) and v.get("id") == key, "not an alert with this id")
+            _need(_number(v.get("t"), 0), "no time")
+            _need(all(isinstance(v.get(k) or "", str) for k in ("kind", "name", "text", "state")), "not text")
+            d = v.get("details")
+            _need(d is None or (isinstance(d, dict) and all(s is None or isinstance(s, dict) for s in d.values())),
+                  "details: not objects")
+        elif tbl == "presence":
+            _need(isinstance(v.get("name"), str) and v["name"], "no name")
+            _need(all(isinstance(v.get(k), int) and 0 < v[k] < PRESENCE_MAX for k in ("start", "end")),
+                  "times out of range")
+            _need(key == f"{v.get('device')}:{v['start']}:{v['name']}", "not this visit's id")
+        elif tbl == "documents":
+            _need(isinstance(v.get("name"), str), "no name")
+            _need(v["name"] not in SHARED_DOCS or isinstance(v.get("body"), dict), "body: not an object")
+        elif tbl == "device_settings":
+            _need(key.count("|") >= 2, "not device|app|key")
+        elif tbl == "person_signals":
+            _need("|" in key and isinstance(v.get("data"), dict), "not name|kind with an object")
+        elif tbl == "forgotten":
+            _need(len(key) <= 200 and not key.startswith("#"), "not a person's name")
+
     def apply(self, tbl, rows, log=print):
         import secretbox
         if tbl == "descriptions":
@@ -474,47 +514,41 @@ class HomePart:
             for k, v in rows.items():
                 try:
                     plain = None if v is None else secretbox.decrypt(key, k, v["nonce"], v["ciphertext"]).decode()
-                except secretbox.WrongPassphrase as e:
-                    log(f"Shared database: key {k}: {e}")
-                    continue
-                if k == "google_vision":
-                    websearch.save_key(plain or "")
-                elif k == "aws_rekognition":
-                    a = json.loads(plain) if plain else {}
-                    websearch.save_aws(a.get("access_key_id") or "", a.get("secret_access_key"), a.get("region"))
-                elif k.startswith("describe_key:") and describe.config()["url"] == k.partition(":")[2]:
-                    describe.set_config(key=plain or "")
+                    if k == "google_vision":
+                        websearch.save_key(plain or "")
+                    elif k == "aws_rekognition":
+                        a = json.loads(plain) if plain else {}
+                        websearch.save_aws(a.get("access_key_id") or "", a.get("secret_access_key"), a.get("region"))
+                    elif k.startswith("describe_key:") and describe.config()["url"] == k.partition(":")[2]:
+                        describe.set_config(key=plain or "")
+                except (secretbox.WrongPassphrase, ValueError, TypeError, AttributeError) as e:
+                    log(f"Shared database: key {k}: {e}")       # this key is left as it is; the others go on
             now = self._secrets()
             return {k: secretbox.digest(key, k, now[k]) if k in now else None for k in rows}
         if tbl == "device_settings":
-            import describe
-            import devicesettings
-            import lmstudio
-            pages = {}
+            # A device's settings are its own: the database keeps a copy of them and never changes them. Before
+            # 1.24.2 a changed row was applied here, so whoever had the database's password could switch on a
+            # device's microphone listening or camera stream, or point its photo describer at a server of
+            # theirs. A row that isn't as this device has it is sent again as it is here (None: not synced),
+            # one this device never wrote is deleted (NOT_OURS), both with the next push. Another device's
+            # settings are taken only by the owner's own Copy settings on this device (take_settings).
+            from dbsync import printable
+            mine = self._settings()
+            out, differ = {}, []
             for k, v in rows.items():
-                _dev, app, key = k.split("|", 2)
-                value = None if v is None else v["value"]
-                if app in devicesettings.APPS:
-                    pages.setdefault(app, {})[key] = None if value is None else str(value)
-                elif app == "describe" and value is not None and key in ("use", "url", "model", "spread"):
-                    try:
-                        describe.set_config(**{key: value})
-                    except ValueError as e:
-                        log(f"Shared database: describe setting {key}: {e}")
-                elif app == "lmstudio" and key == "distributed" and value is not None:
-                    lmstudio.set_distributed(str(value) == "1")
-                elif app == "lmstudio" and key == "share" and value is not None:
-                    try:
-                        lmstudio.set_share(value)
-                    except ValueError as e:
-                        log(f"Shared database: {e}")
-            for app, changes in pages.items():
-                try:
-                    devicesettings.update(app, changes)
-                except ValueError as e:
-                    log(f"Shared database: settings: {e}")
-            now = self._settings()
-            return {k: _h(now[k]) if k in now else None for k in rows}
+                if k in mine:
+                    same = v is not None and v.get("value") == mine[k]["value"]
+                    out[k] = _h(mine[k]) if same else None
+                else:
+                    same = v is None
+                    out[k] = None if same else NOT_OURS
+                if not same:
+                    differ.append(printable(k.partition("|")[2].replace("|", ": "), 60))
+            if differ:
+                log(f"Shared database: {len(differ)} of this device's settings are different in the database "
+                    f"({', '.join(differ[:5])}{', ...' if len(differ) > 5 else ''}). A device's settings are its "
+                    f"own: they stay as they are here, and the database gets them again.")
+            return out
         if tbl == "person_signals":
             import devicesettings
             for k, v in rows.items():
@@ -539,6 +573,31 @@ class HomePart:
                     log(f"Shared database: couldn't forget {name} here: {e}")
                 note_forgotten(name)
         return {n: _h(n) for n in rows if n in forgotten_names()}
+
+    def take_settings(self, rows, log=print):
+        """Set this device's settings from rows {device|app|key: {"value": ...} or None (removed)}: only for
+        copy_settings, the owner's Copy settings on this device. Never the settings that say where this device
+        sends photos or fetches files (STAY_HERE)."""
+        import describe
+        import devicesettings
+        pages = {}
+        for k, v in rows.items():
+            _dev, app, key = k.split("|", 2)
+            value = None if v is None else v["value"]
+            if (app, key) in STAY_HERE:
+                continue
+            if app in devicesettings.APPS:
+                pages.setdefault(app, {})[key] = None if value is None else str(value)
+            elif app == "describe" and value is not None and key in ("use", "model"):
+                try:
+                    describe.set_config(**{key: value})
+                except ValueError as e:
+                    log(f"Shared database: describe setting {key}: {e}")
+        for app, changes in pages.items():
+            try:
+                devicesettings.update(app, changes)
+            except ValueError as e:
+                log(f"Shared database: settings: {e}")
 
     # ---- only sent: the app log, posed expression tests and the expression log, new lines since the last time
     def every_step(self, conn, state):
@@ -691,28 +750,30 @@ class HomePart:
 
 
 def copy_settings(conn, from_id, part):
-    """This device takes another device's page settings (and the describe choices, but its server address, and
-    the LM Studio share folder): replaced in the database, then applied here through part (a HomePart).
-    Returns how many settings were copied."""
+    """This device takes another device's page settings and which describer and model it uses: replaced in the
+    database, then set here through part (a HomePart). Not the settings that say where a device sends photos or
+    fetches files (STAY_HERE: the describe server's address, sharing Describe all, the shared models folder,
+    Fully distributed system): those are set on each device, never from a row. Returns how many were copied."""
     import uuid
     me = facedb.device()["id"]
     src = str(uuid.UUID(str(from_id)))
     if src == me:
         raise ValueError("That's this device.")
+    stay = [f"{a}|{k}" for a, k in STAY_HERE]
     with conn.transaction():
         n = conn.execute("""SELECT count(*) FROM device_settings WHERE device = %s
-                            AND NOT (app = 'describe' AND key = 'url')""", (src,)).fetchone()[0]
+                            AND NOT (app || '|' || key = ANY(%s))""", (src, stay)).fetchone()[0]
         if not n:
             raise ValueError("That device has no settings in the shared database.")
         conn.execute("DELETE FROM device_settings WHERE device = %s AND app IN ('track', 'label')", (me,))
         conn.execute("""INSERT INTO device_settings (device, app, key, value)
                         SELECT %s, app, key, value FROM device_settings
-                        WHERE device = %s AND NOT (app = 'describe' AND key = 'url')
-                        ON CONFLICT (device, app, key) DO UPDATE SET value = excluded.value""", (me, src))
+                        WHERE device = %s AND NOT (app || '|' || key = ANY(%s))
+                        ON CONFLICT (device, app, key) DO UPDATE SET value = excluded.value""", (me, src, stay))
     keys = part.all_keys(conn, "device_settings")
     gone = [k for k in part._settings() if k.split("|", 2)[1] in ("track", "label") and k not in keys]
     got = part.fetch(conn, "device_settings", keys + gone)
-    part.apply("device_settings", got)
+    part.take_settings(got)
     return n
 
 

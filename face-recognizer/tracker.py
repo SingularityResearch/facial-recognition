@@ -150,7 +150,7 @@ def camera_ids(text):
     for part in (text or "").split(",")[:MAX_CAMERAS]:
         d, _, n = part.partition(":")
         if _DEVICE_ID.fullmatch(d):
-            out[d] = int(n) if n.isdigit() else 0
+            out[d] = int(n) if n.isascii() and n.isdigit() and len(n) <= 15 else 0    # ("²" is a digit, and no int)
     return out
 
 
@@ -394,7 +394,7 @@ class Recorder:
     "Delete test data" on the page (or deleting the folder) removes them."""
 
     DIR = F.DATA / "expr_eval"
-    SESSION = re.compile(r"^\d{8}-\d{6}$")
+    SESSION = re.compile(r"\d{8}-\d{6}\Z")          # (\Z: "$" also matches before a line end at the end)
 
     def __init__(self):
         self.lock = threading.Lock()

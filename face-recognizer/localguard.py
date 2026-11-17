@@ -149,14 +149,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.close_connection = True
             self.send_header("Connection", "close")
 
-    def send(self, body, ctype="application/json", code=200, cache=False):
-        """Answer with bytes (of type ctype) or anything JSON can write. cache: the URL names unchanging content."""
+    def send(self, body, ctype="application/json", code=200):
+        """Answer with bytes (of type ctype) or anything JSON can write. Never to be kept by the browser
+        (no-store): through 1.24.1 face pictures and photos were answered as cacheable for a year, so the
+        window's cache on disk kept the picture of a face Ignored or a person forgotten since, and originals
+        another device had only shown. A page that wants a picture twice keeps it in memory (label_ui.js)."""
         if not isinstance(body, (bytes, bytearray)):
             body = json.dumps(body).encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "max-age=31536000, immutable" if cache else "no-store")
+        self.send_header("Cache-Control", "no-store")
         page_headers(self, self.frame_ancestors, self.policy)
         self.keep_or_close()
         self.end_headers()

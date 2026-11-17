@@ -128,7 +128,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     every answer must say its length: answer through `send`, or call `keep_or_close()` before `end_headers()`
     (`tracker._frames`); a request body that `body()` didn't read closes the connection after the answer. An answer
     leaves in one piece and at once (`wbufsize`, `disable_nagle_algorithm`: as headers then body it waited 40 ms
-    for an acknowledgement on Linux);
+    for an acknowledgement on Linux). Every answer says `Cache-Control: no-store`, and `send` has no way to say
+    otherwise: through 1.24.1 face pictures and photos were cacheable for a year, so the window's cache on disk
+    kept the pictures of faces Ignored or forgotten since;
   - the page headers (`page_headers`: Content-Security-Policy `POLICY` plus each server's `policy`,
     frame-ancestors, CORP, nosniff; and a handler's `permissions` as `Permissions-Policy`: the tab page's, for
     camera and microphone);
@@ -189,7 +191,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     - possible faces: each photo is also read with a low detector cut-off (`Importer.MORE_SCORE` 0.45, 4 sizes;
       sampled, not measured for accuracy), marked in `photos.json` `maybe` and listed apart from New faces.
 - `label_tool.py` + `label_ui.html` (layout) + `label_ui.js` (script) / `label.bat`, `label.sh` — the labeling web app
-  on `http://127.0.0.1:8765`. The owner calls this "the recognizer". It also runs the shared-database sync
+  on `http://127.0.0.1:8765`. The owner calls this "the recognizer". Its page keeps the face pictures and photos
+  it has shown in memory (`PICS`: blob: URLs; `thumb()`, `photoSrc()`), since no answer may be cached, and lets go
+  of them on an action, Undo and a forget (`dropPic`, `forgetPics`). It also runs the shared-database sync
   (`start_sync`) and serves `/api/hardware`, `/api/downloads`, `/api/secrets`, the person routes and Settings'
   database, LM Studio and CUDA actions. The header's second bar (`#dlprogress`, `/api/downloads`) shows model and
   CUDA downloads.
@@ -209,8 +213,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Default: LM Studio on this computer (`127.0.0.1:1234`, `FACE_LLM_URL`; `reasoning_effort` none, ~3 s a photo).
   - Settings: the describer (automatic / server only / built-in only), the server address (any OpenAI-style server,
     also on another device or the internet, with a warning: `where`), the model, an API key, and `spread` (off by
-    default: Describe all also uses the other LM Studio servers on the LAN with the same model, `helpers()`; one
-    photo at a time each, a helper failing twice is left out and tried again every `label_tool.HELPER_RETRY`
+    default: Describe all also uses the LM Studio servers of the owner's other devices that have the same model,
+    `helpers()`: only a computer in the shared database, at an address it gave there (`device_addresses()`), or
+    this computer; never whatever else answers like LM Studio on the network, and nobody without a shared
+    database; one photo at a time each, a helper failing twice is left out and tried again every `label_tool.HELPER_RETRY`
     (300) s; no API key goes to a helper).
   - Settings in `HOME/describe.json`, descriptions per photo in `HOME/descriptions.json`; never `data/`.
   - **Describe everything again** (Settings; `/api/describe/again`, `label_tool.describe_all("fresh" | "on")`): the
@@ -308,6 +314,7 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     frames, so no device needs a request per camera for readouts; `/readout` answers one readout on its own.
   - Relaying (`camrelay.py`): one connection per watched device (`peer.open_stream`, never ending on a timer,
     reconnecting at once), keeping that device's newest frame and readout; closed after `IDLE` (60) s unwatched.
+    At most `MAX_RELAYS` (64) at a time: a device id is whatever a request says.
   - Watching (`cameras_ui.html` + `cameras_ui.js`, the tracker's `/cameras` page, the app's Cameras tab): every
     streaming device in a grid with its readout, drawn with text only, and an events fly-out (alerts from every
     device; closed state remembered, its button counting new events). A browser allows six connections per address,
@@ -359,6 +366,18 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     settings, person signals; the app log, posed tests and the expression log only sent). `HomePart.every_step` also runs the peer
     service (`_peer`), camera sightings (`_cameras`) and the passphrase catch-up.
   - A new place that keeps data must get a table (new `db/NNN_*.sql`) and a part.
+  - Rows from the database are never used as they come (`Sync._apply`, since 1.24.2): each part's
+    `check(tbl, key, row)` refuses a row this device can't use (a json or array column holds whatever was
+    written: by a faulty version, or by whoever has the database's password); a row that still fails while it is
+    applied is found by halving its batch (`BAD_ROW`; never `OSError`, which is this device's own trouble and is
+    tried again); a row left out is named in the log and stops nothing. Before, one such row stopped every
+    device's pull for good. `check` refuses only what would break this device, so a newer version's rows pass.
+    A new table's part needs its `check`.
+  - What is a device's own never comes from a row. A photo's `path` and the rest of `PHOTO_FIELDS` are never
+    taken from `photos.extra`. A device's settings: `HomePart.apply("device_settings")` applies nothing, has the
+    device's own values sent again and a row it never wrote deleted. Another device's settings are taken only by
+    the owner's Copy settings on this device (`copy_settings` → `take_settings`), and never `STAY_HERE` (the
+    settings that say where a device sends photos or fetches files).
 - `secretbox.py` — keys in the database, encrypted on the device (scrypt + AES-256-GCM, name as associated data).
   - Every passphrase is a version (`passphrase_versions`, db/006: check value, fingerprint, who/when; one current).
   - The database password alone gets nobody the passphrase (since 1.22.2, db/011; before, it was sealed to every
@@ -512,8 +531,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     before any page loads), `test_window_caches.py`, `test_app_log.py`,
     `test_tracker_reload.py`, `test_skeleton.py`, `test_platforms.py` (also the icon files, the build's icon
     options, the Windows installer's rules, and the Linux installer run for real on Linux).
-  - Shared database: `test_facedb.py`, `test_sync.py` (also a newly installed device, with no faces, joining),
-    with `FACE_TEST_PG` (CI job `database`; each test makes and drops its own schema).
+  - Shared database: `test_facedb.py`, `test_sync.py` (also a newly installed device, with no faces, joining;
+    rows written with only the database's password), with `FACE_TEST_PG` (CI job `database`; each test makes and
+    drops its own schema). `test_sync_rows.py` needs no database: rows that can't be used, a photo row that names
+    a file path, a row that changes a device's settings, each handed to the code the sync hands them to.
   - Device to device: `test_peer.py` (no database needed: which address is tried first, what a refusal says about
     the clocks, a running service on this computer, a long computer name).
   - Music: `test_music.py` (a sound with a known beat and key measured, usual music from liked songs, what is
@@ -663,6 +684,16 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - What other computers on the network say is checked before use: an LM Studio server's model list by shape
   (`hardware._lms_models`), a model's name against `lmstudio.VARIANT` before it reaches `lms get`, paths in the
   shared models folder's list (`lmstudio._inside`).
+- What the shared database says is checked before use too: whoever has its password can write any row, and so
+  can a faulty version. Rows go through `dbsync.Sync._apply` and each part's `check`. A row never gives this
+  device a file path (`dbsync.PHOTO_FIELDS`; `peer.own_photo` shows only a photo whose record has a path and a
+  size) and never changes its settings (the sync's rules above). A row can still change or delete what the
+  devices share (a label, a description, a forgotten name): that is what the database is for.
+- Photos leave a device for describing only to the configured describe server and, with Share Describe all on,
+  to the owner's other devices (`describe.helpers`: an address a device of the shared database gave there, or
+  this computer's own), never to another computer that answers like LM Studio.
+- No answer of the three servers may be kept by a browser (`localguard.Handler.send`: always `no-store`; a test
+  checks every kind of answer). A page that wants a picture twice keeps it in memory.
 - Background jobs (imports, possible-face scans, Describe all) start through `Importer.begin` (one at a time, under
   a lock). Shared caches and counters used by request threads need a lock.
 - Every person's data can be exported and forgotten (`persondata.py`): a new place that keeps anything about a person

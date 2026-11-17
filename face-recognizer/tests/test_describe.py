@@ -152,6 +152,8 @@ def test_helpers_are_other_lm_studio_servers_with_the_same_model(home, monkeypat
            {"host": "old-box", "this_computer": False, "urls": ["http://192.168.1.19:1234"],
             "models": [{"id": "qwen/qwen2.5-vl-7b", "vision": True}]}]
     monkeypatch.setattr(hardware, "lmstudio_network", lambda: net)
+    monkeypatch.setattr(hardware, "own_addresses", lambda every=None: ["192.168.1.10"])
+    monkeypatch.setattr(D, "device_addresses", lambda: frozenset({"192.168.1.18", "192.168.1.19"}))
     monkeypatch.setattr(D, "_connect_secs", lambda u: 0.001)
     assert D.helpers("qwen/qwen3.6-35b-a3b") == []                     # off unless chosen
     D.set_config(spread=True)
@@ -160,6 +162,49 @@ def test_helpers_are_other_lm_studio_servers_with_the_same_model(home, monkeypat
     assert D.helpers(D.florence.NAME) == []                            # the built-in model runs here only
     D.set_config(url="http://192.168.1.18:1234")                       # the server set is the Linux box: here helps
     assert [h["host"] for h in D.helpers("qwen/qwen3.6-35b-a3b")] == ["here"]
+
+
+def test_only_the_owners_own_devices_help(home, monkeypatch):
+    """Any computer on the network that answered like LM Studio with the model's name was sent photos, also one
+    that gave itself the name of a computer of the owner's (its address was then listed under that name, and the
+    address that connects first is used). A helper is a device in the shared database, at an address it gave."""
+    import hardware
+    model = [{"id": "qwen/qwen3.6-35b-a3b", "vision": True}]
+    net = [{"host": "linux-box", "this_computer": False, "models": model,
+            "urls": ["http://192.168.1.66:1234", "http://192.168.1.18:1234"]},        # .66: someone using its name
+           {"host": "stranger", "this_computer": False, "urls": ["http://192.168.1.77:1234"], "models": model},
+           {"host": "here", "this_computer": True, "models": model,
+            "urls": ["http://192.168.1.10:1234", "http://192.168.1.88:1234"]}]        # .88: someone using this one's
+    monkeypatch.setattr(hardware, "lmstudio_network", lambda: net)
+    monkeypatch.setattr(hardware, "own_addresses", lambda every=None: ["192.168.1.10"])
+    monkeypatch.setattr(D, "_connect_secs", lambda u: 0.001 if ".66:" in u or ".88:" in u else 0.2)   # they answer first
+    D.set_config(spread=True)
+    assert D.helpers("qwen/qwen3.6-35b-a3b") == []                     # no shared database: nobody is a device of yours
+    monkeypatch.setattr(D, "device_addresses", lambda: frozenset({"192.168.1.18"}))
+    assert D.helpers("qwen/qwen3.6-35b-a3b") == [{"host": "linux-box", "url": "http://192.168.1.18:1234"}]
+    D.set_config(url="http://192.168.1.18:1234")                       # this computer helps the Linux box: at its own
+    assert D.helpers("qwen/qwen3.6-35b-a3b") == [{"host": "here", "url": "http://192.168.1.10:1234"}]
+
+
+def test_the_owners_devices_are_the_shared_databases(monkeypatch):
+    """Their addresses come from the shared database, are kept a minute, and stand while it can't be reached."""
+    import facedb
+    assert D.device_addresses() == frozenset()                         # no shared database
+    asked = []
+
+    def ask(fn):
+        asked.append(1)
+        if len(asked) == 3:
+            raise OSError("no route")
+        return [(["192.168.1.18", "192.168.7.5"],), (None,), (["192.168.1.19"],)]
+    monkeypatch.setattr(facedb, "configured", lambda: True)
+    monkeypatch.setattr(facedb, "ask", lambda fn: ask(fn))
+    monkeypatch.setattr(D, "_own", {"at": 0.0, "ips": frozenset()})
+    assert D.device_addresses() == {"192.168.1.18", "192.168.7.5", "192.168.1.19"} and D.device_addresses() and len(asked) == 1
+    D._own["at"] = 0.0
+    assert len(D.device_addresses()) == 3 and len(asked) == 2
+    D._own["at"] = 0.0
+    assert len(D.device_addresses()) == 3 and len(asked) == 3          # the database didn't answer: the last list
 
 
 class _Describer(_Recorder):
@@ -191,6 +236,7 @@ def test_a_server_beyond_the_local_network_helps_only_in_a_fully_distributed_sys
     net = [{"host": "lan-box", "this_computer": False, "urls": ["http://192.168.1.18:1234"], "models": model},
            {"host": "far-box", "this_computer": False, "urls": ["http://100.90.1.7:1234"], "models": model}]
     monkeypatch.setattr(hardware, "lmstudio_network", lambda: net)
+    monkeypatch.setattr(D, "device_addresses", lambda: frozenset({"192.168.1.18", "100.90.1.7"}))
     monkeypatch.setattr(D, "_connect_secs", lambda u: 0.001)
     D.set_config(spread=True)
     assert [h["host"] for h in D.helpers("qwen/qwen3.6-35b-a3b")] == ["lan-box"]

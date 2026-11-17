@@ -122,6 +122,16 @@ def test_every_answer_says_what_the_page_may_load(label_url, track, shell_url):
         assert h["Cross-Origin-Resource-Policy"] == "same-origin" and h["X-Content-Type-Options"] == "nosniff"
 
 
+def test_no_browser_keeps_a_picture_or_an_answer(label_url, track, shell_url):
+    """Face pictures and photos were answered as cacheable for a year: the window's cache on disk kept the picture
+    of a face Ignored or a person forgotten since. Every answer of the three servers says no-store."""
+    for url, path in ((label_url, "/thumb/0.jpg"), (label_url, "/photo/0.jpg"), (label_url, "/api/summary"),
+                      (label_url, "/"), (label_url, "/label_ui.js"), (track[0], "/"), (track[0], "/api/people"),
+                      (shell_url, "/"), (shell_url, "/status")):
+        code, h, _ = request(url, path)
+        assert h["Cache-Control"] == "no-store", (path, code, h.get("Cache-Control"))
+
+
 def test_the_tracker_page_can_put_its_camera_trouble_in_the_log(track, capsys, monkeypatch):
     """What "Keep this camera running" does about a camera that won't run (tracker_ui.js pageNote): nobody may be
     looking at the page, and before, a camera left off for hours left nothing in the log. Plain text, short, capped."""
@@ -588,6 +598,17 @@ def test_one_request_for_every_cameras_frames(monkeypatch):
     assert 0.25 < time.time() - t0 < 2.0                  # woken by the frames, not by the timeout
     assert len(got) == 20 and not errors
     assert tracker.camera_ids("x:1," + ",".join(f"{d}:7" for d in fakes)) == {d: 7 for d in fakes}
+    one = next(iter(fakes))
+    assert tracker.camera_ids(f"{one}:²") == {one: 0} == tracker.camera_ids(f"{one}:" + "9" * 40)   # no numbers
+
+
+def test_no_more_camera_relays_than_one_page_may_ask_about(monkeypatch):
+    """A device id is whatever a request says, and each relay is a thread that tries to connect for a minute."""
+    import camrelay
+    monkeypatch.setattr(camrelay, "_relays", {f"id{k}": None for k in range(camrelay.MAX_RELAYS)})
+    none = camrelay.get("ffffffff-ffff-4fff-8fff-ffffffffffff")
+    assert isinstance(none, camrelay.NoRelay) and none.peek(3) == (3, None) and "too many" in none.live_readout()["error"]
+    assert len(camrelay._relays) == camrelay.MAX_RELAYS == tracker.MAX_CAMERAS
 
 
 def test_a_cameras_page_left_open_gets_frames_again_after_a_restart():

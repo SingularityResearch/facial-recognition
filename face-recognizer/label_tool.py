@@ -450,14 +450,14 @@ def make_handler(db, importer):
                         t = face_thumb(i)
                         if t is None:                    # not cached: the picture may turn up (thumbs.npz copied in)
                             return self.send(NO_FACE, "image/svg+xml")
-                        return self.send(t, "image/jpeg", cache=True)   # URL carries the face ID
+                        return self.send(t, "image/jpeg")
                     return self.send({"error": "no such face"}, code=404)
                 if path.startswith("/photo/"):
                     i = int(path[7:].split(".")[0])
                     jpg = photo_jpeg(i) if 0 <= i < db.n else None
                     if jpg is None:
                         return self.send({"error": "photo not found"}, code=404)
-                    return self.send(jpg, "image/jpeg", cache=True)
+                    return self.send(jpg, "image/jpeg")
                 # "Describe photo" (describe.py): outside the database lock, as it asks LM Studio
                 if path == "/api/describe/status":
                     with db.lock:

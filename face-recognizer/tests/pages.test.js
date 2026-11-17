@@ -51,6 +51,19 @@ test("every fetch reads its answer or lets it go (an unread answer keeps a descr
   }
 });
 
+test("the labeling page keeps the pictures it showed in memory, and lets go of them with a forget", () => {
+  // The server answers every picture with no-store (a browser's cache kept forgotten faces on disk), so the page
+  // keeps what it showed as blob: URLs. Every picture goes through thumb()/photoSrc(), and what the page keeps is
+  // dropped when faces are acted on, a person is forgotten, or an action is undone.
+  const code = read("label_ui.js");
+  assert.doesNotMatch(code, /src="\/(thumb|photo)\//, "a picture address written into the page directly");
+  assert.match(code, /post\("\/api\/person\/forget"[^\n]*\n\s*forgetPics\(\)/);
+  assert.match(code, /post\("\/api\/undo"\); if \(r\.undone\) \{ forgetPics\(\)/);
+  assert.match(code, /post\("\/api\/act"[^\n]*\n[^\n]*dropPic\(thumbUrl\(i\)\)/);
+  assert.match(read("localguard.py"), /"Cache-Control", "no-store"\)/);
+  assert.doesNotMatch(read("localguard.py") + read("label_tool.py") + read("tracker.py") + read("app.py"), /max-age|immutable/);
+});
+
 test("no page stops to ask (confirm, alert and prompt stop every tab's scripts: the camera, and the watchdog's signal)", () => {
   // In the app window the tab page and its tabs run in one process. A confirm() left open stopped the camera and
   // the tab page's /alive requests; after 30 s the watchdog took the window for frozen and started the app again.

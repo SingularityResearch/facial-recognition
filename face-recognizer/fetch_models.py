@@ -296,6 +296,8 @@ def fetch(progress=None):
                         out.write(chunk)
                         h.update(chunk)
                         got += len(chunk)
+                        if got > size:                      # never more on the disk than the file is known to be
+                            raise OSError(f"{name}: the download is larger than the expected file")
                         if progress:
                             progress(done + got, total, name)
                 if h.hexdigest() != sha:

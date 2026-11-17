@@ -518,10 +518,13 @@ def own_photo(store, photo, frame):
 
     import face_id as F
     rec = store.photos.get(photo) or {}
-    p = rec.get("path")
-    if not p or not Path(p).exists():
+    p, size = rec.get("path"), rec.get("size")
+    # A photo this device read itself has its size on record. One without is never shown: the size is how the
+    # file is known to still be that photo (and a path is this device's own, never taken from the database:
+    # dbsync.PHOTO_FIELDS).
+    if not p or not isinstance(p, str) or not isinstance(size, int) or size <= 0 or not Path(p).is_file():
         return None
-    if rec.get("size") and Path(p).stat().st_size != rec["size"]:
+    if Path(p).stat().st_size != size:
         return None                                    # changed since it was read: not that photo any more
     img = F.load_image(p) if frame is None or not rec.get("video") else F.video_frame(p, frame)
     if img is None:

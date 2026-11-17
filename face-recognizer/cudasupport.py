@@ -199,14 +199,17 @@ def _download():
             done = 0
             for name, size, sha, where in WHEELS:
                 tmp = part / name
-                h = hashlib.sha256()
+                h, got = hashlib.sha256(), 0
                 req = urllib.request.Request(PY + where + "/" + name, headers={"User-Agent": "FaceRecognizer-cuda"})
                 with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as out:
                     while chunk := r.read(1 << 20):
                         out.write(chunk)
                         h.update(chunk)
                         done += len(chunk)
+                        got += len(chunk)
                         STATE["done"] = done
+                        if got > size:                  # never more on the disk than the file is known to be
+                            raise OSError(f"{name}: the download is larger than the expected file")
                 if tmp.stat().st_size != size or h.hexdigest() != sha:
                     raise OSError(f"{name} isn't the expected file (size or SHA-256 differs)")
                 with zipfile.ZipFile(tmp) as z:

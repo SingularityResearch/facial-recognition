@@ -12,8 +12,9 @@ models read pictures, so their first model is used unless one is picked. Reasoni
 (reasoning_effort "none"): with it, Qwen 3.6 35B-A3B spent ~350 of 400 tokens thinking (6.6 s a photo);
 without it, 3.3 s for the same description.
 
-Describe all can also share the photos out among the other LM Studio servers on the local network that have the
-same vision model (Settings: "spread", off by default, as it sends photos to those computers): one photo at a time
+Describe all can also share the photos out among the LM Studio servers of the owner's other devices (computers in
+the shared database, at the addresses they gave there: helpers()) that have the same vision model (Settings:
+"spread", off by default, as it sends photos to those computers): one photo at a time
 to each server, each taking the next as it finishes, so a faster computer takes more (one server answering 3 at
 once slowed to 45 s a photo: see label_tool's describe_all). A server that fails twice in a row is left out and
 its photo goes back to the others, and it is tried again every five minutes (label_tool.HELPER_RETRY); the
@@ -66,7 +67,7 @@ class Unavailable(Exception):
 # --------------------------------------------------------------------------- settings
 def config():
     """{"use", "url", "model", "key", "spread", "again"} with the defaults filled in. spread: Describe all also
-    uses the other LM Studio servers on the local network that have the same model (off unless chosen in Settings).
+    uses the LM Studio servers of the owner's other devices that have the same model (off unless chosen in Settings).
     again: an unfinished Describe everything again, {"since", "model"}, or None (see again())."""
     try:
         with _cfg_lock:
@@ -300,16 +301,46 @@ def test(url, key=None):
     return f"The server answers: {len(ms)} model(s){': ' + ', '.join(m for m, _ in ms[:5]) if ms else ''}"
 
 
+OWN_EVERY = 60          # seconds the list of the other devices' addresses is used before it is asked for again
+_own = {"at": 0.0, "ips": frozenset()}
+_own_lock = threading.Lock()
+
+
+def device_addresses():
+    """The addresses of the owner's other devices: what each device in the shared database says it can be reached
+    at (devices.peer_addresses, kept by peer.py). Asked at most every OWN_EVERY seconds; while the database can't
+    be reached the last answer stands. Empty without a shared database."""
+    import facedb
+    if not facedb.configured():
+        return frozenset()
+    with _own_lock:
+        if time.time() - _own["at"] < OWN_EVERY:
+            return _own["ips"]
+        try:
+            me = facedb.device()["id"]
+            rows = facedb.ask(lambda conn: conn.execute("SELECT peer_addresses FROM devices WHERE id <> %s",
+                                                        (me,)).fetchall())
+            _own["ips"] = frozenset(a for (addrs,) in rows for a in (addrs or []) if isinstance(a, str))
+        except Exception:
+            pass
+        _own["at"] = time.time()
+        return _own["ips"]
+
+
 def helpers(name):
     """The other LM Studio servers Describe all may also send photos to: [{"host", "url"}], only with "spread"
-    on, a server model (not the built-in one) and on this computer's local network (hardware.lmstudio_network:
-    found by port and mDNS on its own networks). Each must list the same model as a vision model, so every
-    description comes from the same model. The configured server itself isn't one of them. No API key goes to them."""
+    on and a server model (not the built-in one). Each is one of the owner's own devices: a computer in the
+    shared database, at an address it gave there (device_addresses), or this computer. Before 1.24.2 it was any
+    computer on the local network that answered like LM Studio with the model's name, so anyone on the network
+    could have photos sent to them, also under one of the owner's computers' names. Each must list the same
+    model as a vision model, so every description comes from the same model. The configured server itself isn't
+    one of them. No API key goes to them."""
     c = config()
     if not c["spread"] or c["use"] == "builtin" or not name or name == florence.NAME:
         return []
     import hardware
     main_here = where(c["url"])[0] == "this computer"
+    ours = device_addresses() | set(hardware.own_addresses())
     out = []
     for e in hardware.lmstudio_network():
         if c["url"] in e["urls"] or (main_here and e["this_computer"]):
@@ -318,8 +349,11 @@ def helpers(name):
             continue                             # beyond the local network only as a "Fully distributed system"
         if not any(m["id"] == name and m["vision"] for m in e["models"]):
             continue
+        urls = [u for u in e["urls"] if urlparse(u).hostname in ours]
+        if not urls:
+            continue                             # not a device of the owner's (or not at an address it gave)
         # the address that connects first (a computer on Wi-Fi and wired answers at both)
-        best = min(e["urls"], key=_connect_secs)
+        best = min(urls, key=_connect_secs)
         out.append({"host": e["host"], "url": best})
     return out
 

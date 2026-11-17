@@ -506,6 +506,59 @@ def test_settings_stay_each_devices_own_and_signals_are_shared(shared, tmp_path,
         assert c.execute("SELECT count(*) FROM person_signals WHERE kind = 'usual'").fetchone()[0] == 2
 
 
+def test_rows_written_with_only_the_databases_password_change_no_device(shared, tmp_path, monkeypatch):
+    """Someone who has the database's password and no device writes rows: a file path for a photo, a device's
+    settings, rows no device can use. No device opens that file, changes a setting or stops taking the others'
+    changes; each device puts its own settings back. (Row by row, without a database: test_sync_rows.py.)"""
+    import alerts
+    import describe
+    import devicesettings
+    import peer
+    a = Device(tmp_path / "a", monkeypatch, 4)
+    a.step()
+    b = Device(tmp_path / "b", monkeypatch, 4)
+    b.step()
+    a.switch()
+    devicesettings.update("track", {"ft-o-optStream": "0"})
+    url = describe.config()["url"]
+    a.sync.note()
+    a.step()
+    said = []
+    a.sync.log = said.append
+    private = tmp_path / "private.jpg"
+    private.write_bytes(b"\xff\xd8 nobody asked for this")
+    with psycopg.connect(PG, autocommit=True) as c:               # no device: nobody's change
+        c.execute(f"SET search_path TO {os.environ['FACE_DB_SCHEMA']}, public")
+        c.execute("UPDATE photos SET extra = %s WHERE hash = 'h0'", (json.dumps({"path": str(private)}),))
+        c.execute("UPDATE device_settings SET value = '\"1\"' WHERE device = %s AND key = 'ft-o-optStream'", (a.id,))
+        c.execute("INSERT INTO device_settings (device, app, key, value) VALUES (%s, 'label', 'fl-music', '\"1\"')", (a.id,))
+        c.execute("""UPDATE device_settings SET value = '"http://203.0.113.9:1234"'
+                     WHERE device = %s AND app = 'describe' AND key = 'url'""", (a.id,))
+        c.execute("""INSERT INTO alerts (id, data) VALUES ('bad1', '"text"'), ('bad2', '{"id": "another"}')""")
+        c.execute("INSERT INTO faces (fid, photo, box, model) VALUES ('badface', 'h0', '{1,2,3}', 'arcface_w600k_r50')")
+        c.execute("INSERT INTO descriptions (key, data) VALUES ('h1', '[1, 2]')")
+        c.execute("""INSERT INTO presence (id, name, start_ms, end_ms)
+                     VALUES ('made-up', 'Ann', 100000000000000000, 100000000000000001)""")
+    b.switch()
+    b.db.act("name", [b.db.store.fid.index("f2")], "Cy")     # and a real change after them
+    b.step()
+    for dev in (a, b):
+        dev.step()
+        dev.switch()
+        assert dev.name("f2") == "Cy"                         # the pull got past the rows it can't use
+        assert not dev.db.store.photos["h0"].get("path") and peer.own_photo(dev.db.store, "h0", None) is None
+        assert "badface" not in dev.db.store.fid and alerts.listing()["alerts"] == [] and describe.saved("h1") is None
+        dev.db.store.save()                                   # and its own data still saves
+    a.switch()
+    assert devicesettings.settings() == {"track": {"ft-o-optStream": "0"}} and describe.config()["url"] == url
+    assert any("settings are different in the database" in s for s in said)
+    assert sum("can't be used here and was left out" in s for s in said) == 5
+    assert a.step()["pulled"] == 0                            # nothing is read again; a's settings went back
+    with shared.connect() as c:
+        rows = dict(c.execute("SELECT app || '|' || key, value FROM device_settings WHERE device = %s", (a.id,)).fetchall())
+    assert rows["track|ft-o-optStream"] == "0" and rows["describe|url"] == url and "label|fl-music" not in rows
+
+
 def test_a_restart_sends_nothing_again(shared, tmp_path, monkeypatch):
     """What a device took from the database hashes the same after the program reads its files again: floats come
     back from the database's real columns as short decimals (0.9) and from the files as float32 (0.8999999762)."""

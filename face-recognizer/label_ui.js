@@ -29,11 +29,55 @@ async function post(p, body) {
   if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
   return j;
 }
-const thumb = i => `/thumb/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}`;
+// Face pictures and photos are answered with no-store (localguard.py): a browser's cache kept them on disk for a
+// year, also the picture of a face Ignored or a person forgotten since, and originals another device only showed.
+// So the page keeps what it has shown itself, in memory, for as long as it is open (PICS: address -> blob: URL),
+// or every list drawn again would fetch its pictures again and flicker. A face picture that was shown (its <img>
+// loaded) is fetched once more to keep; a photo is fetched once (photoSrc).
+const PICS = new Map(), PICS_MAX = 4000, PHOTOS_MAX = 12;
+let picsAge = 0, ignored = -1, ownChange = false;
+const dropPic = u => { const b = PICS.get(u); if (b) URL.revokeObjectURL(b); PICS.delete(u); };
+function forgetPics() { picsAge++; for (const u of [...PICS.keys()]) dropPic(u); }
+const thumbUrl = i => `/thumb/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}`;
+const photoUrl = i => `/photo/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}`;
+const thumb = i => { const u = thumbUrl(i); return PICS.get(u) || u; };
+// <img> attributes for a face picture: one this page keeps is drawn at once, the others when they come into view
+const thumbAt = i => { const u = thumb(i); return `${u.startsWith("blob:") ? "" : 'loading="lazy" '}src="${u}"`; };
+function keepPic(u) {
+  if (PICS.has(u)) return;
+  if (PICS.size >= PICS_MAX) forgetPics();
+  const age = picsAge;
+  PICS.set(u, "");                                     // being fetched
+  fetch(u).then(r => r.ok && r.headers.get("Content-Type") === "image/jpeg" ? r.blob() : (r.body?.cancel(), null))
+    .then(b => { if (age !== picsAge || PICS.get(u) !== "") return;        // forgotten meanwhile: not kept
+      if (b) PICS.set(u, URL.createObjectURL(b)); else PICS.delete(u); })
+    .catch(() => { if (PICS.get(u) === "") PICS.delete(u); });
+}
+document.addEventListener("load", e => {               // (load doesn't bubble: caught on its way down)
+  const u = e.target.tagName === "IMG" ? e.target.getAttribute("src") : "";
+  if (u && u.startsWith("/thumb/")) keepPic(u);
+}, true);
+// The photo behind face i as a blob: URL, fetched once and kept while it is among the last PHOTOS_MAX shown.
+async function photoSrc(i) {
+  const u = photoUrl(i), have = PICS.get(u), age = picsAge;
+  if (have) { PICS.delete(u); PICS.set(u, have); return have; }          // shown again: the newest
+  const r = await fetch(u);
+  if (!r.ok) { r.body?.cancel(); throw new Error("no photo"); }
+  const b = URL.createObjectURL(await r.blob());
+  if (age !== picsAge) return b;                       // forgotten meanwhile: shown this once, not kept
+  const photos = [...PICS.keys()].filter(k => k.startsWith("/photo/"));
+  if (photos.length >= PHOTOS_MAX) dropPic(photos[0]);
+  PICS.set(u, b);
+  return b;
+}
 
 // ------------------------------------------------------------------ summary + rail
 async function loadSummary() {
   SUM = await get("/api/summary");
+  // faces were Ignored (or named again) elsewhere: another device, another page. Their pictures aren't kept here
+  const ign = SUM.people.find(p => p.name === IGN)?.faces || 0;
+  if (ign !== ignored && !ownChange && ignored >= 0) forgetPics();
+  ignored = ign; ownChange = false;
   if (SUM.faces !== FIDS.length) FIDS = (await get("/api/fids")).fids;
   if (SUM.faces !== STACKN) { const r = await get("/api/stacks"); STACKOF = r.of; STACKN = r.n; }
   const set = (id, n, hot) => { const e = $("#n-" + id); e.textContent = n ? n.toLocaleString() : ""; e.classList.toggle("hot", !!hot && n > 0); };
@@ -193,7 +237,7 @@ function tile(f, o) {
     .filter(Boolean).join(", ");
   const k = (STACK.get(f.i) || []).length;
   return `<button class="face ${sel.has(f.i) ? "sel" : ""}" data-i="${f.i}" title="${tip}${k > 1 ? `${tip ? ", " : ""}the same picture in ${k} photos: acting on it acts on all ${k}` : ""}" aria-pressed="${sel.has(f.i)}">
-    <img loading="lazy" src="${thumb(f.i)}" alt="">${bar}${tags ? `<span class="tags">${tags}</span>` : ""}${k > 1 ? `<span class="stackn">×${k}</span>` : ""}<span class="zoom" aria-hidden="true">⤢</span></button>`;
+    <img ${thumbAt(f.i)} alt="">${bar}${tags ? `<span class="tags">${tags}</span>` : ""}${k > 1 ? `<span class="stackn">×${k}</span>` : ""}<span class="zoom" aria-hidden="true">⤢</span></button>`;
 }
 const F3 = a => ({ i: a[0], s: a[1], q: a[2], by: a[3] });
 
@@ -443,7 +487,8 @@ async function act(action, faces, name, quiet) {
   document.querySelectorAll(faces.map(i => `.face[data-i="${i}"]`).join(",")).forEach(b => b.classList.add("gone"));
   try {
     const r = await post("/api/act", { action, faces, name });
-    faces.forEach(i => sel.delete(i));
+    faces.forEach(i => { sel.delete(i); dropPic(thumbUrl(i)); });   // Ignore deletes a picture, a name makes it again
+    ownChange = true;
     // Ignored faces have no picture or print left; one whose photo isn't here to make them again stays as it is
     const left = r.skipped ? ` ${plural(r.skipped, "face")} couldn't be changed: ignoring deleted ${r.skipped === 1 ? "its picture, and its photo isn't" : "their pictures, and their photos aren't"} on this computer to make ${r.skipped === 1 ? "it" : "them"} again.` : "";
     if (!quiet || left) done(r.undo + (left && ".") + left);
@@ -451,7 +496,7 @@ async function act(action, faces, name, quiet) {
 }
 async function done(msg) { await loadSummary(); await render(); toast(msg, false, true); }
 async function undo() {
-  try { const r = await post("/api/undo"); if (r.undone) { await loadSummary(); await render(); toast("Undone: " + r.undone); } }
+  try { const r = await post("/api/undo"); if (r.undone) { forgetPics(); await loadSummary(); await render(); toast("Undone: " + r.undone); } }
   catch (e) { toast(e.message, true); }
 }
 
@@ -585,6 +630,7 @@ $("#pdforget").onclick = async () => {
   if (!await askUser(`Forget ${pdName} everywhere? This deletes their face prints, pictures and every record naming them, and can't be undone.`, "Forget")) return;
   try {
     const r = await post("/api/person/forget", { name: pdName, confirm: typed });
+    forgetPics();                                              // their pictures, kept by this page while open
     $("#persondlg").classList.remove("on");
     SettingsBridge.notify({ fs: "forgot", name: pdName });     // the app window's tracker tab: their learned normals
     view = { v: "suggested" };
@@ -626,12 +672,15 @@ async function openPhoto(i) {
   const what = info?.video != null ? "video" : "photo", remote = info?.remote || [];
   const noFile = why => `<div class="nofile"><img src="${thumb(i)}" alt="" style="width:224px;height:224px;border-radius:12px"><p>${why}</p></div>`;
   $("#vwrap").innerHTML = info?.exists || remote.length
-    ? `<img id="vimg" src="/photo/${i}.jpg?f=${encodeURIComponent(FIDS[i] || "")}" alt="Photo">` +
+    ? `<img id="vimg" alt="Photo">` +
       (info?.exists ? "" : `<div class="from">The original is on ${esc(remote.join(", "))}: shown from there, not kept here.</div>`)
     : noFile(`The original ${what} isn't on this computer any more,<br>so only the face is shown.`);
-  if (!info?.exists && remote.length) $("#vimg").onerror = () => {
-    $("#vwrap").innerHTML = noFile(`The original ${what} is on ${esc(remote.join(", "))},<br>which can't be reached now, so only the face is shown.`); };
   const img = $("#vimg");
+  if (img) photoSrc(i).then(u => { if (img.isConnected) img.src = u; }, () => {
+    if (!img.isConnected) return;
+    if (!info?.exists && remote.length) $("#vwrap").innerHTML = noFile(`The original ${what} is on ${esc(remote.join(", "))},<br>which can't be reached now, so only the face is shown.`);
+    else img.src = photoUrl(i);                        // as before: the browser shows that it didn't load
+  });
   if (img) img.onload = () => {
     const s = img.clientWidth / img.naturalWidth;
     for (const f of info.faces) {
@@ -1118,7 +1167,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       : `${count(a.elsewhere)} of them aren't on this computer: the device that has each one shows it to this one.`);
     lines.push(h.length ? `The work is shared among ${h.length + 1} computers: this server, ${h.map(x => `${x.host} (${x.url})`).join(", ")}. Each photo sent to another computer is seen by it.`
       : desc.model === desc.builtin?.name ? "The built-in model on this computer does it alone."
-      : desc.config?.spread ? "No other LM Studio server has this model now: this server does it alone."
+      : desc.config?.spread ? "None of your other devices' LM Studio servers has this model now: this server does it alone."
       : "This server does it alone: Share Describe all with other computers is off.");
     lines.push(`About ${howLong(a.total)} with one server (${desc.secs ? `${desc.secs} s each, as this model took here so far` : "at 3.5 s each: none made with this model here yet, and a larger model takes longer"})${h.length ? ", less with the others helping" : ""}. Progress and Stop are at the top of the Labeling tab.`);
     if (a.since && a.left) lines.push(`This starts over: the unfinished run (${count(a.left)} to go) is dropped.`);
@@ -1191,14 +1240,14 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       fields: () => [{ name: "key", placeholder: "API key", secret: true, value: sec.describe || "" }] },
     { section: P, id: "describeSpread", label: "Share Describe all with other computers", type: "toggle", def: false,
       hidden: () => desc.config?.use === "builtin",
-      hint: "Describe all (and Describe everything again, below) also sends photos to the other LM Studio servers on your network that have the same vision model, one photo at a time each: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice in a row is left out, its photo goes back to the others, and it is tried again every five minutes. Describing a single photo uses only the server above.",
+      hint: "Describe all (and Describe everything again, below) also sends photos to the LM Studio servers of your other devices that have the same vision model, one photo at a time each. Your other devices are the computers in your shared database, at the addresses they gave there; no other computer on the network is sent a photo, and without a shared database nothing is shared. How it is shared: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice in a row is left out, its photo goes back to the others, and it is tried again every five minutes. Describing a single photo uses only the server above.",
       get: () => !!desc.config?.spread,
       set: v => post("/api/describe/config", { spread: !!v }) },
     { section: P, id: "describeHelpers", label: "Shared with", type: "info",
       hidden: () => !desc.config?.spread || desc.config?.use === "builtin",
       get: () => { const h = desc.helpers || [];
         return h.length ? h.map(x => `${x.host} (${x.url})`).join("\n") + `\nDescribe all uses ${h.length + 1} computers.`
-          : desc.ok ? `No other LM Studio server on your network has ${desc.model} (see LM Studio below): Describe all uses this server alone.`
+          : desc.ok ? `None of your other devices (the computers in your shared database) has an LM Studio server with ${desc.model} (see LM Studio below): Describe all uses this server alone.`
           : "Nothing to share with until the describer works."; } },
     { section: P, id: "describeAgain", label: "Describe everything again", type: "button",
       button: () => `Describe all ${count(desc.again?.total)} again`,
@@ -1375,7 +1424,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       set: async v => { await post("/api/peer", { share: !!v }); } },
     { section: D, id: "dbcopy", label: "Copy settings from", type: "select", def: "",
       hidden: () => !sdb.available || !sdb.config || !(sdb.devices || []).length,
-      hint: "Takes another device's options for the Face tracking and Labeling pages (and its photo describer choices and LM Studio shared folder; not its describe server address) in place of this device's. The pages load them again.",
+      hint: "Takes another device's options for the Face tracking and Labeling pages (and which photo describer and model it uses) in place of this device's. The pages load them again.",
       options: () => [["", "Choose a device"], ...(sdb.devices || []).map(d => [d.id, `${d.name} (last seen ${localTime(d.seen)})`])],
       get: () => "",
       set: async v => { if (!v) return; const r = await post("/api/db/copy", { from: v });

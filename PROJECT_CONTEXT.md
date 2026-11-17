@@ -724,6 +724,7 @@ first-start downloads; only the latest app release is kept):
 | v1.23.0 | Nov 15 | **Music and room sound as one more signal** (the owner's wish; Settings → Music; off until switched on, for a named person, with a shared database). `music.py`: the song the Spotify app shows as playing (its window title, nothing asked of the internet); every audio interface of the computer listened to at once for 8 s every half minute, each by itself: outputs (what the computer plays) and microphones (the room), through `soundcard`; a song's numbers (level, dynamics, tempo, brightness, bass, key and mode); what a room sounds like, from YAMNet's 521 kinds of sound gathered into plain families (quiet, music, speech, television or radio, steady background noise, activity, alerts, animals), and a steady background's own numbers and word (floor, events, steadiness, rumble, hiss, hum). `musiclog.py`: each song is a row of `music_log` (db/012) when it ends, with what each interface heard; music heard with no player naming it is "music in the room"; only numbers and words, never sound. A person's usual music (`music.picture`, from their Spotify liked songs: `spotify.py`, their own key, read-only, PKCE) is a person signal of kind `music`, shared, exported and forgotten with them. Built and run on the three devices first; the first row reached the database from the PC (a song of 234 s, heard on a display's speakers as music, 0.98). The words and cut-offs are not measured against anything: evidence. Found on the devices before the release build: about 20 s after a Windows screen is locked the camera sends no new picture, and its last one was streamed as live (for an hour that night, and since 1.22 after every Remote Desktop disconnect, which locks the session too: once for 21 hours); such a camera now counts as paused (`camPaused`: no faces read, the other devices told, the log). Under a lock (`desktop.screen_locked`) the page stops and starts it at once, and when that start fails or doesn't finish the app starts itself again, once per lock (`app.restart_soon`): in a session locked by a disconnect the running app never got the camera back, and the app started again had it within seconds; locked at the computer's own screen nothing helps until the unlock, and nothing more is loaded or started. Also found and fixed before the release build: why the Windows app's page grew by 1.5 to 2 GB an hour (pywebview's request handlers switched on the browser's network inspection, which kept a record of every request; `app.drop_request_hooks`, section 10). |
 | v1.24.0 | Nov 16 | Released for Windows, macOS and Linux (installed on four devices first). **Describe everything again** (the owner's wish; Settings → Describe photo): the whole library described anew with the describer set, every photo and every video frame a face was found in, also what only another device has (shown by that device, `peer.fetch`); asked about first (how many, which model, which computers); each description replaced as its new one arrives; shared out like Describe all (Share Describe all, and beyond the local network with Fully distributed system); a stopped or incomplete run stays under Unfinished to carry on with (`describe.again()` in `describe.json`); Stop and progress in Settings too. Settings buttons can ask a question first (`confirm`). Two bugs a newly installed fourth device showed: a device with an empty library could not join the shared database (`Store.save` with no faces), and on a new Windows profile the window never answered the tracker's camera request (WebView2 names the tab page as the one asking; `camera_allowed`, `Permissions-Policy`, the answer in place before any page loads). §10 has the first run's numbers and what is open. |
 | v1.24.1 | Nov 17 | Released for Windows, macOS and Linux (installed on four devices first; the Windows build's window opened on all five of its first starts as a new copy). The two things left open by 1.24.0's first run (§10): a describing helper that failed twice in a row is tried again every five minutes with one photo and rejoins when its server works (`label_tool.HELPER_RETRY`; it used to stay out for the whole run); and the built app's `--self-test` loads the Windows window's own parts (pywebview's Windows platform, WebView2's library, the types the camera answer uses), with `pythonnet`, `clr_loader` and `pyinstaller-hooks-contrib` pinned like the rest. |
+| v1.24.2 | Nov 17 | Not released yet. The security fixes from the code review of 2026-11-16 (§10): a row in the shared database can no longer give a photo a file path on a device (`photos.extra` was copied into the photo's record whole, and the peer service showed the file at a photo's path to every device that asked); a device's settings are its own and never taken from the database (a changed row switched on a device's microphone listening or camera stream, or pointed its describer at another server), only the owner's Copy settings takes another device's, and never the settings that say where a device sends photos or fetches files; a row that can't be used is left out and named in the log instead of stopping every device's pull for good (`Sync._apply`, each part's `check`); Share Describe all sends photos only to the owner's own devices (computers in the shared database, at the addresses they gave), not to whatever answers like LM Studio on the network; no answer is kept by a browser any more (face pictures and photos were cacheable for a year: the labeling page keeps what it showed in memory instead). Smaller: at most 64 camera relays, a download is stopped once it is larger than its file, two inputs that raised. |
 
 ---
 
@@ -1233,6 +1234,80 @@ Released as 1.24.0 (2026-11-17 UTC) from CI's builds of 0417201, each installed 
 first (three Windows, one Linux): data and models untouched, every camera live on every device, and the running
 describe run stopped, the app updated under it, and carried on. The Windows build was also started as a new copy
 with a made-up camera: the window answered the camera request by itself.
+
+### Code review of 2026-11-16 (security, speed, structure)
+
+Four read-only reviews of the whole of `face-recognizer/` (the local servers and pages; the network, keys and
+downloads; structure; speed), each finding then checked against the source. Nothing was found that lets a website
+read or change anything, and no way to run a script in a page; the request checks, the page policies, the keys'
+encryption, the pinned certificates between devices and the download checks held. What was found starts from
+someone who has the shared database's password (or one device), or sits on the local network.
+
+Fixed in 1.24.2 (tests: `test_sync_rows.py`, `test_sync.py`, `test_describe.py`, `test_servers.py`, `pages.test.js`):
+- **A row could name a file on every device.** `Local.apply("photos")` copied the row's `extra` column into the
+  photo's record, `path` included, and `peer.own_photo` shows the file at a photo's path to any device that asks
+  with the cluster key (which the database's password gives). Now `dbsync.PHOTO_FIELDS` are never taken from
+  `extra`, and `own_photo` shows only a record with a path and a size.
+- **A row could change a device's settings.** Rows of `device_settings` for this device were applied when anyone
+  changed them: the music listener (every microphone), the camera stream, Collect faces, the describe server's
+  address, Share Describe all, the shared models folder (a path, looked at as soon as it is set). Now a device
+  applies nothing from that table and puts its own values back; Copy settings (`copy_settings`, the owner's click)
+  is the only way in, without the settings in `dbsync_home.STAY_HERE`.
+- **One row no device could use stopped every device's pull for good**: an alert that is no object, a face with a
+  box of three numbers (saved with the rest, and then no save worked), a visit at a time no calendar has. The
+  pull raised at the row and read it again at every step. Now `Sync._apply`: checked first, halved when applying
+  still fails, left out and named in the log.
+- **Share Describe all sent photos to any computer on the network that answered like LM Studio** with the model's
+  name, also one using the name of a computer of the owner's. Helpers are now devices of the shared database at
+  the addresses they gave there (`describe.device_addresses`), or this computer.
+- **The window's cache kept pictures for a year**: `/thumb` and `/photo` were answered `max-age=31536000,
+  immutable`, so a face Ignored or a person forgotten since stayed in the cache on disk, and so did originals
+  another device had only shown. Every answer is `no-store` now; the labeling page keeps what it showed as
+  blob: URLs in memory (`PICS`), so drawing a list again asks for nothing (checked in a browser: no request on
+  the second draw, the photo fetched once, an Ignored face's picture let go at once).
+- Smaller: `tracker.camera_ids` raised on a digit that is no number; a relay thread was started for any device id
+  a request named (now at most `camrelay.MAX_RELAYS`); the three pinned downloads were only checked once they
+  had ended (one without an end filled the disk); `Recorder.SESSION` took a name ending in a line end.
+
+Open from it, security (none reachable from a website):
+- Another account on the same computer can call every route of the three servers, `/api/secrets` included: the
+  header the routes ask for is a constant. A token made at each start would close it; whether a computer with
+  several accounts is in scope is the owner's decision.
+- The app takes whatever already answers on the two programs' ports as its own, frames it and answers its camera
+  request. Only a program started in this process (`OWN`) should get the camera without a question.
+- A signed request between devices isn't bound to the device it is sent to (`peer.sign`), so one device of the
+  cluster could pass it on to another within two minutes; `peer-key.pem` is kept unprotected (mode 600 elsewhere,
+  the user's own folder on Windows).
+- `secretbox`: the check value that links a new passphrase to the one before it doesn't include which one that
+  was, so after a restore an old link could be shown again.
+- A `database.json` without the server's CA connects with `sslmode=require` and no channel binding.
+- `florence.py` takes model files that are already there by their size alone.
+- Some GET routes start work without the header a POST needs (a possible-face scan under the labeling lock).
+- Page objects keyed by a person's name (`constructor`, `__proto__` as names).
+
+Open from it, speed (by reading the code; none measured yet):
+- While an import runs, the labeling page asks for the summary every 6 s and with it the stacks and checks of
+  the whole library, under the lock the import needs.
+- The whole face store is written again every 50 imported photos, and twice for each batch pulled from another
+  device; every push hashes every face, picture, photo, label and description again.
+- With Settings open, every probe runs again every 5 s: Describe photo's status walks the library, LM Studio's
+  starts `lms ls`, the shared database's opens a connection inside the labeling lock.
+- The alert inbox is sent whole every 3 to 5 s; the large JSON files are written with `indent`, which takes
+  Python's slow encoder; the tracker and the importer each load a full set of models.
+- The Linux app's growth: no container that grows was found in the code; the allocator keeping freed memory is
+  the first thing to check (`MALLOC_ARENA_MAX`, `malloc_trim`).
+
+Open from it, structure:
+- `label_tool.make_handler` is one function of 700 lines; the Describe all job (260 lines) and the Settings-only
+  routes belong in modules of their own. First a test that every route the page scripts call is answered (about
+  16 of 60 are asked for by a test today).
+- Web search answers are guarded by one lock in the handler and another in the sync.
+- `exprlog.py` and `musiclog.py` share about 110 lines nearly word for word: one waiting-log class before a third
+  log is written.
+- A new synced table touches about fourteen places in `dbsync_home.py`: one part per table when the next table is
+  added, and a tripwire test now.
+- The forgotten names belong in a module of their own (six lazy imports go); nine re-exports of `labels.py` and
+  the `/api/autoname` route have no caller.
 
 Other open items (2026-11-12):
 - The macOS app is still not signed or notarized: the Apple secrets aren't set in CI, and the release notes say so.

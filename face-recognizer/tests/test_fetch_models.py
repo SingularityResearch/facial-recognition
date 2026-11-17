@@ -100,6 +100,20 @@ def test_a_changed_file_falls_back_to_the_release(one_model, monkeypatch):
     assert not list(M.MODELS.glob("*.download")) and seen[-1] == len(PAYLOAD)
 
 
+def test_a_download_larger_than_the_file_is_stopped(one_model, monkeypatch):
+    """A source that keeps sending is cut off once it has sent more than the file is known to be: nothing was
+    checked until the download ended, and one without an end filled the disk."""
+    monkeypatch.setitem(FILES, "/endless.onnx", PAYLOAD + b"\0" * (5 << 20))
+    monkeypatch.setattr(M, "ORIGIN", {})
+    monkeypatch.setattr(M, "TRIES", 1)
+    monkeypatch.setattr(M, "_source", lambda name, attempt: (f"{one_model}/endless.onnx", {}))
+    seen = []
+    with pytest.raises(OSError, match="larger than the expected file"):
+        M.fetch(lambda done, total, name: seen.append(done))
+    assert max(seen, default=0) <= len(PAYLOAD)                 # stopped at the first piece past the size
+    assert not (M.MODELS / "test.onnx").exists() and not list(M.MODELS.glob("*.download"))
+
+
 def test_no_good_source_raises_and_leaves_nothing(one_model, monkeypatch):
     monkeypatch.setattr(M, "ORIGIN", {})
     monkeypatch.setattr(M, "_source", lambda name, attempt: (f"{one_model}/wrong.onnx", {}))
