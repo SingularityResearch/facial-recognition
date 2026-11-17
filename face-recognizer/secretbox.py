@@ -170,9 +170,12 @@ def device_proof(key, device, public):
     return _mac(key, b"device proof", device, public)
 
 
-def _link(prev_key, vid, fp):
-    """What the device making version vid writes into its link: made with the key of the version it replaces."""
-    return _mac(prev_key, b"version link", vid, fp)
+def _link(prev_key, prev, vid, fp):
+    """What the device making version vid writes into its link: made with the key of the version it replaces, and
+    saying which one that was (prev). Through 1.24.2 it didn't: a restore gives a new version the key of an earlier
+    one, so the link of whatever once replaced that earlier one fitted again, and whoever can write rows (the
+    database's password) could send the devices back to a passphrase the owner had undone."""
+    return _mac(prev_key, b"version link 2", prev, vid, fp)
 
 
 def _same(a, b):
@@ -276,7 +279,7 @@ def _new_version(conn, passphrase, note, prev=None, prev_key=None):
                         fingerprint(key), note, prev)).fetchone()[0]
     if prev_key is not None:
         conn.execute("UPDATE passphrase_versions SET link = %s WHERE id = %s",
-                     (_link(prev_key, vid, fingerprint(key)), vid))
+                     (_link(prev_key, prev, vid, fingerprint(key)), vid))
     return vid, key
 
 
@@ -406,7 +409,7 @@ def restore(conn, vid):
                              target["id"])).fetchone()[0]
         if old_key is not None:
             conn.execute("UPDATE passphrase_versions SET link = %s WHERE id = %s",
-                         (_link(old_key, vid2, target["fingerprint"]), vid2))
+                         (_link(old_key, cur["id"], vid2, target["fingerprint"]), vid2))
         _make_current(conn, vid2, new_key, old_key)
         share_all(conn, vid2, new_pass, old_key)
         _keep(new_pass, new_key, vid2)
@@ -428,8 +431,9 @@ def _follow(conn, cur):
     """Take the current version when it replaced the one this device has and was made by a device holding that one
     (its link fits this device's key). True when taken."""
     key = local_key()
-    if key is None or cur.get("prev") != local_version() or not _same(cur.get("link"),
-                                                                       _link(key, cur["id"], cur["fingerprint"])):
+    mine = local_version()
+    if key is None or mine is None or cur.get("prev") != mine or not _same(
+            cur.get("link"), _link(key, mine, cur["id"], cur["fingerprint"])):
         return False
     try:
         p = _version_passphrase(conn, cur["id"])

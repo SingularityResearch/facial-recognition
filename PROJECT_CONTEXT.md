@@ -173,7 +173,8 @@ v1.16; the pages keep a quick copy in their browser storage), `webview\` (the .e
 camera, and for a frozen window with how many in a row). With a shared database also: `database.json` + `database-ca.pem` (connection; password DPAPI-protected on
 Windows, file mode 600 elsewhere), `device.json` (this device's id), `sync.sqlite` (each row's digest as last synced),
 `secret.key` and `device-key.json` (the passphrase for keys and this device's X25519 key pair, protected like the
-password), `peer-cert.pem`/`peer-key.pem`/`peer.json` (the peer service's own certificate and settings),
+password), `peer-cert.pem`/`peer-key.pem`/`peer-key.json`/`peer.json` (the peer service's own certificate, its
+key encrypted with a protected password, and settings),
 `forgotten.json` (people forgotten here or on another device).
 
 ### macOS and Linux (since 2026-11-10, v1.9)
@@ -725,6 +726,7 @@ first-start downloads; only the latest app release is kept):
 | v1.24.0 | Nov 16 | Released for Windows, macOS and Linux (installed on four devices first). **Describe everything again** (the owner's wish; Settings → Describe photo): the whole library described anew with the describer set, every photo and every video frame a face was found in, also what only another device has (shown by that device, `peer.fetch`); asked about first (how many, which model, which computers); each description replaced as its new one arrives; shared out like Describe all (Share Describe all, and beyond the local network with Fully distributed system); a stopped or incomplete run stays under Unfinished to carry on with (`describe.again()` in `describe.json`); Stop and progress in Settings too. Settings buttons can ask a question first (`confirm`). Two bugs a newly installed fourth device showed: a device with an empty library could not join the shared database (`Store.save` with no faces), and on a new Windows profile the window never answered the tracker's camera request (WebView2 names the tab page as the one asking; `camera_allowed`, `Permissions-Policy`, the answer in place before any page loads). §10 has the first run's numbers and what is open. |
 | v1.24.1 | Nov 17 | Released for Windows, macOS and Linux (installed on four devices first; the Windows build's window opened on all five of its first starts as a new copy). The two things left open by 1.24.0's first run (§10): a describing helper that failed twice in a row is tried again every five minutes with one photo and rejoins when its server works (`label_tool.HELPER_RETRY`; it used to stay out for the whole run); and the built app's `--self-test` loads the Windows window's own parts (pywebview's Windows platform, WebView2's library, the types the camera answer uses), with `pythonnet`, `clr_loader` and `pyinstaller-hooks-contrib` pinned like the rest. |
 | v1.24.2 | Nov 17 | Released for Windows, macOS and Linux (installed on four devices first: data and models untouched, every camera live on every device; the Windows build's window opened as a new copy and answered the camera request). The security fixes from the code review of 2026-11-16 (§10): a row in the shared database can no longer give a photo a file path on a device (`photos.extra` was copied into the photo's record whole, and the peer service showed the file at a photo's path to every device that asked); a device's settings are its own and never taken from the database (a changed row switched on a device's microphone listening or camera stream, or pointed its describer at another server), only the owner's Copy settings takes another device's, and never the settings that say where a device sends photos or fetches files; a row that can't be used is left out and named in the log instead of stopping every device's pull for good (`Sync._apply`, each part's `check`); Share Describe all sends photos only to the owner's own devices (computers in the shared database, at the addresses they gave), not to whatever answers like LM Studio on the network; no answer is kept by a browser any more (face pictures and photos were cacheable for a year: the labeling page keeps what it showed in memory instead). Smaller: at most 64 camera relays, a download is stopped once it is larger than its file, two inputs that raised. |
+| v1.24.3 | Nov 17 | Not released yet. The smaller security items of the code review (§10): the app shows and gives the camera only to a program it started itself; data and anything a GET starts go only to a tool's own page, not to a page of another program on the computer; a passphrase link says which version it replaces (an old one fitted again after a restore); a database login without the server's authority is bound to its connection; the built-in describer's files are checked by SHA-256 when found already there; the peer service's private key is kept encrypted; nobody can be named `constructor` or `__proto__`. |
 
 ---
 
@@ -1269,21 +1271,38 @@ Fixed in 1.24.2 (tests: `test_sync_rows.py`, `test_sync.py`, `test_describe.py`,
   a request named (now at most `camrelay.MAX_RELAYS`); the three pinned downloads were only checked once they
   had ended (one without an end filled the disk); `Recorder.SESSION` took a name ending in a line end.
 
-Open from it, security (none reachable from a website):
+Fixed in 1.24.3 (not released yet; tests in `test_servers.py`, `test_localguard.py`, `test_peer.py`,
+`test_sync.py`, `test_sync_rows.py`, `test_facedb.py`, `test_describe.py`, `test_labels.py`):
+- **The app showed whatever answered on its programs' ports.** A program holding the tracker's port, answering like
+  it and naming the window's tab page in its frame-ancestors was framed as the tracker and had its camera and
+  microphone request answered. Now `app.start` shows only what this process started (`OWN`), and
+  `camera_allowed` answers only for that.
+- **A GET needed nothing but the right Host.** A page of another program on this computer (`Sec-Fetch-Site:
+  same-site`) could start a search of the network, a camera relay or a look for faces in a photo, and no route
+  told its own page from any other. Now data and what a GET starts are for the tool's own page (`same-origin`)
+  or a program sending the header (`localguard.OWN_ONLY`). Checked in a browser against a test copy: 1,689
+  requests of the app's own pages, none refused, no page error; another program's page was answered 403 on
+  every data route of the three servers and 200 on a page file.
+- **An old passphrase link fitted again after a restore** (`secretbox._link` didn't say which version it
+  replaced; a restore gives a new version an earlier key): whoever can write rows could send every device back
+  to the passphrase the owner had undone. The new test does exactly that against the old code and fails there.
+  Links made before 1.24.3 no longer fit: a device that was one change behind when it is updated needs the
+  passphrase typed or approved once (none of the four was behind).
+- A `database.json` without the server's CA now logs in with channel binding; `florence.py` takes a file already
+  there only with its SHA-256; `peer-key.pem` is encrypted, its password protected (a key from before is
+  encrypted where it is, the certificate stays); nobody can be named `constructor`, `__proto__` or another word
+  of `labels.NOT_NAMES`, in the tool or by a row.
+
+Looked at and left as it is:
+- A signed request between devices isn't bound to the device it is sent to (`peer.sign`). Binding it would
+  change nothing today: a request reaches only a device whose certificate is in the database, writing that row
+  takes the database's password, and the password gives the cluster key, so whoever could pass a request on
+  can sign their own. It becomes worth doing the day devices get keys of their own.
+
+Open from it, security (not reachable from a website):
 - Another account on the same computer can call every route of the three servers, `/api/secrets` included: the
-  header the routes ask for is a constant. A token made at each start would close it; whether a computer with
-  several accounts is in scope is the owner's decision.
-- The app takes whatever already answers on the two programs' ports as its own, frames it and answers its camera
-  request. Only a program started in this process (`OWN`) should get the camera without a question.
-- A signed request between devices isn't bound to the device it is sent to (`peer.sign`), so one device of the
-  cluster could pass it on to another within two minutes; `peer-key.pem` is kept unprotected (mode 600 elsewhere,
-  the user's own folder on Windows).
-- `secretbox`: the check value that links a new passphrase to the one before it doesn't include which one that
-  was, so after a restore an old link could be shown again.
-- A `database.json` without the server's CA connects with `sslmode=require` and no channel binding.
-- `florence.py` takes model files that are already there by their size alone.
-- Some GET routes start work without the header a POST needs (a possible-face scan under the labeling lock).
-- Page objects keyed by a person's name (`constructor`, `__proto__` as names).
+  header the routes ask for is a constant, and a program that isn't a browser sends what it likes. A token made
+  at each start would close it; whether a computer with several accounts is in scope is the owner's decision.
 
 Open from it, speed (by reading the code; none measured yet):
 - While an import runs, the labeling page asks for the summary every 6 s and with it the stacks and checks of

@@ -242,3 +242,26 @@ def test_a_server_beyond_the_local_network_helps_only_in_a_fully_distributed_sys
     assert [h["host"] for h in D.helpers("qwen/qwen3.6-35b-a3b")] == ["lan-box"]
     (tmp_path / "lmstudio.json").write_text('{"distributed": true}')
     assert [h["host"] for h in D.helpers("qwen/qwen3.6-35b-a3b")] == ["lan-box", "far-box"]
+
+
+def test_a_built_in_model_file_counts_only_when_it_is_the_expected_file(tmp_path, monkeypatch):
+    """florence.py took a file already there by its size alone: one damaged, or put there by something else, was
+    loaded as the model. Now its SHA-256 counts, read once for the file as it is."""
+    import hashlib
+    F2 = D.florence
+    good, bad = b"the model" * 100, b"not model" * 100
+    monkeypatch.setattr(F2, "DIR", tmp_path)
+    monkeypatch.setattr(F2, "FILES", {"a.onnx": (len(good), hashlib.sha256(good).hexdigest()),
+                                      "onnx/b.onnx": (len(good), hashlib.sha256(good).hexdigest())})
+    assert not F2.ready()                                             # nothing there
+    (tmp_path / "onnx").mkdir()
+    (tmp_path / "a.onnx").write_bytes(good)
+    (tmp_path / "onnx" / "b.onnx").write_bytes(bad)                   # as large, not the file
+    assert F2.good("a.onnx") and not F2.good("onnx/b.onnx") and not F2.ready()
+    (tmp_path / "onnx" / "b.onnx").write_bytes(good)
+    assert F2.ready() and set(json.loads((tmp_path / F2.VERIFIED).read_text("utf-8"))) == set(F2.FILES)
+    reads, real = [], hashlib.sha256
+    monkeypatch.setattr(F2.hashlib, "sha256", lambda *a: reads.append(1) or real(*a))
+    assert F2.ready() and F2.ready() and reads == []                  # not read again while it stays as it is
+    (tmp_path / "a.onnx").write_bytes(bad)                            # changed since
+    assert not F2.ready() and reads

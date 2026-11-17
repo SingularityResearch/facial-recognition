@@ -432,9 +432,9 @@ def make_handler(db, importer):
 
     class Handler(localguard.Handler):       # quiet, checked, errors answered: see localguard.Handler
         def _get(self):
-            if self.refused(write=False):
-                return
             u = urlparse(self.path)
+            if self.refused(write=False, own=u.path.startswith(localguard.OWN_ONLY)):
+                return
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
             path, low = u.path, q.get("low") == "1"
             try:

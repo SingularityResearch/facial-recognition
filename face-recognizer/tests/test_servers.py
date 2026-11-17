@@ -173,25 +173,62 @@ def test_programs_trust_the_tab_page_only_when_the_app_started_them(label_url, m
                                                                   "http://localhost:8764"]
 
 
-@pytest.mark.parametrize("ancestors, ours", [("'self'", False), ("'self' http://127.0.0.1:8764", True),
-                                             ("'self' http://127.0.0.1:9999", False), ("'none'", False)])
-def test_the_app_shows_a_running_copy_only_if_it_may_frame_it(serve, monkeypatch, ancestors, ours):
-    """A copy started on its own (its .bat) trusts only itself: the app says so instead of showing a refused frame."""
-    class Copy(G.Handler):
-        frame_ancestors = ancestors
+def test_the_app_never_shows_a_program_it_didnt_start(serve, monkeypatch):
+    """Through 1.24.2 the app took whatever answered like one of its programs on that program's port and named this
+    window's tab page in its frame-ancestors: showed it as its own, and answered its camera and microphone request.
+    A copy started on its own (its .bat) gets the same message as before."""
+    class Posing(G.Handler):
+        frame_ancestors = "'self' http://127.0.0.1:8764"
 
         def _get(self):
-            self.send({})
+            self.send({"people": [], "app": "face-labels"})
+
+    class Program:
+        @staticmethod
+        def bind(port):
+            raise OSError("in use")                              # as binding a port another program has
+
+        @staticmethod
+        def attach(srv):
+            raise AssertionError("nothing to start")
+    url = serve(Posing) + "/"
+    port = urllib.parse.urlparse(url).port
     monkeypatch.setattr(G, "FRAME_PARENTS", {"http://127.0.0.1:8764", "http://localhost:8764"})   # this window
-    assert app.lets_us_frame(serve(Copy) + "/") is ours
+    monkeypatch.setattr(app, "PORT_TRIES", 1)
+    monkeypatch.setattr(app, "OWN", {})
+    monkeypatch.setitem(app.STATUS, "track", {"url": url})
+    monkeypatch.setattr(app, "SHELL", {"url": "http://127.0.0.1:8764/"})
+    for kind in ("tracker", "face-labels"):
+        assert app.answering(url, kind)
+        with pytest.raises(OSError, match="already running"):
+            app.start("Face tracker", Program, port, kind)
+    assert app.OWN == {}
+    assert not app.camera_allowed(url) and not app.camera_allowed("http://127.0.0.1:8764/")   # and no camera for it
+    monkeypatch.setitem(app.OWN, url, None)                      # one this process started, answering again: its own
+    assert app.start("Face tracker", Program, port, "tracker") == url
+    assert app.camera_allowed(url) and app.camera_allowed("http://127.0.0.1:8764/")
 
 
 def test_other_websites_get_nothing(label_url, track, shell_url):
     for url, path in ((label_url, "/thumb/0.jpg"), (label_url, "/api/summary"), (track[0], "/api/people"),
                       (shell_url, "/status")):
         assert request(url, path, headers={"Sec-Fetch-Site": "cross-site"})[0] == 403
-        assert request(url, path, headers={"Sec-Fetch-Site": "same-site"})[0] == 200   # the tab page's frames
-        assert request(url, path, headers={"Sec-Fetch-Site": "none"})[0] == 200        # typed, bookmark, .bat
+        assert request(url, path, headers={"Sec-Fetch-Site": "same-origin"})[0] == 200   # the page's own requests
+        assert request(url, path)[0] == 200                                              # a program, not a browser
+        # a page of another program on this computer, an address typed or opened by a program: no data, and
+        # nothing a GET starts (they could until 1.24.2); a program that says it is the tool's own gets it
+        for site in ("same-site", "none"):
+            assert request(url, path, headers={"Sec-Fetch-Site": site})[0] == 403, (path, site)
+            assert request(url, path, headers={"Sec-Fetch-Site": site, "X-Face-Tool": "1"})[0] == 200
+    for url, page in ((label_url, "/"), (label_url, "/label_ui.js"), (track[0], "/"), (track[0], "/cameras"),
+                      (shell_url, "/"), (shell_url, "/app_ui.js"), (label_url, "/favicon.ico")):
+        for site in ("same-site", "none"):                # the pages themselves: the tab page's frames, typed, the .bat
+            assert request(url, page, headers={"Sec-Fetch-Site": site})[0] == 200, (page, site)
+    for path in ("/api/hardware/network", "/api/possible/0", "/api/unknown?regroup=1", "/photo/0.jpg"):
+        assert request(label_url, path, headers={"Sec-Fetch-Site": "same-site"})[0] == 403, path   # what a GET starts
+    for path in ("/api/cameras/frames?after=1:0", "/api/cameras", "/api/alerts", "/api/settings"):
+        assert request(track[0], path, headers={"Sec-Fetch-Site": "same-site"})[0] == 403, path
+    assert request(shell_url, "/alive", headers={"Sec-Fetch-Site": "same-site"})[0] == 403
     assert request(label_url, "/api/undo", b"{}", {"Sec-Fetch-Site": "cross-site"})[0] == 403
 
 
@@ -209,6 +246,9 @@ def test_the_camera_is_only_for_the_tracker_this_window_shows(monkeypatch, shell
     monkeypatch.setitem(app.STATUS, "track", {})
     assert not app.camera_allowed("http://127.0.0.1:8766/")                  # not started yet
     monkeypatch.setitem(app.STATUS, "track", {"url": "http://127.0.0.1:8766/"})
+    monkeypatch.setattr(app, "OWN", {})
+    assert not app.camera_allowed("http://127.0.0.1:8766/")                  # a tracker this process didn't start
+    monkeypatch.setitem(app.OWN, "http://127.0.0.1:8766/", None)
     assert app.camera_allowed("http://127.0.0.1:8766/") and app.camera_allowed("http://127.0.0.1:8766/x?y")
     for other in ("http://127.0.0.1:8765/", "http://127.0.0.1:9000/", "http://localhost:8766/",
                   "https://127.0.0.1:8766/", "http://evil.example:8766/", "http://127.0.0.1:8764/"):

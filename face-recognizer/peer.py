@@ -17,6 +17,7 @@ It also streams this device's live camera, as its tracker page shows it (camstre
 TLS and signature, a multipart JPEG stream that lasts until the watching device closes it (camrelay.py).
 Each device records its addresses, port and certificate fingerprint in the devices table (every sync step).
 Off with FACE_PEER=off, or the Settings switch "Share my photos with my other devices"."""
+import base64
 import datetime
 import hashlib
 import hmac
@@ -81,13 +82,64 @@ def port():
 
 # --- this device's certificate -------------------------------------------------------------------------------------
 
+def _key_pass_file():
+    return KEY.with_suffix(".json")              # beside the key: {"password": kept with paths.protect}
+
+
+def key_password():
+    """The password this device's private key file is encrypted with; "" when there is none that can be read
+    (a key from before 1.24.3, or a private folder that came from another computer or user)."""
+    try:
+        return paths.unprotect(json.loads(_key_pass_file().read_text("utf-8"))["password"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
+
+
+def _write_key(key):
+    """Keep the service's private key encrypted, its password protected as the app's other keys are
+    (paths.protect: only this Windows user can read it back; mode 600 elsewhere). Through 1.24.2 the key lay in
+    the private folder as it was: a copy of that folder was enough to answer as this device."""
+    from cryptography.hazmat.primitives import serialization
+    pw = base64.urlsafe_b64encode(os.urandom(32)).decode()
+    paths.write_private(_key_pass_file(), json.dumps({"password": paths.protect(pw)}).encode())
+    paths.write_private(KEY, key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                               serialization.BestAvailableEncryption(pw.encode())))
+
+
+def _key_state():
+    """'none' (no key, or one that can't be opened: a new one is made), 'plain' (from before 1.24.3: encrypted
+    now) or 'ok'."""
+    try:
+        head = KEY.read_bytes()[:64]
+    except OSError:
+        return "none"
+    if not CERT.exists():
+        return "none"
+    if b"ENCRYPTED" not in head:
+        return "plain"
+    return "ok" if key_password() else "none"
+
+
+def renew():
+    """Forget this device's certificate and key: certificate() makes new ones (the other devices take the new
+    SHA-256 from the database at their next look)."""
+    for f in (CERT, KEY, _key_pass_file()):
+        f.unlink(missing_ok=True)
+
+
 def certificate():
     """(certificate path, key path, SHA-256 of the certificate's DER), made once."""
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
     from cryptography.x509.oid import NameOID
-    if not (CERT.exists() and KEY.exists()):
+    state = _key_state()
+    if state == "plain":                         # the same key and certificate, the file encrypted from now on
+        try:
+            _write_key(serialization.load_pem_private_key(KEY.read_bytes(), None))
+        except (ValueError, TypeError):
+            state = "none"
+    if state == "none":
         key = ec.generate_private_key(ec.SECP256R1())
         # a certificate's name holds 64 characters at most: a computer with a long name got no certificate at all,
         # and so no peer service (found on a Mac, 2026-11-14). The name is for people; devices go by the SHA-256
@@ -96,8 +148,7 @@ def certificate():
         cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
                 .serial_number(x509.random_serial_number()).not_valid_before(now - datetime.timedelta(days=1))
                 .not_valid_after(now + datetime.timedelta(days=3650)).sign(key, hashes.SHA256()))
-        paths.write_private(KEY, key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                                                   serialization.NoEncryption()))
+        _write_key(key)
         paths.atomic_write(CERT, cert.public_bytes(serialization.Encoding.PEM))
     der = ssl.PEM_cert_to_DER_cert(CERT.read_text("ascii"))
     return CERT, KEY, hashlib.sha256(der).hexdigest()
@@ -308,11 +359,16 @@ class Service:
         self.bind, self.listen_port = bind, listen_port if listen_port is not None else port()
 
     def start(self):
-        cert, key, _fp = certificate()
+        ctx = _context(ssl.PROTOCOL_TLS_SERVER)
+        try:
+            cert, key, _fp = certificate()
+            ctx.load_cert_chain(cert, key, password=key_password())    # always a password: never a question asked
+        except ssl.SSLError:                     # the key and its password don't fit (one written, not the other)
+            renew()
+            cert, key, _fp = certificate()
+            ctx.load_cert_chain(cert, key, password=key_password())
         handler = type("Handler", (_Handler,), {"service": self})
         self.srv = _Server((self.bind, self.listen_port), handler)
-        ctx = _context(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(cert, key)
         self.srv.socket = ctx.wrap_socket(self.srv.socket, server_side=True, do_handshake_on_connect=False)
         threading.Thread(target=self.srv.serve_forever, daemon=True, name="peer service").start()
         return self

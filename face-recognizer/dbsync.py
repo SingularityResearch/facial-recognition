@@ -278,8 +278,10 @@ class Local:
         every later save. Only what would break this device is refused; values it doesn't know are left alone."""
         _need(isinstance(key, str) and key, "no key")
         if tbl == "labels":
+            import labels as L
             _need(r.get("not") is None or (isinstance(r["not"], list) and all(isinstance(n, str) for n in r["not"])),
                   "names it is not: not a list of names")
+            _need(not isinstance(r.get("n"), str) or r["n"] not in L.NOT_NAMES, "a name no page can keep")
         elif tbl == "web_suggestions":
             _need(isinstance(r, dict), "not an object")
         elif tbl == "photos":

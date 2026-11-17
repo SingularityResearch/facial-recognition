@@ -109,6 +109,9 @@ def test_the_macos_window_lets_only_this_apps_tracker_use_the_camera_unasked(mon
     monkeypatch.setitem(app.STATUS, "track", {})
     assert app.camera_answer(Origin("127.0.0.1", 8766)) == app.ASK_USER         # no tracker yet
     monkeypatch.setitem(app.STATUS, "track", {"url": "http://127.0.0.1:8766/"})
+    monkeypatch.setattr(app, "OWN", {})
+    assert app.camera_answer(Origin("127.0.0.1", 8766)) == app.ASK_USER         # not one this process started
+    monkeypatch.setitem(app.OWN, "http://127.0.0.1:8766/", None)
     assert app.camera_answer(Origin("127.0.0.1", 8766)) == app.GRANT
     for other in (Origin("127.0.0.1", 8765), Origin("127.0.0.1", 0), Origin("localhost", 8766),
                   Origin("127.0.0.1", 8766, "https"), Origin("example.com", 8766), object()):

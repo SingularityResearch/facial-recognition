@@ -58,8 +58,63 @@ _model = None
 download_state = {"running": False, "done": 0, "total": SIZE, "error": None}
 
 
+VERIFIED = ".verified.json"       # in DIR: {file: {size, mtime_ns}} of the files whose SHA-256 was checked
+_verify_lock = threading.Lock()   # one reading of a file at a time (the page asks for the status again meanwhile)
+
+
+def _checked():
+    try:
+        v = json.loads((DIR / VERIFIED).read_text("utf-8"))
+        return v if isinstance(v, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _note(name):
+    """Remember that DIR/name, as it is now (size and time), has the expected SHA-256."""
+    st = (DIR / name).stat()
+    v = _checked()
+    v[name] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
+    try:
+        paths.atomic_write(DIR / VERIFIED, json.dumps(v, indent=1))
+    except OSError:
+        pass                      # a folder that can't be written: checked again next time
+
+
+def good(name, checked=None):
+    """True if DIR/name is the expected file: its size and its SHA-256. The file is read only when its size or
+    time differ from the last check (VERIFIED), as fetch_models does for the other models. Through 1.24.2 a file
+    already there counted by its size alone: one damaged or put there by something else was loaded as the model."""
+    size, sha = FILES[name]
+    path = DIR / name
+    try:
+        st = path.stat()
+    except OSError:
+        return False
+    if st.st_size != size:
+        return False
+    now = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
+    if (_checked() if checked is None else checked).get(name) == now:
+        return True
+    with _verify_lock:
+        if _checked().get(name) == now:              # read by another request while this one waited
+            return True
+        h = hashlib.sha256()
+        try:
+            with open(path, "rb") as f:
+                while chunk := f.read(1 << 20):
+                    h.update(chunk)
+        except OSError:
+            return False
+        if h.hexdigest() != sha:
+            return False
+        _note(name)
+        return True
+
+
 def ready():
-    return all((DIR / f).exists() and (DIR / f).stat().st_size == s for f, (s, _) in FILES.items())
+    checked = _checked()
+    return all(good(f, checked) for f in FILES)
 
 
 def status():
@@ -75,7 +130,7 @@ def download():
     try:
         for name, (size, sha) in FILES.items():
             dest = DIR / name
-            if dest.exists() and dest.stat().st_size == size:
+            if good(name):                    # there already, and the expected file (not just as large)
                 st["done"] += size
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -94,6 +149,7 @@ def download():
                 if h.hexdigest() != sha:
                     raise OSError(f"{name} downloaded, but it isn't the expected file (checksum differs)")
                 paths.replace_file(tmp, dest)
+                _note(name)
             except Exception:
                 tmp.unlink(missing_ok=True)
                 st["done"] = start

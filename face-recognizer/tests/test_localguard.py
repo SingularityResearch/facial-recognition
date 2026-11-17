@@ -45,6 +45,18 @@ def test_own_page_tab_page_and_typed_addresses_are_allowed(site):
     assert why(h) is None and why(h, write=True) is None
 
 
+@pytest.mark.parametrize("site, header, ok", [("same-origin", None, True), (None, None, True), ("same-site", None, False),
+                                              ("none", None, False), ("same-site", "1", True), ("none", "1", True),
+                                              ("cross-site", "1", False), ("same-site", "yes", False)])
+def test_data_goes_only_to_the_tools_own_page(site, header, ok):
+    """A GET for data, or one that starts something (own=True): from the tool's own page (same-origin), or a
+    program that sends the header. Not from a page of another program on this computer (same-site) or an address
+    typed or opened (none): through 1.24.2 those could start a search of the network or a camera relay."""
+    h = {"Host": "127.0.0.1:8765", **({"Sec-Fetch-Site": site} if site else {}), **({"X-Face-Tool": header} if header else {})}
+    assert (G.refuse_reason(h, PORT, False, own=True) is None) is ok
+    assert (G.refuse_reason(h, PORT, False) is None) is (site != "cross-site")     # the page itself: as before
+
+
 def test_no_page_trusts_another_to_frame_it_unless_the_app_started_it(monkeypatch):
     assert G.FRAME_PARENTS == set()                           # nothing trusted until app.py adds its tab page
     assert "frame-ancestors 'self'" in G.policy() and "8764" not in G.policy()

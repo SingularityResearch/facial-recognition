@@ -421,7 +421,9 @@ class HomePart:
         elif tbl == "device_settings":
             _need(key.count("|") >= 2, "not device|app|key")
         elif tbl == "person_signals":
+            import labels as L
             _need("|" in key and isinstance(v.get("data"), dict), "not name|kind with an object")
+            _need(key.rpartition("|")[0] not in L.NOT_NAMES, "a name no page can keep")
         elif tbl == "forgotten":
             _need(len(key) <= 200 and not key.startswith("#"), "not a person's name")
 

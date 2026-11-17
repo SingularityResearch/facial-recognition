@@ -60,6 +60,7 @@ def test_name_reject_rename_and_undo(data):
 @pytest.mark.parametrize("action, idx, name", [
     ("name", [0], ""), ("name", [0], "#secret"), ("reject", [0], None), ("name", [99], "Ann"), ("name", [-1], "Ann"),
     ("explode", [0], "Ann"),
+    ("name", [0], "constructor"), ("name", [0], "__proto__"), ("name", [0], " toString "),   # labels.NOT_NAMES
 ])
 def test_bad_changes_are_refused(data, action, idx, name):
     db = db_with_faces(data)
@@ -344,3 +345,16 @@ def test_a_skipped_copy_is_not_what_later_copies_are_compared_with(data):
     (data / "photos.json").write_text(json.dumps(photos))
     db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
     assert db.near_duplicate("00" * 31 + "01") == "h0"       # a third version, closest to the copy: still the original
+
+
+def test_nobody_is_renamed_to_a_word_the_pages_cant_keep_data_under(data):
+    """The pages keep each person's data in objects by name: "constructor" and "__proto__" are every object's own
+    machinery there (labels.NOT_NAMES)."""
+    db = db_with_faces(data)
+    db.act("name", [0], "Ann")
+    for word in ("constructor", "__proto__", "hasOwnProperty"):
+        with pytest.raises(ValueError, match="can't be used as a name"):
+            db.rename("Ann", word)
+    assert db.name(0) == "Ann"
+    db.rename("Ann", "Constructor")                              # only the exact words
+    assert db.name(0) == "Constructor"

@@ -54,6 +54,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   Linux) with the Face tracking, Labeling, Cameras and Settings tabs. `VERSION` in `app.py` is the release number.
   - Starts both programs in one process (`tracker.bind`/`attach`, `label_tool.attach`), each still on its own port
     and page. Ports 8764-8766 (tab page, labeling, tracker); `FACE_PORTS=<n>` uses n to n+2 (a second copy).
+    A program already answering on a port that this process didn't start (`OWN`) is never shown in the window:
+    `start` says it is already running (its .bat, another window, or anything answering like it).
   - The tab page itself (`app_ui.html` + `app_ui.js`, `{{VERSION}}` filled in) is served on `127.0.0.1:8764`:
     `/status`, `/paths`, `/update`, `/open-release`, `/open`, `/attention` (alert count in the title, taskbar flash),
     `/restart` (Start again for a program that failed or stopped; one loaded in this process and only slow is never
@@ -121,7 +123,11 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   Linux window, `app.WINDOW_ICON`, and launcher). Packed into every build (`ICONS`). Change the drawing, run the
   script, commit the files.
 - `localguard.py` — what the three servers share:
-  - request checks (`refuse_reason`: Host, `Sec-Fetch-Site`, `X-Face-Tool: 1`, Origin);
+  - request checks (`refuse_reason`: Host, `Sec-Fetch-Site`, `X-Face-Tool: 1`, Origin). A GET for data or one
+    that starts work (`OWN_ONLY`: `/api/`, `/thumb/`, `/photo/`; on the tab page everything but its page files)
+    is answered only for the tool's own page (`Sec-Fetch-Site: same-origin`) or with the header; a browser's
+    `same-site` (a page of another program on this computer) or `none` (an address typed or opened) gets the
+    page files only. A new route under another path that gives data needs `own=True` too;
   - the `Handler` base class (quiet, `send`/`send_json`, `body(limit)`, `refused`; subclasses define `_get`/`_post`;
     uncaught errors answered with a JSON 500). It speaks HTTP/1.1 and keeps connections open (since 1.22.2: with
     a new connection per request, about one in a thousand failed on Windows, PROJECT_CONTEXT.md section 10). So
@@ -173,7 +179,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   models, face finding, prints, `Store` (faces, pictures), `require_models`/`check_downloaded`, and where each model
   runs (`auto`, `_gpu_check`, `_yunet_runner`; see Running). `SAVED_HOOKS` are called after each save.
 - `labels.py` — labeling engine: per-face labels (`LabelDB`), auto-naming, duplicate-photo detection, undo history and
-  clues for unnamed faces (`hints`: closest people, photo tags, same occasion). It re-exports the modules split from it
+  clues for unnamed faces (`hints`: closest people, photo tags, same occasion). Nobody can be named a word in
+  `NOT_NAMES` (`constructor`, `__proto__`, ...: the pages keep people's data in objects by name). It re-exports the modules split from it
   (`labels.X` still works):
   - `photofiles.py` — content hashes, picture fingerprints, online-only cloud files (Windows only), camera dates,
     photo folders.
@@ -227,7 +234,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     nothing is left, so a stopped run is carried on with (`carry_on`).
   - Without LM Studio: `florence.py`, the built-in Florence-2 large (ONNX int8, CPU only: DirectML gave garbage; ~3 s
     a photo; plainer and less accurate), 0.8 GB downloaded on request from Hugging Face (pinned revision, SHA-256)
-    into `models/florence2/` (not in git, not in `fetch_models.py`).
+    into `models/florence2/` (not in git, not in `fetch_models.py`). A file already there counts only with its
+    SHA-256 too (`florence.good`, read once for the file as it is: `.verified.json` there).
 
 ### Live tracker and cameras
 
@@ -335,6 +343,7 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   since v1.16). Without `HOME/database.json` (or `FACE_DB`) nothing changes: files only.
   - Connection settings in `HOME/database.json` (password DPAPI-protected on Windows, mode 600 elsewhere); TLS
     `verify-ca` against the server's own CA (made by `tools/db_certs.py`). This device's id in `HOME/device.json`.
+    Settings without a CA (older, or written by hand) connect with channel binding instead, as `setup` does.
   - `facedb.setup` (Settings → Shared database → Connect) logs in with sslmode=require and
     channel_binding=require, takes the server's CA from the `server_ca` table (the SCRAM login, bound to this TLS
     connection, proves the server at its other end knows the password) and keeps it for verify-ca.
@@ -388,7 +397,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - A holder shows it (`devices.key_proof`: a keyed check value over its id and X25519 public key; private half in
     `HOME/device-key.json`, protected). A change (re-encrypts every key in one transaction) or restore is sealed
     (`passphrase_shares`) only to devices showing the passphrase it replaces, and carries a check value made with
-    that one's key (`passphrase_versions.link`): `catch_up` (`HomePart.every_step`) follows a new version only then
+    that one's key over which version it replaces, its own id and its fingerprint (`passphrase_versions.link`,
+    `_link`; since 1.24.3 with the replaced version in it: a restore reuses an earlier key, and an old link fitted
+    again): `catch_up` (`HomePart.every_step`) follows a new version only then
     (`_follow`), or takes the answer to its own request (`_take_answer`). A device that missed two changes needs
     one of the owner's two ways again.
   - Restore only on a device that held that version itself (`HOME/secret.key` `known`).
@@ -401,7 +412,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     view's JPEG; shown, never stored.
   - Listens on the LAN: port = tab page port + 3 (8767; `FACE_PEER_PORT`; `FACE_PEER=off` or the Settings switch
     turn it off). TLS with the device's own certificate (`HOME/peer-cert.pem`), whose SHA-256 is in
-    `devices.peer_cert_sha256` and checked by the asker.
+    `devices.peer_cert_sha256` and checked by the asker. Its private key (`peer-key.pem`) is kept encrypted, the
+    password protected in `peer-key.json` (`_write_key`; a key from before 1.24.3 is encrypted where it is, one
+    that can't be opened is replaced with a new certificate: `renew`).
   - Requests signed (HMAC) with the cluster key (HKDF of the database password and its instance id), valid
     `CLOCK_SKEW` (120) s; photos by hash only (`PHOTO_RE`), from the device's own records.
   - truststore replaces `ssl.SSLContext` app-wide, so `peer.py` uses the original class (`_context`). Started by
@@ -518,7 +531,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     parses and is served and packed, no inline handlers, no internet fonts, no `confirm()`/`alert()`/`prompt()`,
     and `askUser` (`ask.js`).
   - Servers and security: `test_servers.py` (the three servers on test servers: CSP, CORP, cross-site refusals,
-    request sizes, Collect faces, presence log, feeling reports, `/api/who`, no page loading from the internet),
+    request sizes, Collect faces, presence log, feeling reports, `/api/who`, no page loading from the internet,
+    data only for a page's own requests, no program shown that the app didn't start),
     `test_localguard.py`, `test_certificates.py`.
   - Labeling and people: `test_labels.py` (naming, Ignore and undo, naming an Ignored face, rename/merge, the empty
     new-user start, an empty library saved and read again, the face-picture migration, a moved video), `test_persondata.py` (one person's export and forget; Describe all past an unreadable
@@ -536,7 +550,7 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     drops its own schema). `test_sync_rows.py` needs no database: rows that can't be used, a photo row that names
     a file path, a row that changes a device's settings, each handed to the code the sync hands them to.
   - Device to device: `test_peer.py` (no database needed: which address is tried first, what a refusal says about
-    the clocks, a running service on this computer, a long computer name).
+    the clocks, a running service on this computer, a long computer name, the private key kept encrypted).
   - Music: `test_music.py` (a sound with a known beat and key measured, usual music from liked songs, what is
     logged when and for whom, Spotify's permission against a stand-in on this computer).
   - `test_thresholds.py`: a tripwire on the measured thresholds.
@@ -619,6 +633,10 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - Every endpoint goes through `localguard.refuse_reason` (exact Host and port; POST needs `X-Face-Tool: 1` and its
   own Origin). The `app.py` shell uses it too: its GETs that do something (`/update`, `/open-release`, `/open`,
   `/attention`, `/restart`, `/restart-app`: `acts` in `shell_handler`) need the header.
+- Data, and anything a GET starts, goes only to the tool's own page (`refuse_reason(own=True)`: the browser's
+  `Sec-Fetch-Site: same-origin`, or the header from a program that isn't a browser). A page of another program
+  on this computer (`same-site`) and an address typed or opened (`none`) get a tool's page files and nothing
+  else; a test asks every kind of route both ways.
 - Every answer carries `localguard.page_headers`: a Content-Security-Policy with `default-src 'self'` and only what
   each page uses (`localguard.POLICY`; the tracker adds `blob:` scripts and media for its microphone worklet and Open
   video, the tab page the programs' ports as `frame-src`; no inline script anywhere, so no `onclick=` attributes);
@@ -628,10 +646,11 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   same-origin` and `nosniff`. The tab page also sends `Permissions-Policy`: camera and microphone for itself and the
   programs' ports only (itself, because a page can't hand on what it may not use). Pages load nothing from the internet (a test checks every page file).
 - Requests with `Sec-Fetch-Site: cross-site` are refused (another website's page, even as an `<img>`); same-site is
-  the tab page's frames on other 127.0.0.1 ports. Request bodies go through `Handler.body(limit)` (negative or
-  non-numeric `Content-Length` 400, too large 413).
-- In the app window only the tracker this window shows gets the camera and microphone without a prompt
-  (`app.camera_allowed`; Windows `allow_camera`, macOS `allow_camera_macos` → `camera_answer`). Any other page
+  how the tab page loads a program's page into its frame (the page's own requests after that are same-origin).
+  Request bodies go through `Handler.body(limit)` (negative or non-numeric `Content-Length` 400, too large 413).
+- In the app window only the tracker this process started (`app.OWN`) gets the camera and microphone without a
+  prompt (`app.camera_allowed`; Windows `allow_camera`, macOS `allow_camera_macos` → `camera_answer`), and only
+  a program this process started is shown in the window at all (`app.start`). Any other page
   is left to the window's own question. The tracker's request reaches the window in the tab page's name, so the
   tab page's address is answered too: the tab page hands camera and microphone to the tracker's frame alone
   (`allow=` in `app_ui.html`; its `Permissions-Policy` header names itself and the programs' ports only) and its
@@ -658,7 +677,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - The music log listens to audio interfaces (outputs and microphones) only while its switch is on, and keeps
   numbers only: the sound of any interface is analysed in memory and never stored (`music.record`), like the
   tracker's microphone.
-- Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`, `cudasupport.py`); the
+- Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`, `cudasupport.py`), and
+  so is a model file found already there (`fetch_models.is_good`, `florence.good`); the
   CUDA download starts only from its Settings button, and only `onnxruntime/` and `nvidia/` are unpacked from the
   wheels. `lmstudio.from_share` checks each file against the shared folder's own list (a damaged copy, not a
   rewritten list: the folder is as trusted as the computers that write to it) and writes only inside LM Studio's

@@ -131,7 +131,11 @@ def _conninfo():
         # of the server's addresses; the authority is this server's own, made by tools/db_certs.py.)
         kw |= dict(sslmode="verify-ca", sslrootcert=str(ca))
     else:
-        kw |= dict(sslmode="require")
+        # Settings saved without the server's authority (before 1.16.1, or by hand): nothing says whose server
+        # this is, so the login itself has to: with channel binding, only a server that knows the password and
+        # is the other end of this very connection passes (as in setup). Without it, something between the two
+        # could pass the login along and read and write everything after it.
+        kw |= dict(sslmode="require", channel_binding="require")
     return make_conninfo(**kw), c.get("schema") or "facerec"
 
 

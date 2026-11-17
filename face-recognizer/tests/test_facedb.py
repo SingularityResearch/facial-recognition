@@ -40,6 +40,19 @@ def test_the_password_is_protected_and_bad_settings_refused():
     assert facedb.save_config("", 0, "", "", "", "") is None and facedb.config() is None
 
 
+def test_every_connection_checks_whose_server_it_is(monkeypatch):
+    """With the server's authority: its certificate (verify-ca). Settings saved without one (before 1.16.1, or by
+    hand) connected with sslmode=require alone, which checks nothing: now the login is bound to the connection."""
+    monkeypatch.delenv("FACE_DB", raising=False)
+    facedb.save_config("db.example", 5432, "facerec", "facerec", "s3cret-pw", CA)
+    info = facedb._conninfo()[0]
+    assert "sslmode=verify-ca" in info and "sslrootcert=" in info
+    facedb.save_config("db.example", 5432, "facerec", "facerec", "s3cret-pw", "")
+    info = facedb._conninfo()[0]
+    assert "sslmode=require" in info and "channel_binding=require" in info and "sslrootcert" not in info
+    facedb.save_config("", 0, "", "", "", "")
+
+
 def test_the_device_keeps_its_id():
     a = facedb.device()
     assert uuid.UUID(a["id"]) and facedb.device() == a

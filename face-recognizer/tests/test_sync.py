@@ -302,6 +302,51 @@ def test_private_data_keys_and_forgets_reach_the_other_device(shared, tmp_path, 
         assert c.execute("SELECT count(*) FROM presence").fetchone()[0] == 0
 
 
+def test_a_passphrase_link_fits_only_the_version_it_was_made_to_replace(shared, tmp_path, monkeypatch):
+    """A restore gives a new version the key of an earlier one. The link of whatever once replaced that earlier one
+    was made with the same key, and through 1.24.2 it didn't say what it replaced: whoever can write rows could
+    show it again and send every device back to the passphrase the owner had undone."""
+    import secretbox
+    a, b = Device(tmp_path / "a", monkeypatch, 2), Device(tmp_path / "b", monkeypatch, 2)
+    a.step()
+    b.step()
+    a.switch()
+    with shared.connect() as c:
+        secretbox.set_passphrase(c, "the first passphrase", "the first passphrase")
+        v1 = secretbox.current(c)["id"]
+    b.switch()
+    with shared.connect() as c:
+        assert secretbox.set_passphrase(c, "the first passphrase", "the first passphrase")["what"] == "entered"
+    a.step()
+    b.step()
+    a.switch()
+    with shared.connect() as c:
+        assert secretbox.set_passphrase(c, "a wrong change", "a wrong change")["what"] == "changed"
+        v2 = secretbox.current(c)["id"]
+    b.step()
+    b.step()
+    b.switch()
+    assert secretbox.saved_passphrase() == "a wrong change"                  # followed: its link fits
+    a.switch()
+    with shared.connect() as c:
+        assert secretbox.restore(c, v1)["what"] == "restored"
+        v3 = secretbox.current(c)["id"]
+    b.step()
+    b.step()
+    b.switch()
+    assert secretbox.saved_passphrase() == "the first passphrase" and secretbox.local_version() == v3
+    # the wrong change again, said to replace what the devices have now: its link was made with their key
+    with shared.connect() as c:
+        with c.transaction():
+            c.execute("UPDATE passphrase_versions SET current = false")
+            c.execute("UPDATE passphrase_versions SET current = true, prev = %s WHERE id = %s", (v3, v2))
+    for dev in (a, b):
+        dev.step()
+        dev.step()
+        dev.switch()
+        assert secretbox.saved_passphrase() == "the first passphrase" and secretbox.local_version() == v3, dev.id
+
+
 def test_the_database_password_alone_gets_nobody_the_passphrase(shared, tmp_path, monkeypatch):
     """Whoever holds the database password can write any row. That must not get them the passphrase for keys or a
     key: a device is given the passphrase only when the owner types it there, or types that device's one-time code

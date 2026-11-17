@@ -8,6 +8,8 @@ labels), or use "DNS rebinding" to read their answers. Every request must theref
   * name this computer in its Host header (127.0.0.1 or localhost, with the right port), which
     defeats DNS rebinding, and
   * not come from another website's page (the browser's Sec-Fetch-Site: cross-site), and
+  * for data and anything a GET starts (OWN_ONLY: /api/, face pictures, photos): come from the tool's own page
+    (the browser says same-origin for those), not from a page of another program on this computer, and
   * for anything that changes or computes something (POST): carry the custom header
     X-Face-Tool: 1 and, if the browser sends an Origin, come from this tool's own page.
     Browsers won't let another website add a custom header without the server's permission
@@ -21,6 +23,7 @@ import traceback
 from pathlib import Path
 
 HEADER = "X-Face-Tool"
+OWN_ONLY = ("/api/", "/thumb/", "/photo/")       # GET paths only the tool's own page may ask for (refuse_reason)
 ICON = Path(__file__).resolve().parent / "icons" / "icon.ico"    # the app's icon (tools/make_icon.py)
 
 # Pages may be shown in a frame only by themselves and, when app.py started the program in its window, by the
@@ -185,9 +188,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._body_taken = True
         return data
 
-    def refused(self, write):
-        """Refuse (403) and return why, or None: see refuse_reason. write: the request changes or starts something."""
-        reason = refuse_reason(self.headers, self.server.server_address[1], write)
+    def refused(self, write, own=False):
+        """Refuse (403) and return why, or None: see refuse_reason. write: the request changes or starts something.
+        own: a GET for data or one that starts work, which only the tool's own page may send."""
+        reason = refuse_reason(self.headers, self.server.server_address[1], write, own)
         if reason:
             self.send({"error": reason}, code=403)
         return reason
@@ -222,7 +226,7 @@ def answer_errors(handler, run, send_error):
             pass
 
 
-def refuse_reason(headers, port, write):
+def refuse_reason(headers, port, write, own=False):
     """Return why a request must be refused, or None if it may proceed."""
     local = {f"127.0.0.1:{port}", f"localhost:{port}"}
     if headers.get("Host", "") not in local:
@@ -231,8 +235,15 @@ def refuse_reason(headers, port, write):
     # picture as an <img> (which would tell it the tool runs, and how many faces it has). The app's tab page
     # framing a program on another port of 127.0.0.1 is "same-site"; typing the address, a bookmark or the .bat
     # opening the page is "none"; programs that aren't browsers don't send it.
-    if headers.get("Sec-Fetch-Site") == "cross-site":
+    site = headers.get("Sec-Fetch-Site")
+    if site == "cross-site":
         return "Requests from other websites are not allowed."
+    # A page's requests to its own server are "same-origin". "same-site" is a page on another port of this
+    # computer (some other program's page), "none" an address typed or opened by a program: those get the page
+    # itself, but no data, and can't start what a GET starts (a search of the network, a camera relay, a look for
+    # faces in a photo). Through 1.24.2 they could. A program that isn't a browser sends the header instead.
+    if own and site not in (None, "same-origin") and headers.get(HEADER) != "1":
+        return "Only this tool's own page may ask for that."
     if write:
         if headers.get(HEADER) != "1":
             return f"Missing the {HEADER} header; requests must come from the tool's own page."

@@ -130,3 +130,51 @@ def test_a_running_service_refuses_an_old_request_with_its_own_time(tmp_path, mo
         assert "apart is refused" in peer._why(body) and "clocks automatically" in peer._why(body)
     finally:
         svc.stop()
+
+
+def test_the_services_private_key_is_kept_encrypted(tmp_path, monkeypatch):
+    """Through 1.24.2 peer-key.pem lay in the private folder as it was. Now it is encrypted, its password kept as
+    the app's other keys are (paths.protect); a key from before is encrypted where it is, with the same certificate;
+    one that can't be opened any more is replaced, and the service starts."""
+    pytest.importorskip("cryptography")
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    import paths
+    monkeypatch.setattr(peer, "CERT", tmp_path / "peer-cert.pem")
+    monkeypatch.setattr(peer, "KEY", tmp_path / "peer-key.pem")
+    cert, key, fp = peer.certificate()
+    assert b"ENCRYPTED PRIVATE KEY" in key.read_bytes() and peer.key_password()
+    kept = json.loads((tmp_path / "peer-key.json").read_text("utf-8"))["password"]
+    assert paths.is_protected(kept) and peer.key_password() not in key.read_text("ascii")
+    with pytest.raises((TypeError, ValueError)):
+        serialization.load_pem_private_key(key.read_bytes(), None)             # no use without the password
+    private = serialization.load_pem_private_key(key.read_bytes(), peer.key_password().encode())
+
+    # a device coming from 1.24.2: the same key, as it lay there
+    key.write_bytes(private.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                          serialization.NoEncryption()))
+    (tmp_path / "peer-key.json").unlink()
+    assert peer.certificate()[2] == fp and b"ENCRYPTED PRIVATE KEY" in key.read_bytes()
+    again = serialization.load_pem_private_key(key.read_bytes(), peer.key_password().encode())
+    assert again.private_numbers() == private.private_numbers()                # the same key: the others still know it
+
+    def serves():
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        svc = peer.Service(lambda h, f: b"\xff\xd8photo", lambda: b"k" * 32, bind="127.0.0.1", listen_port=port).start()
+        try:
+            return peer._get("127.0.0.1", port, peer.certificate()[2], "/photo/" + "ab" * 20, b"k" * 32)
+        finally:
+            svc.stop()
+    assert serves() == b"\xff\xd8photo"
+
+    # the password is gone (the private folder came from another computer): a new certificate, said in the database
+    (tmp_path / "peer-key.json").unlink()
+    fp2 = peer.certificate()[2]
+    assert fp2 != fp and peer.key_password() and serves() == b"\xff\xd8photo"
+    # the key and its password don't fit (one was written, the other not): found when the service starts
+    other = ec.generate_private_key(ec.SECP256R1())
+    key.write_bytes(other.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                        serialization.BestAvailableEncryption(b"another password")))
+    assert serves() == b"\xff\xd8photo" and peer.certificate()[2] not in (fp, fp2)

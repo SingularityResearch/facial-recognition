@@ -26,6 +26,7 @@ def test_the_trackers_camera_request_is_answered_before_any_page_loads(monkeypat
             return self
     core = types.SimpleNamespace(PermissionRequested=Requests())
     monkeypatch.setitem(app.STATUS, "track", {"url": "http://127.0.0.1:8766/"})
+    monkeypatch.setitem(app.OWN, "http://127.0.0.1:8766/", None)             # started by this process
     monkeypatch.setattr(app, "SHELL", {"url": "http://127.0.0.1:8764/"})
     said = []
     handler = app.camera_hook(core, ("camera", "microphone"), "ALLOW", said.append)

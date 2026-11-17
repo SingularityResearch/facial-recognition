@@ -16,7 +16,7 @@ How settings are kept:
 | Page options | the page's own storage, and its program in `%APPDATA%\FaceLabels\settings.json` (per computer); with a shared database also this device's rows there | everything under Face tracking, Labeling's display options |
 | What the tracker learned about each person | `%APPDATA%\FaceLabels\person_signals.json`, a copy in the page's storage; with a shared database also there | usual look and signal normals (Calibrate to each person) |
 | Program settings | `%APPDATA%\FaceLabels\` (macOS `~/Library/Application Support/FaceLabels`, Linux `~/.local/share/FaceLabels`) | Describe photo (`describe.json`), Web search keys (keys protected for your user, like the database password), the shared models folder (`lmstudio.json`), alerts, photo sharing (`peer.json`) |
-| Shared database connection | `%APPDATA%\FaceLabels\` | `database.json` (server, user, protected password), `database-ca.pem`, `device.json` (this device's id and name), `secret.key` (the passphrase, protected), `device-key.json` and `peer-cert.pem` (this device's own keys), `sync.sqlite` (what was last synced) |
+| Shared database connection | `%APPDATA%\FaceLabels\` | `database.json` (server, user, protected password), `database-ca.pem`, `device.json` (this device's id and name), `secret.key` (the passphrase, protected), `device-key.json`, `peer-cert.pem`, `peer-key.pem` and `peer-key.json` (this device's own keys; the private ones protected), `sync.sqlite` (what was last synced) |
 | Window conveniences | the page's storage only, per computer | the tab last shown, the Controls panel and Labeling list open or closed, the Cameras tab's choices |
 | Start-up choices | environment variables (end of this page) | `FACE_DEVICE`, `FACE_PORTS` |
 

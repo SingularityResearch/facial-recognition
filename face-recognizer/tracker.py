@@ -495,9 +495,9 @@ def make_handler(engine):
                 self.close_connection = True
 
         def _get(self):
-            if self.refused(write=False):
-                return
             path = self.path.split("?", 1)[0]
+            if self.refused(write=False, own=path.startswith(localguard.OWN_ONLY)):
+                return
             if path in ("/", "/index.html"):
                 return self.send(PAGE.read_bytes(), "text/html; charset=utf-8")   # re-read so edits show on refresh
             if path in SCRIPTS:

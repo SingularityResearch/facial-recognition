@@ -4,7 +4,7 @@ app.py - Face Recognizer: the live tracker and the labeling tool in one window, 
 The two stay separate programs inside: each keeps its own web server (tracker.py on 8766,
 label_tool.py on 8765) and page, exactly as when started from recognize.bat / label.bat, and this
 window shows both pages, one per tab. The tracker keeps running while the Labeling tab is shown.
-If either is already running from its .bat, that copy is used instead of starting a second one.
+If either is already running from its .bat, the window says so instead of starting a second one (start).
 
 Run:  python app.py            (or FaceRecognizer.exe, built with build_app.bat; the app on macOS and Linux)
       python app.py --browser  (the same tab page in the default web browser instead of a window of its own;
@@ -40,7 +40,7 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 TITLE = "Face Recognizer"
-VERSION = "1.24.2"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.24.3"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -81,40 +81,27 @@ def answering(url, app):
         return False
 
 
-def lets_us_frame(url):
-    """True if the page at url may be shown in this window: its frame-ancestors name this window's tab page
-    (localguard.FRAME_PARENTS, set by shell_server). A program started on its own (its .bat) names only itself."""
-    try:
-        req = urllib.request.Request(url, headers={"X-Face-Tool": "1"})
-        with urllib.request.urlopen(req, timeout=3) as r:
-            csp = r.headers.get("Content-Security-Policy", "")
-    except Exception:
-        return False
-    for rule in csp.split(";"):
-        words = rule.split()
-        if words[:1] == ["frame-ancestors"]:
-            return any(o in words[1:] for o in localguard.FRAME_PARENTS)
-    return False
-
-
 def start(name, module, port, app):
-    """Start one program's server in this process on the first free port from `port`, or use the copy
-    already running there. Returns its URL once it answers (models loaded)."""
+    """Start one program's server in this process on the first free port from `port`. Returns its URL once it
+    answers (models loaded). A copy already answering there that this process didn't start is an error."""
     for p in range(port, port + PORT_TRIES):
         url = f"http://127.0.0.1:{p}/"
         try:
             srv = module.bind(p) if hasattr(module, "bind") else bind(p)
         except OSError:
             if answering(url, app):
-                if not lets_us_frame(url):
-                    # Started on its own, so it trusts only its own page. Starting a second copy instead would
-                    # have two programs writing the same data files, so ask for that copy to be closed.
-                    raise OSError(f"It is already running at {url}, started on its own (its .bat) or by another Face "
-                                  f"Recognizer window, and a copy started that way can't be shown in this window. "
-                                  f"\nClose that copy (its black "
-                                  f"window) and start the app again, or keep using it in your browser at {url}") from None
-                print(f"{name}: using the copy already running at {url}")
-                return url
+                if url in OWN:                       # this process's own, answering again (Start again)
+                    print(f"{name}: still serving at {url}")
+                    return url
+                # Not started here: its .bat, another Face Recognizer window, or some other program answering
+                # like one of ours. It is never shown in this window: through 1.24.2 the app took whatever
+                # answered there and named this window's tab page in its frame-ancestors as its own, and so
+                # answered its camera and microphone request (camera_allowed). Starting a second copy instead
+                # would have two programs writing the same data files, so ask for that copy to be closed.
+                raise OSError(f"It is already running at {url}, started on its own (its .bat) or by another Face "
+                              f"Recognizer window, and a copy started that way can't be shown in this window. "
+                              f"\nClose that copy (its black "
+                              f"window) and start the app again, or keep using it in your browser at {url}") from None
             continue
         print(f"{name}: loading ...")
         try:
@@ -177,7 +164,8 @@ def shell_handler():
 
         def _get(self):
             path = self.path.split("?", 1)[0]
-            if self.refused(write=path in acts):
+            # the page's files to anyone on this computer; what the window is doing only to the page itself
+            if self.refused(write=path in acts, own=path not in PAGES and path != "/favicon.ico"):
                 return
             if path == "/favicon.ico":
                 return self.favicon()
@@ -615,15 +603,15 @@ def attention(unread, flash):
 
 def camera_allowed(uri):
     """True if a request for the camera and microphone made in the name of uri is answered without a prompt: the
-    tracker this window started or found (its address in STATUS), or this window's own tab page while that tracker
-    is up; not any other program on 127.0.0.1.
+    tracker this process started (its address in STATUS and in OWN), or this window's own tab page while that
+    tracker is up; not any other program on 127.0.0.1, and not a tracker this process didn't start.
     The tab page: WebView2 says a framed page's request comes from the page around it (seen with runtime 157,
     2026-11-16: the tracker's request arrived as the tab page's and was left to WebView2's own question, which on a
     new copy nobody answers; the three older devices had "allowed" remembered in their profiles). The tab page's
     own scripts never use camera or microphone, and it hands them to the tracker's frame alone: allow= on that
     frame in app_ui.html, and its Permissions-Policy header (shell_handler) names only the programs' ports."""
     track = STATUS["track"].get("url")
-    if not track:
+    if not track or track not in OWN:
         return False
     u = urlparse(uri)
     return any((u.scheme, u.hostname, u.port) == (a.scheme, a.hostname, a.port)
@@ -697,7 +685,7 @@ _MAC_CAMERA = []                                 # the window's delegate class w
 
 def camera_answer(origin):
     """What the macOS window answers a page that asks for the camera or microphone: GRANT to the tracker this
-    window started or found (camera_allowed), ASK_USER for any other page. `origin` is WebKit's WKSecurityOrigin."""
+    window started (camera_allowed), ASK_USER for any other page. `origin` is WebKit's WKSecurityOrigin."""
     try:
         uri = f"{origin.protocol()}://{origin.host()}:{int(origin.port())}"
     except Exception:

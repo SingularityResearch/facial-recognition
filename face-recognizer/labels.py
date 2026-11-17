@@ -34,6 +34,12 @@ import face_id as F
 import paths
 
 IGNORE = "#ignore"
+# Words nobody can be named: the pages keep each person's data in objects by name, and these are every object's own
+# machinery there ("constructor" finds a function where nobody was kept yet, "__proto__" changes the object
+# instead of adding a person). Refused where a name is given (act, rename) and in rows from the shared database.
+NOT_NAMES = frozenset({"__proto__", "constructor", "prototype", "hasOwnProperty", "isPrototypeOf",
+                       "propertyIsEnumerable", "toLocaleString", "toString", "valueOf", "__defineGetter__",
+                       "__defineSetter__", "__lookupGetter__", "__lookupSetter__"})
 # naming an Ignored face, or taking it off the Ignored list, when its print and picture can't be made again
 NO_PRINT = ("Ignoring a face deleted its picture and face print, and they can't be made again: the photo isn't on "
             "this computer any more, or the face wasn't found in it again. The face stays as it is.")
@@ -733,6 +739,8 @@ class LabelDB:
             action = "ignore"                    # the same thing: the print and picture go too
         if action == "name" and name.startswith("#"):
             raise ValueError("names can't start with #")
+        if action == "name" and name in NOT_NAMES:
+            raise ValueError(f"\"{name}\" can't be used as a name")
         idx = list(dict.fromkeys(idx))           # a face given twice would be undone to its changed label
         with self.lock:
             for i in idx:                        # all of them first: a bad one mustn't leave the others half done
@@ -809,6 +817,8 @@ class LabelDB:
         new = (new or "").strip()
         if not new or new.startswith("#"):
             raise ValueError("give a new name")
+        if new in NOT_NAMES:
+            raise ValueError(f"\"{new}\" can't be used as a name")
         if str(old).startswith("#"):             # Ignored isn't a person: those faces have no prints to be someone with
             raise ValueError("that isn't a person's name")
         with self.lock:

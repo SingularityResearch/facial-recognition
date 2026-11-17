@@ -145,7 +145,11 @@ def test_a_row_that_cant_be_used_is_left_out_and_the_others_are_taken(device):
     assert out == {}
     assert device.sync._apply(device.local, "web_suggestions", {"f0": 7, "f1": {"suggestions": []}}).keys() == {"f1"}
     assert device.sync._apply(device.local, "labels", {"f0": {"n": "Ann", "by": "me", "not": [None]},
-                                                       "f1": {"n": "Bo", "by": "me"}}).keys() == {"f1"}
+                                                       "f1": {"n": "Bo", "by": "me"},
+                                                       "f2": {"n": "__proto__", "by": "me"},      # labels.NOT_NAMES
+                                                       "f3": {"n": "constructor", "by": "me"}}).keys() == {"f1"}
+    assert device.sync._apply(device.home, "person_signals", {
+        "constructor|usual": {"name": "constructor", "kind": "usual", "data": {}}}) == {}
     assert device.db.labels.get("f1", {}).get("n") == "Bo" and "f0" not in device.db.labels
 
     said = "\n".join(device.said)
