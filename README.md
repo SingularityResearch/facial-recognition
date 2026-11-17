@@ -1,11 +1,16 @@
-# Facial Recognition and Expression Research
+# Facial Recognition and Emotional Response Research
 
 A fully local system that recognizes specific people on webcams (any camera the computer sees, including a
 phone used as a webcam) and reads facial expression, voice and other signals live. Imported photos and videos
-are recognized the same way: the same face prints and matching, with faces named in the labeling tool. The
-expression side is original research: it reads each recognized person against their own normal, across face,
+are recognized the same way: the same face prints and matching, with faces named in the labeling tool.
+
+The research is about **emotional response**: how a recognized person responds to the people, music and events
+around them. It is original research: it reads each recognized person against their own normal, across face,
 voice, body and several cameras, and measures what each signal is actually worth on that person before letting
-it influence anything.
+it influence anything. So far every one of those signals is taken from outside the person. The next channel is
+taken from inside: brain activity from an EEG headset, recorded on the same clock as everything the cameras and
+microphones measure, so that what a face shows can be compared with how the person's brain responded at that
+moment (see [EEG](#eeg-the-response-from-inside-next)).
 
 Everything runs on your own computers: Windows, macOS (14+, Apple Silicon) or Linux (Ubuntu 22.04+). One computer
 is enough; it identifies its processor, graphics processors and NPU at start and runs each job the fastest way that
@@ -23,10 +28,15 @@ you send them on purpose:
 1. **Recognize the people who matter, live, on every device.** A cluster of your own devices learns specific
    people together, from the photos, videos and camera pictures each of them holds, and shows each person's
    name and match confidence on their face on any camera stream in the cluster.
-2. **Read expression honestly.** Report what a face *looks like* ("this face currently looks happy"),
+2. **Measure the emotional response, not only its display.** An emotional response has parts that can each be
+   measured: what shows (face, voice, body), what the body does (pulse, breathing), what the brain does (EEG,
+   next) and what the person reports. Record them for the same person at the same moment, and find out how they
+   move together for that person.
+3. **Read expression honestly.** Report what a face *looks like* ("this face currently looks happy"),
    never claim to know what someone *feels*, and say how sure the reading is.
-3. **Find out what actually works.** Treat every new signal (face shape, motion, talking, voice, pulse) as
-   a hypothesis. Measure it on the person's own data against ground truth before it may change a reading.
+4. **Find out what actually works.** Treat every new signal (face shape, motion, talking, voice, pulse, and
+   EEG when it arrives) as a hypothesis. Measure it on the person's own data against ground truth before it
+   may change a reading.
 
 ## What's in the repo
 
@@ -58,6 +68,7 @@ you send them on purpose:
 | **New signals are evidence only until measured** | Face-shape cues, talking, motion, blinks, gaze, pulse, body posture, voice and the state model are shown but don't change the label. The options that would change it (skip while talking, skip when a hand is on the face, state model) are off by default. |
 | **Every signal is read against the person's own normal** | People differ more from each other than from their own good and bad days, so a population norm says little about one person (the idiographic view, Molenaar 2004). Each named person's usual level of every signal is learned, separately alone and in company, and the tracker shows departures ("head -2.3 SD for Sam"). Kept on this computer (by the tracker, with a copy in the page's browser storage) and in your shared database if you set one up; forgettable per person. |
 | **Self-report is the only ground truth for feelings** | An opt-in "feeling check" asks how you feel on two 1–7 scales. Without it, accuracy can only be measured against posed expressions, never against feelings. |
+| **EEG as the next channel: a second measurement, not a verdict** (planned) | Self-reports are few, and a face can be composed. EEG measures the response continuously and can't be posed the same way, so it gives every outward signal something to be tested against between reports. It is treated like every other signal here: per person, measured before it is trusted, and never called a feeling. |
 | **Only numbers are stored for research** | Posed tests and feeling reports save scores and signals (including body points): no pictures, no audio. Live voice, pulse and posture are never written down. Expression readings are: with a shared database, every few seconds for each named person (the owner's choice, for reports later; a switch turns it off), and with each alert. Always as numbers, never a picture or sound. |
 | **Two separate apps** (labeling and tracking) | Owner preference. Each stays simple, and both can run at once. Since 2026-11-08 FaceRecognizer.exe shows both in one window as tabs, but each keeps its own server and page. |
 | **One Settings tab that owns no settings** | Each setting stays with the program it belongs to (the page's controls and storage, or its server). The Settings tab asks each page for its settings and sends changes back (`settings_bridge.js`), so the tab and the pages can't disagree and each page still works on its own. |
@@ -73,6 +84,12 @@ Most emotion-recognition demos run a classifier on single frames and print a lab
 the other way round. Each claim has to survive measurement on the person it's about. That makes the repo
 useful beyond its own use:
 
+- **The emotional response as the subject, with its parts kept apart.** What a person reports, what shows on
+  them and what their body does are tied together less tightly than is usually assumed, and how tightly differs
+  between people and situations (Mauss et al. 2005; Mauss & Robinson 2009). So no single channel is read as "the emotion". Each is
+  recorded as its own measurement of the response, on one clock, for an identified person, which makes the
+  ties between them something to measure per person instead of something to assume. EEG adds the part that
+  has been missing: the response as the brain produces it (see [EEG](#eeg-the-response-from-inside-next)).
 - **A worked example of honest affect sensing.** It shows how to scope claims to what the data supports.
   Every reading carries its evidence (votes, share, lead, why frames were skipped, calibrated confidence)
   instead of a bare verdict.
@@ -99,6 +116,84 @@ useful beyond its own use:
 - **A documented trail of decisions.** [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) records what was built, in
   what order, with which measured values and why. The design review that shaped the expression work is kept
   as [Real-Time Facial Emotion Recognition.md](Real-Time%20Facial%20Emotion%20Recognition.md).
+
+## EEG: the response from inside (next)
+
+Not built yet: the headset hasn't arrived and nothing in the code reads it. This section says why it is the next
+channel and what it is expected to add.
+
+### What is missing without it
+
+Face, voice and body are displays. A display can be composed (a polite smile), held back (a still face during
+a strong response) or absent (nobody shows much alone at a desk), and the link from a face to a feeling is weak
+and depends on context (Barrett et al. 2019). The only measure of the feeling itself is the person's own report,
+and reports are few: the per-person fit needs 15 to 20 of them before it exists at all, and each one interrupts
+what it asks about. Between two reports the project can only compare one display with another.
+
+EEG measures electrical activity of the brain at the scalp, many times a second, whether or not anything shows.
+It is not a reading of feelings either. It is a second, independent measurement of the same response, taken
+from the other side.
+
+### What it adds to the research
+
+- **A reference between self-reports.** Each expression reading (one every 5 seconds per named person) gets
+  an EEG measurement from the same seconds. Every outward signal can then be tested against the brain's
+  response thousands of times a day instead of at a handful of reports.
+- **Display and response told apart.** Moments when the face shows something and the EEG doesn't change, and
+  moments when the EEG changes and the face stays still, become visible and countable. Which outward signals
+  follow the inner response for a given person, and which are mostly manner, is the question this project
+  exists to answer.
+- **Responses to real events, by name.** Emotion research with EEG mostly shows pictures or film clips in a
+  laboratory, because the brain's response has to be lined up with the moment something happened (the late
+  positive potential to emotional pictures: Hajcak, MacNamara & Olvet 2010). This system already knows those
+  moments in daily life, on one UTC clock: which recognized person came into view, on which camera, which song
+  started, what the room sounded like. The response in the seconds after a specific person arrives can be
+  measured, per wearer and per person arriving.
+- **How tightly one person's response hangs together.** With report, face, voice, body and brain recorded
+  together, the ties between them can be measured for each person, alone and in company, instead of taken
+  from a population average (the same idiographic rule as the rest of the project).
+- **Each channel checks the other's errors.** Muscle and eye activity are far stronger at the scalp than brain
+  activity, and above about 20 Hz much of a scalp recording is muscle (Whitham et al. 2007): a smile, a blink,
+  talking or a clenched jaw can pass for a change in the brain. The cameras measure exactly those movements at
+  the same moment (52 face shapes, blinks, jaw, head motion), so affected seconds can be marked instead of
+  guessed. The headset's own detection of facial actions can in turn be compared with what the camera saw.
+- **The vendor's numbers get measured too.** The headset's software reports its own estimates ("stress",
+  "engagement", "relaxation" and others). Here they are hypotheses like any other signal: compared with the
+  wearer's reports and with the other channels before they count for anything.
+
+### What the research says
+
+- Frontal alpha asymmetry is the most studied EEG measure in emotion research. It follows approach and
+  withdrawal motivation better than pleasant and unpleasant feeling (Davidson 1992; Coan & Allen 2004;
+  Harmon-Jones & Gable 2018), so it is not a "valence meter".
+- Telling emotional states apart from EEG works above chance, modestly, and within one person much better than
+  across people (the DEAP recordings: Koelstra et al. 2012). That fits this project, which fits every model
+  per person.
+- An earlier headset of the same family gave auditory evoked responses close to a laboratory system's
+  (Badcock et al. 2013). The 16-channel model planned here (Emotiv EPOC X PRO) hasn't been checked by this
+  project.
+
+### Limits, known before it arrives
+
+- One headset measures one wearer. Everyone else in view is still read from outside only.
+- Wearing a headset changes the situation, and dry sensors lose contact when the wearer moves. The contact
+  quality of every sensor has to be recorded with the readings.
+- Sixteen scalp sensors can't locate activity deep in the brain, where much of emotion is processed.
+- The headset can only be read through its maker's own program, which needs an account with them and the
+  internet to sign in (as its maker documents it today). That program is outside this project's control. What
+  the project would keep of the readings stays in your own database, like the expression log.
+- What is stored (band powers and the maker's estimates, or the raw signal as well) isn't decided. Whatever is
+  stored belongs to the wearer by name and goes into their export and their forget, like everything else held
+  about a person.
+- An EEG reading is "what the recording showed", not what the person feels. The "looks, not feels" rule holds
+  here too.
+
+References for this section: Badcock et al. (2013), *PeerJ* 1:e38. Barrett et al. (2019), *Psychological
+Science in the Public Interest* 20(1). Coan & Allen (2004), *Biological Psychology* 67. Davidson (1992),
+*Brain and Cognition* 20. Hajcak, MacNamara & Olvet (2010), *Developmental Neuropsychology* 35(2).
+Harmon-Jones & Gable (2018), *Psychophysiology* 55(1). Koelstra et al. (2012), *IEEE Transactions on Affective
+Computing* 3(1). Mauss et al. (2005), *Emotion* 5(2). Mauss & Robinson (2009), *Cognition and Emotion* 23(2).
+Whitham et al. (2007), *Clinical Neurophysiology* 118(8).
 
 ## Body
 
@@ -227,10 +322,11 @@ from audEERING.
 - The newer signals (talking gate, hand-on-face gate, state model, pulse, body posture and breathing,
   voice model) work in the page but haven't been validated on enough real sessions. Their thresholds are first guesses, marked as such in the code.
 - The valence/arousal fit needs about 15–20 feeling reports per person before it exists at all.
+- EEG is planned, not built: no code reads a headset yet, and nothing above about EEG has been measured here.
 - The shared database, photos between devices and the Cameras tab are new (versions 1.16 to 1.20) and run on a
   few devices so far; the Cameras page was measured with a stand-in for 40 cameras (9–10 frames a second each).
 - Web search named both well-known people it was tried on (Amazon's own match confidence 99.4% and 100%: two pictures, not an accuracy measurement) but never private people, and its confidence bands haven't been measured on this project's faces.
-- This is a single-user personal system, not a product. Expression and feeling readings must not be used
+- This is a single-user personal system, not a product. Expression, feeling and EEG readings must not be used
   to make decisions about people. The EU AI Act bans emotion recognition in workplaces and schools.
 
 ## Your data stays on your own devices
