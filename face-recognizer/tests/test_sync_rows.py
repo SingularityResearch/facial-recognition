@@ -45,14 +45,16 @@ def face(**changes):
                  "possible": None, "frame": None}, **changes)
 
 
-def test_a_photo_row_never_gives_this_device_a_file_path(device, tmp_path):
+def test_a_photo_row_never_gives_this_device_a_file_path(device, tmp_path, monkeypatch):
     """The photos table's `extra` column was copied into the photo's record whole, `path` included, and the peer
     service shows the file at a photo's path to every device that asks: a row could name any picture or video
     this user can read."""
+    import cv2
+
     import peer
     secret = tmp_path / "private.jpg"
-    import cv2
     cv2.imwrite(str(secret), np.full((40, 40, 3), 90, np.uint8))
+    monkeypatch.setattr(F, "load_image", lambda p, data=None: cv2.imread(str(p)))    # (the real one needs Pillow)
     row = {"name": "photo0.jpg", "size": secret.stat().st_size, "fp": None, "faces": 2, "dup_of": None, "video": None,
            "fps": None, "maybe_read": False, "facts": None,
            "extra": {"path": str(secret), "mtime": 5, "at": {"f0": 3}, "note": "kept"}}
