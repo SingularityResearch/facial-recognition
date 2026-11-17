@@ -777,7 +777,7 @@ async function describeStatus(i) {
   const left = r.photos - r.described, b = r.builtin || {};
   $("#desccount").textContent = r.ok ? `${r.described.toLocaleString()} of ${r.photos.toLocaleString()} described` : r.why;
   if (left <= 0 || !r.ok) $("#descall").style.display = "none";
-  else $("#descall").textContent = `Describe all photos (${left.toLocaleString()} to go, about ${Math.max(1, Math.round(left * 3.5 / 3600))} h)`;
+  else $("#descall").textContent = `Describe all photos (${left.toLocaleString()} to go, about ${Math.max(1, Math.round(left * (r.secs || 3.5) / 3600))} h)`;
   $("#descget").style.display = !r.ok || b.running ? "" : "none";
   $("#descgetgo").disabled = !!b.running;
   $("#descgetgo").textContent = `Download the built-in model (${(b.size_mb / 1000).toFixed(1)} GB)`;
@@ -968,10 +968,11 @@ function showImport(st) {
   const rate = st.done - st.known > 0 ? (st.done - st.known) / el : 0;
   const left = rate > 0 ? Math.round((st.total - st.done) / rate) : null;
   const descr = st.folder === "photo descriptions";
-  const parts = descr ? [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} photos`, `${st.new.toLocaleString()} described`]
+  // st.again: Describe everything again (Settings), which also covers video frames and what other devices have
+  const parts = descr ? [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.again ? "photos and video frames" : "photos"}`, `${st.new.toLocaleString()} described`]
     : [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.videos ? "photos and videos" : "photos"}`, plural(st.faces, "face") + " found",
        `${st.auto.toLocaleString()} named automatically`];
-  if (st.known) parts.push(descr ? `${st.known.toLocaleString()} not on this computer now` : st.folder === "possible faces" ? `${st.known.toLocaleString()} not on this computer now` : `${st.known.toLocaleString()} already added`);
+  if (st.known) parts.push(descr && st.again ? `${st.known.toLocaleString()} on no device that answers now` : descr ? `${st.known.toLocaleString()} not on this computer now` : st.folder === "possible faces" ? `${st.known.toLocaleString()} not on this computer now` : `${st.known.toLocaleString()} already added`);
   if (st.duplicates) parts.push(plural(st.duplicates, "duplicate") + " skipped");
   if (st.errors) parts.push(`${st.errors} unreadable`);
   if (descr && st.by && Object.keys(st.by).length > 1)      // Describe all shared with other computers: who did how many
@@ -1104,7 +1105,25 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
   const flag = (section, id, key, label, def, hint) => ({ section, id, label, type: "toggle", def, hint,
     get: () => (store.get(key) ?? (def ? "1" : "0")) === "1",
     set: v => { store.set(key, v ? "1" : "0"); const el = $("#" + id); if (el) el.checked = !!v; } });
-  let desc = {}, hw = {}, lms = {}, lmsOffer = false, sdb = {};
+  let desc = {}, job = {}, hw = {}, lms = {}, lmsOffer = false, sdb = {};
+  // Describe everything again: how many, how long, and the question asked before it starts (app_ui.js asks it)
+  const count = n => (+n || 0).toLocaleString();
+  const describing = () => !!job.running && job.folder === "photo descriptions";
+  // desc.secs: what a description took with this model here (the median of its newest); 3.5 s until some are made
+  const howLong = n => { const s = n * (desc.secs || 3.5); return s < 5400 ? `${Math.max(1, Math.round(s / 60))} min` : `${(s / 3600).toFixed(1)} h`; };
+  const againQuestion = () => {
+    const a = desc.again || {}, h = desc.helpers || [];
+    const lines = [`Describe all ${plural((+a.total || 0) - (+a.frames || 0), "photo")}${a.frames ? ` and ${plural(+a.frames, "video frame")}` : ""} again with ${desc.model}? Each description is replaced as its new one arrives.`];
+    if (a.elsewhere) lines.push(a.elsewhere === 1 ? "1 of them isn't on this computer: the device that has it shows it to this one."
+      : `${count(a.elsewhere)} of them aren't on this computer: the device that has each one shows it to this one.`);
+    lines.push(h.length ? `The work is shared among ${h.length + 1} computers: this server, ${h.map(x => `${x.host} (${x.url})`).join(", ")}. Each photo sent to another computer is seen by it.`
+      : desc.model === desc.builtin?.name ? "The built-in model on this computer does it alone."
+      : desc.config?.spread ? "No other LM Studio server has this model now: this server does it alone."
+      : "This server does it alone: Share Describe all with other computers is off.");
+    lines.push(`About ${howLong(a.total)} with one server (${desc.secs ? `${desc.secs} s each, as this model took here so far` : "at 3.5 s each: none made with this model here yet, and a larger model takes longer"})${h.length ? ", less with the others helping" : ""}. Progress and Stop are at the top of the Labeling tab.`);
+    if (a.since && a.left) lines.push(`This starts over: the unfinished run (${count(a.left)} to go) is dropped.`);
+    return lines.join("\n\n");
+  };
   // The saved keys and the shared database's password, shown masked in their fields (an eye button shows one while
   // held). Loaded with the page and again after each save. Never in this page's own HTML or storage.
   let sec = { aws: {}, db: {} };
@@ -1135,6 +1154,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     { section: P, id: "describer", label: "Describing with", type: "info",
       get: async () => {
         desc = await get("/api/describe/status");
+        try { job = await get("/api/import"); } catch { job = {}; }
         const b = desc.builtin || {};
         if (b.running) setTimeout(SettingsBridge.changed, 2000);
         return [desc.ok ? (desc.model === b.name ? desc.model : `${desc.model}, on ${desc.config.url}`) : desc.why,
@@ -1171,7 +1191,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       fields: () => [{ name: "key", placeholder: "API key", secret: true, value: sec.describe || "" }] },
     { section: P, id: "describeSpread", label: "Share Describe all with other computers", type: "toggle", def: false,
       hidden: () => desc.config?.use === "builtin",
-      hint: "Describe all also sends photos to the other LM Studio servers on your network that have the same vision model, one photo at a time each: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice is left out and its photo goes back to the others. Describing a single photo uses only the server above.",
+      hint: "Describe all (and Describe everything again, below) also sends photos to the other LM Studio servers on your network that have the same vision model, one photo at a time each: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice is left out and its photo goes back to the others. Describing a single photo uses only the server above.",
       get: () => !!desc.config?.spread,
       set: v => post("/api/describe/config", { spread: !!v }) },
     { section: P, id: "describeHelpers", label: "Shared with", type: "info",
@@ -1180,6 +1200,21 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         return h.length ? h.map(x => `${x.host} (${x.url})`).join("\n") + `\nDescribe all uses ${h.length + 1} computers.`
           : desc.ok ? `No other LM Studio server on your network has ${desc.model} (see LM Studio below): Describe all uses this server alone.`
           : "Nothing to share with until the describer works."; } },
+    { section: P, id: "describeAgain", label: "Describe everything again", type: "button",
+      button: () => `Describe all ${count(desc.again?.total)} again`,
+      hidden: () => !desc.ok || !desc.again?.total || !!job.running,
+      confirm: againQuestion, confirmYes: "Describe again",
+      hint: "Describes the whole library anew with the describer set above, for example after choosing a better model: every photo, and every video frame a face was found in, on all your devices. With a shared database, what is only on another device is shown by that device (as in the photo view), and the new descriptions reach every device. Each description is replaced when its new one arrives, so stopping loses nothing. The work is shared as Describe all's is: with Share Describe all with other computers on, among the LM Studio servers that have the same model, and with Fully distributed system on (under LM Studio) also those beyond your local network. Progress and Stop are at the top of the Labeling tab." },
+    { section: P, id: "describeAgainOn", label: "Unfinished", type: "button",
+      button: () => `Carry on: ${count(desc.again?.left)} to go`,
+      hidden: () => !desc.ok || !desc.again?.since || !desc.again?.left || !!job.running,
+      hint: () => `Describe everything again was started ${desc.again?.since ? localTime(desc.again.since) : ""} with ${desc.again?.model || "a model"} and isn't finished: it was stopped, or some photos couldn't be read or their device didn't answer. Carry on describes what is left, with the describer set now.` },
+    { section: P, id: "describeNow", label: "Running now", type: "info", hidden: () => !describing(),
+      get: () => !describing() ? "" : `${job.stage}: ${count(job.done)} of ${count(job.total)}` +
+        (job.by && Object.keys(job.by).length > 1 ? ` (${Object.entries(job.by).map(([h, n]) => `${h} ${count(n)}`).join(", ")})` : "") +
+        (job.left_out?.length ? `\nLeft out: ${job.left_out.join("; ")}` : "") + "\nThe bar at the top of the Labeling tab shows the rest." },
+    { section: P, id: "describeStop", label: "Stop describing", type: "button", button: "Stop", hidden: () => !describing(),
+      hint: "Stops Describe all or Describe everything again; what is described so far is kept, and it carries on from there when started again." },
     { section: P, id: "descget", label: "Built-in model", type: "button",
       button: () => `Download the built-in model (${((desc.builtin?.size_mb || 831) / 1000).toFixed(1)} GB)`,
       hidden: () => !!(desc.builtin?.ready || desc.builtin?.running),
@@ -1268,7 +1303,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       get: () => lms.shared?.share || "",
       set: v => post("/api/lmstudio/share", { folder: v }) },
     { section: M, id: "lmsdist", label: "Fully distributed system", type: "toggle", def: false,
-      hint: "On: your computers may be anywhere, not only on one local network. The search for LM Studio servers then covers every network adapter of this computer (VPNs and virtual networks too, not only its real network ports), this computer tells your other devices those addresses as well, and Describe all (with Share Describe all on) may send photos to LM Studio servers beyond your local network, over the internet. Off (as a new copy starts): the real adapters of your local network only.",
+      hint: "On: your computers may be anywhere, not only on one local network. The search for LM Studio servers then covers every network adapter of this computer (VPNs and virtual networks too, not only its real network ports), this computer tells your other devices those addresses as well, and Describe all and Describe everything again (with Share Describe all on) may send photos to LM Studio servers beyond your local network, over the internet. Off (as a new copy starts): the real adapters of your local network only.",
       get: () => !!lms.distributed,
       set: v => post("/api/lmstudio/distributed", { on: !!v }) },
     { section: M, id: "hwnet", label: "LM Studio on the network", type: "info",
@@ -1403,6 +1438,11 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     cudaget: () => post("/api/cuda/download", {}),
     lmsget: () => post("/api/lmstudio/get", {}),
     describeTest: () => post("/api/describe/test", { url: desc.config?.url || "" }),
+    describeAgain: async () => { await post("/api/describe/again", {}); pollImport();
+      return { message: "Started: progress and Stop are at the top of the Labeling tab" }; },
+    describeAgainOn: async () => { await post("/api/describe/again", { carry_on: true }); pollImport();
+      return { message: "Carrying on: progress and Stop are at the top of the Labeling tab" }; },
+    describeStop: async () => { await post("/api/import/stop", {}); return { message: "Stopping" }; },
     describeKey: saved(a => post("/api/describe/config", { key: a.key || "" })),
     spotify: async a => { await post("/api/music/spotify", { client_id: a.client_id || "" });
       return { message: "Spotify's page is opening in your browser: agree there" }; },

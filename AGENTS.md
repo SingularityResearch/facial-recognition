@@ -77,6 +77,13 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     to 2 GB an hour until 1.23.0. A test trips when a new pywebview hooks requests another way.
   - `clear_graphics_caches`: before the window opens, removes its compiled graphics caches once per new version (a
     stale one froze a newer Qt WebEngine: white window); never Local Storage.
+  - `allow_camera` (`camera_hook`): Windows: the window answers the tracker's camera and microphone request itself.
+    WebView2 names the page around a frame as the one asking, so the request arrives as the tab page's
+    (`camera_allowed`: the tracker's address or the tab page's own, `SHELL`). Through 1.23.0 only the tracker's
+    address was answered: on a new copy WebView2 showed its own question, nobody answered it, and the camera never
+    started (found on a fourth device, 2026-11-16; the others had the answer remembered in their profiles). The
+    answer is put in place before the window is shown (`before_show`, then `CoreWebView2InitializationCompleted`),
+    and the log says each request and its answer.
   - `KEEP_RUNNING_FLAGS`: the window's browser runs pages unthrottled in the background (the camera stream needs it),
     and on Windows keeps camera frames in ordinary memory (`MediaFoundationD3D11VideoCapture` off: reading them back
     from the graphics processor stalled the page in a disconnected desktop session).
@@ -122,13 +129,15 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     leaves in one piece and at once (`wbufsize`, `disable_nagle_algorithm`: as headers then body it waited 40 ms
     for an acknowledgement on Linux);
   - the page headers (`page_headers`: Content-Security-Policy `POLICY` plus each server's `policy`,
-    frame-ancestors, CORP, nosniff);
+    frame-ancestors, CORP, nosniff; and a handler's `permissions` as `Permissions-Policy`: the tab page's, for
+    camera and microphone);
   - `bind` (no port sharing on Windows; an accept queue of 128).
 - `settings_bridge.js` — the app window's **Settings** tab reads and changes each page's settings over postMessage.
   - Each page lists its own (`SettingsBridge.init` at the end of its script). The tab shows sections in list order,
     tracker first: keep related rows in one section, and the order in `docs/SETTINGS.md` the same.
   - Changes go through the page's own controls (`SettingsBridge.control(id, section)`) or its own get/set and actions.
-  - Setting types: toggle, range, select, text, multi, info, button, form. The tab owns no settings itself.
+  - Setting types: toggle, range, select, text, multi, info, button, form. The tab owns no settings itself. A
+    button with `confirm` (text; `confirmYes`) is asked about in the tab first (`askUser`).
   - Pages also send the tab page notices this way (`SettingsBridge.notify`: alerts, `camstuck`). Served by both
     servers.
   - It also passes Ctrl+1 to Ctrl+4 pressed inside a tab on to the tab page (`fs: "key"`; a key pressed in a tab
@@ -202,6 +211,12 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     default: Describe all also uses the other LM Studio servers on the LAN with the same model, `helpers()`; one
     photo at a time each, a helper failing twice is left out; no API key goes to a helper).
   - Settings in `HOME/describe.json`, descriptions per photo in `HOME/descriptions.json`; never `data/`.
+  - **Describe everything again** (Settings; `/api/describe/again`, `label_tool.describe_all("fresh" | "on")`): the
+    same job over `describe_items()`: every photo and every video frame a face was found in (`h:frame`), of the whole
+    library; what isn't on this computer is asked of the device that has it (`peer.fetch`; after `PEER_MISSES`
+    unreached in a row, no more in that run). Each description is replaced as its new one arrives. The run's start
+    and model are kept in `describe.json` (`describe.again()`): done means described since then, and it stays until
+    nothing is left, so a stopped run is carried on with (`carry_on`).
   - Without LM Studio: `florence.py`, the built-in Florence-2 large (ONNX int8, CPU only: DirectML gave garbage; ~3 s
     a photo; plainer and less accurate), 0.8 GB downloaded on request from Hugging Face (pinned revision, SHA-256)
     into `models/florence2/` (not in git, not in `fetch_models.py`).
@@ -374,6 +389,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     network both are on), each for `CONNECT` (3) s. A device tells the others only addresses they can reach
     (`hardware.reachable_addresses`: never its container bridges, even with **Fully distributed system**).
     Who has a photo and where a device is are asked on the kept database connection (`facedb.ask`).
+    `fetch`'s reason tells a device that didn't answer at all (`UNREACHED`) from one that answered without the
+    photo (Describe everything again stops asking only after the first kind).
   - Serving: an accept queue of 128 and answers sent at once (`request_queue_size`, `disable_nagle_algorithm`),
     as the three local servers have.
   - Clocks: a request signed more than `CLOCK_SKEW` from the service's time is refused with that time, so the
@@ -480,17 +497,18 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     request sizes, Collect faces, presence log, feeling reports, `/api/who`, no page loading from the internet),
     `test_localguard.py`, `test_certificates.py`.
   - Labeling and people: `test_labels.py` (naming, Ignore and undo, naming an Ignored face, rename/merge, the empty
-    new-user start, the face-picture migration, a moved video), `test_persondata.py` (one person's export and forget; Describe all past an unreadable
-    photo and spread among LM Studio servers), `test_self_attributes.py`.
+    new-user start, an empty library saved and read again, the face-picture migration, a moved video), `test_persondata.py` (one person's export and forget; Describe all past an unreadable
+    photo and spread among LM Studio servers; Describe everything again: video frames, other devices' photos, carry on), `test_self_attributes.py`.
   - Signing: `test_apple_signing.py` (the request, the secrets from a made-up certificate, what is refused; on
     macOS the .p12 goes through the system's own `security import`).
   - Services and downloads: `test_describe.py`, `test_websearch.py` (keys, caps), `test_fetch_models.py` (against a
     local server), `test_cudasupport.py`, `test_lmstudio.py`, `test_hardware.py`, `test_gpu_choice.py`.
-  - App window and tracker: `test_window_watchdog.py`, `test_window_caches.py`, `test_app_log.py`,
+  - App window and tracker: `test_window_watchdog.py` (also the window's answer to the camera request, in place
+    before any page loads), `test_window_caches.py`, `test_app_log.py`,
     `test_tracker_reload.py`, `test_skeleton.py`, `test_platforms.py` (also the icon files, the build's icon
     options, the Windows installer's rules, and the Linux installer run for real on Linux).
-  - Shared database: `test_facedb.py`, `test_sync.py`, with `FACE_TEST_PG` (CI job `database`; each test makes and
-    drops its own schema).
+  - Shared database: `test_facedb.py`, `test_sync.py` (also a newly installed device, with no faces, joining),
+    with `FACE_TEST_PG` (CI job `database`; each test makes and drops its own schema).
   - Device to device: `test_peer.py` (no database needed: which address is tried first, what a refusal says about
     the clocks, a running service on this computer, a long computer name).
   - Music: `test_music.py` (a sound with a known beat and key measured, usual music from liked songs, what is
@@ -581,13 +599,17 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   `frame-ancestors` lets only the page itself frame it, plus the app's tab page when `app.py` started the program
   (`localguard.FRAME_PARENTS` is empty until `app.shell_server` adds its real port; a .bat copy trusts nobody, and
   the app says so instead of showing it); the shell page can't be framed at all; `Cross-Origin-Resource-Policy:
-  same-origin` and `nosniff`. Pages load nothing from the internet (a test checks every page file).
+  same-origin` and `nosniff`. The tab page also sends `Permissions-Policy`: camera and microphone for itself and the
+  programs' ports only (itself, because a page can't hand on what it may not use). Pages load nothing from the internet (a test checks every page file).
 - Requests with `Sec-Fetch-Site: cross-site` are refused (another website's page, even as an `<img>`); same-site is
   the tab page's frames on other 127.0.0.1 ports. Request bodies go through `Handler.body(limit)` (negative or
   non-numeric `Content-Length` 400, too large 413).
 - In the app window only the tracker this window shows gets the camera and microphone without a prompt
   (`app.camera_allowed`; Windows `allow_camera`, macOS `allow_camera_macos` → `camera_answer`). Any other page
-  is left to the window's own question.
+  is left to the window's own question. The tracker's request reaches the window in the tab page's name, so the
+  tab page's address is answered too: the tab page hands camera and microphone to the tracker's frame alone
+  (`allow=` in `app_ui.html`; its `Permissions-Policy` header names itself and the programs' ports only) and its
+  own scripts never use them; a test checks all three.
 - Servers bind with `localguard.bind` (no address reuse on Windows, so a second copy fails instead of sharing the
   port) and wrap handlers in `localguard.answer_errors` (an uncaught error still gets a JSON 500).
 - Anything put into `innerHTML` goes through `esc()` (names, paths, descriptions, web results, tags, errors).

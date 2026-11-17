@@ -13,6 +13,46 @@ def run(times, alive, platform="linux", monkeypatch=None):
     return out
 
 
+def test_the_trackers_camera_request_is_answered_before_any_page_loads(monkeypatch):
+    """The answer to WebView2's permission requests: allow for the tracker this window shows, nothing for any other
+    page or kind; and main() puts it in place before the window is shown, not only once its page has loaded (a
+    request made before that got WebView2's own question, and none was raised again while it stood)."""
+    import inspect
+    import types
+
+    class Requests(list):
+        def __iadd__(self, f):
+            self.append(f)
+            return self
+    core = types.SimpleNamespace(PermissionRequested=Requests())
+    monkeypatch.setitem(app.STATUS, "track", {"url": "http://127.0.0.1:8766/"})
+    monkeypatch.setattr(app, "SHELL", {"url": "http://127.0.0.1:8764/"})
+    said = []
+    handler = app.camera_hook(core, ("camera", "microphone"), "ALLOW", said.append)
+    assert core.PermissionRequested == [handler]
+
+    def ask(uri, kind):
+        e = types.SimpleNamespace(Uri=uri, PermissionKind=kind, State="default")
+        handler(None, e)
+        return e.State
+    assert ask("http://127.0.0.1:8766", "camera") == "ALLOW" and ask("http://127.0.0.1:8766/", "microphone") == "ALLOW"
+    assert ask("http://127.0.0.1:8766", "geolocation") == "default"          # not a kind the tracker gets
+    assert ask("http://127.0.0.1:8765", "camera") == "default"               # another program's page: the window asks
+    assert ask("http://127.0.0.1:8764/", "camera") == "ALLOW"                # as WebView2 names it: the page around it
+    assert ask("https://example.com", "camera") == "default"
+    ask("http://127.0.0.1:8766", "camera")                                   # said once, not at every request
+    assert len(said) == 6 and said[0] == "Permission: http://127.0.0.1:8766 asked for camera: allowed"
+    assert "left to the window" in said[3]
+    main = inspect.getsource(app.main)
+    assert "before_show += lambda: allow_camera(window, early=True)" in main
+    assert main.index("before_show") < main.index("webview.start(")
+
+    window = types.SimpleNamespace()                                         # not Windows: nothing is touched
+    monkeypatch.setattr(app.sys, "platform", "linux")
+    app.allow_camera(window, early=True)
+    assert not hasattr(window, "_camera_ok")
+
+
 def test_answering_page_left_alone(monkeypatch):
     assert run(range(0, 120, 5), lambda t: t - 2, monkeypatch=monkeypatch) == [None] * 24
 

@@ -1,6 +1,7 @@
 """persondata.py and the labeling tool's person routes, on a made-up data folder and private folder: everything held
 about one person exported, then forgotten everywhere (their faces kept only as Ignored places); plus the labeling
-tool's Describe all going on past an unreadable photo, and shared out among LM Studio servers."""
+tool's Describe all going on past an unreadable photo, and shared out among LM Studio servers, and Describe
+everything again: photos, video frames and what only another device has."""
 import json
 import re
 import threading
@@ -240,6 +241,114 @@ def test_describe_all_shares_photos_with_other_servers(data, home, serve, tmp_pa
     else:
         assert st["by"]["other"] == 0 and asked.count("http://192.168.1.30:1234") == 2
         assert st["left_out"][0].startswith("other (failed twice")
+
+
+def _library(data, tmp_path, monkeypatch):
+    """Four photos here (h0-h3; h3 a duplicate of h0), a video here with faces in frames 30 and 90, and two photos
+    only another device has (h5, h6). Returns (LabelDB, Importer, what was asked to be described)."""
+    make_faces(data, 4)
+    photos = {}
+    for k in range(4):
+        f = tmp_path / f"p{k}.jpg"
+        f.write_bytes(b"x")
+        photos[f"h{k}"] = {"path": str(f)}
+    photos["h3"]["dup_of"] = "h0"
+    (tmp_path / "clip.mp4").write_bytes(b"x")
+    photos["h4"] = {"path": str(tmp_path / "clip.mp4"), "video": True, "at": {"f0": 30, "f1": 30, "f2": 90}}
+    photos["h5"] = {"name": "away.jpg"}
+    photos["h6"] = {"name": "gone.jpg"}
+    (data / "photos.json").write_text(json.dumps(photos))
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    asked = []
+
+    def ask(jpg, name=None, url=None):
+        asked.append(len(jpg))
+        return {"text": "described again", "model": name}
+    monkeypatch.setattr(describe, "model", lambda: "new-model")
+    monkeypatch.setattr(describe, "ask", ask)
+    monkeypatch.setattr(L, "online_only", lambda p: False)
+    monkeypatch.setattr(F, "load_image", lambda p: np.zeros((20, 20, 3), np.uint8))
+    monkeypatch.setattr(F, "video_frame", lambda p, k: np.zeros((20 + k, 20, 3), np.uint8))
+    return db, L.Importer(db), asked
+
+
+def _status(url):
+    with urllib.request.urlopen(url + "/api/describe/status", timeout=10) as r:
+        return json.loads(r.read())
+
+
+def test_describe_everything_again_covers_photos_video_frames_and_other_devices(data, home, serve, tmp_path, monkeypatch):
+    """Every photo and every video frame a face was found in is described anew, old descriptions replaced; what
+    only another device has is asked of it (peer.fetch); what no device sends stays to carry on with."""
+    import types
+
+    import peer
+    db, imp, asked = _library(data, tmp_path, monkeypatch)
+    db.sync = types.SimpleNamespace(info={"state": "online"})          # a shared database, reached
+    sent = []
+
+    def fetch(h, frame=None):
+        sent.append((h, frame))
+        return (_jpeg(7), "nas") if h == "h5" else (None, "no other device that shares its photos has it")
+    monkeypatch.setattr(peer, "fetch", fetch)
+    monkeypatch.setattr(describe, "status", lambda: {"ok": True, "model": "new-model"})
+    old = {"text": "old", "model": "old-model", "when": "2026-01-01T00:00:00Z"}
+    with describe._lock:                                               # as described long ago: h0, and frame 30
+        describe._load().update({"h0": dict(old), "h4:30": dict(old), "h3": dict(old)})
+    url = serve(label_tool.make_handler(db, imp))
+    a = _status(url)["again"]
+    assert a == {"total": 7, "frames": 2, "elsewhere": 2, "since": None, "model": None, "left": 0}
+    assert _post(url, "/api/describe/again", {"carry_on": True})[0] == 400      # nothing unfinished to carry on
+    assert _post(url, "/api/describe/again", {})[0] == 200
+    imp.thread.join(10)
+    st = imp.status
+    assert st["stage"] == "Done" and st["again"] and st["total"] == 7 and st["new"] == 6 and st["known"] == 1, st
+    assert sorted(sent) == [("h5", None), ("h6", None)] and len(asked) == 6
+    for k in ("h0", "h1", "h2", "h4:30", "h4:90", "h5"):
+        assert describe.saved(k)["text"] == "described again" and describe.saved(k)["model"] == "new-model", k
+    assert describe.saved("h3")["text"] == "old" and not describe.saved("h6") and not describe.saved("h4")
+    a = _status(url)["again"]                                          # h6 is left: the run stays, to carry on
+    assert a["left"] == 1 and a["model"] == "new-model" and describe.again()["since"] == a["since"]
+    monkeypatch.setattr(peer, "fetch", lambda h, frame=None: (_jpeg(9), "nas"))
+    assert _post(url, "/api/describe/again", {"carry_on": True})[0] == 200
+    imp.thread.join(10)
+    assert imp.status["total"] == 1 and imp.status["new"] == 1 and describe.saved("h6")["text"] == "described again"
+    assert describe.again() is None and _status(url)["again"]["left"] == 0     # all of it done: nothing unfinished
+
+
+def test_describe_everything_again_stops_asking_devices_that_do_not_answer(data, home, serve, tmp_path, monkeypatch):
+    """Devices that aren't reached PEER_MISSES times in a row are asked for no more photos in that run (each ask
+    waits for every address); without a shared database nothing is asked at all. Describe all itself is unchanged:
+    only photos here that aren't described yet."""
+    import types
+
+    import peer
+    db, imp, asked = _library(data, tmp_path, monkeypatch)
+    with db.lock:
+        for k in range(30):
+            db.store.photos[f"away{k}"] = {"name": f"away{k}.jpg"}
+    sent = []
+
+    def fetch(h, frame=None):
+        sent.append(h)
+        return None, f"it's on nas, which {peer.UNREACHED} (192.168.1.9:8767: timed out)"
+    monkeypatch.setattr(peer, "fetch", fetch)
+    url = serve(label_tool.make_handler(db, imp))
+    assert _post(url, "/api/describe/again", {})[0] == 200             # no shared database: other devices not asked
+    imp.thread.join(10)
+    assert sent == [] and imp.status["new"] == 5 and imp.status["known"] == 32
+    db.sync = types.SimpleNamespace(info={"state": "online"})
+    monkeypatch.setattr(label_tool, "PEER_MISSES", 3)
+    assert _post(url, "/api/describe/again", {})[0] == 200             # starts over: everything again
+    imp.thread.join(10)
+    st = imp.status
+    assert st["stage"] == "Done" and st["total"] == 37 and st["new"] == 5 and st["known"] == 32, st
+    assert 3 <= len(sent) <= 3 + 5 and len(st["left_out"]) == 1 and st["left_out"][0].startswith("what is only on other devices")
+    assert describe.again()                                            # 32 left: kept, to carry on with
+    describe.drop(lambda d: True)
+    assert _post(url, "/api/describe/all", {})[0] == 200
+    imp.thread.join(10)
+    assert imp.status["total"] == 3 and not imp.status["again"] and describe.count() == 3    # h0-h2: no video, no dup
 
 
 def test_a_persons_expression_readings_are_exported_and_forgotten(data, home, tmp_path, monkeypatch):

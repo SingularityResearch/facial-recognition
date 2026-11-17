@@ -194,14 +194,31 @@ def test_no_page_loads_anything_from_the_internet():
     assert "fonts.googleapis.com" not in (HERE / "tracker_ui.html").read_text("utf-8")
 
 
-def test_the_camera_is_only_for_the_tracker_this_window_shows(monkeypatch):
+def test_the_camera_is_only_for_the_tracker_this_window_shows(monkeypatch, shell_url):
+    monkeypatch.setattr(app, "SHELL", {})
     monkeypatch.setitem(app.STATUS, "track", {})
     assert not app.camera_allowed("http://127.0.0.1:8766/")                  # not started yet
     monkeypatch.setitem(app.STATUS, "track", {"url": "http://127.0.0.1:8766/"})
     assert app.camera_allowed("http://127.0.0.1:8766/") and app.camera_allowed("http://127.0.0.1:8766/x?y")
     for other in ("http://127.0.0.1:8765/", "http://127.0.0.1:9000/", "http://localhost:8766/",
-                  "https://127.0.0.1:8766/", "http://evil.example:8766/"):
+                  "https://127.0.0.1:8766/", "http://evil.example:8766/", "http://127.0.0.1:8764/"):
         assert not app.camera_allowed(other), other
+    # WebView2 names the page around the frame: the tab page's address counts too, while the tracker is up
+    monkeypatch.setattr(app, "SHELL", {"url": "http://127.0.0.1:8764/"})
+    assert app.camera_allowed("http://127.0.0.1:8764/") and app.camera_allowed("http://127.0.0.1:8764")
+    assert not app.camera_allowed("http://127.0.0.1:8765/") and not app.camera_allowed("http://localhost:8764/")
+    monkeypatch.setitem(app.STATUS, "track", {})
+    assert not app.camera_allowed("http://127.0.0.1:8764/")                  # no tracker: nothing to hand it to
+    # ... and the tab page hands camera and microphone on to the programs' ports only, and only the tracker's
+    # frame asks for them ("self": a page can't hand on what it may not use; its own scripts use neither)
+    h = request(shell_url, "/")[1]["Permissions-Policy"]
+    origins = " ".join(f'"http://127.0.0.1:{p}"' for p in app.TOOL_PORTS)
+    assert h == f"camera=(self {origins}), microphone=(self {origins})" and "*" not in h
+    for f in ("app_ui.js", "ask.js"):                                        # the tab page's own scripts
+        assert "getUserMedia" not in (HERE / f).read_text("utf-8"), f
+    frames = re.findall(r"<iframe[^>]*>", (HERE / "app_ui.html").read_text("utf-8"))
+    assert len(frames) == 3 and [("camera" in f, "microphone" in f) for f in frames] == [(True, True), (False, False), (False, False)]
+    assert 'id="f-track"' in frames[0]
 
 
 # --------------------------------------------------------------------------- request sizes

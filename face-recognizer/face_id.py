@@ -1134,8 +1134,12 @@ class Store:
             replace_file(tmp, self.thumbs_path)
             self.thumbs_changed = False
         tmp = DATA / "faces.tmp.npz"
+        # no faces yet (a new device): reshape can't work out a row's length from nothing. Joining the shared
+        # database saves first (dbsync before_join), so a device with an empty library could never join.
+        emb = (np.asarray(self.emb, np.float32).reshape(len(self.emb), -1) if self.emb
+               else np.zeros((0, REC_MODELS.get(self.model, REC)["dim"]), np.float32))
         np.savez(tmp,
-                 emb=np.asarray(self.emb, np.float32).reshape(len(self.emb), -1),
+                 emb=emb,
                  model=np.asarray(self.model),
                  files=np.asarray(self.file, dtype=str),
                  fid=np.asarray(self.fid, dtype=str),

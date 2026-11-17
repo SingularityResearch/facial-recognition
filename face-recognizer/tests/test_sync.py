@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(not PG, reason="FACE_TEST_PG not set (no test da
 class Device:
     """One device: switch() makes its folders and id the current ones; then use .db and .sync."""
 
-    def __init__(self, root, monkeypatch, n, seed=0, labels=None):
+    def __init__(self, root, monkeypatch, n, seed=0, labels=None, new=False):
         import dbsync
         import facedb
         import paths
@@ -30,8 +30,9 @@ class Device:
         self.id = str(uuid.uuid4())
         (self.home / "device.json").write_text(json.dumps({"id": self.id, "name": root.name}))
         self.switch()
-        make_faces(self.data, n, thumbs=[b"\xff\xd8pic%d" % i for i in range(n)], seed=seed)
-        F.Store().save()
+        if not new:                                   # new: a device just installed, nothing in data/ yet
+            make_faces(self.data, n, thumbs=[b"\xff\xd8pic%d" % i for i in range(n)], seed=seed)
+            F.Store().save()
         if labels:
             (self.data / "labels.json").write_text(json.dumps(labels))
         self.db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
@@ -139,6 +140,25 @@ def test_two_devices_join_and_share_labels_ignores_and_hand_labels(shared, tmp_p
     with shared.connect() as c:
         assert c.execute("SELECT n, by FROM labels WHERE fid = 'f4'").fetchone() == ("Eve", "me")
         assert c.execute("SELECT count(*) FROM label_history").fetchone()[0] >= 3   # each device's undo log
+
+
+def test_a_newly_installed_device_with_nothing_joins_and_gets_everything(shared, tmp_path, monkeypatch):
+    """A device with an empty library (no faces.npz at all) joins: it once stopped at saving its own empty
+    library and stayed offline for good."""
+    a = Device(tmp_path / "a", monkeypatch, 6, labels={"f0": {"n": "Ann", "by": "me"}})
+    assert "joined" in a.step()
+    b = Device(tmp_path / "b", monkeypatch, 0, new=True)
+    assert b.db.n == 0 and not (b.data / "faces.npz").exists()
+    assert "joined" in b.step()
+    assert b.db.n == 6 and b.name("f0") == "Ann"
+    i5 = b.db.store.fid.index("f5")
+    assert b.db.store.thumbs[i5] == b"\xff\xd8pic5" and np.any(b.db.store.emb[i5])
+    b.switch()
+    assert len(F.Store().emb) == 6                                # and its files hold them
+    b.db.act("name", [b.db.store.fid.index("f2")], "Cy")          # what it does then reaches the others
+    b.step()
+    a.step()
+    assert a.name("f2") == "Cy"
 
 
 def test_offline_changes_wait_and_are_sent_later(shared, tmp_path, monkeypatch):

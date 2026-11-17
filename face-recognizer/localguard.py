@@ -61,6 +61,8 @@ def page_headers(handler, frame_ancestors=None, extra=None):
     no reading of the answer by another site's page (Cross-Origin-Resource-Policy: e.g. a face picture as an
     <img> on another website)."""
     handler.send_header("Content-Security-Policy", policy(frame_ancestors, extra))
+    if getattr(handler, "permissions", None):       # which pages may use the camera and microphone through this one
+        handler.send_header("Permissions-Policy", handler.permissions)
     handler.send_header("Cross-Origin-Resource-Policy", "same-origin")
     handler.send_header("X-Content-Type-Options", "nosniff")
 

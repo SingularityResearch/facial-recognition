@@ -185,6 +185,8 @@ function makeRow(k, it) {
     if ((it.fields || []).length >= 2) ctl.classList.add("fields");
     const b = el("button", { className: "b", id: "s-" + key, type: "button" }), msg = el("span", { className: "msg" });
     b.onclick = async () => {
+      const now = row._it || it;                   // as the page describes it now: what the question says changes
+      if (now.confirm && !(await askUser(now.confirm, now.confirmYes || "Start"))) return;
       b.disabled = true; msg.className = "msg"; msg.textContent = "…";
       const args = {}; (it.fields || []).forEach((f, j) => args[f.name] = inputs[j].value);
       const r = await act(k, it.id, args);
@@ -204,6 +206,7 @@ function makeRow(k, it) {
 }
 function update(row, it) {
   const c = row.querySelector("#" + CSS.escape("s-" + row.dataset.key));
+  row._it = it;
   row.hidden = !!it.hidden;
   const m = row.querySelector(".rmsg"), h = row.querySelector(".hint");
   if (m) m.textContent = it.error || "";

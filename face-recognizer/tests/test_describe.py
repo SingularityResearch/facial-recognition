@@ -37,7 +37,7 @@ def test_where(url, place, open_net):
 
 
 def test_settings_round_trip_and_defaults(home):
-    assert D.config() == {"use": "auto", "url": D.URL, "model": "", "key": "", "spread": False}
+    assert D.config() == {"use": "auto", "url": D.URL, "model": "", "key": "", "spread": False, "again": None}
     D.set_config(use="server", url="192.168.1.20:1234", model="m" * 300, key="k")
     c = D.config()
     assert c["use"] == "server" and c["url"] == "http://192.168.1.20:1234" and len(c["model"]) == 200 and c["key"] == "k"
@@ -47,6 +47,30 @@ def test_settings_round_trip_and_defaults(home):
         D.set_config(use="sometimes")
     (home / "describe.json").write_text("{not json", "utf-8")
     assert D.config()["use"] == "auto"                       # a damaged file gives the defaults
+
+
+def test_an_unfinished_describe_everything_again_is_kept_with_the_settings(home):
+    assert D.again() is None
+    a = D.set_again("qwen/qwen3.6-35b-a3b")
+    assert a["model"] == "qwen/qwen3.6-35b-a3b" and D.paths.parse_time(a["since"]) and D.again() == a
+    D.set_config(spread=True, key="k")                       # changing a setting doesn't drop it
+    assert D.again() == a and D.config()["key"] == "k"
+    assert D.set_again(None) is None and D.again() is None and D.config()["spread"] is True
+    (home / "describe.json").write_text('{"again": {"since": "last week", "model": "m"}}', "utf-8")
+    assert D.again() is None                                 # not a time: no unfinished run
+
+
+def test_how_long_a_description_takes_comes_from_the_models_own_newest_ones(home):
+    assert D.typical_secs("big-model") is None                # none made yet
+    for k in range(4):
+        D.save(f"h{k}", {"text": "t", "model": "big-model", "secs": 10 + k}, write=False)
+    assert D.typical_secs("big-model") is None                # too few to say
+    for k, secs in enumerate([12.4, 11.8, 300, 12.1]):        # one that waited for the model to load
+        D.save(f"g{k}", {"text": "t", "model": "big-model", "secs": secs}, write=False)
+    D.save("x", {"text": "t", "model": "small-model", "secs": 3.3}, write=False)
+    D.save("y", {"text": "t", "model": "big-model"}, write=False)           # no time kept: left out
+    assert D.typical_secs("big-model") == 12.1 and D.typical_secs("small-model") is None
+    assert D.typical_secs("") is None and D.typical_secs(None) is None
 
 
 def test_key_stays_with_its_server(home):

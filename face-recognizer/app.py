@@ -40,7 +40,7 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 TITLE = "Face Recognizer"
-VERSION = "1.23.0"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.24.0"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -134,6 +134,7 @@ def bind(port):
 
 
 STATUS = {"track": {}, "label": {}}         # {"url": ...} once serving, {"error": ...} if it failed
+SHELL = {}                                  # {"url": the tab page's own address} once its server is up
 
 
 def latest_release():
@@ -167,6 +168,12 @@ def shell_handler():
         # beyond localguard.POLICY: the two programs' pages in its frames (on 127.0.0.1, any of their ports); no
         # pictures of its own beyond its server's
         policy = {"frame-src": " ".join(f"http://127.0.0.1:{p}" for p in TOOL_PORTS), "img-src": "'self'"}
+        # camera and microphone: handed on only to a program's page (their ports), and of those only to a frame
+        # that asks for them (allow= in app_ui.html: the tracker's frame alone). "self" has to be there: a page
+        # can't hand on what it may not use (without it the tracker was refused outright; this page's own
+        # scripts never use either). See camera_allowed.
+        permissions = ", ".join(f"{what}=(self {' '.join(f'"http://127.0.0.1:{p}"' for p in TOOL_PORTS)})"
+                                for what in ("camera", "microphone"))
 
         def _get(self):
             path = self.path.split("?", 1)[0]
@@ -223,6 +230,7 @@ def shell_server():
         srv = bind(0)                               # taken (a second copy?): any free port
     srv.RequestHandlerClass = shell_handler()
     port = srv.server_address[1]
+    SHELL["url"] = f"http://127.0.0.1:{port}/"
     # the programs this window starts may be framed by this page (and only then: see localguard.FRAME_PARENTS)
     localguard.FRAME_PARENTS.update({f"http://127.0.0.1:{port}", f"http://localhost:{port}"})
     threading.Thread(target=srv.serve_forever, daemon=True, name="shell").start()
@@ -606,35 +614,77 @@ def attention(unread, flash):
 
 
 def camera_allowed(uri):
-    """True if the page at uri may use the camera and microphone without a prompt: only the tracker this window
-    started or found (its address in STATUS), not any other program on 127.0.0.1."""
+    """True if a request for the camera and microphone made in the name of uri is answered without a prompt: the
+    tracker this window started or found (its address in STATUS), or this window's own tab page while that tracker
+    is up; not any other program on 127.0.0.1.
+    The tab page: WebView2 says a framed page's request comes from the page around it (seen with runtime 157,
+    2026-11-16: the tracker's request arrived as the tab page's and was left to WebView2's own question, which on a
+    new copy nobody answers; the three older devices had "allowed" remembered in their profiles). The tab page's
+    own scripts never use camera or microphone, and it hands them to the tracker's frame alone: allow= on that
+    frame in app_ui.html, and its Permissions-Policy header (shell_handler) names only the programs' ports."""
     track = STATUS["track"].get("url")
     if not track:
         return False
-    u, t = urlparse(uri), urlparse(track)
-    return (u.scheme, u.hostname, u.port) == (t.scheme, t.hostname, t.port)
+    u = urlparse(uri)
+    return any((u.scheme, u.hostname, u.port) == (a.scheme, a.hostname, a.port)
+               for a in map(urlparse, filter(None, (track, SHELL.get("url")))))
 
 
-def allow_camera(window):
+def camera_hook(core, kinds, allow, say=print):
+    """Answer the permission requests of core (the window's CoreWebView2): `allow` for the tracker this window
+    shows (camera_allowed) asking for one of `kinds`; anything else is left to WebView2's own question. Each kind
+    of request and its answer is said once (the log), so a camera that never starts can be told from one that was
+    never asked for. Returns the handler."""
+    said = set()
+
+    def on_request(_, e):
+        uri, kind = str(e.Uri), e.PermissionKind
+        ok = kind in kinds and camera_allowed(uri)
+        if ok:
+            e.State = allow
+        if (uri, str(kind), ok) not in said:
+            said.add((uri, str(kind), ok))
+            say(f"Permission: {uri} asked for {kind}: {'allowed' if ok else 'left to the window to ask'}")
+    core.PermissionRequested += on_request
+    return on_request
+
+
+def allow_camera(window, early=False):
     """Let this window's tracker page use the camera and microphone without asking each time (WebView2 asks by
     default). Any other page, including other programs on 127.0.0.1, still gets WebView2's prompt. Windows only: on
     macOS the system asks once for the app (the .app's NSCameraUsageDescription) and the window's own question is
-    answered by allow_camera_macos; on Linux the window toolkit asks."""
+    answered by allow_camera_macos; on Linux the window toolkit asks.
+    early: called before the window is shown (its own thread, WebView2 not made yet): the answer is put in place
+    the moment WebView2 is made, before any page loads. Through 1.23.0 it was only put in place once the tab page had
+    loaded, which waits for the pages in its tabs when they are already up: the tracker then asked first, WebView2
+    showed its own question, and while that stood unanswered it raised no further request, so on a new copy (nothing
+    remembered yet) the camera never started, through page reloads and app restarts (found on a fourth device,
+    2026-11-16; the three others had the answer remembered from earlier). Called again when the page has loaded,
+    in case that came too late."""
     if sys.platform != "win32" or getattr(window, "_camera_ok", False):
         return
-    window._camera_ok = True
     try:
         from System import Action
         from Microsoft.Web.WebView2.Core import CoreWebView2PermissionKind as Kind, CoreWebView2PermissionState as State
 
-        def on_request(_, e):
-            # the tracker's own alerts may show as Windows notifications too
-            if e.PermissionKind in (Kind.Camera, Kind.Microphone, Kind.Notifications) and camera_allowed(e.Uri):
-                e.State = State.Allow
+        def attach(core):
+            if core is not None and not getattr(window, "_camera_ok", False):
+                # the tracker's own alerts may show as Windows notifications too
+                camera_hook(core, (Kind.Camera, Kind.Microphone, Kind.Notifications), State.Allow)
+                window._camera_ok = True
 
-        def hook():
-            window.native.webview.CoreWebView2.PermissionRequested += on_request
-        window.native.Invoke(Action(hook))
+        view = window.native.webview
+        if early:
+            def ready(sender, _args):
+                try:
+                    attach(sender.CoreWebView2)
+                except Exception:
+                    print("Camera permission: WebView2 will ask (couldn't pre-allow):")
+                    traceback.print_exc()
+            view.CoreWebView2InitializationCompleted += ready
+            attach(view.CoreWebView2)                # None until it is made
+        else:
+            window.native.Invoke(Action(lambda: attach(view.CoreWebView2)))
     except Exception:
         print("Camera permission: WebView2 will ask (couldn't pre-allow):")
         traceback.print_exc()
@@ -1157,6 +1207,7 @@ def main(argv=None):
                                        background_color="#0d1512")
         global WINDOW
         WINDOW = window
+        window.events.before_show += lambda: allow_camera(window, early=True)   # before any page can ask
         window.events.loaded += lambda: allow_camera(window)
         window.events.loaded += lambda: recover_renderer(window)
         window.events.loaded += lambda: drop_request_hooks(window)

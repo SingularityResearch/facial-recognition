@@ -36,6 +36,8 @@ PAGE = HERE / "label_ui.html"
 NO_FACE = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 112"><rect width="112" height="112" fill="#8884"/>'
            b'<circle cx="56" cy="44" r="20" fill="#8888"/><path d="M18 104c4-24 20-34 38-34s34 10 38 34z" fill="#8888"/>'
            b'<title>No picture of this face on this computer</title></svg>')
+PEER_MISSES = 10                       # Describe everything again: other devices not reached this often in a row
+                                       # are asked for no more photos in that run
 MAX_BODY = 2_000_000                   # bytes in a request (a list of 100,000 face numbers is about 0.7 MB)
 WEB_SAVED = "web_suggestions.json"     # in data/: Web search answers per face, so a face is searched (and paid for) once
                                        # (persondata.WEB_SAVED: exported and forgotten with a person)
@@ -123,32 +125,83 @@ def make_handler(db, importer):
             img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
         return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
 
-    def describe_all():
+    def describe_items():
+        """What Describe everything again covers: every photo, and every video frame a face was found in, of the
+        whole library, whether its file is on this computer or only on another device of the shared database
+        (a duplicate is left out: its first copy is described). [(description key, photo hash, path or None,
+        frame number or None, what to call it)], those with a file here first."""
+        with db.lock:
+            out = []
+            for h, p in db.store.photos.items():
+                if p.get("dup_of"):
+                    continue
+                path = p.get("path")
+                shown = path or p.get("name") or h
+                if p.get("video"):
+                    frames = sorted({k for k in (p.get("at") or {}).values() if isinstance(k, int)})
+                    out += [(f"{h}:{k}", h, path, k, f"{shown} (frame {k})") for k in frames]
+                else:
+                    out.append((h, h, path, None, shown))
+        return sorted(out, key=lambda it: not it[2])
+
+    def again_due(items, since):
+        """Those of items whose description wasn't made since the Describe everything again was started."""
+        since = paths.utc_text(since)
+        t, when = paths.parse_time(since), describe.whens()
+
+        def done(key):
+            w = when.get(key)
+            if isinstance(w, str) and len(w) == 20 and w.endswith("Z"):
+                return w >= since               # both as paths.utc_now writes them: that text sorts in time order
+            d = paths.parse_time(w)             # an older one, in local time
+            return d is not None and d >= t
+        return [it for it in items if not done(it[0])]
+
+    def again_state():
+        """For Settings: how much Describe everything again covers, and an unfinished one's start and what is left."""
+        a, items = describe.again(), describe_items()
+        return {"total": len(items), "frames": sum(1 for it in items if it[3] is not None),
+                "elsewhere": sum(1 for it in items if not it[2]), "since": a["since"] if a else None,
+                "model": a["model"] if a else None, "left": len(again_due(items, a["since"])) if a else 0}
+
+    def describe_all(again=None):
         """Describe every photo not described yet (not videos, duplicates or online-only cloud files) in the
         background; progress in importer.status so the page's progress bar shows it, and the page's Stop button
         stops it. One request to each server at a time, the next photos loading meanwhile: with 3 at once, LM
         Studio's log showed generation falling from 48 to 1.3 tokens/s per request (Qwen 3.6 35B-A3B), 45 s a photo
         instead of about 3.5 s. With "spread" on (Settings), the other LM Studio servers on the network with the
         same model each take the next photo as they finish (describe.helpers); a helper that fails twice in a row
-        is left out and its photo goes back to the others."""
+        is left out and its photo goes back to the others.
+        again ("fresh" or "on"): Describe everything again instead (Settings): everything in describe_items(),
+        described or not, each description replaced as its new one arrives; what only another device has is shown
+        by that device (peer.py). "fresh" starts one from now; "on" carries on with the unfinished one, which
+        describe.again() keeps until nothing is left."""
         with importer.job_lock:                  # one background job at a time (imports, scans, this)
-            _describe_all()
+            _describe_all(again)
 
-    def _describe_all():
+    def _describe_all(again):
         if importer.thread and importer.thread.is_alive():
             raise ValueError("An import is already running.")
         name = describe.model()                  # raises Unavailable with what's missing
+        mark = describe.again() if again else None
+        if again == "on" and not mark:
+            raise ValueError("Nothing is unfinished: start Describe everything again instead.")
+        if again == "fresh":
+            mark = describe.set_again(name)
         importer.stop.clear()
 
         def run():
             st = importer.status = dict(running=True, folder="photo descriptions", stage="Describing photos",
                                         total=0, done=0, new=0, known=0, duplicates=0, faces=0, auto=0, errors=0,
-                                        started=time.time(), error=None)
+                                        started=time.time(), error=None, again=bool(again))
             try:
-                with db.lock:
-                    todo = [(h, p["path"]) for h, p in db.store.photos.items()
-                            if p.get("path") and not p.get("video") and not p.get("dup_of")]
-                todo = [(h, p) for h, p in todo if not describe.saved(h)]
+                if again:
+                    todo = again_due(describe_items(), mark["since"])
+                else:
+                    with db.lock:
+                        todo = [(h, h, p["path"], None, p["path"]) for h, p in db.store.photos.items()
+                                if p.get("path") and not p.get("video") and not p.get("dup_of")]
+                    todo = [it for it in todo if not describe.saved(it[0])]
                 st["total"] = len(todo)
                 if todo:
                     st["stage"] = "Finding LM Studio servers"
@@ -159,8 +212,11 @@ def make_handler(db, importer):
                     except Exception as e:              # the network search failed: describe here alone
                         st["left_out"] = [f"the other computers (couldn't search the network: {e})"]
                     st["by"] = {s["host"]: 0 for s in servers}
-                    st["stage"] = "Describing photos" + (f" on {len(servers)} computers" if len(servers) > 1 else "")
-                    _describe_on(servers, todo, name, st)
+                    st["stage"] = (("Describing everything again" if again else "Describing photos")
+                                   + (f" on {len(servers)} computers" if len(servers) > 1 else ""))
+                    _describe_on(servers, todo, name, st, bool(again))
+                if again and not importer.stop.is_set() and not again_due(describe_items(), mark["since"]):
+                    describe.set_again(None)            # all of it done; else it stays, to carry on with
                 st["stage"] = "Stopped" if importer.stop.is_set() else "Done"
             except Exception as e:
                 st["error"] = f"{type(e).__name__}: {e}"
@@ -172,10 +228,11 @@ def make_handler(db, importer):
         importer.thread = threading.Thread(target=run, daemon=True)
         importer.thread.start()
 
-    def _describe_on(servers, todo, name, st):
-        """Describe the photos in todo [(hash, path)] with one worker per server in servers [{"host", "url"}]
-        (url None: the configured server, which keeps going to the end). Loader threads read and shrink the
-        photos a few ahead; each worker takes the next one as it finishes. Counts go in st (importer.status)."""
+    def _describe_on(servers, todo, name, st, elsewhere=False):
+        """Describe the photos in todo (items as describe_items() gives them) with one worker per server in
+        servers [{"host", "url"}] (url None: the configured server, which keeps going to the end). Loader threads
+        read and shrink the photos a few ahead; each worker takes the next one as it finishes. Counts go in st
+        (importer.status). elsewhere: a photo that isn't on this computer is asked of the device that has it."""
         import queue
         work = queue.Queue()
         for it in todo:
@@ -185,6 +242,25 @@ def make_handler(db, importer):
         lock = threading.Lock()
         left = [len(todo)]                                  # photos not finished yet (described, skipped, failed)
         stop = importer.stop
+        away = {"misses": 0, "off": not (elsewhere and peer_ready())}
+
+        def from_device(h, frame):
+            """The photo from another device, or None. After PEER_MISSES in a row that no device answered for, no
+            more are asked in this run (each would wait for every address of a device that is off)."""
+            with lock:
+                if away["off"]:
+                    return None
+            import peer
+            jpg, why = peer.fetch(h, frame)
+            with lock:
+                if jpg is not None:
+                    away["misses"] = 0
+                elif peer.UNREACHED in why:
+                    away["misses"] += 1
+                    if away["misses"] >= PEER_MISSES and not away["off"]:
+                        away["off"] = True
+                        st.setdefault("left_out", []).append(f"what is only on other devices ({why[:200]})")
+            return jpg
 
         def finish(n=1):
             with lock:
@@ -194,10 +270,14 @@ def make_handler(db, importer):
                     describe.flush()
 
         def load(item):
-            h, path = item
-            if not Path(path).exists() or L.online_only(path):
-                return None
-            img = F.load_image(path)
+            _key, h, path, frame, _shown = item
+            if path and Path(path).exists() and not L.online_only(path):
+                img = F.load_image(path) if frame is None else F.video_frame(path, frame)
+            else:
+                jpg = from_device(h, frame)
+                if jpg is None:
+                    return None
+                img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
             if img is None:
                 raise OSError("unreadable")
             sc = min(1.0, 1024 / max(img.shape[:2]))
@@ -214,10 +294,11 @@ def make_handler(db, importer):
                 try:
                     jpg = load(item)
                 except Exception as e:
-                    L.note_problem(st, item[1], e)
+                    L.note_problem(st, item[4], e)
                     finish()
                     continue
-                if jpg is None:                             # not on this computer now (moved, online-only)
+                if jpg is None:                             # not on this computer now (moved, online-only),
+                                                            # nor shown by another device
                     with lock:
                         st["known"] += 1
                     finish()
@@ -253,7 +334,7 @@ def make_handler(db, importer):
                                 st.setdefault("left_out", []).append(f"{srv['host']} (failed twice: {e})")
                             return
                         continue
-                    L.note_problem(st, item[1], str(e))
+                    L.note_problem(st, item[4], str(e))
                     finish()
                     continue
                 fails = 0
@@ -362,7 +443,9 @@ def make_handler(db, importer):
                     with db.lock:
                         n = sum(1 for p in db.store.photos.values()
                                 if p.get("path") and not p.get("video") and not p.get("dup_of"))
-                    return self.send(dict(describe.status(), described=describe.count(), photos=n))
+                    st = describe.status()
+                    return self.send(dict(st, described=describe.count(), photos=n, again=again_state(),
+                                          secs=describe.typical_secs(st.get("model")) if st.get("ok") else None))
                 if path.startswith("/api/describe/"):
                     i = int(path[14:])
                     if not 0 <= i < db.n:
@@ -511,6 +594,12 @@ def make_handler(db, importer):
                 if path == "/api/describe/all":          # describe every photo not described yet (background)
                     try:
                         describe_all()
+                    except describe.Unavailable as e:
+                        raise ValueError(str(e)) from e
+                    return self.send({"ok": True})
+                if path == "/api/describe/again":        # Settings: describe everything again, or carry on with it
+                    try:
+                        describe_all("on" if body.get("carry_on") is True else "fresh")
                     except describe.Unavailable as e:
                         raise ValueError(str(e)) from e
                     return self.send({"ok": True})

@@ -16,6 +16,18 @@ def db_with_faces(data, n=6):
     return L.LabelDB(folders=[], backup=False, log=lambda *a: None)
 
 
+def test_a_library_with_no_faces_yet_is_saved_and_read_again(data):
+    """A new device: nothing in data/. Saving it (the first thing joining a shared database does) once failed."""
+    s = F.Store()
+    s.save()
+    again = F.Store()
+    assert again.emb == [] and again.fid == [] and again.thumbs == [] and again.model == F.REC_NAME
+    with np.load(data / "faces.npz") as z:
+        assert z["emb"].shape == (0, F.REC["dim"]) and z["box"].shape == (0, 5)
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    assert db.n == 0 and db.summary()["faces"] == 0
+
+
 def test_a_new_copy_starts_empty(data):
     db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
     assert db.n == 0 and db.labels == {} and db.people_faces() == {}

@@ -11,7 +11,8 @@
 //
 // A setting is {section, id, label, type, hint?, def?, get(), set(v)}; type is "toggle", "range" (min, max,
 // step), "select" (options [[value, text]]), "text", "info" (read-only text), "button" or "form" (fields
-// [{name, placeholder, secret}], button): the last two run actions[id](args) on the page.
+// [{name, placeholder, secret}], button): the last two run actions[id](args) on the page. A button with `confirm`
+// (text; `confirmYes` names its button) is asked about in the Settings tab first and runs only on that yes.
 const SettingsBridge = (() => {
   let app = "", items = [], actions = {}, origin = null, timer = 0;
   const local = o => /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(o);

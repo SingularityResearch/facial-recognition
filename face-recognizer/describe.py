@@ -18,6 +18,11 @@ to each server, each taking the next as it finishes, so a faster computer takes 
 once slowed to 45 s a photo: see label_tool's describe_all). A server that fails twice in a row is left out and
 its photo goes back to the others; the configured server keeps going to the end.
 
+"Describe everything again" (Settings) describes the whole library anew, shared out the same way: every photo and
+every video frame a face was found in, also those only another device of the shared database has (shown by it,
+peer.py). Each description is replaced as its new one arrives. When it was started and with which model is kept in
+describe.json ("again") until everything is done, so a stopped run carries on from where it stopped.
+
 When LM Studio isn't there (not running, or no vision model in it), the built-in Florence-2 model (florence.py,
 downloaded on request, 0.8 GB) describes instead: plainer and less accurate, about 3.4 s a photo on the CPU.
 
@@ -41,7 +46,7 @@ import paths
 URL = os.environ.get("FACE_LLM_URL", "http://127.0.0.1:1234").rstrip("/")    # the default server
 HOME = paths.HOME                # %APPDATA%\FaceLabels
 STORE = HOME / "descriptions.json"
-CONFIG = HOME / "describe.json"  # the Settings tab's choices: {"use", "url", "model", "key", "spread"}
+CONFIG = HOME / "describe.json"  # the Settings tab's choices: {"use", "url", "model", "key", "spread"}, and "again"
 USES = ("auto", "server", "builtin")   # server if it answers, else built-in / the server only / the built-in model only
 TIMEOUT = 300                    # the first call may wait for LM Studio to load the model
 PROMPT = ("Describe this photo for someone sorting a family photo library, in 2-3 short sentences: the setting "
@@ -59,8 +64,9 @@ class Unavailable(Exception):
 
 # --------------------------------------------------------------------------- settings
 def config():
-    """{"use", "url", "model", "key", "spread"} with the defaults filled in. spread: Describe all also uses the
-    other LM Studio servers on the local network that have the same model (off unless chosen in Settings)."""
+    """{"use", "url", "model", "key", "spread", "again"} with the defaults filled in. spread: Describe all also
+    uses the other LM Studio servers on the local network that have the same model (off unless chosen in Settings).
+    again: an unfinished Describe everything again, {"since", "model"}, or None (see again())."""
     try:
         with _cfg_lock:
             c = json.loads(CONFIG.read_text("utf-8"))
@@ -73,7 +79,7 @@ def config():
         print(f"Describe photo: the saved API key can't be read here ({e})")
         key = ""
     c = {"use": c.get("use") if c.get("use") in USES else "auto", "url": c.get("url") or URL,
-         "model": c.get("model") or "", "key": key, "spread": c.get("spread") is True}
+         "model": c.get("model") or "", "key": key, "spread": c.get("spread") is True, "again": _again(c.get("again"))}
     if key and not paths.is_protected(stored):     # saved plain by an older version: protect it now
         try:
             _write_config(c)
@@ -86,6 +92,29 @@ def _write_config(c):
     """describe.json, with the API key protected for this user."""
     with _cfg_lock:
         paths.write_private(CONFIG, json.dumps(dict(c, key=paths.protect(c["key"]) if c["key"] else ""), indent=1))
+
+
+def _again(a):
+    return ({"since": a["since"], "model": a["model"]} if isinstance(a, dict) and paths.parse_time(a.get("since"))
+            and isinstance(a.get("model"), str) and a["model"] else None)
+
+
+def again():
+    """The unfinished "Describe everything again": {"since": when it was started (UTC), "model": its model}, or
+    None. A description made at or after "since" is done; every other one is still to be made again."""
+    return config()["again"]
+
+
+def set_again(name=None):
+    """Start a Describe everything again with model name (from now), or with None note that it is finished."""
+    if name:
+        # descriptions are timed to the second: start in the next one, so that one made just before the start is
+        # never taken for one made since
+        time.sleep(1.01 - time.time() % 1)
+    c = config()
+    c["again"] = {"since": paths.utc_now(), "model": str(name)[:200]} if name else None
+    _write_config(c)
+    return c["again"]
 
 
 def clean_url(url):
@@ -389,6 +418,26 @@ def _write(s):
 def count():
     with _lock:
         return len(_load())
+
+
+def typical_secs(name, newest=200, least=5):
+    """How long one description takes with model `name`, from this device's saved ones: the median "secs" of its
+    newest `newest` (None with fewer than `least`). For saying how long describing many will take: 3.5 s a photo
+    was measured with one model, and the next took 12."""
+    with _lock:
+        rows = [(str(d.get("when") or ""), d["secs"]) for d in _load().values()
+                if isinstance(d, dict) and d.get("model") == name and isinstance(d.get("secs"), (int, float))
+                and not isinstance(d.get("secs"), bool) and d["secs"] > 0]
+    if not name or len(rows) < least:
+        return None
+    secs = sorted(s for _, s in sorted(rows)[-newest:])
+    return round(secs[len(secs) // 2], 1)
+
+
+def whens():
+    """{photo key: when its saved description was made (UTC text)}."""
+    with _lock:
+        return {k: d.get("when") for k, d in _load().items() if isinstance(d, dict)}
 
 
 def find(match):

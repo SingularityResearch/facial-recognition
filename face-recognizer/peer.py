@@ -47,6 +47,7 @@ STREAM_FOR = 7 * 24 * 3600       # a /stream request lasts until the watching de
 BOUNDARY = "facerecframe"
 STREAM_READ = 15                 # s a watching device waits for the next part before it takes the stream as gone
                                  # and connects again (it used to wait a week: a device that vanished froze its tile)
+UNREACHED = "can't be reached now"   # in fetch()'s reason when no device that has the photo answered at all
 READOUT_EVERY = 1.0             # s between the live readouts sent along a /stream (JSON parts between the frames)
 PHOTO_RE = re.compile(r"^/photo/([0-9a-f]{40}|path-[0-9a-f]{24}|nofile-[0-9a-f]{24})(?:\?frame=(\d{1,7}))?$")
 _key_cache = {}
@@ -488,7 +489,7 @@ def fetch(photo, frame=None):
     if not found:
         return None, "no other device that shares its photos has it"
     path = f"/photo/{photo}" + (f"?frame={int(frame)}" if frame is not None else "")
-    tried, last = [], ""
+    tried, last, answered = [], "", False
     for name, addrs, port_, fp in found:
         for a in _order(fp, addrs):
             try:
@@ -496,7 +497,7 @@ def fetch(photo, frame=None):
                 _answered(fp, a)                       # it answered, with the photo or without
                 if jpg:
                     return jpg, name
-                last = f"{a}:{port_} didn't send it"
+                last, answered = f"{a}:{port_} didn't send it", True
                 break                                  # the same device has no other answer at its other addresses
             except PermissionError as e:               # reached, and it refused (the key, the clocks)
                 last = f"{a}:{port_}: {e}"
@@ -505,7 +506,9 @@ def fetch(photo, frame=None):
                 _answered(fp, a, False)
                 last = f"{a}:{port_}: {e}"
         tried.append(name)
-    return None, "it's on " + ", ".join(tried) + f", which can't be reached now ({last})"
+    # a device that answered without the photo (its file moved or changed) was reached: Describe everything again
+    # stops asking only after devices that didn't answer at all (UNREACHED)
+    return None, "it's on " + ", ".join(tried) + f", which {'did not send it' if answered else UNREACHED} ({last})"
 
 
 def own_photo(store, photo, frame):

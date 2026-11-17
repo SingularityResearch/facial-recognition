@@ -722,6 +722,7 @@ first-start downloads; only the latest app release is kept):
 | v1.22.4 | Nov 14 | Released for Windows, macOS and Linux; the first release whose macOS app and .dmg are signed with a Developer ID and notarized by Apple (`tools/apple_signing.py`, CI's signing steps and the built app's `--self-test` came in after 1.22.3). For the Mac, found by reading the code before there was one to try it on: the app window never answered WebKit's question about the camera, so macOS would have asked "Allow 127.0.0.1 to use your camera?" at every page load, with nobody there to answer after an unattended restart (`app.allow_camera_macos`: the window's delegate grants the tracker this window started, `camera_answer`; any other page is still asked); and the app's `Info.plist` says why it reaches the local network (macOS 15 and later ask first; until allowed, the shared database and the other devices can't be reached). Still not run on a real Mac: the window, the camera, a hidden window's frame rate and CoreML are to be measured on the first one. |
 | v1.22.5 | Nov 14 | From the network review of that day (§10), built and run on the three devices first. The service the devices reach each other through stands many requests at one moment on Windows (accept queue 128: 16 at once took 1.04 s, now about 20 ms). A request to another device, and the Cameras page's list of devices, no longer open a database connection each (`facedb.ask`: 130 ms down to 13 to 32 ms, and 109 ms to 3 ms). A device's addresses are tried best first, each for 3 s instead of 8, and a device no longer tells the others its container bridges. The log says when another device's clock is more than a minute from this one's, before requests are refused at two minutes, and a refusal for the time says how far apart the clocks are (one device's clock was found 81 s slow). Also from that day, without a release of their own: the library versions (psycopg 3.3.9, mediapipe 1.2.3, boto3 1.44.3), CI's actions at v7. |
 | v1.23.0 | Nov 15 | **Music and room sound as one more signal** (the owner's wish; Settings → Music; off until switched on, for a named person, with a shared database). `music.py`: the song the Spotify app shows as playing (its window title, nothing asked of the internet); every audio interface of the computer listened to at once for 8 s every half minute, each by itself: outputs (what the computer plays) and microphones (the room), through `soundcard`; a song's numbers (level, dynamics, tempo, brightness, bass, key and mode); what a room sounds like, from YAMNet's 521 kinds of sound gathered into plain families (quiet, music, speech, television or radio, steady background noise, activity, alerts, animals), and a steady background's own numbers and word (floor, events, steadiness, rumble, hiss, hum). `musiclog.py`: each song is a row of `music_log` (db/012) when it ends, with what each interface heard; music heard with no player naming it is "music in the room"; only numbers and words, never sound. A person's usual music (`music.picture`, from their Spotify liked songs: `spotify.py`, their own key, read-only, PKCE) is a person signal of kind `music`, shared, exported and forgotten with them. Built and run on the three devices first; the first row reached the database from the PC (a song of 234 s, heard on a display's speakers as music, 0.98). The words and cut-offs are not measured against anything: evidence. Found on the devices before the release build: about 20 s after a Windows screen is locked the camera sends no new picture, and its last one was streamed as live (for an hour that night, and since 1.22 after every Remote Desktop disconnect, which locks the session too: once for 21 hours); such a camera now counts as paused (`camPaused`: no faces read, the other devices told, the log). Under a lock (`desktop.screen_locked`) the page stops and starts it at once, and when that start fails or doesn't finish the app starts itself again, once per lock (`app.restart_soon`): in a session locked by a disconnect the running app never got the camera back, and the app started again had it within seconds; locked at the computer's own screen nothing helps until the unlock, and nothing more is loaded or started. Also found and fixed before the release build: why the Windows app's page grew by 1.5 to 2 GB an hour (pywebview's request handlers switched on the browser's network inspection, which kept a record of every request; `app.drop_request_hooks`, section 10). |
+| v1.24.0 | Nov 16 | **Describe everything again** (the owner's wish; Settings → Describe photo): the whole library described anew with the describer set, every photo and every video frame a face was found in, also what only another device has (shown by that device, `peer.fetch`); asked about first (how many, which model, which computers); each description replaced as its new one arrives; shared out like Describe all (Share Describe all, and beyond the local network with Fully distributed system); a stopped or incomplete run stays under Unfinished to carry on with (`describe.again()` in `describe.json`); Stop and progress in Settings too. Settings buttons can ask a question first (`confirm`). Two bugs a newly installed fourth device showed: a device with an empty library could not join the shared database (`Store.save` with no faces), and on a new Windows profile the window never answered the tracker's camera request (WebView2 names the tab page as the one asking; `camera_allowed`, `Permissions-Policy`, the answer in place before any page loads). §10 has the first run's numbers and what is open. |
 
 ---
 
@@ -1182,6 +1183,38 @@ Open after the 2026-11-12 review and v1.22 (not fixed yet):
   start hung after a stop and start a few seconds apart (the app restarted itself and recovered).
 - Git history before 9c76e0f still holds the old Connect defaults (a host name and a database name).
 - For later, asked for by the owner: reports on the expression log; a per-picture quality menu on the Cameras tab.
+
+### A fourth device and the first Describe everything again (2026-11-16)
+
+A fourth device (a Windows laptop with an 8 GB NVIDIA card) was installed from the 1.23.0 installer and joined; and
+**Describe everything again** (Settings → Describe photo) ran for the first time over the whole library. Found and
+fixed that day (in 1.24.0):
+- **A device with an empty library couldn't join the shared database.** The join first saves the device's own
+  files, and saving zero faces failed (`Store.save`: reshape of an empty array); the device stayed "offline" with
+  that error for good. The three earlier devices each had faces when they joined. Tests: an empty library saved
+  and read again; a new device joining and getting everything.
+- **On a new copy the camera never started on Windows.** WebView2 names the page around a frame as the one asking
+  for the camera, so the tracker's request arrived as the tab page's; the app only answered the tracker's address,
+  WebView2 showed its own question, nobody answered, and no later request was raised while it stood (page reloads
+  and the app's restart changed nothing). The three earlier devices had "allowed" remembered in their profiles.
+  Reproduced on the PC in a test copy with a new profile and a made-up camera (`--use-fake-device-for-media-stream`
+  in `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`: the real camera is never opened), old code against new. Now the tab
+  page's address is answered too (`app.camera_allowed`), the answer is in place before any page loads, the tab
+  page's `Permissions-Policy` hands camera and microphone to the programs' ports only, and the log says each
+  request and its answer. (A header without `self` refused the tracker outright: a page can't hand on what it may
+  not use.)
+- **Describe everything again**, as it ran: 13,095 photos and video frames with Qwen 3.8 27B, three computers,
+  about 12 s a photo on each Ryzen AI Max+ 395 and 22 s on the 8 GB laptop (the 35B-A3B model had taken 3.5 s,
+  which the question's time estimate still assumed that day; it now uses what the model in use really took here:
+  `describe.typical_secs`). The laptop's LM Studio died on its first picture (20 layers
+  on an 8 GB card: "CUDA error: the resource allocation failed") and the run left it out for good after two
+  failures in 13 s; loaded by hand with a quarter on the card it works, and Stop then Carry on brought it back.
+Open after it:
+- A helper left out stays out for the whole run: try it again every few minutes.
+- A new device can't read the shared models folder on the NAS without credentials for it: its model was copied
+  from the PC by hand. Settings → LM Studio should say so instead of only offering the internet.
+- LM Studio's per-model load settings on the 8 GB devices are set by hand (`lms load … --gpu 0.25`), and are
+  gone after LM Studio restarts.
 
 Other open items (2026-11-12):
 - The macOS app is still not signed or notarized: the Apple secrets aren't set in CI, and the release notes say so.
