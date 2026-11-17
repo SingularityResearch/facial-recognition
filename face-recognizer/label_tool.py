@@ -36,6 +36,8 @@ PAGE = HERE / "label_ui.html"
 NO_FACE = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 112"><rect width="112" height="112" fill="#8884"/>'
            b'<circle cx="56" cy="44" r="20" fill="#8888"/><path d="M18 104c4-24 20-34 38-34s34 10 38 34z" fill="#8888"/>'
            b'<title>No picture of this face on this computer</title></svg>')
+HELPER_RETRY = 300                     # s a describing helper that failed twice in a row sits out before it is tried
+                                       # again (its LM Studio may have been loading a model, or restarting)
 PEER_MISSES = 10                       # Describe everything again: other devices not reached this often in a row
                                        # are asked for no more photos in that run
 MAX_BODY = 2_000_000                   # bytes in a request (a list of 100,000 face numbers is about 0.7 MB)
@@ -171,7 +173,8 @@ def make_handler(db, importer):
         Studio's log showed generation falling from 48 to 1.3 tokens/s per request (Qwen 3.6 35B-A3B), 45 s a photo
         instead of about 3.5 s. With "spread" on (Settings), the other LM Studio servers on the network with the
         same model each take the next photo as they finish (describe.helpers); a helper that fails twice in a row
-        is left out and its photo goes back to the others.
+        is left out and its photo goes back to the others, and it is tried again every HELPER_RETRY seconds with one
+        photo (the first run left a helper out for good 13 s in, and 17 hours of work went to two computers).
         again ("fresh" or "on"): Describe everything again instead (Settings): everything in describe_items(),
         described or not, each description replaced as its new one arrives; what only another device has is shown
         by that device (peer.py). "fresh" starts one from now; "on" carries on with the unfinished one, which
@@ -310,6 +313,17 @@ def make_handler(db, importer):
                     except queue.Full:
                         pass
 
+        def sit_out():
+            """A helper left out waits HELPER_RETRY s; False when the run ended or was stopped meanwhile."""
+            until = time.monotonic() + HELPER_RETRY
+            while time.monotonic() < until:
+                if stop.wait(min(1.0, max(0.05, until - time.monotonic()))):
+                    return False
+                with lock:
+                    if left[0] <= 0:
+                        return False
+            return True
+
         def worker(srv, main):
             fails = 0
             while not stop.is_set():
@@ -330,9 +344,15 @@ def make_handler(db, importer):
                         back.put((item, jpg))
                         fails += 1
                         if fails >= 2:
+                            note = (f"{srv['host']} (failed twice: {str(e)[:200]}; tried again every "
+                                    f"{max(1, round(HELPER_RETRY / 60))} min)")
                             with lock:                      # shown on the progress bar, not as an unreadable photo
-                                st.setdefault("left_out", []).append(f"{srv['host']} (failed twice: {e})")
-                            return
+                                st.setdefault("left_out", []).append(note)
+                            if not sit_out():
+                                return
+                            with lock:                      # back in: one more failure and it sits out again
+                                st["left_out"].remove(note)
+                            fails = 1
                         continue
                     L.note_problem(st, item[4], str(e))
                     finish()

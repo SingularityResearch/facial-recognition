@@ -16,7 +16,8 @@ Describe all can also share the photos out among the other LM Studio servers on 
 same vision model (Settings: "spread", off by default, as it sends photos to those computers): one photo at a time
 to each server, each taking the next as it finishes, so a faster computer takes more (one server answering 3 at
 once slowed to 45 s a photo: see label_tool's describe_all). A server that fails twice in a row is left out and
-its photo goes back to the others; the configured server keeps going to the end.
+its photo goes back to the others, and it is tried again every five minutes (label_tool.HELPER_RETRY); the
+configured server keeps going to the end.
 
 "Describe everything again" (Settings) describes the whole library anew, shared out the same way: every photo and
 every video frame a face was found in, also those only another device of the shared database has (shown by it,

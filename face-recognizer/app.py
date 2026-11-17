@@ -40,7 +40,7 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 TITLE = "Face Recognizer"
-VERSION = "1.24.0"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.24.1"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -1143,6 +1143,17 @@ def self_test():
 
     def window():
         import webview
+        if sys.platform == "win32":
+            # the window's own parts, as it loads them at start: .NET through pythonnet (the lines in pywebview's
+            # winforms.py that once failed on a new build's first starts: no window, and the web browser instead),
+            # WebView2's library from the package, and the types the camera answer uses (allow_camera)
+            forms = importlib.import_module("webview.platforms.winforms")
+            importlib.import_module("webview.platforms.edgechromium")
+            kind = importlib.import_module("Microsoft.Web.WebView2.Core").CoreWebView2PermissionKind
+            if str(kind.Camera) != "Camera":
+                raise RuntimeError(f"WebView2's permission kinds aren't as expected: {kind.Camera}")
+            return (f"pywebview {getattr(webview, '__version__', '')}".strip() + ", its .NET and WebView2 parts load"
+                    + ("" if forms.is_chromium else " (no WebView2 runtime on this computer)"))
         if sys.platform == "darwin":             # the window toolkit itself only where signing may stop it
             importlib.import_module("webview.platforms.cocoa")
             if not allow_camera_macos():         # the tracker's camera without a question at each page load

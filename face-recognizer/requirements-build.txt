@@ -1,3 +1,5 @@
 # Building the app (build_exe.py; build_app.bat on Windows): the app's own requirements plus PyInstaller.
 -r requirements.txt
 pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.10   # what PyInstaller packs for each library: unpinned, CI and a developer's computer
+                                     # built with different ones (2026-11-17)

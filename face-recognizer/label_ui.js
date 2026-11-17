@@ -1191,7 +1191,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       fields: () => [{ name: "key", placeholder: "API key", secret: true, value: sec.describe || "" }] },
     { section: P, id: "describeSpread", label: "Share Describe all with other computers", type: "toggle", def: false,
       hidden: () => desc.config?.use === "builtin",
-      hint: "Describe all (and Describe everything again, below) also sends photos to the other LM Studio servers on your network that have the same vision model, one photo at a time each: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice is left out and its photo goes back to the others. Describing a single photo uses only the server above.",
+      hint: "Describe all (and Describe everything again, below) also sends photos to the other LM Studio servers on your network that have the same vision model, one photo at a time each: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice in a row is left out, its photo goes back to the others, and it is tried again every five minutes. Describing a single photo uses only the server above.",
       get: () => !!desc.config?.spread,
       set: v => post("/api/describe/config", { spread: !!v }) },
     { section: P, id: "describeHelpers", label: "Shared with", type: "info",

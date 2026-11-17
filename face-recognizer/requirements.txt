@@ -19,6 +19,8 @@ mediapipe==1.2.3         # optional: face-shape cues and body posture in the liv
 boto3==1.44.3            # optional: the labeling tool's Web search (Amazon celebrity recognition)
 soundcard==0.4.6         # optional: the music log's listening (music.py): each audio interface's sound, as numbers
 pywebview==6.2.1         # FaceRecognizer's window (python app.py, and the .exe)
+pythonnet==3.2.1; sys_platform == "win32"    # the window on Windows: .NET from Python (pywebview asks for it unpinned)
+clr_loader==0.3.1; sys_platform == "win32"   # loads .NET for pythonnet
 truststore==0.10.5       # HTTPS certificates checked by the operating system (a fresh Windows has few roots for Python)
 psycopg[binary]==3.3.9   # optional shared database (PostgreSQL + pgvector on a server the devices share): facedb.py
 pgvector==0.5.1          # face prints to and from the database's vector type

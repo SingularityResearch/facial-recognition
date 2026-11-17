@@ -40,7 +40,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     `FACE_TEST_PG`.
   - `build`: the app on Windows, macOS and Linux (`build_exe.py --no-copy`, macOS signing when its secrets are set),
     the built app's own check (`--self-test`, `app.self_test`: every library loads and works once; on macOS under
-    its signature), then its installer (`--installer-only`; the Linux one is tried there: install, icons,
+    its signature; on Windows also the window's own parts: pywebview's Windows platform with its .NET lines,
+    WebView2's library and the types `allow_camera` uses), then its installer (`--installer-only`; the Linux one is tried there: install, icons,
     uninstall; the .dmg signed and notarized too);
     keeps the `FaceRecognizer-windows-x64`, `-macos-arm64` and `-linux-x64` artifacts 14 days, each with the app,
     its installer and `BUILD-INFO.json` (commit, run, both files' SHA-256, signed).
@@ -209,7 +210,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Settings: the describer (automatic / server only / built-in only), the server address (any OpenAI-style server,
     also on another device or the internet, with a warning: `where`), the model, an API key, and `spread` (off by
     default: Describe all also uses the other LM Studio servers on the LAN with the same model, `helpers()`; one
-    photo at a time each, a helper failing twice is left out; no API key goes to a helper).
+    photo at a time each, a helper failing twice is left out and tried again every `label_tool.HELPER_RETRY`
+    (300) s; no API key goes to a helper).
   - Settings in `HOME/describe.json`, descriptions per photo in `HOME/descriptions.json`; never `data/`.
   - **Describe everything again** (Settings; `/api/describe/again`, `label_tool.describe_all("fresh" | "on")`): the
     same job over `describe_items()`: every photo and every video frame a face was found in (`h:frame`), of the whole
@@ -457,7 +459,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 
 - `setup.bat` — installs Python 3.12 (winget) and `requirements.txt` (pinned versions; OpenCV as
   `opencv-contrib-python` only, which mediapipe needs; setup removes a plain `opencv-python` if one is installed).
-  `requirements-build.txt` adds PyInstaller for `build_app.bat`; `requirements-dev.txt` has pytest and ruff.
+  `requirements-build.txt` adds PyInstaller and its hooks package for `build_app.bat`; `requirements-dev.txt` has
+  pytest and ruff. A library the build packs is pinned even when another library brings it in (`pythonnet` and
+  `clr_loader` for pywebview on Windows, `pyinstaller-hooks-contrib` for PyInstaller): unpinned, CI and a
+  developer's computer built with different ones.
 - `setup.sh`, `start.sh`, `label.sh`, `recognize.sh`, `FaceRecognizer.command` — macOS and Linux: a `.venv` with the
   pinned libraries (Linux adds `pywebview[qt]` for the app window), the models, and starting the app (`--browser`
   for the web browser).

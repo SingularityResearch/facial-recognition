@@ -243,6 +243,45 @@ def test_describe_all_shares_photos_with_other_servers(data, home, serve, tmp_pa
         assert st["left_out"][0].startswith("other (failed twice")
 
 
+def test_a_helper_left_out_is_tried_again_and_comes_back(data, home, serve, tmp_path, monkeypatch):
+    """A helper that fails twice sits out, then gets one photo again: when its server works by then it rejoins (and
+    is no longer listed as left out); it once stayed out for the whole run, 13 seconds into 17 hours."""
+    make_faces(data, 4)
+    photos = {}
+    for k in range(60):
+        f = tmp_path / f"p{k}.jpg"
+        f.write_bytes(b"x")
+        photos[f"h{k}"] = {"path": str(f)}
+    (data / "photos.json").write_text(json.dumps(photos))
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    imp = L.Importer(db)
+    helper, noted = [], []
+
+    def ask(jpg, name=None, url=None):
+        time.sleep(0.02)
+        noted.extend(imp.status.get("left_out") or [])           # what the progress bar says meanwhile
+        if url:
+            helper.append(time.monotonic())
+            if len(helper) <= 3:                                 # down at first: twice, and once more after the wait
+                raise describe.Unavailable("The describe server didn't answer")
+        return {"text": "a photo", "model": name}
+    monkeypatch.setattr(label_tool, "HELPER_RETRY", 0.15)
+    monkeypatch.setattr(describe, "model", lambda: "test-model")
+    monkeypatch.setattr(describe, "helpers", lambda name: [{"host": "other", "url": "http://192.168.1.30:1234"}])
+    monkeypatch.setattr(describe, "ask", ask)
+    monkeypatch.setattr(L, "online_only", lambda p: False)
+    monkeypatch.setattr(F, "load_image", lambda p: np.zeros((20, 20, 3), np.uint8))
+    url = serve(label_tool.make_handler(db, imp))
+    assert _post(url, "/api/describe/all", {})[0] == 200
+    imp.thread.join(20)
+    st = imp.status
+    assert st["stage"] == "Done" and st["done"] == 60 and st["new"] == 60 and st["errors"] == 0, st
+    assert describe.count() == 60 and sum(st["by"].values()) == 60     # every photo once, whoever failed on it
+    assert st["by"]["other"] > 0 and st["left_out"] == []              # it came back, and is no longer listed
+    assert helper[2] - helper[1] >= 0.14 and helper[3] - helper[2] >= 0.14   # it sat out before each new try
+    assert noted and all(n.startswith("other (failed twice") and "tried again every" in n for n in noted)
+
+
 def _library(data, tmp_path, monkeypatch):
     """Four photos here (h0-h3; h3 a duplicate of h0), a video here with faces in frames 30 and 90, and two photos
     only another device has (h5, h6). Returns (LabelDB, Importer, what was asked to be described)."""
