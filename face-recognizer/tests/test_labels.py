@@ -287,24 +287,24 @@ def test_the_faceness_model_trains_in_the_background_without_holding_the_lock(da
 
 
 def test_a_name_given_by_hand_is_no_longer_a_forgotten_name(data, tmp_path, monkeypatch):
-    import dbsync_home
+    import forgotten
     import paths
     monkeypatch.setattr(paths, "HOME", tmp_path / "home")
     db = db_with_faces(data)
     for n in ("Ann", "Cy", "Dee"):
-        dbsync_home.note_forgotten(n)
+        forgotten.note(n)
     db.act("reject", [0], "Ann")                             # saying who it isn't names nobody
-    assert dbsync_home.forgotten_names() == {"Ann", "Cy", "Dee"}
+    assert forgotten.names() == {"Ann", "Cy", "Dee"}
     db.act("name", [0], "Ann")
     db.act("name", [1], "Bob")
-    assert dbsync_home.forgotten_names() == {"Cy", "Dee"}
+    assert forgotten.names() == {"Cy", "Dee"}
     db.rename("Bob", "Cy")
-    assert dbsync_home.forgotten_names() == {"Dee"}
+    assert forgotten.names() == {"Dee"}
     # a list that can't be read is "no names" for the pages, but the sync must not send that on as every forget withdrawn
-    (tmp_path / "home" / dbsync_home.FORGOTTEN).write_text("{not json")
-    assert dbsync_home.forgotten_names() == set()
+    (tmp_path / "home" / forgotten.FILE).write_text("{not json")
+    assert forgotten.names() == set()
     with pytest.raises(OSError):
-        dbsync_home.forgotten_names(strict=True)
+        forgotten.names(strict=True)
 
 
 def test_a_copy_of_a_photo_with_possible_faces_is_still_a_copy(data):
@@ -455,3 +455,31 @@ def test_a_face_that_comes_to_or_leaves_someone_with_many_faces_is_not_every_fac
     assert np.allclose(went, db.score(list(range(db.n)))[1], atol=1e-6)
     db.act("name", [200], "Bob")
     assert np.allclose(came, db.score(list(range(db.n)))[1], atol=1e-6)
+
+
+def test_an_ignore_and_its_undo_keep_the_groups_of_unknown_faces(data, monkeypatch):
+    """The unknown faces are shown in groups of look-alikes. An Ignored face only leaves its group, and comes back
+    into it when the Ignore is undone: the groups aren't made anew for it (0.5 s on 16,000 faces after every
+    Ignore, for the same groups less one face)."""
+    rng = np.random.default_rng(5)
+    make_faces(data, 40)
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    db._faceness_job = lambda: None
+    centres = rng.normal(size=(2, 512)).astype(np.float32)
+    for i in range(40):                                     # two people nobody has named: two groups of 20
+        e = centres[i % 2] + 0.3 * rng.normal(size=512).astype(np.float32)
+        db.store.emb[i] = (e / np.linalg.norm(e)).astype(np.float32)
+    db._forgot()
+
+    def groups():
+        return sorted(sorted(f[0] for f in g["faces"]) for g in db.unknown()["groups"])
+    before = groups()
+    assert [len(g) for g in before] == [20, 20]
+    made = []
+    monkeypatch.setattr(db, "_regroup", lambda idx: made.append(len(idx)))
+    db.act("ignore", [4, 6])
+    assert groups() == [[i for i in g if i not in (4, 6)] for g in before] and not made
+    db.undo()
+    assert groups() == before and not made                  # back where they were, and nothing grouped anew
+    db.act("name", [0], "Ann")                              # a name never regrouped either: the faces like Ann's
+    assert groups() == [before[1]] and not made             # are suggestions now, the other group is as it was

@@ -62,6 +62,13 @@ def _need(ok, what):
         raise ValueError(what)
 
 
+def _ours(tbl):
+    """Raises ValueError for a table that isn't one of TABLES. The functions below each end with the faces: a
+    table without a branch of its own would have its rows read, written and applied as faces."""
+    if tbl not in TABLES:
+        raise ValueError(f"the sync has no place to put rows of {tbl!r}")
+
+
 def printable(v, n=80):
     """v for a log line: one line, n characters at most (keys and messages from the database are anyone's text)."""
     return "".join(c if c.isprintable() else "?" for c in str(v))[:n]
@@ -253,6 +260,7 @@ class Local:
 
     # rows to send
     def rows(self, tbl, keys):
+        _ours(tbl)
         db, s = self.db, self.db.store
         out = {}
         with db.lock:
@@ -289,6 +297,7 @@ class Local:
         columns have types, but its json and array columns hold whatever was written, by a faulty version or by
         whoever has the database's password: a box of three numbers was saved with the rest and then stopped
         every later save. Only what would break this device is refused; values it doesn't know are left alone."""
+        _ours(tbl)
         _need(isinstance(key, str) and key, "no key")
         if tbl == "labels":
             import labels as L
@@ -319,6 +328,7 @@ class Local:
 
     # rows received: {key: row or None (deleted)}. Returns the new local digests of those keys.
     def apply(self, tbl, rows, log=print):
+        _ours(tbl)
         db, s = self.db, self.db.store
         import face_id as F
         with db.lock:
@@ -405,6 +415,7 @@ class Local:
 
 def push(conn, tbl, rows, deletes):
     """Send rows {key: row} and deletions [key] of one table in one transaction."""
+    _ours(tbl)
     cur = conn.cursor()
     me = facedb.device()["id"]
     with conn.transaction():
@@ -483,6 +494,7 @@ SAME = "same"     # fetch(): the server's picture is the one this device has (no
 def fetch(conn, tbl, keys, pictures=None):
     """Current server rows {key: row or None} in the shape Local.apply takes. pictures: {fid: SHA-256 of this
     device's picture}; a face picture the server has the same of isn't fetched (its row says SAME)."""
+    _ours(tbl)
     out = {k: None for k in keys}
     keys = list(keys)
     for b in range(0, len(keys), BATCH * 3):

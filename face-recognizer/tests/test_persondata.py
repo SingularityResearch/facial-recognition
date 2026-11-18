@@ -15,6 +15,7 @@ import pytest
 
 import alerts
 import describe
+import describejob
 import face_id as F
 import labels as L
 import label_tool
@@ -265,7 +266,7 @@ def test_a_helper_left_out_is_tried_again_and_comes_back(data, home, serve, tmp_
             if len(helper) <= 3:                                 # down at first: twice, and once more after the wait
                 raise describe.Unavailable("The describe server didn't answer")
         return {"text": "a photo", "model": name}
-    monkeypatch.setattr(label_tool, "HELPER_RETRY", 0.15)
+    monkeypatch.setattr(describejob, "HELPER_RETRY", 0.15)
     monkeypatch.setattr(describe, "model", lambda: "test-model")
     monkeypatch.setattr(describe, "helpers", lambda name: [{"host": "other", "url": "http://192.168.1.30:1234"}])
     monkeypatch.setattr(describe, "ask", ask)
@@ -377,7 +378,7 @@ def test_describe_everything_again_stops_asking_devices_that_do_not_answer(data,
     imp.thread.join(10)
     assert sent == [] and imp.status["new"] == 5 and imp.status["known"] == 32
     db.sync = types.SimpleNamespace(info={"state": "online"})
-    monkeypatch.setattr(label_tool, "PEER_MISSES", 3)
+    monkeypatch.setattr(describejob, "PEER_MISSES", 3)
     assert _post(url, "/api/describe/again", {})[0] == 200             # starts over: everything again
     imp.thread.join(10)
     st = imp.status

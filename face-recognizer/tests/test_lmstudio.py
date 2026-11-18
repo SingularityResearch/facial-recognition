@@ -179,3 +179,25 @@ def test_only_plain_model_names_are_ever_downloaded(monkeypatch):
             break
         __import__("time").sleep(0.02)
     assert got == ["qwen/qwen3.8-27b@q4_k_m"]
+
+
+def test_the_list_of_models_on_disk_is_asked_of_lms_once_a_minute_not_every_time(monkeypatch):
+    """Settings asks for LM Studio's state every 5 s while it is open, and each `lms ls` starts a program (half a
+    second). The list is kept for a minute, and asked again at once when this app changed what is on disk."""
+    asked = []
+
+    class Answer:
+        returncode, stdout = 0, '[{"modelKey": "qwen/vision", "vision": true, "sizeBytes": 5}]'
+    monkeypatch.setattr(L, "_lms", lambda *a, **k: asked.append(a) or Answer())
+    L.models_changed()
+    first = L.local_models()
+    assert first == [{"key": "qwen/vision", "variant": "qwen/vision", "vision": True, "size": 5}] and len(asked) == 1
+    first[0]["key"] = "changed by the caller"               # a caller's changes never reach the kept list
+    assert L.local_models()[0]["key"] == "qwen/vision" and len(asked) == 1
+    L.models_changed()                               # a download ended
+    assert L.local_models() and len(asked) == 2
+    monkeypatch.setattr(L.time, "time", lambda: L._models["at"] + L.MODELS_FOR + 1)
+    assert L.local_models() and len(asked) == 3      # and after a minute
+    monkeypatch.setattr(L, "_lms", lambda *a, **k: None)       # lms gone: no list, and nothing stale kept
+    L.models_changed()
+    assert L.local_models() is None

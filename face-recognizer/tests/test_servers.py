@@ -526,14 +526,14 @@ def test_page_settings_and_person_signals_are_kept_by_the_server(track, tmp_path
     assert sorted(first["signals"]["ft-baselines"]) == ["Ann", "Bo"] and first["forgotten"] == []
     assert json.loads(request(url, "/api/signals?v=" + urllib.parse.quote(first["v"]))[2]) == {"v": first["v"], "same": True}
     # a forgotten person can't be written back by a page that is still running; named again, they can be learned again
-    import dbsync_home
+    import forgotten
     assert devicesettings.forget("Ann") == 1 and devicesettings.of("Ann") == {}
-    dbsync_home.note_forgotten("Ann")
+    forgotten.note("Ann")
     later = json.loads(request(url, "/api/signals?v=" + urllib.parse.quote(first["v"]))[2])
     assert sorted(later["signals"]["ft-baselines"]) == ["Bo"] and later["forgotten"] == ["Ann"]
     assert post("/api/signals", {"key": "ft-baselines", "changed": {"Ann": ann}}) == 200
     assert devicesettings.of("Ann") == {}
-    dbsync_home.unforget("Ann")
+    forgotten.unforget("Ann")
     assert post("/api/signals", {"key": "ft-baselines", "changed": {"Ann": ann}}) == 200
     assert devicesettings.of("Ann") == {"baseline": ann}
 
@@ -702,10 +702,10 @@ def test_expression_readings_are_kept_only_for_a_shared_database(track, tmp_path
     database to keep them in and the switch is on; numbers and short text only, named people only."""
     import time
 
-    import dbsync_home
     import devicesettings
     import exprlog
     import facedb
+    import forgotten
     import paths
     monkeypatch.setattr(paths, "HOME", tmp_path / "h")
     url, _ = track
@@ -724,7 +724,7 @@ def test_expression_readings_are_kept_only_for_a_shared_database(track, tmp_path
                 dict(ann, data={"list": [1, 2]}), "Ann"):
         assert post([bad])[0] == 400, bad
     assert post([ann] * 101)[0] == 400
-    dbsync_home.note_forgotten("Bo")                                                           # a forgotten person:
+    forgotten.note("Bo")                                                                       # a forgotten person:
     assert json.loads(post([dict(ann, name="Bo", t=now + 2), dict(ann, t=now + 3)])[2]) == {"kept": 1}   # left out
     assert exprlog.forget("Bo") == 1 and [r["name"] for r in exprlog.waiting()] == ["Ann", "Ann"]
     devicesettings.update("track", {exprlog.OPTION: "0"})                                      # switched off
@@ -823,3 +823,11 @@ def test_an_answer_on_a_kept_open_connection_doesnt_wait(label_url):
     c.close()
     assert sorted(took)[15] < 0.02, sorted(took)[15]
     assert G.Handler.disable_nagle_algorithm and G.Handler.wbufsize > 0
+
+
+def test_copy_settings_without_a_shared_database_says_what_to_do(label_url):
+    """Settings' Copy settings asked of a copy with no shared database set up was answered as a server error (500,
+    "NotConfigured: "). It is a request that can't be met: 400, with what to do first."""
+    code, _headers, body = request(label_url, "/api/db/copy", json.dumps({"from": "another device"}).encode(),
+                                   {"X-Face-Tool": "1", "Content-Type": "application/json"})
+    assert code == 400 and b"Connect to the shared database first" in body

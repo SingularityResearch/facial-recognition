@@ -216,7 +216,11 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     A test asks after each kind of change that all of it is what working everything out again gives
     (`SCORES_KEPT = -1` scores the old way). Change any of it only with that test, and with the same answers on
     a real library (the side-by-side comparison: PROJECT_CONTEXT.md section 10).
-  - It re-exports the modules split from it (`labels.X` still works):
+    Also kept: the photos that have people tags at all (`tagged`, `_tag_photos`: 19 of 11,000 in one library, and
+    every change went through all of them), and the groups of unknown faces through an Ignore and its undo
+    (`_forgot(regroup=False)`: the face leaves its group and comes back into it).
+  - The rest of the engine is in the modules split from it; `labels` imports only what it uses of them and what
+    other code asks for as `labels.X` (a name nobody uses that way is taken from its own module):
   - `photofiles.py` — content hashes, picture fingerprints, online-only cloud files (Windows only), camera dates,
     photo folders.
   - `photofacts.py` — `PhotoFacts`: camera dates + people tags (XMP, Google Takeout), in `data/photo_facts.json`.
@@ -236,16 +240,28 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   on `http://127.0.0.1:8765`. The owner calls this "the recognizer". Its page keeps the face pictures and photos
   it has shown in memory (`PICS`: blob: URLs; `thumb()`, `photoSrc()`), since no answer may be cached, and lets go
   of them on an action, Undo and a forget (`dropPic`, `forgetPics`). It also runs the shared-database sync
-  (`start_sync`) and serves `/api/hardware`, `/api/downloads`, `/api/secrets`, the person routes and Settings'
-  database, LM Studio and CUDA actions. The header's second bar (`#dlprogress`, `/api/downloads`) shows model and
-  CUDA downloads.
+  (`start_sync`) and serves `/api/downloads` and the person routes. The header's second bar (`#dlprogress`,
+  `/api/downloads`) shows model and CUDA downloads.
+  - Its request handler (`make_handler`) answers the labeling page's own routes and hands the rest on:
+    - `label_settings.py` — what the Settings tab asks of the labeling tool (`get`, `post`: LM Studio, this
+      computer, the shared database and its passphrase, the keys, Music, the downloads it can start;
+      `/api/secrets`, `db_state`). The handler asks it first, and nothing in it is answered under the labeling
+      lock: it asks the network, the database (on the kept connection, `facedb.ask`) and other programs.
+    - `describejob.py` — `DescribeJob`: Describe all and Describe everything again (`start`, `items`, `due`,
+      `again_state`, `HELPER_RETRY`, `PEER_MISSES`), run as the Importer's one background job.
+  - The Web search answers (`db.web_saved`) are guarded by the labeling data's own lock (`db.web_lock` is
+    `db.lock`): the sync reads and writes them under that one.
+- `forgotten.py` — the names of forgotten people (`HOME/forgotten.json`): `names` (`strict=True` for the sync: a
+  file that can't be read raises instead of counting as no names), `note`, `unforget`, under one lock. It imports
+  only `paths`, so `labels`, `devicesettings`, `exprlog`, `musiclog`, `persondata` and `tracker` import it at
+  their top; the `forgotten` table's sync stays in `dbsync_home.HomePart`.
 - `persondata.py` — one person's data: `export` (a folder with `data.json` and their pictures) and `forget` (every
   place a person's data lives, listed at its top; their faces stay as Ignored places). In the person view (**Their
   data…**, `/api/person/export`, `/api/person/forget`); the tracker page forgets its browser storage itself
   (`forgetPerson`, sent by the tab page after a forget); with a shared database every device forgets (db/004).
   The forgotten name is kept (`HOME/forgotten.json`, the `forgotten` table) as the instruction for devices that
   haven't forgotten yet; giving the name to someone again removes it everywhere (`LabelDB.act`/`rename` →
-  `dbsync_home.unforget`), so a device joining later doesn't forget that new person.
+  `forgotten.unforget`), so a device joining later doesn't forget that new person.
 - `websearch.py` — the labeling tool's **Web search**: Amazon Rekognition celebrity recognition + Google Cloud Vision
   web detection, combined into suggestions with a confidence level. On click only; US services, English results,
   each capped under $10/month (`dbsync_home.count_use` holds the caps across devices); keys in `HOME`, never in the
@@ -258,11 +274,11 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     default: Describe all also uses the LM Studio servers of the owner's other devices that have the same model,
     `helpers()`: only a computer in the shared database, at an address it gave there (`device_addresses()`), or
     this computer; never whatever else answers like LM Studio on the network, and nobody without a shared
-    database; one photo at a time each, a helper failing twice is left out and tried again every `label_tool.HELPER_RETRY`
+    database; one photo at a time each, a helper failing twice is left out and tried again every `describejob.HELPER_RETRY`
     (300) s; no API key goes to a helper).
   - Settings in `HOME/describe.json`, descriptions per photo in `HOME/descriptions.json`; never `data/`.
-  - **Describe everything again** (Settings; `/api/describe/again`, `label_tool.describe_all("fresh" | "on")`): the
-    same job over `describe_items()`: every photo and every video frame a face was found in (`h:frame`), of the whole
+  - **Describe everything again** (Settings; `/api/describe/again`, `describejob.DescribeJob.start("fresh" | "on")`): the
+    same job over its `items()`: every photo and every video frame a face was found in (`h:frame`), of the whole
     library; what isn't on this computer is asked of the device that has it (`peer.fetch`; after `PEER_MISSES`
     unreached in a row, no more in that run). Each description is replaced as its new one arrives. The run's start
     and model are kept in `describe.json` (`describe.again()`): done means described since then, and it stays until
@@ -310,6 +326,17 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `signals.js` — motion, talking, blinks, gaze, smile timing, webcam pulse, body posture, microphone voice features,
   each person's normal for every signal (`Baselines`, alone and in company), feeling-report summaries, fitted
   valence/arousal (browser; served by `tracker.py`).
+- `waitlog.py` — `WaitLog`: what the expression log and the music log share. Rows wait in
+  `HOME/<folder>/<UTC day>.jsonl` until the sync has sent them (`send`, from `HomePart.after_push`: one row per
+  device, name and time, so sending twice changes nothing; a past day's file is deleted once all of it is sent),
+  and are read, dropped for a forgotten person and exported there. Each log's own module keeps what a row is
+  (`check`), its switch, the forgotten-names check before `add`, and its table. Files wait on the devices: the
+  folder, file names, lines and the sync state's keys (`xlog:`, `mlog:`) stay as they are.
+  - A forget rewrites a waiting file and leaves a mark beside it (`<file>.again`): the next send starts at the
+    file's beginning. Through 1.24.4 only a file shorter than what was sent counted as rewritten; with rows added
+    after the forget it was as long again, and everyone's rows since the forget were lost.
+  - A new log of this kind: a `WaitLog` in its own module, a table (`db/NNN_*.sql`), its `send` in `after_push`,
+    its rows in `dbsync_home._forget_on_server`, and `persondata.py` with its test.
 - `exprlog.py` — the expression log (the owner's decision, 2026-11-12): what each named person's face looks like,
   every `EXPR_LOG_EVERY` (5 s, `tracker_ui.js`) while a tracker sees them, kept in the shared database for reports
   later (`expression_log`, db/010: device, name, time, label, share, state, and the rest as numbers in `data`).
@@ -411,7 +438,13 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     (descriptions, Collect faces pictures, alerts, presence, shared documents, keys, forgotten people, device
     settings, person signals; the app log, posed tests and the expression log only sent). `HomePart.every_step` also runs the peer
     service (`_peer`), camera sightings (`_cameras`) and the passphrase catch-up.
-  - A new place that keeps data must get a table (new `db/NNN_*.sql`) and a part.
+  - A new place that keeps data must get a table (new `db/NNN_*.sql`) and its class in `dbsync_home.py`: each
+    table of the private folder is a `Table` there (`Descriptions`, `Snapshots`, `Alerts`, `Presence`,
+    `Documents`, `Secrets`, `Forgotten`, `DeviceSettings`, `PersonSignals`, listed in `TABLE_CLASSES`) with its
+    `local`, `push`, `fetch`, `check` and `apply`; `HomePart`, which the sync talks to, only hands each question
+    to the table's class. A table neither part has a place for is refused in every function (`HomePart._table`,
+    `dbsync._ours`): before, its rows went to each function's last branch, which for `HomePart.apply` was the
+    forgotten people (every key a name to forget, on every device) and for `Local` the faces.
   - Rows from the database are never used as they come (`Sync._apply`, since 1.24.2): each part's
     `check(tbl, key, row)` refuses a row this device can't use (a json or array column holds whatever was
     written: by a faulty version, or by whoever has the database's password); a row that still fails while it is
@@ -492,6 +525,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     never left off).
   - `announce`: mDNS `_lmstudio._tcp` + `_http._tcp` with its port (Windows `DnsServiceRegister`, macOS
     `dns-sd -R`, Linux `avahi-publish-service`); skipped when the computer announces it already.
+  - `local_models`: the models on disk (`lms ls`), kept `MODELS_FOR` (60) s: starting `lms` takes half a second
+    and Settings asks every 5 s; `models_changed()` after a download or before publishing asks anew.
   - `missing_models` / `get_models`: vision models other servers on the network have, from Settings → LM Studio's
     button: first from the shared models folder (`from_share`, checked by SHA-256, removed again if a file fails;
     paths in the folder's `index.json` that would leave LM Studio's models or hub folder are never used: `_inside`),
@@ -589,6 +624,15 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     a file path, a row that changes a device's settings, each handed to the code the sync hands them to.
   - Device to device: `test_peer.py` (no database needed: which address is tried first, what a refusal says about
     the clocks, a running service on this computer, a long computer name, the private key kept encrypted).
+  - Tripwires: `test_routes.py` (every address a page asks for is answered by the server that sent the page: the
+    page files as the test servers send them against the route strings in the files its `ROUTE_FILES` names; every
+    route has a page that asks for it or an entry in `OTHER_CALLERS`; every GET a page sends is sent for real, but
+    those in `SKIP`, with any connection or name look-up beyond the test servers stopped) and `test_sync_tables.py`
+    (every table in a sync part's `TABLES` has all its places: `KEYS`, `digests`, `rows`, `check`, `apply`, `push`,
+    `fetch`, `all_keys`, its migration with the change-log trigger, and for a table about a person the export and
+    forget; every table a migration makes is a part's or listed in `NOT_A_PARTS`).
+  - Waiting logs: `test_waitlog.py` (no database needed: where a row waits, sent once, a failed send leaves it
+    waiting, when a past day's file goes, a file left by the version before, rows added after a forget).
   - Music: `test_music.py` (a sound with a known beat and key measured, usual music from liked songs, what is
     logged when and for whom, Spotify's permission against a stand-in on this computer).
   - `test_thresholds.py`: a tripwire on the measured thresholds.
@@ -644,6 +688,10 @@ Every `fetch` in a page script must read its answer (`json()`, `text()`, `arrayB
 froze when they ran out (ten minutes after a start, found 2026-11-12; `tests/pages.test.js` checks every fetch).
 A page asks a question with `askUser` (`ask.js`), never `confirm()`, `alert()` or `prompt()`: those stop the camera
 and every other script of the window until answered (a test fails on them).
+A route and the page's request for it go in together. When a handler's routes move to another module, add the file
+to `ROUTE_FILES` in `tests/test_routes.py`; a GET that reaches the network or another program, or starts work, goes
+in its `SKIP` with the reason. A new synced table: first give it a row in `ROW` in `tests/test_sync_tables.py`; the
+test then names each place it is still missing.
 Keep page code in the `.js` files (no inline `<script>` blocks: a test fails on them), and add any new page file to
 its server and to `PAGES` in `build_exe.py` (a test checks both). Change a measured threshold only together with
 `tests/test_thresholds.py`, after re-measuring.

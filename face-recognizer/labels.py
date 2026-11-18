@@ -20,7 +20,7 @@ each start of the labeling page (data/backups/, last 20 kept).
 
 This module holds the labels themselves (LabelDB). The rest of the engine is in photofiles.py (hashes,
 fingerprints, cloud files, folders), photofacts.py (camera dates, people tags), relocate.py (upgrade, moved
-photos) and importer.py (adding photos and videos); all of it is re-exported here, so `labels.X` still works.
+photos) and importer.py (adding photos and videos); what other code uses of them as `labels.X` is imported here.
 """
 import json
 import os
@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 
 import face_id as F
+import forgotten
 import paths
 
 IGNORE = "#ignore"
@@ -64,21 +65,19 @@ SCORES_KEPT = 64_000_000
 BIG = 256
 FACE_SHOW = 0.25   # share of possible faces drawn as dashed boxes: the most face-like (LabelDB.face_cut)
 
-# The rest of the labeling engine, in its own modules; re-exported so `labels.X` keeps working.
-from photofiles import (CLOUD, file_hash, fingerprint, make_local, needs_possible, online_only,  # noqa: E402,F401
-                        photo_date, remember_folder, settings, unpin)
-from photofacts import (CLOSEST, FOLDER_NEAR, TAKEN_NEAR_H, PhotoFacts, match_regions,  # noqa: E402,F401
-                        xmp_people)
-from relocate import migrate, register_faceless, relocate  # noqa: E402,F401
+# The rest of the labeling engine, in its own modules. What this module uses of them, and what other code asks for
+# as `labels.X`, is imported here; anything else is taken from its own module.
+from photofiles import file_hash, fingerprint, needs_possible, online_only, photo_date, settings  # noqa: E402,F401
+from photofacts import CLOSEST, FOLDER_NEAR, TAKEN_NEAR_H, PhotoFacts  # noqa: E402
+from relocate import migrate, relocate  # noqa: E402,F401
 
 
 def _named_again(name):
     """A name given by hand is a person again: an earlier forget of that name (persondata.forget) no longer applies
-    to them, on this device or, with a shared database, on the others (dbsync_home.unforget)."""
+    to them, on this device or, with a shared database, on the others (forgotten.unforget)."""
     try:
-        import dbsync_home
-        dbsync_home.unforget(name)
-    except (ImportError, OSError):
+        forgotten.unforget(name)
+    except OSError:
         pass
 
 
@@ -99,6 +98,7 @@ class LabelDB:
         self._cache = {}
         self._scores = {}                # every face's score for every person, kept across changes (_columns)
         self._stacked = None             # (the prints stacks() last looked at, its groups): new faces are added to it
+        self._tag_photos = (None, [])    # (the photo facts they were read from, the photos with people tags): tagged()
         self.groups = None               # cached groups of unknown faces (lists of face indices)
         self._grouped = set()
         self._fp, self._fp_keys = None, []
@@ -146,15 +146,20 @@ class LabelDB:
         of it still counts as a copy (same_faces). Returns {face ID: (print, picture)} for Undo, this session."""
         with self.lock:
             saved = {self.store.fid[i]: self.store.forget(i) for i in idx}
-            self._forgot()
+            self._forgot(regroup=False)
             self.store.save()
         return saved
 
-    def _forgot(self):
+    def _forgot(self, regroup=True):
+        """Faces' prints changed (deleted, put back, another device's). regroup=False keeps the groups of unknown
+        faces as they are, for an Ignore and its undo: an Ignored face only leaves its group (unknown() shows who is
+        still unknown), and comes back into it when the Ignore is undone. Grouping them all anew took 0.5 s on
+        16,000 faces after every Ignore, for the same groups less one face."""
         for k in ("E", "E_n", "gone", "st", "st_n"):
             self._cache.pop(k, None)
         self.version_faces += 1          # the faceness model trains again, in the background (kept meanwhile)
-        self.groups = None
+        if regroup:
+            self.groups = None
         self.changed()
 
     def remake(self, idx):
@@ -746,8 +751,12 @@ class LabelDB:
         """Unnamed faces the photo's own people tags name, grouped by that name."""
         key = ("tagged", show_low, self.facts.version, len(self.facts.facts))
         if key not in self._cache:
+            # only the photos that have people tags at all (19 of 11,000 in one library): this is asked again after
+            # every change, and going through every photo's facts took 0.1 s of each
+            if self._tag_photos[0] != key[2:]:
+                self._tag_photos = (key[2:], [(h, f) for h, f in self.facts.items() if f["faces"] or f["tags"]])
             out = {}
-            for h, f in self.facts.items():
+            for h, f in self._tag_photos[1]:
                 for i, nm in self.tag_names(h, f).items():
                     if not self.name(i) and nm not in self.rec(i).get("not", ()) and not self.hidden(i, show_low):
                         out.setdefault(nm, []).append([i, self.q(i)])
@@ -1006,7 +1015,7 @@ class LabelDB:
                 for fid in step.get("remade") or ():
                     if fid in idx_of and self.labels.get(fid, {}).get("n") == IGNORE:
                         self.store.forget(idx_of[fid])          # Ignored again: without print or picture, as before
-                self._forgot()
+                self._forgot(regroup=False)                     # back in its group, or out of it again
                 self.store.save()
             self._save(f"Undo: {step['text']}", [f for f, _ in step["before"]])
             return step["text"]
@@ -1114,4 +1123,4 @@ class LabelDB:
         return self._fp_keys[k] if d[k] <= DUP_BITS else None
 
 
-from importer import PROBLEMS_KEPT, VIDEO, Importer, is_video, note_problem  # noqa: E402,F401
+from importer import PROBLEMS_KEPT, Importer, note_problem  # noqa: E402,F401

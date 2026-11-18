@@ -8,6 +8,7 @@ A reading says what a face looked like to the model ("looks happy"), never what 
 The tracker page sends its readings (tracker_ui.js: every EXPR_LOG_EVERY seconds, POST /api/expression-log). They
 wait in HOME/expression/<UTC day>.jsonl until the sync has put them in the database (dbsync_home.HomePart.after_push
 -> send); a day's waiting file goes once all of it is there, because the database is where the readings are kept.
+The waiting and the sending are waitlog.py's, which the music log uses too; what a reading is, is here.
 Without a shared database, or with "Keep expression readings" switched off (ft-o-optExprLog), nothing is written.
 
 One reading: {"t": epoch ms, "name", "label", "share", "state", "data"}
@@ -21,23 +22,30 @@ persondata.py exports and forgets a person's readings: the waiting files here, a
 forget, dbsync_home._forget_on_server).
 """
 import json
-import threading
 import time
-from datetime import datetime, timezone
 
 import alerts
-import paths
+import forgotten
+import waitlog
 
 FOLDER = "expression"            # in HOME: readings waiting to be sent
 OPTION = "ft-o-optExprLog"       # the tracker page's "Keep expression readings" (on unless switched off)
 MAX_ROWS = 100                   # readings in one request
 MAX_DATA = 4000                  # bytes of one reading's data
 STATES = ("plain", "change", "usual", "unsure", "")
-_lock = threading.Lock()
+
+
+def _values(o):
+    """A waiting reading as expression_log's columns after device, name and time. One without a label isn't sent."""
+    return o["label"], o.get("share"), o.get("state") or "", json.dumps(o.get("data") or {})
+
+
+# The readings waiting here, and how they reach the table. "xlog" names their files in the sync's state.
+LOG = waitlog.WaitLog(FOLDER, "expression_log", ("label", "share", "state", "data"), _values, key="xlog")
 
 
 def folder():
-    return paths.HOME / FOLDER
+    return LOG.folder()
 
 
 def enabled():
@@ -80,135 +88,29 @@ def add(rows):
     rows = [check(r) for r in rows]
     if not rows or not enabled():
         return 0
-    try:
-        import dbsync_home
-        gone = dbsync_home.forgotten_names()
-    except ImportError:
-        gone = set()
-    by_day = {}
-    for r in rows:
-        if r["name"] not in gone:
-            day = datetime.fromtimestamp(r["t"] / 1000, timezone.utc).strftime("%Y-%m-%d")
-            by_day.setdefault(day, []).append(json.dumps(r, ensure_ascii=False))
-    with _lock:
-        folder().mkdir(parents=True, exist_ok=True)
-        for day, lines in by_day.items():
-            with open(folder() / f"{day}.jsonl", "a", encoding="utf-8") as f:
-                f.write("".join(ln + "\n" for ln in lines))
-    return sum(len(v) for v in by_day.values())
-
-
-def _files():
-    return sorted(folder().glob("*.jsonl")) if folder().is_dir() else []
-
-
-def _rows(path):
-    out = []
-    for ln in path.read_text("utf-8").splitlines():
-        try:
-            o = json.loads(ln)
-        except ValueError:
-            continue
-        if isinstance(o, dict) and o.get("name") and o.get("t") is not None:
-            out.append(o)
-    return out
+    gone = forgotten.names()
+    return LOG.add([r for r in rows if r["name"] not in gone])
 
 
 def waiting(name=None):
     """Readings not sent yet (of one person, or everyone's)."""
-    with _lock:
-        return [o for f in _files() for o in _rows(f) if name is None or o["name"] == name]
+    return LOG.waiting(name)
 
 
 def forget(name):
     """Drop name's waiting readings (persondata.forget; the table's go with the sync's forget). Returns how many."""
-    n = 0
-    with _lock:
-        for f in _files():
-            rows = _rows(f)
-            keep = [o for o in rows if o["name"] != name]
-            if len(keep) < len(rows):
-                n += len(rows) - len(keep)
-                paths.atomic_write(f, "".join(json.dumps(o, ensure_ascii=False) + "\n" for o in keep))
-    return n
+    return LOG.forget(name)
 
 
 def send(conn, state, device):
     """The sync: put waiting readings into the database's expression_log. A reading is one row per (device, name,
     time), so sending a line twice changes nothing: a file that was rewritten (a person forgotten) is simply sent
     again. Past days' files go once all of them is in the database. Returns how many readings were sent."""
-    today, sent = datetime.now(timezone.utc).strftime("%Y-%m-%d"), 0
-    for f in _files():
-        key = f"xlog:{f.name}"
-        with _lock:
-            try:
-                size = f.stat().st_size
-            except OSError:
-                continue
-            done = int(state.get(key, 0))
-            if size < done:
-                done = 0
-            chunk = b""
-            if size > done:
-                with open(f, "rb") as fh:
-                    fh.seek(done)
-                    chunk = fh.read(size - done)
-        end = chunk.rfind(b"\n") + 1                # whole lines only; the rest goes next time
-        rows = []
-        for ln in chunk[:end].decode("utf-8", "replace").splitlines():
-            try:
-                o = json.loads(ln)
-                rows.append((device, o["name"], datetime.fromtimestamp(o["t"] / 1000, timezone.utc), o["label"],
-                             o.get("share"), o.get("state") or "", json.dumps(o.get("data") or {})))
-            except (ValueError, KeyError, TypeError, OverflowError, OSError):
-                continue
-        if rows:
-            with conn.transaction():
-                conn.cursor().executemany(
-                    """INSERT INTO expression_log (device, name, at, label, share, state, data)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (device, name, at) DO NOTHING""", rows)
-        if end:
-            state.put(key, done + end)
-            sent += len(rows)
-        with _lock:                                  # a past day, all of it sent, nothing added for a minute: done
-            try:
-                st = f.stat()
-                if f.stem < today and st.st_size == done + end and time.time() - st.st_mtime > 60:
-                    f.unlink()
-                    state.drop(key)
-            except OSError:
-                pass
-    return sent
+    return LOG.send(conn, state, device)
 
 
 def export_to(path, name):
     """Write name's readings to path, one JSON object a line: those in the shared database (when it can be reached)
     and those still waiting here. Returns {"readings": n, "note": why some may be missing or None}."""
-    n, note, seen = 0, None, set()
-    with open(path, "w", encoding="utf-8") as out:
-        try:
-            import facedb
-            if facedb.configured():
-                with facedb.connect() as conn:
-                    for dev, at, label, share, state, data in conn.execute(
-                            """SELECT device::text, at, label, share, state, data FROM expression_log
-                               WHERE name = %s ORDER BY at""", (name,)):
-                        t = int(at.timestamp() * 1000)
-                        seen.add((dev, t))
-                        out.write(json.dumps({"t": t, "when": at.strftime("%Y-%m-%dT%H:%M:%SZ"), "device": dev,
-                                              "label": label, "share": share, "state": state, "data": data},
-                                             ensure_ascii=False) + "\n")
-                        n += 1
-        except Exception as e:                       # can't be reached now: say so in the export
-            note = f"the shared database couldn't be read ({str(e).strip().splitlines()[0][:200] if str(e).strip() else type(e).__name__})"
-        try:
-            import facedb
-            me = facedb.device()["id"]
-        except Exception:
-            me = None
-        for o in waiting(name):
-            if (me, o["t"]) not in seen:
-                out.write(json.dumps({**{k: o.get(k) for k in ("t", "label", "share", "state", "data")},
-                                      "device": me, "waitingToBeSent": True}, ensure_ascii=False) + "\n")
-                n += 1
+    n, note = LOG.export_to(path, name)
     return {"readings": n, "note": note}

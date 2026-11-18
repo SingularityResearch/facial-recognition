@@ -25,8 +25,9 @@ One row, written when the song ends or changes:
         for each one that wasn't quiet; place (the song against the person's usual music)
 
 Rows wait in HOME/music/<UTC day>.jsonl until the sync has put them in the database (dbsync_home.HomePart.after_push
--> send); a past day's file goes once all of it is there. persondata.py exports and forgets a person's rows and
-their picture.
+-> send); a past day's file goes once all of it is there. The waiting and the sending are waitlog.py's, which the
+expression log uses too; what a row is, is here. persondata.py exports and forgets a person's rows and their
+picture.
 """
 import json
 import threading
@@ -34,8 +35,9 @@ import time
 from datetime import datetime, timezone
 
 import alerts
+import forgotten
 import music
-import paths
+import waitlog
 
 FOLDER = "music"                 # in HOME: songs waiting to be sent
 OPTION, WHO, LISTEN = "fl-music", "fl-musicWho", "fl-musicListen"
@@ -44,11 +46,20 @@ LISTEN_EVERY = 30.0              # seconds between listenings while a song plays
 LISTEN_FOR = 8.0                 # seconds of one listening
 MIN_SECONDS = 15.0               # a song seen for less was skipped past: not logged
 MAX_DATA = 12_000                # bytes of one row's data
-_lock = threading.Lock()
+
+
+def _values(o):
+    """A waiting song as music_log's columns after device, name and time. One without artist or song isn't sent."""
+    return o["artist"], o["song"], o.get("seconds"), json.dumps(o.get("data") or {})
+
+
+# The songs waiting here, and how they reach the table. "mlog" names their files in the sync's state; a line
+# with no song isn't a row.
+LOG = waitlog.WaitLog(FOLDER, "music_log", ("artist", "song", "seconds", "data"), _values, key="mlog", needs=("song",))
 
 
 def folder():
-    return paths.HOME / FOLDER
+    return LOG.folder()
 
 
 def _settings():
@@ -98,133 +109,33 @@ def check(r, now_ms=None):
 def add(row):
     """Keep one song until the sync sends it. True if it was kept (False for a forgotten person's)."""
     row = check(row)
-    try:
-        import dbsync_home
-        if row["name"] in dbsync_home.forgotten_names():
-            return False
-    except ImportError:
-        pass
-    day = datetime.fromtimestamp(row["t"] / 1000, timezone.utc).strftime("%Y-%m-%d")
-    with _lock:
-        folder().mkdir(parents=True, exist_ok=True)
-        with open(folder() / f"{day}.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    if row["name"] in forgotten.names():
+        return False
+    LOG.add([row])
     return True
-
-
-def _files():
-    return sorted(folder().glob("*.jsonl")) if folder().is_dir() else []
-
-
-def _rows(path):
-    out = []
-    for ln in path.read_text("utf-8").splitlines():
-        try:
-            o = json.loads(ln)
-        except ValueError:
-            continue
-        if isinstance(o, dict) and o.get("name") and o.get("t") is not None and o.get("song"):
-            out.append(o)
-    return out
 
 
 def waiting(name=None):
     """Songs not sent yet (of one person, or everyone's)."""
-    with _lock:
-        return [o for f in _files() for o in _rows(f) if name is None or o["name"] == name]
+    return LOG.waiting(name)
 
 
 def forget(name):
     """Drop name's waiting songs and their picture here (persondata.forget; the table's rows and the shared picture
     go with the sync's forget). Returns how many songs went."""
-    n = 0
-    with _lock:
-        for f in _files():
-            rows = _rows(f)
-            keep = [o for o in rows if o["name"] != name]
-            if len(keep) < len(rows):
-                n += len(rows) - len(keep)
-                paths.atomic_write(f, "".join(json.dumps(o, ensure_ascii=False) + "\n" for o in keep))
-    return n
+    return LOG.forget(name)
 
 
 def send(conn, state, device):
     """The sync: put waiting songs into the database's music_log. One row per (device, name, time), so sending a
     line twice changes nothing. Past days' files go once all of them is in the database. Returns how many were sent."""
-    today, sent = datetime.now(timezone.utc).strftime("%Y-%m-%d"), 0
-    for f in _files():
-        key = f"mlog:{f.name}"
-        with _lock:
-            try:
-                size = f.stat().st_size
-            except OSError:
-                continue
-            done = int(state.get(key, 0))
-            if size < done:
-                done = 0
-            chunk = b""
-            if size > done:
-                with open(f, "rb") as fh:
-                    fh.seek(done)
-                    chunk = fh.read(size - done)
-        end = chunk.rfind(b"\n") + 1                # whole lines only; the rest goes next time
-        rows = []
-        for ln in chunk[:end].decode("utf-8", "replace").splitlines():
-            try:
-                o = json.loads(ln)
-                rows.append((device, o["name"], datetime.fromtimestamp(o["t"] / 1000, timezone.utc), o["artist"],
-                             o["song"], o.get("seconds"), json.dumps(o.get("data") or {})))
-            except (ValueError, KeyError, TypeError, OverflowError, OSError):
-                continue
-        if rows:
-            with conn.transaction():
-                conn.cursor().executemany(
-                    """INSERT INTO music_log (device, name, at, artist, song, seconds, data)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (device, name, at) DO NOTHING""", rows)
-        if end:
-            state.put(key, done + end)
-            sent += len(rows)
-        with _lock:                                  # a past day, all of it sent, nothing added for a minute: done
-            try:
-                st = f.stat()
-                if f.stem < today and st.st_size == done + end and time.time() - st.st_mtime > 60:
-                    f.unlink()
-                    state.drop(key)
-            except OSError:
-                pass
-    return sent
+    return LOG.send(conn, state, device)
 
 
 def export_to(path, name):
     """Write name's songs to path, one JSON object a line: those in the shared database (when it can be reached)
     and those still waiting here. Returns {"songs": n, "note": why some may be missing or None}."""
-    n, note, seen = 0, None, set()
-    with open(path, "w", encoding="utf-8") as out:
-        try:
-            import facedb
-            if facedb.configured():
-                with facedb.connect() as conn:
-                    for dev, at, artist, song, seconds, data in conn.execute(
-                            """SELECT device::text, at, artist, song, seconds, data FROM music_log
-                               WHERE name = %s ORDER BY at""", (name,)):
-                        t = int(at.timestamp() * 1000)
-                        seen.add((dev, t))
-                        out.write(json.dumps({"t": t, "when": at.strftime("%Y-%m-%dT%H:%M:%SZ"), "device": dev,
-                                              "artist": artist, "song": song, "seconds": seconds, "data": data},
-                                             ensure_ascii=False) + "\n")
-                        n += 1
-        except Exception as e:                       # can't be reached now: say so in the export
-            note = f"the shared database couldn't be read ({str(e).strip().splitlines()[0][:200] if str(e).strip() else type(e).__name__})"
-        try:
-            import facedb
-            me = facedb.device()["id"]
-        except Exception:
-            me = None
-        for o in waiting(name):
-            if (me, o["t"]) not in seen:
-                out.write(json.dumps({**{k: o.get(k) for k in ("t", "artist", "song", "seconds", "data")},
-                                      "device": me, "waitingToBeSent": True}, ensure_ascii=False) + "\n")
-                n += 1
+    n, note = LOG.export_to(path, name)
     return {"songs": n, "note": note}
 
 
@@ -307,8 +218,7 @@ def status():
         sp = {"connected": False, "client_id": "", "error": str(e)[:200], "redirect": ""}
     t = _listener["thread"]
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    with _lock:                                  # today's file holds today's songs, sent or not; an older file
-        counts = {f.stem: len(_rows(f)) for f in _files()}       # is still here only while some of it isn't sent
+    counts = LOG.days()     # today's file holds today's songs, sent or not; an older one only while some of it isn't sent
     return {"on": _settings().get(OPTION) == "1", "who": name, "listen": _settings().get(LISTEN) or "all",
             "today": counts.get(today, 0), "earlier": sum(n for day, n in counts.items() if day < today),
             "logging": enabled(), "playing": music.now_playing(),

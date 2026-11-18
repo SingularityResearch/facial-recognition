@@ -231,16 +231,34 @@ def announce():
 
 
 # --------------------------------------------------------------------------- the same models as the network
+MODELS_FOR = 60          # seconds the list of models on disk is kept (local_models)
+_models = {"at": 0.0, "list": None}
+_models_lock = threading.Lock()
+
+
+def models_changed():
+    """The models on disk may have changed (a download ended, they are about to be published): local_models asks
+    `lms` again the next time."""
+    with _models_lock:
+        _models["list"] = None
+
+
 def local_models():
-    """[{key, variant, vision, size}] of the models on disk here (`lms ls --json`), or None without lms."""
-    r = _lms("ls", "--json", timeout=60)
-    if r is None or r.returncode != 0:
-        return None
-    try:
-        return [{"key": m.get("modelKey"), "variant": m.get("selectedVariant") or m.get("modelKey"),
-                 "vision": bool(m.get("vision")), "size": m.get("sizeBytes")} for m in json.loads(r.stdout)]
-    except ValueError:
-        return None
+    """[{key, variant, vision, size}] of the models on disk here (`lms ls --json`), or None without lms. Kept for
+    MODELS_FOR seconds: starting `lms` takes half a second, and Settings asks every 5 s while it is open."""
+    with _models_lock:
+        if _models["list"] is not None and time.time() - _models["at"] < MODELS_FOR:
+            return [dict(m) for m in _models["list"]]
+        r = _lms("ls", "--json", timeout=60)
+        if r is None or r.returncode != 0:
+            return None
+        try:
+            got = [{"key": m.get("modelKey"), "variant": m.get("selectedVariant") or m.get("modelKey"),
+                    "vision": bool(m.get("vision")), "size": m.get("sizeBytes")} for m in json.loads(r.stdout)]
+        except ValueError:
+            return None
+        _models.update(at=time.time(), list=got)
+        return [dict(m) for m in got]
 
 
 # A model as `lms get` takes it: <publisher>/<name>, maybe @<quantization>. Names come from other computers on the
@@ -320,6 +338,7 @@ def get_models(variants):
             try:
                 if from_share(v, st):                    # the shared folder first (fast, the very same files) ...
                     time.sleep(3)                        # LM Studio notices new model files by itself
+                    models_changed()
                     if any(m["key"] == v.split("@")[0] for m in local_models() or []):
                         st["done"].append(f"{v} (copied from the shared folder)")
                     else:                                # seen once: its own paused download of the model hid it
@@ -337,6 +356,7 @@ def get_models(variants):
                 st["error"] = f"{v}: {why}"
                 break
             st["done"].append(f"{v} (downloaded from the internet)")
+        models_changed()                                 # what is on disk now is asked of lms again
         st.update(running=False, now=None, how=None)
     threading.Thread(target=run, daemon=True, name="lms-get").start()
 
@@ -437,6 +457,7 @@ def local_variants():
     """{variant: {hub, files: [relative paths in the models folder]}} for this computer's vision models: each model's
     LM Studio description (hub) says which Hugging Face repos hold it; its files are those of the downloaded
     quantization and its picture projector (mmproj)."""
+    models_changed()
     here = local_models() or []
     out = {}
     for m in here:

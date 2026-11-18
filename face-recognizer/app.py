@@ -40,7 +40,7 @@ if sys.platform.startswith("linux"):
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 TITLE = "Face Recognizer"
-VERSION = "1.24.4"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.24.5"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -1112,7 +1112,7 @@ def self_test():
     def own():
         names = ("face_id", "labels", "label_tool", "tracker", "facedb", "dbsync", "dbsync_home", "peer", "secretbox",
                  "describe", "websearch", "hardware", "lmstudio", "persondata", "exprlog", "camrelay", "cudasupport",
-                 "music", "musiclog", "spotify")
+                 "music", "musiclog", "spotify", "describejob", "label_settings", "forgotten", "waitlog")
         for n in names:
             importlib.import_module(n)
         return f"{len(names)} modules"

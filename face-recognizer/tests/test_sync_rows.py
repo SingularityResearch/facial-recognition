@@ -183,3 +183,17 @@ def test_a_row_that_fails_while_applied_is_found_by_halving(device):
 def test_a_key_or_message_from_the_database_goes_into_the_log_as_one_short_line():
     import dbsync
     assert dbsync.printable("a\nb\x1b[31m" + "x" * 200) == "a?b?[31m" + "x" * 72
+
+
+def test_rows_of_a_table_the_sync_has_no_place_for_never_forget_anybody(home, tmp_path):
+    """HomePart.apply ends with the forgotten people: each row's key is a name to forget, here and then on every
+    device. A table without a branch of its own (a new one, half added) fell through to it, and every key of its
+    rows would have been forgotten as a person. Now such rows are refused."""
+    import dbsync_home
+    import forgotten
+    asked = []
+    part = dbsync_home.HomePart(forget=asked.append)
+    with pytest.raises(ValueError):
+        part.apply("a_new_table", {"Ann": {"value": 1}, "2026-11-18|x": {"value": 2}}, log=lambda *a: None)
+    assert asked == [] and forgotten.names() == set()
+    assert part.apply("forgotten", {"Ann": {"name": "Ann"}}, log=lambda *a: None) and asked == ["Ann"]   # the real one still does

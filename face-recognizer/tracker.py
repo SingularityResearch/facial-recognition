@@ -32,6 +32,7 @@ import numpy as np
 
 import face_id as F
 import alerts
+import forgotten
 import localguard
 import paths
 
@@ -217,11 +218,7 @@ def page_note(text, now=None):
 
 def _forgotten():
     """People forgotten on any device (with a shared database): the page forgets what it learned about them."""
-    try:
-        import dbsync_home
-        return sorted(dbsync_home.forgotten_names())
-    except ImportError:
-        return []
+    return sorted(forgotten.names())
 
 
 def log_visit(v):

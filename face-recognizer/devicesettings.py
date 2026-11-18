@@ -12,6 +12,7 @@ import json
 import re
 import threading
 
+import forgotten
 import paths
 
 SETTINGS = "settings.json"
@@ -77,14 +78,6 @@ def signals(every=False):
     return {k: dict(s.get(k) or {}) for k in (ALL_KINDS if every else KINDS)}
 
 
-def _forgotten():
-    try:
-        import dbsync_home
-        return dbsync_home.forgotten_names()
-    except ImportError:
-        return set()
-
-
 def merge_signals(kind, changed, gone=()):
     """What the tracker page learned since it last said: changed {name: data} is set, the names in gone are removed.
     Nobody else is touched. (The page used to send its whole map, and whoever it didn't know of was dropped: people
@@ -94,13 +87,13 @@ def merge_signals(kind, changed, gone=()):
         raise ValueError("bad signals")
     if len(json.dumps(changed)) > MAX_SIGNALS:
         raise ValueError("too much")
-    forgotten = _forgotten()
+    refused = forgotten.names()
     with _lock:
         s = _read(SIGNALS)
         m = s[kind] = dict(s.get(kind) or {})
         for n, d in changed.items():
             n = str(n)[:100]
-            if isinstance(d, dict) and n and not n.startswith("#") and n not in forgotten:
+            if isinstance(d, dict) and n and not n.startswith("#") and n not in refused:
                 m[n] = d
         for n in gone:
             m.pop(str(n), None)
@@ -116,10 +109,10 @@ def signals_state(have=None):
             return f"{st.st_mtime_ns}.{st.st_size}"
         except OSError:
             return "-"
-    v = stamp(paths.HOME / SIGNALS) + "/" + stamp(paths.HOME / "forgotten.json")
+    v = stamp(paths.HOME / SIGNALS) + "/" + stamp(paths.HOME / forgotten.FILE)
     if have == v:
         return {"v": v, "same": True}
-    return {"v": v, "signals": {KINDS[k]: p for k, p in signals().items()}, "forgotten": sorted(_forgotten())}
+    return {"v": v, "signals": {KINDS[k]: p for k, p in signals().items()}, "forgotten": sorted(forgotten.names())}
 
 
 def set_signals(kind, people):
@@ -173,5 +166,5 @@ def page_state(app):
     out = {"settings": settings(app)}
     if app == "track":
         out["signals"] = {KINDS[k]: v for k, v in signals().items()}
-        out["forgotten"] = sorted(_forgotten())
+        out["forgotten"] = sorted(forgotten.names())
     return out

@@ -35,7 +35,7 @@ The labeling tool's person view (**Their data…**) uses it through label_tool.p
            to every other device (dbsync_home: the forgotten table), and clears what only the server holds.
   private\forgotten.json and the database's forgotten table: the forgotten name itself, the one thing kept, as the
            instruction for devices that haven't forgotten yet. It goes when the name is given to someone again
-           (dbsync_home.unforget), so a later device doesn't forget that new person.
+           (forgotten.unforget), so a later device doesn't forget that new person.
 
 Forgetting keeps their faces as Ignored faces without print or picture (only where each face is in its photo,
 so the photos aren't read again and the faces don't come back as new faces), removes their name everywhere
@@ -54,6 +54,7 @@ import describe
 import devicesettings
 import exprlog
 import face_id as F
+import forgotten
 import labels as L
 import musiclog
 import paths
@@ -360,8 +361,7 @@ def forget(db, name, web_saved=None, web_lock=None, known=False):
     try:                                     # the other devices forget them too (only with a shared database)
         import facedb
         if facedb.configured():
-            import dbsync_home
-            dbsync_home.note_forgotten(name)
+            forgotten.note(name)
             done["otherDevices"] = True
     except ImportError:
         pass

@@ -24,7 +24,7 @@ import numpy as np
 
 import cudasupport
 import describe
-import hardware
+import label_settings
 import lmstudio
 import websearch
 import localguard
@@ -36,16 +36,13 @@ PAGE = HERE / "label_ui.html"
 NO_FACE = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 112"><rect width="112" height="112" fill="#8884"/>'
            b'<circle cx="56" cy="44" r="20" fill="#8888"/><path d="M18 104c4-24 20-34 38-34s34 10 38 34z" fill="#8888"/>'
            b'<title>No picture of this face on this computer</title></svg>')
-HELPER_RETRY = 300                     # s a describing helper that failed twice in a row sits out before it is tried
-                                       # again (its LM Studio may have been loading a model, or restarting)
-PEER_MISSES = 10                       # Describe everything again: other devices not reached this often in a row
-                                       # are asked for no more photos in that run
 MAX_BODY = 2_000_000                   # bytes in a request (a list of 100,000 face numbers is about 0.7 MB)
 WEB_SAVED = "web_suggestions.json"     # in data/: Web search answers per face, so a face is searched (and paid for) once
                                        # (persondata.WEB_SAVED: exported and forgotten with a person)
 
 
 def make_handler(db, importer):
+    import describejob
     import face_id as F
     import labels as L
     import persondata
@@ -56,7 +53,7 @@ def make_handler(db, importer):
     remake_cv = threading.Condition()
     # face ID -> its last complete Web search answer (attach() puts it on db, for the shared database's sync)
     web_saved = db.web_saved if hasattr(db, "web_saved") else F.load_json(WEB_SAVED, {})
-    web_lock = getattr(db, "web_lock", None) or threading.Lock()
+    web_lock = getattr(db, "web_lock", None) or db.lock
 
     def photo_jpeg(i):
         """The whole photo face i was found in (for a video: the frame it was found in), as JPEG."""
@@ -109,267 +106,7 @@ def make_handler(db, importer):
         except Exception:
             return []
 
-    def describe_key(i):
-        """Descriptions are per photo (per frame for a video): every face in it shares one."""
-        h = db.store.photo[i]
-        rec = db.store.photos.get(h, {})
-        frame = rec.get("at", {}).get(db.store.fid[i]) if rec.get("video") else None
-        return h if frame is None else f"{h}:{frame}"
-
-    def describe_picture(i):
-        """The photo of face i at most 1024 px on its longer side, as JPEG, for the local model."""
-        jpg = photo_jpeg(i)
-        if jpg is None:
-            raise ValueError("The original photo isn't on this computer any more.")
-        img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
-        s = min(1.0, 1024 / max(img.shape[:2]))
-        if s < 1:
-            img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
-        return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
-
-    def describe_items():
-        """What Describe everything again covers: every photo, and every video frame a face was found in, of the
-        whole library, whether its file is on this computer or only on another device of the shared database
-        (a duplicate is left out: its first copy is described). [(description key, photo hash, path or None,
-        frame number or None, what to call it)], those with a file here first."""
-        with db.lock:
-            out = []
-            for h, p in db.store.photos.items():
-                if p.get("dup_of"):
-                    continue
-                path = p.get("path")
-                shown = path or p.get("name") or h
-                if p.get("video"):
-                    frames = sorted({k for k in (p.get("at") or {}).values() if isinstance(k, int)})
-                    out += [(f"{h}:{k}", h, path, k, f"{shown} (frame {k})") for k in frames]
-                else:
-                    out.append((h, h, path, None, shown))
-        return sorted(out, key=lambda it: not it[2])
-
-    def again_due(items, since):
-        """Those of items whose description wasn't made since the Describe everything again was started."""
-        since = paths.utc_text(since)
-        t, when = paths.parse_time(since), describe.whens()
-
-        def done(key):
-            w = when.get(key)
-            if isinstance(w, str) and len(w) == 20 and w.endswith("Z"):
-                return w >= since               # both as paths.utc_now writes them: that text sorts in time order
-            d = paths.parse_time(w)             # an older one, in local time
-            return d is not None and d >= t
-        return [it for it in items if not done(it[0])]
-
-    def again_state():
-        """For Settings: how much Describe everything again covers, and an unfinished one's start and what is left."""
-        a, items = describe.again(), describe_items()
-        return {"total": len(items), "frames": sum(1 for it in items if it[3] is not None),
-                "elsewhere": sum(1 for it in items if not it[2]), "since": a["since"] if a else None,
-                "model": a["model"] if a else None, "left": len(again_due(items, a["since"])) if a else 0}
-
-    def describe_all(again=None):
-        """Describe every photo not described yet (not videos, duplicates or online-only cloud files) in the
-        background; progress in importer.status so the page's progress bar shows it, and the page's Stop button
-        stops it. One request to each server at a time, the next photos loading meanwhile: with 3 at once, LM
-        Studio's log showed generation falling from 48 to 1.3 tokens/s per request (Qwen 3.6 35B-A3B), 45 s a photo
-        instead of about 3.5 s. With "spread" on (Settings), the other LM Studio servers on the network with the
-        same model each take the next photo as they finish (describe.helpers); a helper that fails twice in a row
-        is left out and its photo goes back to the others, and it is tried again every HELPER_RETRY seconds with one
-        photo (the first run left a helper out for good 13 s in, and 17 hours of work went to two computers).
-        again ("fresh" or "on"): Describe everything again instead (Settings): everything in describe_items(),
-        described or not, each description replaced as its new one arrives; what only another device has is shown
-        by that device (peer.py). "fresh" starts one from now; "on" carries on with the unfinished one, which
-        describe.again() keeps until nothing is left."""
-        with importer.job_lock:                  # one background job at a time (imports, scans, this)
-            _describe_all(again)
-
-    def _describe_all(again):
-        if importer.thread and importer.thread.is_alive():
-            raise ValueError("An import is already running.")
-        name = describe.model()                  # raises Unavailable with what's missing
-        mark = describe.again() if again else None
-        if again == "on" and not mark:
-            raise ValueError("Nothing is unfinished: start Describe everything again instead.")
-        if again == "fresh":
-            mark = describe.set_again(name)
-        importer.stop.clear()
-
-        def run():
-            st = importer.status = dict(running=True, folder="photo descriptions", stage="Describing photos",
-                                        total=0, done=0, new=0, known=0, duplicates=0, faces=0, auto=0, errors=0,
-                                        started=time.time(), error=None, again=bool(again))
-            try:
-                if again:
-                    todo = again_due(describe_items(), mark["since"])
-                else:
-                    with db.lock:
-                        todo = [(h, h, p["path"], None, p["path"]) for h, p in db.store.photos.items()
-                                if p.get("path") and not p.get("video") and not p.get("dup_of")]
-                    todo = [it for it in todo if not describe.saved(it[0])]
-                st["total"] = len(todo)
-                if todo:
-                    st["stage"] = "Finding LM Studio servers"
-                    servers = [{"host": "this computer" if describe.where(describe.config()["url"])[0] == "this computer"
-                                else urlparse(describe.config()["url"]).hostname, "url": None}]
-                    try:
-                        servers += describe.helpers(name)
-                    except Exception as e:              # the network search failed: describe here alone
-                        st["left_out"] = [f"the other computers (couldn't search the network: {e})"]
-                    st["by"] = {s["host"]: 0 for s in servers}
-                    st["stage"] = (("Describing everything again" if again else "Describing photos")
-                                   + (f" on {len(servers)} computers" if len(servers) > 1 else ""))
-                    _describe_on(servers, todo, name, st, bool(again))
-                if again and not importer.stop.is_set() and not again_due(describe_items(), mark["since"]):
-                    describe.set_again(None)            # all of it done; else it stays, to carry on with
-                st["stage"] = "Stopped" if importer.stop.is_set() else "Done"
-            except Exception as e:
-                st["error"] = f"{type(e).__name__}: {e}"
-                st["stage"] = "Failed"
-            finally:
-                describe.flush()
-                st["running"] = False
-                st["elapsed"] = round(time.time() - st["started"], 1)
-        importer.thread = threading.Thread(target=run, daemon=True)
-        importer.thread.start()
-
-    def _describe_on(servers, todo, name, st, elsewhere=False):
-        """Describe the photos in todo (items as describe_items() gives them) with one worker per server in
-        servers [{"host", "url"}] (url None: the configured server, which keeps going to the end). Loader threads
-        read and shrink the photos a few ahead; each worker takes the next one as it finishes. Counts go in st
-        (importer.status). elsewhere: a photo that isn't on this computer is asked of the device that has it."""
-        import queue
-        work = queue.Queue()
-        for it in todo:
-            work.put(it)
-        ready = queue.Queue(maxsize=2 * len(servers) + 2)    # loaded photos waiting for a free server
-        back = queue.Queue()                                # photos a failing helper gave back: taken first
-        lock = threading.Lock()
-        left = [len(todo)]                                  # photos not finished yet (described, skipped, failed)
-        stop = importer.stop
-        away = {"misses": 0, "off": not (elsewhere and peer_ready())}
-
-        def from_device(h, frame):
-            """The photo from another device, or None. After PEER_MISSES in a row that no device answered for, no
-            more are asked in this run (each would wait for every address of a device that is off)."""
-            with lock:
-                if away["off"]:
-                    return None
-            import peer
-            jpg, why = peer.fetch(h, frame)
-            with lock:
-                if jpg is not None:
-                    away["misses"] = 0
-                elif peer.UNREACHED in why:
-                    away["misses"] += 1
-                    if away["misses"] >= PEER_MISSES and not away["off"]:
-                        away["off"] = True
-                        st.setdefault("left_out", []).append(f"what is only on other devices ({why[:200]})")
-            return jpg
-
-        def finish(n=1):
-            with lock:
-                left[0] -= n
-                st["done"] += n
-                if st["done"] % 25 == 0:
-                    describe.flush()
-
-        def load(item):
-            _key, h, path, frame, _shown = item
-            if path and Path(path).exists() and not L.online_only(path):
-                img = F.load_image(path) if frame is None else F.video_frame(path, frame)
-            else:
-                jpg = from_device(h, frame)
-                if jpg is None:
-                    return None
-                img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
-            if img is None:
-                raise OSError("unreadable")
-            sc = min(1.0, 1024 / max(img.shape[:2]))
-            if sc < 1:
-                img = cv2.resize(img, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA)
-            return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
-
-        def loader():
-            while not stop.is_set():
-                try:
-                    item = work.get_nowait()
-                except queue.Empty:
-                    return
-                try:
-                    jpg = load(item)
-                except Exception as e:
-                    L.note_problem(st, item[4], e)
-                    finish()
-                    continue
-                if jpg is None:                             # not on this computer now (moved, online-only),
-                                                            # nor shown by another device
-                    with lock:
-                        st["known"] += 1
-                    finish()
-                    continue
-                while not stop.is_set():
-                    try:
-                        ready.put((item, jpg), timeout=0.5)
-                        break
-                    except queue.Full:
-                        pass
-
-        def sit_out():
-            """A helper left out waits HELPER_RETRY s; False when the run ended or was stopped meanwhile."""
-            until = time.monotonic() + HELPER_RETRY
-            while time.monotonic() < until:
-                if stop.wait(min(1.0, max(0.05, until - time.monotonic()))):
-                    return False
-                with lock:
-                    if left[0] <= 0:
-                        return False
-            return True
-
-        def worker(srv, main):
-            fails = 0
-            while not stop.is_set():
-                with lock:
-                    if left[0] <= 0:
-                        return
-                try:
-                    item, jpg = back.get_nowait()
-                except queue.Empty:
-                    try:
-                        item, jpg = ready.get(timeout=0.5)
-                    except queue.Empty:
-                        continue
-                try:
-                    d = describe.ask(jpg, name, srv["url"])
-                except Exception as e:
-                    if not main:                            # another computer: its photo goes back to the others
-                        back.put((item, jpg))
-                        fails += 1
-                        if fails >= 2:
-                            note = (f"{srv['host']} (failed twice: {str(e)[:200]}; tried again every "
-                                    f"{max(1, round(HELPER_RETRY / 60))} min)")
-                            with lock:                      # shown on the progress bar, not as an unreadable photo
-                                st.setdefault("left_out", []).append(note)
-                            if not sit_out():
-                                return
-                            with lock:                      # back in: one more failure and it sits out again
-                                st["left_out"].remove(note)
-                            fails = 1
-                        continue
-                    L.note_problem(st, item[4], str(e))
-                    finish()
-                    continue
-                fails = 0
-                describe.save(item[0], d, write=False)
-                with lock:
-                    st["new"] += 1
-                    st["by"][srv["host"]] = st["by"].get(srv["host"], 0) + 1
-                finish()
-
-        threads = [threading.Thread(target=loader, daemon=True) for _ in range(2 + len(servers))]
-        threads += [threading.Thread(target=worker, args=(s, k == 0), daemon=True) for k, s in enumerate(servers)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+    job = describejob.DescribeJob(db, importer, photo_jpeg, peer_ready)     # Describe all, Describe everything again
 
     def face_thumb(i, wait=False):
         """Face i's picture as JPEG, or None. A copy of the project from GitHub has no face pictures
@@ -464,33 +201,15 @@ def make_handler(db, importer):
                         n = sum(1 for p in db.store.photos.values()
                                 if p.get("path") and not p.get("video") and not p.get("dup_of"))
                     st = describe.status()
-                    return self.send(dict(st, described=describe.count(), photos=n, again=again_state(),
+                    return self.send(dict(st, described=describe.count(), photos=n, again=job.again_state(),
                                           secs=describe.typical_secs(st.get("model")) if st.get("ok") else None))
                 if path.startswith("/api/describe/"):
                     i = int(path[14:])
                     if not 0 <= i < db.n:
                         return self.send({"error": "no such face"}, code=404)
-                    return self.send({"saved": describe.saved(describe_key(i))})
-                # These ask the network, other programs or files of their own, never the labeling data: outside its
-                # lock, or a search of the local network (seconds) held up every labeling request, the import, the
-                # sync and the page's own settings request at load.
-                if path == "/api/lmstudio":                # LM Studio on this computer, and models it lacks
-                    st = lmstudio.status()
-                    return self.send({**st, "missing": lmstudio.missing_models() if st.get("installed") else [],
-                                      "distributed": hardware.distributed()})
-                if path == "/api/hardware/network":       # LM Studio servers on the local network (Settings)
-                    return self.send({"servers": hardware.lmstudio_network()})
-                if path == "/api/hardware":               # this computer, and where each job runs (Settings)
-                    return self.send({"has": hardware.describe(), "uses": hardware.uses(), "ai": hardware.ai_apps()})
-                if path == "/api/websearch/key":
-                    return self.send({"set": bool(websearch.key()), "services": websearch.services()})
-                if path == "/api/music":                 # the music log and a person's usual music (Settings)
-                    import musiclog
-                    return self.send(musiclog.status())
-                if path == "/api/secrets":               # the Settings tab's saved keys, shown masked
-                    if self.refused(write=True):         # only to the tool's own page (its header), never cross-site
-                        return
-                    return self.send(secrets())
+                    return self.send({"saved": describe.saved(job.key(i))})
+                if label_settings.get(self, path, db) is not False:     # what the Settings tab asks: its own module
+                    return
                 if path == "/api/settings":              # this page's settings (page_store.js)
                     import devicesettings
                     return self.send(devicesettings.page_state("label"))
@@ -541,8 +260,6 @@ def make_handler(db, importer):
                                           "exists": here, "remote": [] if here else remote_holders(h),
                                           "date": L.photo_date(path_) if path_ else "", "faces": others,
                                           "hints": dict(db.hints(i), web=web_saved.get(db.store.fid[i]))})
-                    if path == "/api/db":                    # the shared database: settings (never the password), state
-                        return self.send(db_state(db))
                     if path == "/api/photos":                # photos with all of these people: ?with=A&with=B
                         names = parse_qs(u.query).get("with", [])
                         return self.send({"photos": db.photos_with(names)})
@@ -560,6 +277,8 @@ def make_handler(db, importer):
                 if not isinstance(body, dict):
                     raise ValueError("expected an object")
                 path = self.path.split("?", 1)[0]
+                if label_settings.post(self, path, body, db) is not False:   # what the Settings tab asks
+                    return
                 if path == "/api/act":
                     faces = body.get("faces")
                     if not (isinstance(faces, list) and all(isinstance(i, int) for i in faces)):
@@ -609,122 +328,36 @@ def make_handler(db, importer):
                     if body.get("confirm") != body.get("name"):
                         raise ValueError("Type the person's name to confirm.")
                     return self.send({"ok": True, "removed": persondata.forget(db, body.get("name"), web_saved, web_lock)})
-                if path == "/api/autoname":
-                    return self.send({"ok": True, "named": db.autoname()})
                 if path == "/api/describe/all":          # describe every photo not described yet (background)
                     try:
-                        describe_all()
+                        job.start()
                     except describe.Unavailable as e:
                         raise ValueError(str(e)) from e
                     return self.send({"ok": True})
                 if path == "/api/describe/again":        # Settings: describe everything again, or carry on with it
                     try:
-                        describe_all("on" if body.get("carry_on") is True else "fresh")
+                        job.start("on" if body.get("carry_on") is True else "fresh")
                     except describe.Unavailable as e:
                         raise ValueError(str(e)) from e
-                    return self.send({"ok": True})
-                if path == "/api/music/spotify":         # Settings: connect Spotify (opens its page in the browser)
-                    import musiclog
-                    musiclog.connect_spotify(body.get("client_id") or "")
-                    return self.send({"ok": True})
-                if path == "/api/music/liked":           # Settings: read the liked songs, make the person's picture
-                    import musiclog
-                    musiclog.read_liked()
-                    return self.send({"ok": True})
-                if path == "/api/music/disconnect":
-                    import spotify
-                    spotify.disconnect()
-                    return self.send({"ok": True})
-                if path == "/api/describe/config":       # Settings: which describer, server, model, API key
-                    describe.set_config(**{k: body[k] for k in ("use", "url", "model", "key", "spread") if k in body})
-                    return self.send({"ok": True})
-                if path == "/api/describe/test":         # Settings' Test button
-                    try:
-                        return self.send({"ok": True, "message": describe.test(body.get("url") or "", body.get("key"))})
-                    except describe.Unavailable as e:
-                        raise ValueError(str(e)) from e
-                if path == "/api/lmstudio/share":         # the shared models folder (this computer's setting)
-                    lmstudio.set_share(body.get("folder", ""))
-                    threading.Thread(target=lmstudio.publish, daemon=True).start()
-                    return self.send({"ok": True, "shared": lmstudio.share_status()})
-                if path == "/api/lmstudio/distributed":   # "Fully distributed system": every adapter, any network
-                    lmstudio.set_distributed(body.get("on") is True)
-                    return self.send({"ok": True, "distributed": hardware.distributed()})
-                if path == "/api/lmstudio/get":           # download the models other LM Studio servers have
-                    lmstudio.get_models([m["variant"] for m in lmstudio.missing_models()])
-                    return self.send({"ok": True})
-                if path == "/api/cuda/download":          # NVIDIA CUDA for the Linux app (cudasupport.py), when asked
-                    cudasupport.start_download()
-                    return self.send({"ok": True, "status": cudasupport.status()})
-                if path == "/api/describe/getmodel":     # download the built-in describer (florence.py), background
-                    describe.florence.download_in_background()
                     return self.send({"ok": True})
                 if path == "/api/describe":              # describe the photo with the local model (LM Studio or built-in)
                     i = body.get("i")
                     if not (isinstance(i, int) and 0 <= i < db.n):
                         raise ValueError("no such face")
-                    k = describe_key(i)
+                    k = job.key(i)
                     d = describe.saved(k)
                     if d and not body.get("refresh"):
                         return self.send(dict(d, cached=True))
                     try:
-                        d = describe.ask(describe_picture(i))
+                        d = describe.ask(job.picture(i))
                     except describe.Unavailable as e:
                         raise ValueError(str(e)) from e
                     return self.send(describe.save(k, d))
-                if path == "/api/db/setup":             # set up (or stop using) the shared database
-                    import facedb
-                    r = facedb.setup(str(body.get("host") or ""), body.get("port") or 5432,
-                                     str(body.get("dbname") or "facerec"), str(body.get("user") or ""),
-                                     str(body.get("password") or ""), str(body.get("schema") or "facerec"),
-                                     app_version())
-                    if getattr(db, "sync", None):
-                        db.sync.note()
-                    return self.send(dict(r, **db_state(db)))
                 if path == "/api/settings":             # page_store.js: changed settings of this page
                     import devicesettings
                     if body.get("app") != "label":
                         raise ValueError("bad settings")
                     return self.send({"settings": devicesettings.update("label", body.get("settings") or {})})
-                if path == "/api/peer":                 # share this device's photos with the other devices
-                    import peer
-                    peer.set_sharing(bool(body.get("share")))
-                    if getattr(db, "sync", None):
-                        db.sync.note()
-                    return self.send({"ok": True, "share": peer.sharing()})
-                if path == "/api/db/copy":              # this device takes another device's settings
-                    import dbsync_home
-                    import facedb
-                    with facedb.connect() as conn:
-                        n = dbsync_home.copy_settings(conn, str(body.get("from") or ""), db.sync.parts[-1])
-                    return self.send({"ok": True, "copied": n})
-                if path in ("/api/db/passphrase", "/api/db/passphrase/restore", "/api/db/passphrase/ask",
-                            "/api/db/passphrase/approve"):   # passphrase for keys
-                    import facedb
-                    import secretbox
-                    try:
-                        with facedb.connect() as conn:
-                            if path.endswith("/restore"):
-                                r = secretbox.restore(conn, int(body.get("version") or 0))
-                            elif path.endswith("/ask"):       # this device asks: a code to type on one that has it
-                                r = {"ok": True, "request": secretbox.ask(conn)}
-                            elif path.endswith("/approve"):   # the code a waiting device shows, typed here
-                                r = secretbox.approve(conn, str(body.get("code") or ""),
-                                                      str(body.get("device") or "") or None)
-                            else:
-                                r = secretbox.set_passphrase(conn, str(body.get("passphrase") or ""),
-                                                             str(body.get("again") or ""))
-                    except facedb.NotConfigured:
-                        raise ValueError("Connect to the shared database first.") from None
-                    if getattr(db, "sync", None):
-                        db.sync.note()
-                    return self.send(dict(r, **db_state(db)))
-                if path == "/api/websearch/aws":        # optional Amazon key, kept outside the project
-                    websearch.save_aws(body.get("id"), body.get("secret"), body.get("region"))
-                    return self.send({"ok": True, "services": websearch.services()})
-                if path == "/api/websearch/key":        # optional Cloud Vision key, kept outside the project
-                    websearch.save_key(body.get("key"))
-                    return self.send({"ok": True, "set": bool(websearch.key()), "services": websearch.services()})
                 if path == "/api/websearch":            # face to Amazon, photo to Google: only when you click
                     i = body.get("face")
                     if not (isinstance(i, int) and 0 <= i < db.n):
@@ -788,15 +421,6 @@ def downloads():
     return out
 
 
-def app_version():
-    """The app's version (app.VERSION), also when app.py runs as __main__ (python app.py, the built app)."""
-    for name in ("app", "__main__"):
-        v = getattr(sys.modules.get(name), "VERSION", None)
-        if isinstance(v, str):
-            return v
-    return ""
-
-
 def face_index(body, db=None):
     """The face a request is about (its "i"): a missing or bad one is refused, never taken as the last face (-1)."""
     try:
@@ -808,56 +432,9 @@ def face_index(body, db=None):
     return i
 
 
-def secrets():
-    """Every saved key and password, for the Settings tab to show masked (each can be shown while its eye button is
-    held): the Web search keys, the describe server's key, the shared database's password and the passphrase for keys."""
-    import describe
-    out = {"google": "", "aws": {"id": "", "secret": "", "region": ""}, "describe": describe.config().get("key") or "",
-           "db": {}}
-    out["google"] = websearch.saved_key()
-    a = websearch.aws() or {}
-    out["aws"] = {"id": a.get("access_key_id") or "", "secret": a.get("secret_access_key") or "",
-                  "region": a.get("region") or ""}
-    try:
-        import facedb
-        import secretbox
-        out["db"] = facedb.saved_login() or {}
-        out["passphrase"] = secretbox.saved_passphrase()
-        out["request"] = secretbox.request()      # this device's one-time code while it asks for the passphrase
-    except ImportError:
-        out["passphrase"] = ""
-    return out
-
-
 def facedb_configured():
     import facedb
     return facedb.configured()
-
-
-def db_state(db):
-    """The shared database for the Settings tab: {available, config (no password), device, sync}."""
-    sync = getattr(db, "sync", None)
-    if sync is None:
-        return {"available": False, "why": "This copy of the app can't use a shared database (psycopg isn't installed)."}
-    import facedb
-    import secretbox
-    import peer
-    out = {"available": True, "config": facedb.config(), "device": facedb.device(), "sync": sync.status(),
-           "share": peer.sharing(),
-           "passphrase": secretbox.status()["here"], "devices": []}
-    if out["config"] and out["sync"].get("state") == "online":
-        try:                                 # the other devices, for "Copy settings from"
-            with facedb.connect() as conn:
-                out["devices"] = [{"id": str(i), "name": n, "seen": s.isoformat().replace("+00:00", "Z")}
-                                  for i, n, s in conn.execute("SELECT id, name, last_seen FROM devices "
-                                                              "WHERE id <> %s ORDER BY name", (out["device"]["id"],))]
-                out["keys"] = secretbox.overview(conn)
-                out["peers"] = [{"name": n, "share": bool(s), "addresses": a or [], "port": p}
-                                for n, s, a, p in conn.execute("SELECT name, peer_share, peer_addresses, peer_port "
-                                                               "FROM devices ORDER BY name")]
-        except Exception:
-            pass
-    return out
 
 
 def start_sync(db):
@@ -870,7 +447,7 @@ def start_sync(db):
     except ImportError:
         db.sync = None
         return None
-    version = app_version()
+    version = label_settings.app_version()
 
     import dbsync_home
     import persondata
@@ -897,7 +474,10 @@ def attach(srv):
     import labels as L
     F.require_models()
     db = L.LabelDB()
-    db.web_saved, db.web_lock = F.load_json(WEB_SAVED, {}), threading.Lock()
+    # The Web search answers are guarded by the labeling data's own lock: the sync reads and writes them under
+    # that one (dbsync.Local), and a lock of their own here let a search's answer be stored while the sync was
+    # going through them.
+    db.web_saved, db.web_lock = F.load_json(WEB_SAVED, {}), db.lock
     importer = L.Importer(db)
     srv.RequestHandlerClass = make_handler(db, importer)
     # Listed before the sync starts: while it runs, a face another device just ignored is for a moment without print

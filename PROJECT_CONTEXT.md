@@ -63,7 +63,7 @@ facial-recognition\
 └── face-recognizer\              the Python project (everything below shares one data\ folder)
     ├── face_id.py                core library + CLI: scan / cluster / name / people / recognize / reembed / migrate
     ├── paths.py                  ROOT/HOME (FACE_ROOT/FACE_HOME overrides), atomic_write
-    ├── labels.py                 labeling engine: LabelDB (per-face labels, undo); re-exports the four below
+    ├── labels.py                 labeling engine: LabelDB (per-face labels, undo); imports what it uses of the four below
     ├── photofiles.py, photofacts.py, relocate.py, importer.py   hashes/cloud files; dates/tags; upgrade/moved
     │                             photos; background import (split out of labels.py 2026-11-09)
     ├── label_tool.py             labeling web app  → http://127.0.0.1:8765   (launch: label.bat, label.sh)
@@ -288,7 +288,7 @@ Every change is logged to `history.jsonl` and can be undone. `people.npz` is reb
   "What reaches the network").
 - API: GET `/api/summary`, `/api/fids`, `/api/suggested`, `/api/unknown`, `/api/tagged`, `/api/auto`, `/api/person`,
   `/api/checks`, `/api/import`, `/api/photoinfo/…` (includes `hints`); POST `/api/act`, `/api/rename`, `/api/undo`,
-  `/api/import`, `/api/import/stop`, `/api/autoname`. Added since: possible faces (`/api/possiblefaces`,
+  `/api/import`, `/api/import/stop` (`/api/autoname` had no caller and went on 2026-11-18). Added since: possible faces (`/api/possiblefaces`,
   `/api/possible/…`, `/api/morefaces`, `/api/drawface`), `/api/stacks`, Web search keys, Describe photo
   (`/api/describe/…`), one person's data (`/api/person/export`, `/api/person/forget`), This computer and LM Studio
   (`/api/hardware`, `/api/hardware/network`, `/api/lmstudio…`, `/api/cuda/download`, `/api/downloads`), the page's
@@ -502,7 +502,7 @@ device's settings and person signals), released together as v1.16.
   Settings can copy another device's); usual looks and signal baselines are shared (`person_signals`, per person: that
   person's last save wins). Web search use is counted in the database before each call (`count_use`), so each service's monthly cap
   holds across devices. Forgetting a person reaches every device (db/004 `forgotten`) and the tracker pages there;
-  the name stops being a forget instruction once it is given to someone again (`dbsync_home.unforget`). The tracker
+  the name stops being a forget instruction once it is given to someone again (`forgotten.unforget`). The tracker
   page sends person signals per person and takes in other devices' every half minute (`page_store.js`).
 - Keys (`secretbox.py`; passphrase versions since v1.17): encrypted on the device (scrypt + AES-256-GCM, the key's
   name as associated data) with a key from the owner's passphrase. Every passphrase is a version (db/006
@@ -728,6 +728,7 @@ first-start downloads; only the latest app release is kept):
 | v1.24.2 | Nov 17 | Released for Windows, macOS and Linux (installed on four devices first: data and models untouched, every camera live on every device; the Windows build's window opened as a new copy and answered the camera request). The security fixes from the code review of 2026-11-16 (§10): a row in the shared database can no longer give a photo a file path on a device (`photos.extra` was copied into the photo's record whole, and the peer service showed the file at a photo's path to every device that asked); a device's settings are its own and never taken from the database (a changed row switched on a device's microphone listening or camera stream, or pointed its describer at another server), only the owner's Copy settings takes another device's, and never the settings that say where a device sends photos or fetches files; a row that can't be used is left out and named in the log instead of stopping every device's pull for good (`Sync._apply`, each part's `check`); Share Describe all sends photos only to the owner's own devices (computers in the shared database, at the addresses they gave), not to whatever answers like LM Studio on the network; no answer is kept by a browser any more (face pictures and photos were cacheable for a year: the labeling page keeps what it showed in memory instead). Smaller: at most 64 camera relays, a download is stopped once it is larger than its file, two inputs that raised. |
 | v1.24.3 | Nov 17 | Released (installed on four devices first; before publishing, the repository, every file inside the three builds, the build's logs and the notes were searched for the real keys, passwords and tokens of the computers it was made on: none). The smaller security items of the code review (§10): the app shows and gives the camera only to a program it started itself; data and anything a GET starts go only to a tool's own page, not to a page of another program on the computer; a passphrase link says which version it replaces (an old one fitted again after a restore); a database login without the server's authority is bound to its connection; the built-in describer's files are checked by SHA-256 when found already there; the peer service's private key is kept encrypted; nobody can be named `constructor` or `__proto__`. |
 | v1.24.4 | Nov 18 | Released (installed on four devices first, the three Windows ones with the signed installer over the unsigned 1.24.3; the repository, every file inside the three builds, the build's logs and the notes were searched for the real keys, passwords and tokens as for 1.24.3: none). The first release with code-signed Windows files (the .exe, the installer and its uninstaller, signed by CI through Azure Artifact Signing; §10). The labeling tool answers about ten times faster after a change on a large library (16,000 faces: 1.3 s to 0.13 s after a name): scores and stacks are kept and brought up to date where a change touches them, with the same answers; the sync hashes outside the labeling lock; the large JSON files are written one line per entry. |
+| v1.24.5 | Nov 18 | Structure and the speed leftovers from the code review (§10), and two faults found on the way. `label_tool.py` split (the Describe all job and the Settings routes in modules of their own), the forgotten names in `forgotten.py`, one class for the logs that wait to be sent (`waitlog.py`), one class per synced table in `dbsync_home.py`, two tripwire tests (page routes, synced tables). Fixed: after a person was forgotten, the expression and music readings of everyone else from later that day could miss the database; a synced table without its own branch would have had its rows' keys forgotten as people. Faster: Settings open no longer starts `lms ls` and a database connection every 5 s, people tags and the regrouping after an Ignore. |
 
 ---
 
@@ -1341,26 +1342,52 @@ whom one has 6,137 usable faces), the labeling tool from source on a port of its
 - The list of webcam photos was made again after every change with a `Path` per photo (0.1 s): as text now.
 - Measured and left: the face store written every 50 imported photos (0.26 s per 50 photos); Describe photo's
   status (4 ms); the alert inbox (185 kB, 2 ms to read).
-- Seen while measuring, not changed: after an Ignore the unknown faces are grouped anew (0.5 s,
-  `LabelDB._regroup`); the summary's people tags walk 10,000 photos after every change (0.1 s); the background
-  model of what a face looks like trains 3.5 s after a start and after an Ignore (off the lock, but on the same
-  processor); the first summary after a start takes 3.4 s.
-- Not measured yet: with Settings open, LM Studio's probe starts `lms ls` every 5 s and the shared database's
-  opens a connection inside the labeling lock; the tracker and the importer each load a full set of models.
+- The leftovers, measured and changed on 2026-11-18 (1.24.5):
+  - with Settings open, every 5 s: LM Studio's probe started `lms ls` (0.5 s; the list is kept a minute now, and
+    asked anew after a download), and the shared database's state opened a new connection under the labeling
+    lock (0.1 to 0.8 s; now outside the lock, on the kept connection: 2 ms);
+  - the summary's people tags went through every photo's facts after every change (0.1 s; 19 of 10,979 photos
+    have tags: those are found once);
+  - after an Ignore the unknown faces were grouped anew (0.5 s): the Ignored face now only leaves its group, and
+    comes back into it on undo.
+- Seen and left: the background model of what a face looks like trains 3.5 s after a start and after an Ignore
+  (off the lock, on another core); the first summary after a start takes 3.4 s; the tracker and the importer each
+  load a full set of models (memory, and the tracker must not wait for an import's use of them).
 - The Linux app's growth: no container that grows was found in the code; the allocator keeping freed memory is
   the first thing to check (`MALLOC_ARENA_MAX`, `malloc_trim`).
 
-Open from it, structure:
-- `label_tool.make_handler` is one function of 700 lines; the Describe all job (260 lines) and the Settings-only
-  routes belong in modules of their own. First a test that every route the page scripts call is answered (about
-  16 of 60 are asked for by a test today).
-- Web search answers are guarded by one lock in the handler and another in the sync.
-- `exprlog.py` and `musiclog.py` share about 110 lines nearly word for word: one waiting-log class before a third
-  log is written.
-- A new synced table touches about fourteen places in `dbsync_home.py`: one part per table when the next table is
-  added, and a tripwire test now.
-- The forgotten names belong in a module of their own (six lazy imports go); nine re-exports of `labels.py` and
-  the `/api/autoname` route have no caller.
+From it, structure, done on 2026-11-18 (1.24.5):
+- `label_tool.py` went from 981 to 561 lines: the Describe all job is `describejob.DescribeJob` (261 lines moved
+  as they were, the closure's variables reached through `self`), and what the Settings tab asks is
+  `label_settings.py` (its routes and `db_state`, `secrets`, `app_version`), asked first by the handler. The
+  labeling page's own routes are still one `_get` and one `_post` in `make_handler` (about 120 lines each).
+- The Web search answers have one lock: the labeling data's own (`db.web_lock` is `db.lock`).
+- `waitlog.WaitLog` is what `exprlog.py` and `musiclog.py` shared (old and new compared on the same rows, a
+  previous version's file, a failing send, a forget and exports: 122 comparisons the same, files byte for byte).
+  It showed a loss that was there before: after a forget, the rows of everyone else that day could miss the
+  database (the file, rewritten shorter, had grown past what the sync's state said was sent, and the send began
+  in the middle of the new lines; the file was later deleted as all sent). Fixed in the one place it now has.
+- The forgotten names are `forgotten.py` (six lazy imports are plain ones now); nine re-exports of `labels.py`
+  that nobody used and the `/api/autoname` route are gone.
+- Two tripwires: `tests/test_routes.py` (every address a page asks for is answered by the server that sent the
+  page; every route has a caller; every GET a page sends is really sent, with anything beyond the test servers
+  stopped: 70 routes of the labeling tool, 36 of the tracker, 13 of the tab page; it passed unchanged across the
+  split but for the one line naming the new file) and `tests/test_sync_tables.py` (each of the 13 synced tables
+  has all its places, from `KEYS` to the migration's trigger and the person's export and forget). Each was shown
+  to trip, sixteen ways.
+- `dbsync_home.py` has a class per table (`Table` and nine after it: where a table's rows are on this device
+  and in the database, what a row must look like, how it is applied), and `HomePart` hands each question to the
+  table's class. Before, each table was a branch in seven long functions, so a new table meant about fourteen
+  edits, and a table without its branch in one of them fell into that function's last: in `apply` the forgotten
+  people's, where every row's key would have been forgotten as a person on every device. Now a table neither part
+  knows is refused everywhere (`HomePart._table`; `dbsync._ours` for the labeling data's four tables, whose
+  functions still branch and end with the faces).
+  - The same answers: the file before and after side by side on one made-up private folder, every table through
+    `check` (good rows and one that can't be used), `apply` (rows and a deleted one), `digests`, `rows`, and
+    `push`, `fetch` and `all_keys` against a stand-in that takes down every statement: 150 comparisons, none
+    different. The two-device tests against a real PostgreSQL pass as before.
+Still open, structure: the labeling data's part (`dbsync.Local`, four tables) still branches per function;
+`device_settings` and `forgotten` rows are checked by key only.
 
 Other open items (2026-11-12):
 - The macOS app is signed and notarized by CI since 1.22.4 (2026-11-14): `tools/apple_signing.py` made the

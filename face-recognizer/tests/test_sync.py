@@ -779,7 +779,7 @@ def test_a_change_committed_late_still_reaches_devices_that_pulled_meanwhile(sha
 def test_a_forgotten_name_given_again_is_not_forgotten_by_a_later_device(shared, tmp_path, monkeypatch):
     """The forgotten name is an instruction to devices that haven't forgotten yet. Once the name is given to someone
     again it must stop being one, or a device joining later would forget that new person on every device."""
-    import dbsync_home
+    import forgotten
     import persondata
     a = Device(tmp_path / "a", monkeypatch, 6, labels={"f0": {"n": "Ann", "by": "me"}})
     a.step()
@@ -791,17 +791,17 @@ def test_a_forgotten_name_given_again_is_not_forgotten_by_a_later_device(shared,
     a.step()
     b.step()
     b.switch()
-    assert b.forgot == ["Ann"] and b.name("f0") == "#ignore" and dbsync_home.forgotten_names() == {"Ann"}
+    assert b.forgot == ["Ann"] and b.name("f0") == "#ignore" and forgotten.names() == {"Ann"}
 
     a.switch()
     a.db.act("name", [a.db.store.fid.index("f4")], "Ann")    # another Ann, or the same one added again
-    assert dbsync_home.forgotten_names() == set()
+    assert forgotten.names() == set()
     a.step()
     with shared.connect() as c:
         assert c.execute("SELECT count(*) FROM forgotten").fetchone()[0] == 0
     b.step()
     b.switch()
-    assert dbsync_home.forgotten_names() == set() and b.name("f4") == "Ann"
+    assert forgotten.names() == set() and b.name("f4") == "Ann"
 
     late = Device(tmp_path / "late", monkeypatch, 6)         # joins after all of it
     late.step()
