@@ -1344,7 +1344,7 @@ Other open items (2026-11-12):
   certificate request and the secrets without a Mac, and the built app's `--self-test` runs under the signature.
   Still to see: the app used on a Mac with a camera.
 - **Windows code signing** (asked for 2026-11-17; built, set up in Azure and tried from the owner's computer the
-  same day; CI's first signed run is still to be seen). The .exe, the
+  same day, and CI signs since then: its first signed build is run 44207548400). The .exe, the
   installer and its uninstaller are signed when the build is told with what (`build_exe.py`, "Windows code
   signing"); CI does it on pushes to `main` once five repository secrets are set. Chosen: Azure Artifact Signing
   (about 10 USD a month; the key stays in Microsoft's service, and CI signs in as the repository's workflow, so
@@ -1372,9 +1372,16 @@ Other open items (2026-11-12):
     trial and taken off it again): a copy of the released 1.24.3 .exe was signed in 6 s, and Windows reads it as
     Valid, dated, signed by the owner's legal name with city, state and country (what an individual's
     certificate carries). The copy was deleted.
-  - Still to be seen in CI's first signed run: that the sign-in the job makes (`azure/login`, then the Azure CLI
-    through the plug-in) is taken by the service, and that GitHub's Windows machines have the .NET 10 runtime
-    the plug-in needs (the build says so when it is missing).
+  - CI's first signed run failed at the sign-in, then passed: GitHub names a repository to Azure with numbers
+    added (`repo:<owner>@<owner number>/<repository>@<repository number>:ref:refs/heads/main`), so the trust
+    written with the names alone matched nothing (AADSTS700213; the error prints the subject it wanted). With
+    the trust corrected, the job signed the .exe and, after signing in again, the uninstaller and Setup; both
+    files downloaded from the run read as Valid and dated on the owner's computer, fit the SHA-256 the build
+    wrote down, and the signed .exe passes its self-test. GitHub's Windows machines have the .NET 10 runtime the
+    plug-in needs. The log shows none of the Azure ids or names (they are secrets, so masked); the check after
+    signing first printed whom the certificate names, and now prints its thumbprint and issuer instead.
+  - Not yet done with a signed build: an install over an unsigned one on the devices (the next release's
+    routine), and a look at what SmartScreen says for a download of it.
   - What signing does not do: stop SmartScreen's warning at once. Windows warns about a new publisher until it
     has seen enough installs, for any kind of certificate. The warning then names the publisher: the owner's
     legal name with an individual account, as on the Mac.

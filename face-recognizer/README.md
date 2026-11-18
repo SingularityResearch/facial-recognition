@@ -153,10 +153,13 @@ Microsoft's service, and CI signs in to it as this repository's workflow, so no 
    from it: in the portal, or `az artifact-signing certificate-profile create --profile-type PublicTrust
    --identity-validation-id <id>` with the id the portal shows for the completed check.
 3. **Let this repository's workflow sign**, with the Azure CLI (`winget install -e --id Microsoft.AzureCLI`, `az login`).
-   Save this as `github-main.json`:
+   Save this as `github-main.json`, with the two numbers that
+   `gh api repos/SingularityResearch/facial-recognition --jq '"\(.owner.id) \(.id)"'` prints (GitHub names a
+   repository to Azure with its owner's and its own number; the names alone match nothing, and the failed sign-in
+   prints the subject it wanted):
    ```
    {"name": "github-main", "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:SingularityResearch/facial-recognition:ref:refs/heads/main",
+    "subject": "repo:SingularityResearch@<owner number>/facial-recognition@<repository number>:ref:refs/heads/main",
     "audiences": ["api://AzureADTokenExchange"]}
    ```
    then:

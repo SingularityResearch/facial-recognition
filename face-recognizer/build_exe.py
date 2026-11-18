@@ -284,11 +284,11 @@ def sign(files, env=os.environ):
 
 
 def signature(file):
-    """A Windows program's signature as Windows itself reads it: {status, signer, thumbprint, timestamped}.
+    """A Windows program's signature as Windows itself reads it: {status, signer, issuer, thumbprint, timestamped}.
     status is "Valid" only for a signature that fits the file and leads to a certificate authority Windows trusts."""
     ps = ("$s = Get-AuthenticodeSignature -LiteralPath $env:FACE_SIGNED_FILE; "
           "@{status = [string]$s.Status; signer = [string]$s.SignerCertificate.Subject; "
-          "thumbprint = [string]$s.SignerCertificate.Thumbprint; "
+          "issuer = [string]$s.SignerCertificate.Issuer; thumbprint = [string]$s.SignerCertificate.Thumbprint; "
           "timestamped = $null -ne $s.TimeStamperCertificate} | ConvertTo-Json -Compress")
     # without PSModulePath: started from PowerShell 7, Windows PowerShell inherits its module folders and then
     # can't load its own security module (the command fails, with exit code 0)
@@ -302,13 +302,16 @@ def signature(file):
 
 
 def check_signed(files):
-    """Stops unless each of `files` is signed, trusted by Windows and dated by a time server."""
+    """Stops unless each of `files` is signed, trusted by Windows and dated by a time server. Says who issued the
+    certificate, not whom it names: an individual's certificate carries their name and town, and CI's log is public
+    (the file's own properties show the signer)."""
     bad = []
     for f in files:
         s = signature(f)
         ok = s["status"] == "Valid" and s["timestamped"]
-        print(f"{'Signed' if ok else 'NOT signed and trusted'}: {Path(f).name}: {s['status']}, by {s['signer'] or 'nobody'}"
-              f"{'' if s['timestamped'] else ', no time stamp'}")
+        named = re.match(r"CN=([^,]*)", s.get("issuer") or "")
+        print(f"{'Signed' if ok else 'NOT signed and trusted'}: {Path(f).name}: {s['status']}, certificate "
+              f"{s['thumbprint'] or 'none'} issued by {named.group(1) if named else 'nobody'}{'' if s['timestamped'] else ', no time stamp'}")
         bad += [] if ok else [f]
     if bad:
         sys.exit(1)

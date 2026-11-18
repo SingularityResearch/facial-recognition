@@ -134,9 +134,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
       reads both files' signatures as Windows does. Every signature is dated (`TIMESTAMP`): Artifact Signing's
       certificates last three days.
     - Tried 2026-11-17 with a self-signed certificate (the signed one-file .exe passes its self-test, and the
-      installer, the .exe it installs and `unins000.exe` are all signed) and, from the owner's computer, with the
-      real Artifact Signing profile (Windows reads the .exe as signed, trusted and dated). The owner's steps:
-      README, "Signing the Windows app".
+      installer, the .exe it installs and `unins000.exe` are all signed); CI signs with the real Artifact Signing
+      profile since that day (Windows reads both files as signed, trusted and dated). The owner's steps: README,
+      "Signing the Windows app". `check_signed` prints the certificate's thumbprint and issuer, never whom it
+      names: an individual's certificate carries their name and town, and the log is public.
 - `icons/` — the app's icon, drawn by `tools/make_icon.py` (a faceted face, half solid and half mesh, in a camera's
   corner marks; small sizes drawn again with fewer marks) and kept in git: `icon.ico` (the .exe, the installer, each
   server's `/favicon.ico`: `localguard.Handler.favicon`), `icon.icns` (the .app), `icon.png` and two smaller (the
