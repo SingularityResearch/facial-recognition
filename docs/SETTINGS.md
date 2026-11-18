@@ -287,6 +287,7 @@ Set before starting the app (or a program) to change how it starts.
 | `FACE_PEER_PORT` | a port | The peer service's port instead of the app's ports + 3 (8767, or `FACE_PORTS` + 3). |
 | `FACE_DB_PASSWORD` | a password | `tools/db_setup.py` only: the database role's password, instead of being asked for it. |
 | `XDG_DATA_HOME` | a folder | Linux: the private folder is `FaceLabels` inside it (default `~/.local/share`), unless `FACE_HOME` is set. |
+| `GLIBC_TUNABLES` | the system's own, e.g. `glibc.malloc.arena_max=128` | Linux: the programs set how the C library hands out memory themselves (few arenas, large blocks back to the system when freed: `paths.give_memory_back`), so the app's memory stays level. When this variable already sets a `glibc.malloc.` value, they leave all of it as set (for measuring). |
 | `PYTHON` | a Python 3.12 command | `setup.sh` only: the Python to make `.venv` with (default `python3.12`). |
 | `FACE_RESTART_AFTER` | a process id | Set by the app itself when it starts again on Windows (the new copy waits for that process to end); not for use by hand. |
 | `FACE_SIGN_ACCOUNT`, `FACE_SIGN_PROFILE`, `FACE_SIGN_ENDPOINT` | an Azure Artifact Signing account, its certificate profile, its region's address (`https://<region>.codesigning.azure.net`) | `build_exe.py` on Windows only: code-sign the .exe, the installer and its uninstaller with that profile, as whoever is signed in to Azure (`az login`; CI signs in as the repository's workflow). All three or none. |

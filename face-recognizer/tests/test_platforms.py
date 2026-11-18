@@ -380,3 +380,30 @@ def test_the_linux_app_keeps_numpys_maths_to_one_thread():
     import app  # noqa: F401
     if sys.platform.startswith("linux"):
         assert os.environ.get("OPENBLAS_NUM_THREADS") == "1"
+
+
+def test_linux_gives_freed_memory_back_to_the_system():
+    """paths.give_memory_back, set when paths is loaded (glibc only): a large block is back with the system once it
+    is freed. Left alone, glibc takes the next block of up to that size from an arena and keeps it when freed, in
+    each of up to 128 arenas: the Linux app's process grew to 6 to 8 GB that way with 1.6 GB in use."""
+    import os
+    import platform
+    import sys
+
+    assert paths.give_memory_back("win32") is None and paths.give_memory_back("darwin") is None
+    assert paths.give_memory_back("linux", {"GLIBC_TUNABLES": "glibc.malloc.arena_max=2"}) is None   # the starter's choice
+    if not sys.platform.startswith("linux") or platform.libc_ver()[0] != "glibc" \
+            or "glibc.malloc." in os.environ.get("GLIBC_TUNABLES", ""):
+        return
+    assert paths.give_memory_back() == [name for name, _, _ in paths.MALLOC]
+
+    def held():                                  # MB this process has to itself
+        for line in open("/proc/self/status"):
+            if line.startswith("RssAnon:"):
+                return int(line.split()[1]) / 1024
+    before = held()
+    for mb in (24, 20, 16):                      # a smaller block after a larger one was freed: the kind glibc kept
+        block = bytearray(b"x") * (mb << 20)
+        assert held() > before + mb - 4
+        del block
+    assert held() < before + 8

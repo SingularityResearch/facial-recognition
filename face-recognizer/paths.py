@@ -36,6 +36,38 @@ def _system_certificates():
 
 _system_certificates()
 
+# Linux: how the C library (glibc) hands out memory, for every program of the project, set before any thread starts.
+# Left alone, the Linux app's own process grew by 1 to 2.7 GB an hour whenever people were in view, to 6 to 8.6 GB
+# (Windows: 3.3 to 4.3 GB all day), with no more in use than before: glibc gives each thread one of up to 8 arenas
+# per processor core (128 on the 16-core laptop), and once a large block has been freed it takes every block up to
+# that size (at most 32 MB) from those arenas and keeps up to twice that, freed, at the top of each. Every label
+# change (a collected face imported, the people reloaded) makes blocks of 9 to 70 MB for a moment, each time in
+# whichever arena the thread at work has, so each of the 128 ends up keeping its own tens of MB. Asked for its own
+# account, the running app said so (2026-11-18, malloc_info: 3.0 GB taken from the system, 1.6 GB in use; malloc_trim
+# gave back 0.26 GB of the rest: it leaves the tops of thread arenas alone). So: few arenas, a block of 8 MB or more
+# straight from the system and back to it when freed, and no more than 16 MB kept free at the top of an arena.
+# Measured on a copy of the library with frames and collected faces coming in for 8 minutes: 0.67 to 2.09 GB left
+# alone, 0.67 to 1.25 GB and level with these, the same 0.80 GB in use either way. Why 8 MB and not less: a frame's
+# own buffers (1.5 to 7.4 MB) then stay in the arenas; with 1 MB each came new from the system, 2 to 6% slower a frame.
+MALLOC = (("M_ARENA_MAX", -8, 8), ("M_MMAP_THRESHOLD", -3, 8 << 20), ("M_TRIM_THRESHOLD", -1, 16 << 20))
+
+
+def give_memory_back(platform=sys.platform, env=os.environ):
+    """Set MALLOC in glibc (mallopt). Returns the names set; None where there is nothing to set: not Linux, a C
+    library without mallopt (musl), or GLIBC_TUNABLES already says how malloc is to work (the starter's choice)."""
+    if not platform.startswith("linux") or "glibc.malloc." in (env.get("GLIBC_TUNABLES") or ""):
+        return None
+    try:
+        import ctypes
+        mallopt = ctypes.CDLL(None).mallopt
+        mallopt.argtypes, mallopt.restype = [ctypes.c_int, ctypes.c_int], ctypes.c_int
+        return [name for name, key, value in MALLOC if mallopt(key, value)]
+    except (OSError, AttributeError, ImportError):
+        return None
+
+
+give_memory_back()
+
 
 def user_data(name, platform=sys.platform, env=os.environ, home=None):
     """This user's application-data folder for name, as each system expects it."""

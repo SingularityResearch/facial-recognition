@@ -729,6 +729,7 @@ first-start downloads; only the latest app release is kept):
 | v1.24.3 | Nov 17 | Released (installed on four devices first; before publishing, the repository, every file inside the three builds, the build's logs and the notes were searched for the real keys, passwords and tokens of the computers it was made on: none). The smaller security items of the code review (§10): the app shows and gives the camera only to a program it started itself; data and anything a GET starts go only to a tool's own page, not to a page of another program on the computer; a passphrase link says which version it replaces (an old one fitted again after a restore); a database login without the server's authority is bound to its connection; the built-in describer's files are checked by SHA-256 when found already there; the peer service's private key is kept encrypted; nobody can be named `constructor` or `__proto__`. |
 | v1.24.4 | Nov 18 | Released (installed on four devices first, the three Windows ones with the signed installer over the unsigned 1.24.3; the repository, every file inside the three builds, the build's logs and the notes were searched for the real keys, passwords and tokens as for 1.24.3: none). The first release with code-signed Windows files (the .exe, the installer and its uninstaller, signed by CI through Azure Artifact Signing; §10). The labeling tool answers about ten times faster after a change on a large library (16,000 faces: 1.3 s to 0.13 s after a name): scores and stacks are kept and brought up to date where a change touches them, with the same answers; the sync hashes outside the labeling lock; the large JSON files are written one line per entry. |
 | v1.24.5 | Nov 18 | Released (installed on four devices first; the repository, every file inside the three builds, the build's logs and the notes searched for the real keys, passwords and tokens: none). Structure and the speed leftovers from the code review (§10), and two faults found on the way. `label_tool.py` split (the Describe all job and the Settings routes in modules of their own), the forgotten names in `forgotten.py`, one class for the logs that wait to be sent (`waitlog.py`), one class per synced table in `dbsync_home.py`, two tripwire tests (page routes, synced tables). Fixed: after a person was forgotten, the expression and music readings of everyone else from later that day could miss the database; a synced table without its own branch would have had its rows' keys forgotten as people. Faster: Settings open no longer starts `lms ls` and a database connection every 5 s, people tags and the regrouping after an Ignore. |
+| v1.24.6 | Nov 18 | Committed, not released yet (a build of it runs on the Linux laptop). The Linux app's own process no longer grows while people are in view (§10): it went to 6 to 8 GB over a day with 1.6 GB in use, because glibc kept freed memory in up to 128 arenas, one per working thread, and every label change made blocks of 9 to 70 MB for a moment in whichever arena was at hand. `paths.give_memory_back` sets glibc at start (8 arenas, a block of 8 MB or more straight from the system and back when freed, at most 16 MB kept free at an arena's top): test copies side by side for 20 minutes 0.67 to 2.18 GB before, 0.71 to 1.25 GB and level after, the same frames at the same 124 ms each; the real app 1.86 to 1.94 GB over 209 collected faces where 1.24.5 had gone from 3.1 to 4.2 GB over 244. Nothing changes on Windows and macOS. Still to read: a full day of its memory lines. |
 
 ---
 
@@ -1353,8 +1354,47 @@ whom one has 6,137 usable faces), the labeling tool from source on a port of its
 - Seen and left: the background model of what a face looks like trains 3.5 s after a start and after an Ignore
   (off the lock, on another core); the first summary after a start takes 3.4 s; the tracker and the importer each
   load a full set of models (memory, and the tracker must not wait for an import's use of them).
-- The Linux app's growth: no container that grows was found in the code; the allocator keeping freed memory is
-  the first thing to check (`MALLOC_ARENA_MAX`, `malloc_trim`).
+- **The Linux app's own process grew by 1 to 2.7 GB an hour while people were in view** (found and fixed
+  2026-11-18, 1.24.6; the window's processes were never part of it). In `app.log`'s memory lines: level all night
+  at about 2 GB, then to 6 to 8.6 GB over a day, where it levels; the PC's stays at 3.3 to 4.3 GB. No leak: glibc
+  keeping memory the app had freed.
+  - What the running app said. Asked for glibc's own account (`malloc_info`, called through gdb in a thread that
+    was waiting: a stop of 0.4 s), its 128 arenas had taken 3.0 GB from the system with 1.6 GB in use.
+    `malloc_trim(0)` gave back 0.26 GB: it frees pages inside free pieces and leaves the free tops of thread
+    arenas alone, where most of it was. Then someone was in view for a quarter of an hour: the process went from
+    3.1 to 4.2 GB, in use from 1,583 to 1,629 MB (250 collected faces), freed and kept from 1,408 to 2,341 MB.
+  - Why. 236 threads share 128 arenas (8 for each of 16 processor threads). Once a large block has been freed,
+    glibc takes every block up to that size (at most 32 MB) from the arenas instead of straight from the system,
+    and keeps up to twice that size free at each arena's top. Every label change makes blocks of 9 to 70 MB for
+    a moment (the prints as one table for faces.npz, the pictures joined for thumbs.npz, the score table,
+    people.npz read again by the tracker), each time in the arena of whichever thread is at work, so each arena
+    ends up with tens of MB of its own. It takes label changes: with Collect faces on, a snapshot is imported
+    every 20 s while someone is in view. Frames alone don't do it (6,200 frames through a test copy: level).
+  - The fix (`paths.give_memory_back`, when `paths` is loaded, before any thread): 8 arenas, a block of 8 MB or
+    more straight from the system and back to it when freed, at most 16 MB kept free at an arena's top
+    (`mallopt`; setting the two sizes also stops glibc from raising them). Not when `GLIBC_TUNABLES` already
+    sets a `glibc.malloc.` value, which is how the old way is measured beside the new.
+  - Measured on test copies on the laptop (a copy of the library, CPU only, no shared database; a script sends
+    frames as the page does and a snapshot of each new face, which the labeling tool imports):
+    - 8 minutes, the installed 1.24.5 with glibc set through the environment: left alone 0.67 to 2.09 GB (70
+      arenas, 1.70 GB taken, 1.17 GB of it free); 1 MB and 4 MB: 1.09 GB; 8 MB and 16 MB: 1.25 GB and level. In
+      use the same 0.80 GB in all three.
+    - A frame's time, one copy at a time: left alone 127 and 139 ms, 1 MB 135 and 142 ms, 8 MB 126 ms. A frame's
+      own buffers are 1.5 to 7.4 MB: under 8 MB they stay in the arenas, with 1 MB each one came new from the
+      system. Hence 8 MB.
+    - 20 minutes, the installed 1.24.5 beside the built 1.24.6 (the setting made by the code): 0.67 to 2.18 GB
+      against 0.71 to 1.25 GB, level from the second minute; 9,345 and 9,362 frames, 124 ms each in both; in use
+      802 MB in both. (The script's snapshots ended after six minutes in every run: both copies got the same 77.)
+  - What misled first: the kernel's list of the process's memory, with only maps that begin on a 64 MB boundary
+    counted as arenas, said "the arenas are level, other blocks grow": adjoining arena heaps are one map there.
+    glibc's own account was the thing to ask.
+  - The real app (GPU path, shared database), the built 1.24.6 on the laptop since 2026-11-18 16:12 UTC: with
+    people in view for 25 minutes (209 snapshots imported, 114 reloads of the known people) its process went
+    from 1,855 to 1,939 MB, where 1.24.5 had gone from 3.1 to 4.2 GB over 244 snapshots an hour before. Its
+    account then: 8 arenas, 1.57 GB taken, 1.37 GB in use, 0.20 GB free and kept. Still to read: its memory
+    lines after a full day (about 2 GB is level; whether what is in use creeps up by more than the new faces).
+  - The tools (glibc's account through gdb, what kind of data a process's memory holds, the test-copy scripts)
+    are in the backup: `speed-tools/linux-memory`.
 
 From it, structure, done on 2026-11-18 (1.24.5):
 - `label_tool.py` went from 981 to 561 lines: the Describe all job is `describejob.DescribeJob` (261 lines moved

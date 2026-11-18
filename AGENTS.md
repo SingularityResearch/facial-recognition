@@ -195,6 +195,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   rewritten whole), `utc_now`/`utc_stamp`/`parse_time`. Every module takes its folders from here. Importing it also makes HTTPS check
   certificates the operating system's way (`truststore`): a fresh Windows has few root certificates for Python, and
   the first-start model download from GitHub failed there (CERTIFICATE_VERIFY_FAILED; `tests/test_certificates.py`).
+  On Linux it also sets how glibc hands out memory (`give_memory_back`, `MALLOC`: 8 arenas, a block of 8 MB or
+  more straight from the system and back to it when freed, at most 16 MB kept free at an arena's top), before any
+  thread starts. The values are measured (memory level, no slower a frame): change them only with the measurement. Left alone, glibc kept freed memory in up to 128 arenas, and the app's own process grew to 6 to
+  8 GB with 1.6 GB in use (PROJECT_CONTEXT.md section 10). Not when `GLIBC_TUNABLES` already sets `glibc.malloc.`.
 
 ### Recognition and labeling
 
