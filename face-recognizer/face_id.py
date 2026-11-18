@@ -1164,7 +1164,7 @@ SAVED_HOOKS = []
 
 
 def save_json(name, obj):
-    paths.atomic_write(DATA / name, json.dumps(obj, indent=1))     # never leave a half-written file
+    paths.atomic_write(DATA / name, paths.rows_json(obj))          # never leave a half-written file
     for hook in SAVED_HOOKS:
         hook()
 

@@ -358,3 +358,100 @@ def test_nobody_is_renamed_to_a_word_the_pages_cant_keep_data_under(data):
     assert db.name(0) == "Ann"
     db.rename("Ann", "Constructor")                              # only the exact words
     assert db.name(0) == "Constructor"
+
+
+@pytest.mark.parametrize("big", [256, 2])
+def test_kept_scores_and_stacks_are_what_working_it_all_out_again_gives(data, monkeypatch, big):
+    """LabelDB keeps every face's score for every person, and its stacks, between changes, and works out again only
+    what a change touches: a person whose faces changed; a face that is new or whose print changed. After each kind
+    of change both must be what scoring and comparing everything again gives (on a real library of 16,000 faces
+    that took 1.3 to 2.5 s after every label, Ignore and imported photo, under the lock an import needs).
+    big=2: everyone with three faces or more is kept the way a person with very many faces is (labels.BIG), their
+    closest faces brought up to date for the face that came or went."""
+    monkeypatch.setattr(L, "BIG", big)
+    rng = np.random.default_rng(3)
+    make_faces(data, 60)
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    db._faceness_job = lambda: None                         # the background model has its own test
+    s = db.store
+    centres = rng.normal(size=(4, 512)).astype(np.float32)
+
+    def face_of(k):
+        e = centres[k] + 0.6 * rng.normal(size=512).astype(np.float32)
+        return (e / np.linalg.norm(e)).astype(np.float32)
+    for i in range(60):                                     # four people's faces ...
+        s.emb[i] = face_of(i % 4)
+    for i in range(10, 60, 10):                             # ... and some of them the same picture again
+        s.emb[i] = s.emb[i - 4].copy()
+    db._forgot()
+    box = np.asarray([10, 10, 80, 80, 0.99], np.float32)
+
+    def check(step):
+        idx = list(range(db.n))
+        names, kept = db.score(idx)
+        monkeypatch.setattr(L, "SCORES_KEPT", -1)           # nothing kept: every face against every person
+        again, anew = db.score(idx)
+        monkeypatch.setattr(L, "SCORES_KEPT", 64_000_000)
+        assert names == again and kept.shape == anew.shape and np.allclose(kept, anew, atol=1e-6), step
+        stacks = dict(db.stacks())
+        db._stacked = None
+        db._cache.pop("st", None)                           # and the stacks from nothing
+        assert db.stacks() == stacks, step
+        return stacks
+
+    assert check("the start") == {6: 6, 10: 6, 16: 16, 20: 16, 26: 26, 30: 26, 36: 36, 40: 36, 46: 46, 50: 46}
+    db.act("name", [0, 4, 8, 12], "Ann")
+    db.act("name", [1, 5, 9], "Bob")
+    check("faces named")
+    db.act("name", [2], "Cy")
+    db.act("reject", [3], "Ann")
+    check("somebody new, and a face that isn't Ann")
+    db.act("ignore", [4, 10])                               # Ann loses a face; a stack loses its second picture
+    assert 10 not in check("an Ignore: the prints are gone") and db.printless(4)
+    db.undo()
+    assert check("the Ignore undone")[10] == 6
+    with db.lock:                                           # an import: new faces, one of them a picture again
+        s.put("new1", "h0", "photo0.jpg", box, face_of(0), b"", 0.9)
+        s.put("new2", "h0", "photo0.jpg", box, s.emb[16].copy(), b"", 0.9)
+        db.changed()
+    assert check("new faces")[61] == 16
+    db.act("name", [60], "Ann")
+    check("a new face named")
+    with db.lock:                                           # another device's print for a face Ann is known by
+        s.put("f8", "h4", "photo4.jpg", box, face_of(1), b"", 0.9)
+        db._forgot()
+    check("a print replaced")
+    assert db.rename("Cy", "Bob") == 1
+    check("two people merged")
+    db.act("clear", [0])                                    # a face Ann was known by, and the closest of others
+    check("a name taken off")
+    db.act("name", [0, 3, 7, 11], "Bob")
+    db.act("ignore", [12])
+    check("several faces to another person, and one of Ann's Ignored")
+
+
+def test_a_face_that_comes_to_or_leaves_someone_with_many_faces_is_not_every_face_scored_again(data, monkeypatch):
+    """Naming a face as the person with the most faces is the most common thing done. With 6,000 faces of theirs,
+    scoring every face against all of them again took 0.57 s each time: now the one face is compared with every
+    face. Faces without a print (Ignored: here 120 of 400) are never looked at again for it: nothing is close to
+    them whoever comes or goes, and with thousands of them every face was scored again after all."""
+    monkeypatch.setattr(L, "BIG", 50)
+    make_faces(data, 400)
+    db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
+    db._faceness_job = lambda: None
+    db.act("name", list(range(150)), "Bob")
+    db.act("name", [150, 151, 152], "Ann")
+    db.act("ignore", list(range(280, 400)))
+    db.score([0])
+    looked, closest = [], L.LabelDB._closest
+    monkeypatch.setattr(L.LabelDB, "_closest", staticmethod(lambda E, idx, cols: looked.append(len(idx)) or
+                                                             closest(E, idx, cols)))
+    db.act("name", [200], "Bob")                            # a face comes ...
+    names, came = db.score(list(range(db.n)))
+    db.act("clear", [200])                                  # ... and goes again
+    names, went = db.score(list(range(db.n)))
+    assert max(looked, default=0) < db.n // 4, looked       # only the faces it was among the closest of
+    monkeypatch.setattr(L, "SCORES_KEPT", -1)               # and the same as every face against every person
+    assert np.allclose(went, db.score(list(range(db.n)))[1], atol=1e-6)
+    db.act("name", [200], "Bob")
+    assert np.allclose(came, db.score(list(range(db.n)))[1], atol=1e-6)

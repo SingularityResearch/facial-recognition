@@ -125,6 +125,22 @@ def read_json(path, default, tries=10):
             time.sleep(0.05)
 
 
+def rows_json(obj, ensure_ascii=True):
+    """obj as JSON with one line for each of its entries. For the large files that are rewritten whole (photos,
+    labels, descriptions): json.dumps with indent= uses Python's slow encoder (0.12 s for 20,000 photos, at every
+    save), each entry on its own goes through the fast one (0.03 s), and the file can still be read and compared
+    line by line. Reads back as the same data as json.dumps gives."""
+    import json
+
+    def one(v):
+        return json.dumps(v, ensure_ascii=ensure_ascii)
+    if isinstance(obj, dict) and obj:
+        return "{\n" + ",\n".join(one({k: v})[1:-1] for k, v in obj.items()) + "\n}"
+    if isinstance(obj, (list, tuple)) and obj:
+        return "[\n" + ",\n".join(one(v) for v in obj) + "\n]"
+    return one(obj)
+
+
 def atomic_write(path, data, private=False):
     """Write text or bytes to path without ever leaving a half-written file: into path.tmp, then replaced.
     private: the file is this user's alone from its first byte (mode 600 outside Windows, see write_private)."""

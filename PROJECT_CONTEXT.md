@@ -727,6 +727,7 @@ first-start downloads; only the latest app release is kept):
 | v1.24.1 | Nov 17 | Released for Windows, macOS and Linux (installed on four devices first; the Windows build's window opened on all five of its first starts as a new copy). The two things left open by 1.24.0's first run (§10): a describing helper that failed twice in a row is tried again every five minutes with one photo and rejoins when its server works (`label_tool.HELPER_RETRY`; it used to stay out for the whole run); and the built app's `--self-test` loads the Windows window's own parts (pywebview's Windows platform, WebView2's library, the types the camera answer uses), with `pythonnet`, `clr_loader` and `pyinstaller-hooks-contrib` pinned like the rest. |
 | v1.24.2 | Nov 17 | Released for Windows, macOS and Linux (installed on four devices first: data and models untouched, every camera live on every device; the Windows build's window opened as a new copy and answered the camera request). The security fixes from the code review of 2026-11-16 (§10): a row in the shared database can no longer give a photo a file path on a device (`photos.extra` was copied into the photo's record whole, and the peer service showed the file at a photo's path to every device that asked); a device's settings are its own and never taken from the database (a changed row switched on a device's microphone listening or camera stream, or pointed its describer at another server), only the owner's Copy settings takes another device's, and never the settings that say where a device sends photos or fetches files; a row that can't be used is left out and named in the log instead of stopping every device's pull for good (`Sync._apply`, each part's `check`); Share Describe all sends photos only to the owner's own devices (computers in the shared database, at the addresses they gave), not to whatever answers like LM Studio on the network; no answer is kept by a browser any more (face pictures and photos were cacheable for a year: the labeling page keeps what it showed in memory instead). Smaller: at most 64 camera relays, a download is stopped once it is larger than its file, two inputs that raised. |
 | v1.24.3 | Nov 17 | Released (installed on four devices first; before publishing, the repository, every file inside the three builds, the build's logs and the notes were searched for the real keys, passwords and tokens of the computers it was made on: none). The smaller security items of the code review (§10): the app shows and gives the camera only to a program it started itself; data and anything a GET starts go only to a tool's own page, not to a page of another program on the computer; a passphrase link says which version it replaces (an old one fitted again after a restore); a database login without the server's authority is bound to its connection; the built-in describer's files are checked by SHA-256 when found already there; the peer service's private key is kept encrypted; nobody can be named `constructor` or `__proto__`. |
+| v1.24.4 | Nov 18 | The first release with code-signed Windows files (the .exe, the installer and its uninstaller, signed by CI through Azure Artifact Signing; §10). The labeling tool answers about ten times faster after a change on a large library (16,000 faces: 1.3 s to 0.13 s after a name): scores and stacks are kept and brought up to date where a change touches them, with the same answers; the sync hashes outside the labeling lock; the large JSON files are written one line per entry. |
 
 ---
 
@@ -1315,15 +1316,37 @@ Open from it, security (not reachable from a website):
   header the routes ask for is a constant, and a program that isn't a browser sends what it likes. A token made
   at each start would close it; whether a computer with several accounts is in scope is the owner's decision.
 
-Open from it, speed (by reading the code; none measured yet):
-- While an import runs, the labeling page asks for the summary every 6 s and with it the stacks and checks of
-  the whole library, under the lock the import needs.
-- The whole face store is written again every 50 imported photos, and twice for each batch pulled from another
-  device; every push hashes every face, picture, photo, label and description again.
-- With Settings open, every probe runs again every 5 s: Describe photo's status walks the library, LM Studio's
-  starts `lms ls`, the shared database's opens a connection inside the labeling lock.
-- The alert inbox is sent whole every 3 to 5 s; the large JSON files are written with `indent`, which takes
-  Python's slow encoder; the tracker and the importer each load a full set of models.
+From it, speed. Measured 2026-11-17 on a copy of the owner's library (16,479 faces, 20,207 photos, 133 people of
+whom one has 6,137 usable faces), the labeling tool from source on a port of its own; not yet committed or released:
+- **Every change scored every face against every person again, twice** (the summary's suggestions and its
+  checks), and compared every face with every face for the stacks when a print changed or a face was added: the
+  page's questions after one label took 1.3 s, after an Ignore or imported photos 2.4 s, all under the lock an
+  import needs. Now the scores and the stacks are kept and brought up to date where a change touches them
+  (`labels._columns`, `_closest_kept`, `stacks`): 0.13 s after a name, 0.3 s after an undo, an Ignore or imported
+  faces; the first question after a start takes 1 s longer than before (3.4 s: every face is scored, also the
+  named ones). In the tool itself a summary after a name went from 0.8 s to 0.17 s.
+  - The same answers: the old and the new engine side by side on the copy through names, a new person, a "not
+    this person", an Ignore and its undo, 40 faces imported 8 at a time: every best name, every decision a score
+    leads to (suggested, automatic name, hint, margin) and every list identical; the largest difference between
+    two scores 9e-8 (the products are made in other batches).
+  - What it took that reading the code hadn't shown: one person with 6,137 faces cost 0.57 s for each face named
+    as them (hence `BIG`); a blurred face is among the five closest of 4,800 other faces, so when it leaves that
+    many are looked at again; faces without a print are all "as close" as the fifth closest (0) and were looked
+    at again by the thousand until left out.
+- **The sync hashed every row under the labeling lock** after each save and every minute (0.5 s): another request
+  waited up to 0.52 s for the lock, now 0.03 s (the hashing happens after the lock; the digests are the same).
+- **`indent=` in the large files** takes Python's slow encoder: photos.json 0.12 s at every save (now 0.03 s),
+  labels.json 0.02 s at every label (0.005 s), descriptions.json 0.08 s at every description (0.04 s). One line
+  per entry instead (`paths.rows_json`); they read back as the same data.
+- The list of webcam photos was made again after every change with a `Path` per photo (0.1 s): as text now.
+- Measured and left: the face store written every 50 imported photos (0.26 s per 50 photos); Describe photo's
+  status (4 ms); the alert inbox (185 kB, 2 ms to read).
+- Seen while measuring, not changed: after an Ignore the unknown faces are grouped anew (0.5 s,
+  `LabelDB._regroup`); the summary's people tags walk 10,000 photos after every change (0.1 s); the background
+  model of what a face looks like trains 3.5 s after a start and after an Ignore (off the lock, but on the same
+  processor); the first summary after a start takes 3.4 s.
+- Not measured yet: with Settings open, LM Studio's probe starts `lms ls` every 5 s and the shared database's
+  opens a connection inside the labeling lock; the tracker and the importer each load a full set of models.
 - The Linux app's growth: no container that grows was found in the code; the allocator keeping freed memory is
   the first thing to check (`MALLOC_ARENA_MAX`, `malloc_trim`).
 

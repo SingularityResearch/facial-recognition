@@ -212,30 +212,43 @@ class Local:
 
     # digests of every local row, per table
     def digests(self):
+        """Under the lock only a copy of what the rows are made of is taken; the hashing comes after it. Hashing
+        16,000 faces and 20,000 photos takes 0.5 s, after every save and every minute, and the labeling page
+        waited for the lock all that time. A row that changes while its copy is hashed gets a digest that fits
+        neither: it is sent again at the next look, as any changed row is."""
         db, s = self.db, self.db.store
         with db.lock:
             facts = {h: dict(f) for h, f in db.facts.facts.items() if f.get("key")}
-            out = {"labels": {k: _h(v) for k, v in db.labels.items()},
-                   "web_suggestions": {k: _h(v) for k, v in self.web.items()},
-                   "photos": {h: self._photo_digest(h, r, facts.get(h)) for h, r in s.photos.items()},
-                   "faces": {}}
-            for i, fid in enumerate(s.fid):
-                out["faces"][fid] = self._face_digest(i)
-        return out
+            labels = {k: dict(v) for k, v in db.labels.items()}
+            web = {k: dict(v) if isinstance(v, dict) else v for k, v in self.web.items()}
+            photos = {h: dict(r) for h, r in s.photos.items()}
+            faces = self._face_parts(range(len(s.fid)))
+            fids = list(s.fid)
+        return {"labels": {k: _h(v) for k, v in labels.items()},
+                "web_suggestions": {k: _h(v) for k, v in web.items()},
+                "photos": {h: self._photo_digest(h, r, facts.get(h), fids) for h, r in photos.items()},
+                "faces": {f[0]: self._face_digest(f, photos) for f in faces}}
 
-    def _face_digest(self, i):
+    def _face_parts(self, idx):
+        """What a face's digest is made of, for the faces idx (call with the lock held): prints and pictures are
+        replaced, never changed in place, so they can be hashed after the lock is let go."""
         s = self.db.store
-        rec = s.photos.get(s.photo[i], {})
-        fid = s.fid[i]
-        printless = s.printless(i)
-        return _h(s.photo[i], s.file[i], np.asarray(s.box[i], np.float32), _f(s.quality[i]), s.model,
-                  None if printless else np.asarray(s.emb[i], np.float32), None if printless else s.thumbs[i] or None,
+        return [(s.fid[i], s.photo[i], s.file[i], s.box[i], s.quality[i], s.model, s.emb[i], s.thumbs[i]) for i in idx]
+
+    @staticmethod
+    def _face_digest(parts, photos):
+        fid, photo, file, box, quality, model, emb, thumb = parts
+        rec = photos.get(photo, {})
+        printless = not np.any(emb)                       # as Store.printless
+        return _h(photo, file, np.asarray(box, np.float32), _f(quality), model,
+                  None if printless else np.asarray(emb, np.float32), None if printless else thumb or None,
                   _f((rec.get("maybe") or {}).get(fid)), (rec.get("at") or {}).get(fid))
 
-    def _photo_digest(self, h, r, f):
+    def _photo_digest(self, h, r, f, fids=None):
+        fids = self.db.store.fid if fids is None else fids
         shared = {k: v for k, v in r.items() if k not in ("maybe", "at")}
         facts = None if not f else {"t": f.get("t"), "tags": f.get("tags") or [],
-                                    "faces": {self.db.store.fid[i]: nm for i, nm in f.get("faces", {}).items()}}
+                                    "faces": {fids[i]: nm for i, nm in f.get("faces", {}).items()}}
         return _h(shared, "maybe" in r, facts)
 
     # rows to send
@@ -385,7 +398,7 @@ class Local:
                 log(f"Shared database: {skipped} faces have prints from another recognition model; not taken.")
             db._forgot()
             s.save()
-            return {fid: self._face_digest(idx[fid]) for fid in rows if fid in idx}
+            return {f[0]: self._face_digest(f, s.photos) for f in self._face_parts([idx[fid] for fid in rows if fid in idx])}
 
 
 # --- the server side -----------------------------------------------------------------------------------------------

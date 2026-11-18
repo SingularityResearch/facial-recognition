@@ -189,6 +189,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   to the window for an alert, whether the screen is locked (`screen_locked`; Windows only, None elsewhere).
   `paths.user_data` gives each system's application-data folder.
 - `paths.py` — `ROOT` (`FACE_ROOT` overrides), `HOME` (`FACE_HOME` overrides), `atomic_write`/`replace_file`,
+  `rows_json` (the large files that are rewritten whole, photos, labels and descriptions: one line per entry,
+  through the fast encoder; `indent=` takes Python's slow one),
   `read_json` (a file that is there but can't be read raises instead of counting as empty: for files that are
   rewritten whole), `utc_now`/`utc_stamp`/`parse_time`. Every module takes its folders from here. Importing it also makes HTTPS check
   certificates the operating system's way (`truststore`): a fresh Windows has few root certificates for Python, and
@@ -201,8 +203,20 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   runs (`auto`, `_gpu_check`, `_yunet_runner`; see Running). `SAVED_HOOKS` are called after each save.
 - `labels.py` — labeling engine: per-face labels (`LabelDB`), auto-naming, duplicate-photo detection, undo history and
   clues for unnamed faces (`hints`: closest people, photo tags, same occasion). Nobody can be named a word in
-  `NOT_NAMES` (`constructor`, `__proto__`, ...: the pages keep people's data in objects by name). It re-exports the modules split from it
-  (`labels.X` still works):
+  `NOT_NAMES` (`constructor`, `__proto__`, ...: the pages keep people's data in objects by name).
+  - What it keeps between changes, so a change costs what it touches and not the whole library (measured on
+    16,000 faces: 1.3 to 2.5 s after every label, Ignore and imported photo before, 0.13 to 0.4 s now):
+    - every face's score for every person (`_columns`: one table, a row a face, a column a person, while faces x
+      people stays under `SCORES_KEPT`). Scored again: a person whose usable faces changed, for every face; a face
+      that is new or whose print changed, for every person. What changed is told from the prints themselves
+      (`E` compared with the `E` the table was made from), so no change has to remember to say so;
+    - for a person with more than `BIG` usable faces, each face's `TOPK` closest of them too (`_closest_kept`):
+      a face that comes is compared with every face, a face that goes is looked for among the closest;
+    - the stacks (`stacks`, `_stacked`): new faces, and faces whose print changed with the stacks they were in.
+    A test asks after each kind of change that all of it is what working everything out again gives
+    (`SCORES_KEPT = -1` scores the old way). Change any of it only with that test, and with the same answers on
+    a real library (the side-by-side comparison: PROJECT_CONTEXT.md section 10).
+  - It re-exports the modules split from it (`labels.X` still works):
   - `photofiles.py` — content hashes, picture fingerprints, online-only cloud files (Windows only), camera dates,
     photo folders.
   - `photofacts.py` — `PhotoFacts`: camera dates + people tags (XMP, Google Takeout), in `data/photo_facts.json`.
@@ -386,6 +400,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Each row's digest as last synced is in `HOME/sync.sqlite`. Changed rows are pushed after each save
     (`face_id.SAVED_HOOKS` → `Sync.note`) and every minute; other devices' changes are pulled from `changes` every
     3 s and applied through the stores (so `people.npz` is rebuilt and the tracker reloads by mtime).
+    `Local.digests` takes only a copy of what the rows are made of under the labeling lock and hashes after it
+    (0.5 s for 16,000 faces and 20,000 photos, which the labeling page waited for after every save).
   - Which changes are new is decided by transaction, not by `seq` (`Sync._pull`, db/009): the pull keeps the
     snapshot it read the log with and next time takes every change whose transaction wasn't visible in it
     (`pg_visible_in_snapshot`). By `seq` alone, rows of a long transaction (a join) that committed after a device

@@ -23,6 +23,7 @@ fingerprints, cloud files, folders), photofacts.py (camera dates, people tags), 
 photos) and importer.py (adding photos and videos); all of it is re-exported here, so `labels.X` still works.
 """
 import json
+import os
 import shutil
 import threading
 import time
@@ -54,6 +55,13 @@ DUP_BITS = 12            # photos whose 256-bit picture fingerprints differ in <
 HINT = MATCH - 0.12      # unknown groups this close to a known person get a "looks like ..." hint
 POP = np.array([bin(i).count("1") for i in range(256)], np.uint8)
 SAME = 0.95        # face prints this alike are the same picture again (LabelDB.stacks)
+# Every face's score for every person is kept between questions (LabelDB._columns) while faces x people stays
+# under this: 64 million scores are 256 MB. A larger library is scored anew each time, as all were before.
+SCORES_KEPT = 64_000_000
+# A person with more usable faces than this also keeps, for every face, the TOPK closest of theirs: when one of
+# their faces comes or goes, only that face is compared with every face, not every face with all of theirs again
+# (one person with 6,000 faces: 0.57 s after each face named as them, the most common thing done; now 0.02 s).
+BIG = 256
 FACE_SHOW = 0.25   # share of possible faces drawn as dashed boxes: the most face-like (LabelDB.face_cut)
 
 # The rest of the labeling engine, in its own modules; re-exported so `labels.X` keeps working.
@@ -89,6 +97,8 @@ class LabelDB:
         self.undo_stack = []
         self.version = 0                 # bumps on every change; caches key on it
         self._cache = {}
+        self._scores = {}                # every face's score for every person, kept across changes (_columns)
+        self._stacked = None             # (the prints stacks() last looked at, its groups): new faces are added to it
         self.groups = None               # cached groups of unknown faces (lists of face indices)
         self._grouped = set()
         self._fp, self._fp_keys = None, []
@@ -262,8 +272,11 @@ class LabelDB:
     def webcam(self, i):
         """True if face i is from a webcam snapshot the live tracker saved (F.WEBCAM)."""
         if self._cache.get("cam_n") != self.n:
-            self._cache["cam"] = {h for h, p in self.store.photos.items()
-                                  if p.get("path") and Path(p["path"]).parent == F.WEBCAM}
+            # as text, not as Path objects: this list is made again after every change, and 20,000 photos took
+            # 0.1 s of each as Paths
+            cam = os.path.normcase(os.path.normpath(str(F.WEBCAM)))
+            self._cache["cam"] = {h for h, p in self.store.photos.items() if p.get("path") and
+                                  os.path.normcase(os.path.normpath(os.path.dirname(p["path"]))) == cam}
             self._cache["cam_n"] = self.n
         return self.store.photo[i] in self._cache["cam"]
 
@@ -307,26 +320,133 @@ class LabelDB:
         P = np.full((len(idx), len(names)), -1.0, np.float32)
         if not len(idx) or not names:
             return names, P
-        E = self.E()
-        X = E[idx]
-        for j, nm in enumerate(names):
-            cols = np.asarray(gal[nm])
-            for a in range(0, len(idx), 4096):              # bounded memory for big imports
-                S = X[a:a + 4096] @ E[cols].T
-                own = idx[a:a + 4096, None] == cols[None, :]
-                S[own] = -2.0
-                kk = min(TOPK, len(cols))
-                T = np.sort(np.partition(S, len(cols) - kk, axis=1)[:, -kk:], axis=1)[:, ::-1]
-                krow = np.minimum(kk, len(cols) - own.any(1))
-                C = np.cumsum(T, axis=1)
-                r = np.arange(len(T))
-                P[a:a + 4096, j] = np.where(krow > 0, C[r, np.maximum(krow, 1) - 1] / np.maximum(krow, 1), -1.0)
+        if gal is self._cache.get("gal") and self.n * len(names) <= SCORES_KEPT:
+            P = self._columns(gal, names)[idx]              # a copy: the "not" lists below change it
+        else:
+            E = self.E()
+            for j, nm in enumerate(names):
+                P[:, j] = self._person_scores(E, idx, np.asarray(gal[nm]))
         pos = {nm: j for j, nm in enumerate(names)}
         for r, i in enumerate(idx):
             for nm in self.rec(int(i)).get("not", ()):
                 if nm in pos:
                     P[r, pos[nm]] = -1.0
         return names, P
+
+    @staticmethod
+    def _closest(E, idx, cols):
+        """For each of the faces idx, the TOPK closest of one person's usable faces cols, closest first. A face
+        is never among its own closest; a row with fewer than TOPK to show is filled with -2."""
+        T = np.full((len(idx), TOPK), -2.0, np.float32)
+        G = E[cols].T
+        kk = min(TOPK, len(cols))
+        for a in range(0, len(idx), 4096):              # bounded memory for big libraries
+            rows = idx[a:a + 4096]
+            S = E[rows] @ G
+            S[rows[:, None] == cols[None, :]] = -2.0
+            T[a:a + 4096, :kk] = np.sort(np.partition(S, len(cols) - kk, axis=1)[:, -kk:], axis=1)[:, ::-1]
+        return T
+
+    @staticmethod
+    def _from_closest(T, idx, cols):
+        """The faces idx scored against one person from their closest faces T (_closest): the mean of the TOPK
+        closest, or of as many as there are; -1 where nothing is left to compare with."""
+        kk = min(TOPK, len(cols))
+        krow = np.minimum(kk, len(cols) - np.isin(idx, cols))
+        C = np.cumsum(T[:, :kk], axis=1)
+        r = np.arange(len(T))
+        return np.where(krow > 0, C[r, np.maximum(krow, 1) - 1] / np.maximum(krow, 1), -1.0)
+
+    @classmethod
+    def _person_scores(cls, E, idx, cols):
+        """Faces idx scored against one person, whose usable faces are cols."""
+        return cls._from_closest(cls._closest(E, idx, cols), idx, cols)
+
+    def _closest_kept(self, E, T, was, faces, redo, touched):
+        """A person's kept closest faces T (made for their usable faces `was`) brought up to date for `faces`.
+        redo: faces that are new or whose print changed; touched: the same as a set. Returns (T, whether it changed).
+          a face of theirs that went    the faces that counted it among their closest are looked at again (a
+                                        blurred face can be among the closest of thousands: seen, 4,800 of 16,000)
+          a face of theirs that came    compared with every face, and taken into their closest where it is closer
+          a new or changed face         looked at again, against all of the person's faces
+        A changed print among the faces they had makes all of it anew: what it was closest to can't be told."""
+        n, cols, every = len(E), np.asarray(faces), np.arange(len(E))
+        if T is None or was is None or len(T) > n or not touched.isdisjoint(was):
+            return self._closest(E, every, cols), True
+        if was == tuple(faces) and not len(redo):
+            return T, False
+        gone, came = sorted(set(was) - set(faces)), sorted(set(faces) - set(was))
+        if len(T) < n:
+            T = np.concatenate([T, np.full((n - len(T), TOPK), -2.0, np.float32)])
+        again = set(touched)
+        if gone:
+            # not the faces without a print (Ignored): nothing is close to them, whoever comes or goes, and
+            # with thousands of them every face was looked at again after all
+            again.update(np.flatnonzero(((E @ E[gone].T) >= T[:, -1:]).any(1) & E.any(1)).tolist())
+        if len(again) >= n:
+            return self._closest(E, every, cols), True
+        if came:
+            S = E @ E[came].T
+            S[came, np.arange(len(came))] = -2.0             # never among its own closest
+            T = np.ascontiguousarray(np.sort(np.concatenate([T, S], axis=1), axis=1)[:, ::-1][:, :TOPK])
+        if again:
+            rows = np.asarray(sorted(again), int)
+            T[rows] = self._closest(E, rows, cols)
+        return T, True
+
+    def _columns(self, gal, names):
+        """Every face's score for every person of the gallery `gal`, one row a face and one column a person (in the
+        order of `names`, sorted), kept between calls and brought up to date only where something changed. Before,
+        every question (the summary after each label, the lists, the checks) scored every face against every
+        person again: 1.3 s on 16,000 faces and 260 people, twice per change, holding the lock an import needs.
+        What makes a kept score wrong, and what is then scored again:
+          a person's usable faces changed (a face named, renamed, Ignored)   that person, for every face
+          a face's print changed, or the face is new (an import)             that face, for every person; and
+                                                                             a person it is a usable face of
+        Told from the prints themselves (E compared with the E the scores were made from), not from a counter
+        each change would have to remember to raise."""
+        E, n, kept = self.E(), self.n, self._scores
+        old = kept.get("E")
+        if old is None or len(old) > n:
+            kept.update(M=np.empty((n, 0), np.float32), names=[], cols={}, top={})
+            redo = np.zeros(0, np.int64)
+        elif old is E:
+            redo = np.zeros(0, np.int64)
+        else:
+            m = len(old)
+            differs = np.zeros(n, bool)
+            differs[:m] = (E[:m] != old).any(1)
+            differs[m:] = True
+            redo = np.flatnonzero(differs)
+        kept["E"] = E
+        M = kept["M"]
+        if len(M) < n or kept["names"] != names:             # new faces: rows; people who came or went: columns
+            had = {nm: j for j, nm in enumerate(kept["names"])}
+            grown = np.empty((n, len(names)), np.float32)
+            for j, nm in enumerate(names):
+                if nm in had:
+                    grown[:len(M), j] = M[:, had[nm]]
+            M, kept["names"] = grown, list(names)
+            kept["cols"] = {nm: c for nm, c in kept["cols"].items() if nm in gal}
+            kept["top"] = {nm: t for nm, t in kept["top"].items() if nm in gal}
+        every = np.arange(n)
+        touched = set(redo.tolist())
+        for j, nm in enumerate(names):
+            faces = gal[nm]
+            if len(faces) > BIG:                             # someone with very many faces: see BIG
+                T, new = self._closest_kept(E, kept["top"].get(nm), kept["cols"].get(nm), faces, redo, touched)
+                if new:
+                    M[:, j] = self._from_closest(T, every, np.asarray(faces))
+                kept["top"][nm], kept["cols"][nm] = T, tuple(faces)
+                continue
+            kept["top"].pop(nm, None)
+            if kept["cols"].get(nm) != tuple(faces) or not touched.isdisjoint(faces):
+                M[:, j] = self._person_scores(E, every, np.asarray(faces))
+                kept["cols"][nm] = tuple(faces)
+            elif len(redo):
+                M[redo, j] = self._person_scores(E, redo, np.asarray(faces))
+        kept["M"] = M
+        return M
 
     @staticmethod
     def best(names, P):
@@ -510,25 +630,48 @@ class LabelDB:
         least SAME alike (screenshots of one avatar, burst shots, re-saved copies). The labeling page shows a
         stack as one tile. Measured: 31 copies of one avatar in different screenshots were 0.96 alike (median);
         different photos of one real person 0.44 (median), 0.74 at the 99th percentile, 0.2% at 0.9 or more.
-        Recomputed when faces are added."""
-        if self._cache.get("st_n") != self.n:
+        Worked out again when faces change, and then only for the faces it has to be: new ones (an import adds
+        faces thousands of times) and those whose print changed (an Ignore, an undo), with the stacks they were
+        in. Comparing every face with every face took 1 s on 16,000."""
+        if self._cache.get("st_n") != self.n or "st" not in self._cache:
             self._cache["st_n"] = self.n
-            E = self.E()
-            parent = list(range(self.n))
+            E, n, was = self.E(), self.n, self._stacked
+            parent = list(range(n))
 
             def root(a):
                 while parent[a] != a:
                     parent[a] = parent[parent[a]]
                     a = parent[a]
                 return a
-            for a in range(0, self.n, 2048):
-                M = E[a:a + 2048] @ E.T
-                for r, j in zip(*np.nonzero(M >= SAME)):
-                    i = a + int(r)
-                    if i < j:
-                        ri, rj = root(i), root(int(j))
-                        if ri != rj:
-                            parent[max(ri, rj)] = min(ri, rj)
+
+            def join(i, j):
+                ri, rj = root(i), root(j)
+                if ri != rj:
+                    parent[max(ri, rj)] = min(ri, rj)     # a stack's first face is its lowest
+            if was is None or len(was[0]) > n:
+                for a in range(0, n, 2048):                # every face with every later face
+                    M = E[a:a + 2048] @ E.T
+                    for r, j in zip(*np.nonzero(M >= SAME)):
+                        if a + int(r) < j:
+                            join(a + int(r), int(j))
+            else:
+                m = len(was[0])
+                parent[:m] = was[1]
+                redo = set(range(m, n))
+                moved = [] if was[0] is E else np.flatnonzero((E[:m] != was[0]).any(1)).tolist()
+                if moved:                                   # their stacks may fall apart: taken apart, put together again
+                    apart = {root(i) for i in moved}
+                    redo.update(i for i in range(m) if root(i) in apart)
+                    for i in redo:
+                        parent[i] = i
+                redo = np.asarray(sorted(redo), int)
+                for a in range(0, len(redo), 2048):         # each of these faces with every face
+                    rows = redo[a:a + 2048]
+                    M = E[rows] @ E.T
+                    for r, j in zip(*np.nonzero(M >= SAME)):
+                        if int(rows[r]) != j:
+                            join(int(rows[r]), int(j))
+            self._stacked = (E, parent)
             out = {}
             for i in range(self.n):
                 r = root(i)
@@ -685,14 +828,18 @@ class LabelDB:
         idx = [i for nm, faces in gal.items() if nm != IGNORE for i in faces if not self.rec(i).get("ok")]
         names, P = self.score(idx, gal)
         bad = []
+        col = {nm: j for j, nm in enumerate(names)}
+        mine = np.asarray([col[self.name(i)] for i in idx], int)
+        rows = np.arange(len(idx))
+        owns = P[rows, mine] if len(idx) else np.zeros(0, np.float32)
+        rest = P.copy()
+        rest[rows, mine] = -1                    # the best of the others, for every face at once
+        best_other = rest.argmax(1) if len(idx) and len(names) > 1 else None
         for r, i in enumerate(idx):
             nm = self.name(i)
-            j = names.index(nm)
-            own = float(P[r, j])
-            others = P[r].copy()
-            others[j] = -1
-            k = int(np.argmax(others)) if len(names) > 1 else None
-            other, os_ = (names[k], float(others[k])) if k is not None else (None, -1.0)
+            own = float(owns[r])
+            k = int(best_other[r]) if best_other is not None else None
+            other, os_ = (names[k], float(rest[r, k])) if k is not None else (None, -1.0)
             if len(gal[nm]) > 1 and (own < MATCH or os_ > own):
                 bad.append({"i": i, "name": nm, "s": round(own, 3), "other": other, "os": round(os_, 3),
                             "by": self.rec(i).get("by", "me"), "q": self.q(i)})
