@@ -1,5 +1,9 @@
 # Facial Recognition and Emotional Response Research
 
+<p align="center">
+  <img src="face-recognizer/icons/icon.png" width="320" alt="The Face Recognizer icon: a faceted face, half solid and half wire mesh, inside the corner marks of a camera's viewfinder">
+</p>
+
 A fully local system that recognizes specific people on webcams (any camera the computer sees, including a
 phone used as a webcam) and reads facial expression, voice and other signals live. Imported photos and videos
 are recognized the same way: the same face prints and matching, with faces named in the labeling tool.

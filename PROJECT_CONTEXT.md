@@ -727,7 +727,7 @@ first-start downloads; only the latest app release is kept):
 | v1.24.1 | Nov 17 | Released for Windows, macOS and Linux (installed on four devices first; the Windows build's window opened on all five of its first starts as a new copy). The two things left open by 1.24.0's first run (§10): a describing helper that failed twice in a row is tried again every five minutes with one photo and rejoins when its server works (`label_tool.HELPER_RETRY`; it used to stay out for the whole run); and the built app's `--self-test` loads the Windows window's own parts (pywebview's Windows platform, WebView2's library, the types the camera answer uses), with `pythonnet`, `clr_loader` and `pyinstaller-hooks-contrib` pinned like the rest. |
 | v1.24.2 | Nov 17 | Released for Windows, macOS and Linux (installed on four devices first: data and models untouched, every camera live on every device; the Windows build's window opened as a new copy and answered the camera request). The security fixes from the code review of 2026-11-16 (§10): a row in the shared database can no longer give a photo a file path on a device (`photos.extra` was copied into the photo's record whole, and the peer service showed the file at a photo's path to every device that asked); a device's settings are its own and never taken from the database (a changed row switched on a device's microphone listening or camera stream, or pointed its describer at another server), only the owner's Copy settings takes another device's, and never the settings that say where a device sends photos or fetches files; a row that can't be used is left out and named in the log instead of stopping every device's pull for good (`Sync._apply`, each part's `check`); Share Describe all sends photos only to the owner's own devices (computers in the shared database, at the addresses they gave), not to whatever answers like LM Studio on the network; no answer is kept by a browser any more (face pictures and photos were cacheable for a year: the labeling page keeps what it showed in memory instead). Smaller: at most 64 camera relays, a download is stopped once it is larger than its file, two inputs that raised. |
 | v1.24.3 | Nov 17 | Released (installed on four devices first; before publishing, the repository, every file inside the three builds, the build's logs and the notes were searched for the real keys, passwords and tokens of the computers it was made on: none). The smaller security items of the code review (§10): the app shows and gives the camera only to a program it started itself; data and anything a GET starts go only to a tool's own page, not to a page of another program on the computer; a passphrase link says which version it replaces (an old one fitted again after a restore); a database login without the server's authority is bound to its connection; the built-in describer's files are checked by SHA-256 when found already there; the peer service's private key is kept encrypted; nobody can be named `constructor` or `__proto__`. |
-| v1.24.4 | Nov 18 | The first release with code-signed Windows files (the .exe, the installer and its uninstaller, signed by CI through Azure Artifact Signing; §10). The labeling tool answers about ten times faster after a change on a large library (16,000 faces: 1.3 s to 0.13 s after a name): scores and stacks are kept and brought up to date where a change touches them, with the same answers; the sync hashes outside the labeling lock; the large JSON files are written one line per entry. |
+| v1.24.4 | Nov 18 | Released (installed on four devices first, the three Windows ones with the signed installer over the unsigned 1.24.3; the repository, every file inside the three builds, the build's logs and the notes were searched for the real keys, passwords and tokens as for 1.24.3: none). The first release with code-signed Windows files (the .exe, the installer and its uninstaller, signed by CI through Azure Artifact Signing; §10). The labeling tool answers about ten times faster after a change on a large library (16,000 faces: 1.3 s to 0.13 s after a name): scores and stacks are kept and brought up to date where a change touches them, with the same answers; the sync hashes outside the labeling lock; the large JSON files are written one line per entry. |
 
 ---
 
@@ -1317,7 +1317,7 @@ Open from it, security (not reachable from a website):
   at each start would close it; whether a computer with several accounts is in scope is the owner's decision.
 
 From it, speed. Measured 2026-11-17 on a copy of the owner's library (16,479 faces, 20,207 photos, 133 people of
-whom one has 6,137 usable faces), the labeling tool from source on a port of its own; not yet committed or released:
+whom one has 6,137 usable faces), the labeling tool from source on a port of its own; released in 1.24.4:
 - **Every change scored every face against every person again, twice** (the summary's suggestions and its
   checks), and compared every face with every face for the stacks when a print changed or a face was added: the
   page's questions after one label took 1.3 s, after an Ignore or imported photos 2.4 s, all under the lock an
@@ -1403,8 +1403,13 @@ Other open items (2026-11-12):
     wrote down, and the signed .exe passes its self-test. GitHub's Windows machines have the .NET 10 runtime the
     plug-in needs. The log shows none of the Azure ids or names (they are secrets, so masked); the check after
     signing first printed whom the certificate names, and now prints its thumbprint and issuer instead.
-  - Not yet done with a signed build: an install over an unsigned one on the devices (the next release's
-    routine), and a look at what SmartScreen says for a download of it.
+  - 1.24.4 is the first signed release (CI run 44222896544). The signed installer went over the unsigned 1.24.3
+    on three Windows devices as any update does (the open app closed by it, data and models left alone); on
+    each, Windows reads the installed program and `unins000.exe` as signed and valid. The .exe taken out of the
+    release's zip is the built one, signature intact. The built .exe as a new copy: its window after 6 s, none of
+    its pages' 2,222 requests refused, the camera request answered by the window.
+  - Not yet looked at: what SmartScreen says for a download of a signed file (it should name the publisher and
+    still warn at first).
   - What signing does not do: stop SmartScreen's warning at once. Windows warns about a new publisher until it
     has seen enough installs, for any kind of certificate. The warning then names the publisher: the owner's
     legal name with an individual account, as on the Mac.
