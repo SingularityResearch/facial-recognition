@@ -122,11 +122,16 @@ class LabelDB:
         return len(self.store.emb)
 
     def E(self):
-        if self._cache.get("E_n") != self.n:
-            dim = F.REC["dim"]
-            self._cache["E"] = np.asarray(self.store.emb, np.float32).reshape(self.n, dim)
-            self._cache["E_n"] = self.n
-        return self._cache["E"]
+        """Every face's print, a row a face. Made under the lock: a request that doesn't hold it (a face's picture)
+        may ask while an import or the sync adds a face, and numpy, reading the list as it grew, stopped with
+        "Content of sequences changed" (the picture's request failed; seen 13 times in two days on two devices)."""
+        E = self._cache.get("E")
+        if E is None or len(E) != self.n:
+            with self.lock:
+                E = self._cache.get("E")
+                if E is None or len(E) != self.n:
+                    E = self._cache["E"] = np.asarray(self.store.emb, np.float32).reshape(self.n, F.REC["dim"])
+        return E
 
     def usable(self, i):
         q = self.store.quality[i]
@@ -135,10 +140,12 @@ class LabelDB:
     def printless(self, i):
         """True if face i's print and picture were deleted (Ignored, or a forgotten person's): it can't be
         scored, grouped or teach the recognizer."""
-        if "gone" not in self._cache:
-            E = self.E()
-            self._cache["gone"] = set(np.flatnonzero(~E.any(1)).tolist()) if self.n else set()
-        return i in self._cache["gone"]
+        gone = self._cache.get("gone")
+        if gone is None:
+            with self.lock:              # as E(): asked without the lock too (label_tool.face_thumb)
+                E = self.E()
+                gone = self._cache["gone"] = set(np.flatnonzero(~E.any(1)).tolist()) if len(E) else set()
+        return i in gone
 
     def forget_faces(self, idx):
         """Delete the prints and pictures of faces idx (Store.forget) and save. Only where each face is stays
@@ -155,7 +162,7 @@ class LabelDB:
         faces as they are, for an Ignore and its undo: an Ignored face only leaves its group (unknown() shows who is
         still unknown), and comes back into it when the Ignore is undone. Grouping them all anew took 0.5 s on
         16,000 faces after every Ignore, for the same groups less one face."""
-        for k in ("E", "E_n", "gone", "st", "st_n"):
+        for k in ("E", "gone", "st", "st_n"):
             self._cache.pop(k, None)
         self.version_faces += 1          # the faceness model trains again, in the background (kept meanwhile)
         if regroup:
@@ -217,7 +224,7 @@ class LabelDB:
         self.version += 1
         # kept: face prints, and the faceness model (retrained when faces are added, not on every label)
         self._cache = {k: v for k, v in self._cache.items()
-                       if k in ("E", "E_n", "fm", "fs", "fc", "fj", "st", "st_n")}
+                       if k in ("E", "fm", "fs", "fc", "fj", "st", "st_n")}
 
     def by_photo(self):
         if self._cache.get("bp_n") != self.n:

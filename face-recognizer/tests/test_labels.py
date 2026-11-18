@@ -1,6 +1,7 @@
 """labels.py and face_id.Store on a tiny made-up data\\ folder: naming, undo, rename/merge, the new-user (empty)
 start, and moving face pictures out of faces.npz."""
 import json
+import threading
 
 import cv2
 import numpy as np
@@ -55,6 +56,25 @@ def test_name_reject_rename_and_undo(data):
     assert db.name(2) is None and db.rec(2) == {} and db.name(0) == "Ann"
     assert json.loads((data / "labels.json").read_text("utf-8")) == db.labels       # saved as it goes
     assert len((data / "history.jsonl").read_text("utf-8").splitlines()) == 7       # 4 changes + 3 undos
+
+
+def test_prints_asked_for_during_a_change_wait_for_it(data):
+    """A face's picture is asked for without the labeling lock (label_tool.face_thumb, printless) while an import
+    or the sync adds faces under it. Read as the list grew, the prints stopped numpy ("Content of sequences
+    changed") and the request failed. So their table is made under the lock: asked for during a change, it waits
+    and holds the new face."""
+    db = db_with_faces(data)
+    out = []
+    with db.lock:
+        db._forgot()                                       # as after any change to the prints: made again when asked
+        t = threading.Thread(target=lambda: out.append((db.printless(0), len(db.E()))))
+        t.start()
+        t.join(0.3)
+        assert t.is_alive() and not out                    # waits for the change
+        s = db.store
+        s.put("new", s.photo[0], s.file[0], s.box[0], np.ones(F.REC["dim"], np.float32), b"", 0.9)
+    t.join(5)
+    assert db.n == 7 and out == [(False, 7)]
 
 
 @pytest.mark.parametrize("action, idx, name", [

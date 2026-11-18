@@ -14,9 +14,16 @@ import peer
 
 def test_a_devices_addresses_are_tried_in_the_order_most_likely_to_answer(monkeypatch):
     """A device lists every address it has (a VPN's too, with "Fully distributed system"); each one that doesn't
-    answer costs CONNECT seconds. First the one that answered last, then those on a network this computer is on."""
+    answer costs CONNECT seconds. First the one that answered last, then those on a network this computer is on.
+    Never this computer's own address at its own port (a VPN client's, the same on every computer: asked there, a
+    device reached its own service and the log blamed the other's certificate)."""
     monkeypatch.setattr(peer, "addresses", lambda: ["192.168.1.13"])
+    monkeypatch.setattr(peer, "own", lambda: {"192.168.1.13", "100.96.0.1"})
+    monkeypatch.setattr(peer, "port", lambda: 8767)
     monkeypatch.setattr(peer, "_good", {})
+    assert peer._order("fp", ["10.8.0.2", "100.96.0.1", "192.168.1.20"], 8767) == ["192.168.1.20", "10.8.0.2"]
+    assert peer._order("fp", ["100.96.0.1"], 8767) == []
+    assert peer._order("fp", ["192.168.1.13"], 9767) == ["192.168.1.13"]        # a second copy on this computer
     listed = ["10.8.0.2", "100.96.0.1", "192.168.1.20"]
     assert peer._order("fp", listed) == ["192.168.1.20", "10.8.0.2", "100.96.0.1"]
     peer._answered("fp", "100.96.0.1")
@@ -39,6 +46,7 @@ def test_a_device_tells_the_others_only_addresses_they_can_reach(monkeypatch):
     monkeypatch.setattr(peer, "_addr_cache", {"at": 0.0, "list": []})
     assert hardware.own_addresses() == ["100.96.0.1", "172.17.0.1", "192.168.1.13"]    # as before: all its own
     assert peer.addresses() == ["100.96.0.1", "192.168.1.13"]
+    assert peer.own() == {"100.96.0.1", "172.17.0.1", "192.168.1.13"}                  # told or not: all are its own
     monkeypatch.setattr(hardware, "distributed", lambda: False)
     assert hardware.reachable_addresses() == ["192.168.1.13"] == hardware.own_addresses()
     monkeypatch.setattr(hardware, "_adapters", lambda max_age=300: None)               # a system that doesn't say

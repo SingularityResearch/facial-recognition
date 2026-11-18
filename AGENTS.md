@@ -494,7 +494,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - truststore replaces `ssl.SSLContext` app-wide, so `peer.py` uses the original class (`_context`). Started by
     `HomePart._peer`.
   - Asking: a device's addresses are tried best first (`_order`: the one that answered last, then those on a
-    network both are on), each for `CONNECT` (3) s. A device tells the others only addresses they can reach
+    network both are on), each for `CONNECT` (3) s; never this computer's own address at its own port (`own`: a
+    VPN client can give every computer the same address, and a device asking there reached itself). A device tells the others only addresses they can reach
     (`hardware.reachable_addresses`: never its container bridges, even with **Fully distributed system**).
     Who has a photo and where a device is are asked on the kept database connection (`facedb.ask`).
     `fetch`'s reason tells a device that didn't answer at all (`UNREACHED`) from one that answered without the
@@ -806,7 +807,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - No answer of the three servers may be kept by a browser (`localguard.Handler.send`: always `no-store`; a test
   checks every kind of answer). A page that wants a picture twice keeps it in memory.
 - Background jobs (imports, possible-face scans, Describe all) start through `Importer.begin` (one at a time, under
-  a lock). Shared caches and counters used by request threads need a lock.
+  a lock). Shared caches and counters used by request threads need a lock. The labeling data changes only under
+  `db.lock`; what a request reads without it (a face's picture: `label_tool.face_thumb`) must not walk a list
+  that grows meanwhile (`LabelDB.E` and `printless` make their tables under the lock).
 - Every person's data can be exported and forgotten (`persondata.py`): a new place that keeps anything about a person
   must be added to its list, `export` and `forget`, and to `tests/test_persondata.py`.
 - Windows code signing keeps no key and no password anywhere: the key is in Azure Artifact Signing, and CI signs

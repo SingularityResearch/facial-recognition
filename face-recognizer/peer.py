@@ -220,18 +220,31 @@ def addresses():
     container bridges no other machine can reach), looked up at most once a minute."""
     if time.time() - _addr_cache["at"] > 60:
         import hardware
-        _addr_cache["list"], _addr_cache["at"] = hardware.reachable_addresses(), time.time()
+        _addr_cache.update(list=hardware.reachable_addresses(), own=set(hardware.own_addresses(every=True)),
+                           at=time.time())
     return _addr_cache["list"]
+
+
+def own():
+    """Every address of this computer, told to the others or not (looked up with addresses())."""
+    addresses()
+    return _addr_cache.get("own") or set()
 
 
 _good = {}                       # a device's certificate fingerprint -> its address that answered last
 
 
-def _order(fp, addrs):
+def _order(fp, addrs, port_=None):
     """A device's addresses in the order to try them: the one that answered last, then those on a network this
-    computer is on too, then the rest (each in the order the device listed them)."""
+    computer is on too, then the rest (each in the order the device listed them). Never this computer's own
+    address at its own port (port_ is the device's): a VPN client can give every computer the same address
+    (100.96.0.1 on two of the owner's devices), and a device asking there reached its own service, so whenever the
+    other was off the log said "that device's certificate isn't the one in the database". A second copy on this
+    computer has another port and is asked as before."""
     mine = {a.rpartition(".")[0] for a in addresses()}
-    return sorted(addrs or [], key=lambda a: (a != _good.get(fp), a.rpartition(".")[0] not in mine))
+    here = own() if port_ == port() else ()
+    return sorted((a for a in addrs or [] if a not in here),
+                  key=lambda a: (a != _good.get(fp), a.rpartition(".")[0] not in mine))
 
 
 def _answered(fp, addr, ok=True):
@@ -478,7 +491,7 @@ def fetch_readout(device_id):
         raise OSError("that device doesn't share its camera")
     name, addrs, port_, fp = found
     last = "no address"
-    for a in _order(fp, addrs):
+    for a in _order(fp, addrs, port_):
         try:
             body = _get(a, port_, fp, "/readout", key)
             if body:
@@ -498,7 +511,7 @@ def open_stream(device_id):
         raise OSError("that device doesn't share its camera")
     name, addrs, port_, fp = found
     last = "no address"
-    for a in _order(fp, addrs):
+    for a in _order(fp, addrs, port_):
         try:
             ctx = _context(ssl.PROTOCOL_TLS_CLIENT, ssl.CERT_NONE)
             raw = socket.create_connection((a, port_), timeout=CONNECT)
@@ -547,7 +560,7 @@ def fetch(photo, frame=None):
     path = f"/photo/{photo}" + (f"?frame={int(frame)}" if frame is not None else "")
     tried, last, answered = [], "", False
     for name, addrs, port_, fp in found:
-        for a in _order(fp, addrs):
+        for a in _order(fp, addrs, port_):
             try:
                 jpg = _get(a, port_, fp, path, key)
                 _answered(fp, a)                       # it answered, with the photo or without
