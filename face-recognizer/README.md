@@ -24,7 +24,7 @@ Everything runs locally. No photos leave your computer, with one exception you s
 ## Getting it
 
 - **Just to run it:** download the installer for your system from the project's GitHub **Releases**. Each puts the app in place and gives it icons to start it from; none needs administrator rights or Python.
-  - **Windows:** `FaceRecognizer-Setup-x64.exe`. It installs into `%LOCALAPPDATA%\Programs\FaceRecognizer` (you can choose another folder you may write to) and adds **Face Recognizer** to the Start menu and the desktop. Windows SmartScreen may warn, as the installer isn't code-signed (**More info → Run anyway**). If you already use FaceRecognizer.exe from a folder of your own, choose that folder in the installer: your `data` there is kept and only the program is replaced. If Face Recognizer is open, the installer closes it (and offers to start it again at the end). Uninstall from Windows' **Installed apps**; that leaves the face models and your `data` where they are and tells you where.
+  - **Windows:** `FaceRecognizer-Setup-x64.exe`. It installs into `%LOCALAPPDATA%\Programs\FaceRecognizer` (you can choose another folder you may write to) and adds **Face Recognizer** to the Start menu and the desktop. Windows SmartScreen may warn the first time (**More info → Run anyway**): a release's notes say whether its Windows files are code-signed. A signed one names its publisher in that warning, and Windows stops warning once it has seen enough installs of that publisher's files; an unsigned one is from an "Unknown publisher". If you already use FaceRecognizer.exe from a folder of your own, choose that folder in the installer: your `data` there is kept and only the program is replaced. If Face Recognizer is open, the installer closes it (and offers to start it again at the end). Uninstall from Windows' **Installed apps**; that leaves the face models and your `data` where they are and tells you where.
   - **macOS 14+ on Apple Silicon:** `FaceRecognizer-macos-arm64.dmg`. Open it and drag **FaceRecognizer** onto **Applications**; it is then in Launchpad.
   - **Linux (Ubuntu 22.04+, x86_64):** `sh FaceRecognizer-linux-x64.run`. It installs for you alone into `~/.local/lib/FaceRecognizer` and adds **Face Recognizer** to the applications menu and the desktop (`--no-desktop`: menu only). `sh ~/.local/lib/FaceRecognizer/uninstall.sh` removes it and leaves your data.
   - **Without installing:** `FaceRecognizer-win64.zip` (unzip it anywhere and double-click **FaceRecognizer.exe**), `FaceRecognizer-macos-arm64.zip` (**FaceRecognizer.app**) or `FaceRecognizer-linux-x64.tar.gz` (unpack it and run `FaceRecognizer/FaceRecognizer`).
@@ -123,8 +123,71 @@ real ones (`fetch_models.py`). `data` isn't in the repository: it's created empt
    `--installer-only` makes it from the .exe already in `build\dist`. The installer copies only the .exe, makes the
    Start menu and desktop icons, and never touches `models\` or `data\`.
 
-Neither the .exe nor the installer is code-signed, so Windows SmartScreen may warn the first time each runs
-(**More info → Run anyway**).
+A build is code-signed only when it is told with what (next section). Unsigned, Windows SmartScreen warns the
+first time the .exe or the installer runs (**More info → Run anyway**).
+
+##### Signing the Windows app (once)
+
+Signed, the .exe, the installer and its uninstaller carry the publisher's verified name, and nobody can change them
+unnoticed. It does not silence SmartScreen at once: Windows warns about a new publisher's files until it has seen
+enough installs of them (no certificate of any kind buys that off since 2024), then stops, also for later versions
+signed the same way. The build signs with [Azure Artifact Signing](https://learn.microsoft.com/azure/artifact-signing/)
+(Microsoft's signing service, once called Trusted Signing; about 10 USD a month): the certificate's key stays in
+Microsoft's service, and CI signs in to it as this repository's workflow, so no password or key is stored anywhere.
+
+1. **An Azure subscription** (<https://portal.azure.com>, pay-as-you-go). As an individual (United States and Canada
+   only), its billing account must be of the type Individual, with your legal name and address as on your
+   government ID: that name is what Windows shows as the publisher. As an organization, the organization's legal
+   name is shown; Microsoft wants three years of its tax history. A subscription billed to a Business billing
+   account can't take the individual check: make a second subscription on a billing account of the type
+   Individual (Cost Management + Billing shows each account's type) and put the signing account there.
+2. **In the Azure portal** (Microsoft's [quickstart](https://learn.microsoft.com/azure/artifact-signing/quickstart)
+   has each screen): register the resource provider `Microsoft.CodeSigning` for the subscription; create an
+   **Artifact Signing account** (Basic) and note its region's address (**Account URI**, like
+   `https://eus.codesigning.azure.net`); give yourself the **Artifact Signing Identity Verifier** role on it; under
+   **Identity validations** make a **Public** one (as an individual: change the dropdown from Organization to
+   Individual first; the form fills itself from the billing account, and its email address is where the check's
+   PIN goes). When it says **Action Required**, its link leads through photos of your ID and a face check on your
+   phone, and ends by sharing a Verified ID from the Microsoft Authenticator app; the status turns **Completed** some
+   minutes after that (an organization's check can take days). Then create a **Public Trust** certificate profile
+   from it: in the portal, or `az artifact-signing certificate-profile create --profile-type PublicTrust
+   --identity-validation-id <id>` with the id the portal shows for the completed check.
+3. **Let this repository's workflow sign**, with the Azure CLI (`winget install -e --id Microsoft.AzureCLI`, `az login`).
+   Save this as `github-main.json`:
+   ```
+   {"name": "github-main", "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:SingularityResearch/facial-recognition:ref:refs/heads/main",
+    "audiences": ["api://AzureADTokenExchange"]}
+   ```
+   then:
+   ```
+   az ad app create --display-name facerecognizer-signing --query appId -o tsv
+   az ad sp create --id <app id>
+   az ad app federated-credential create --id <app id> --parameters github-main.json
+   az role assignment create --assignee <app id> --role "Artifact Signing Certificate Profile Signer" --scope /subscriptions/<subscription id>/resourceGroups/<resource group>/providers/Microsoft.CodeSigning/codeSigningAccounts/<account>/certificateProfiles/<profile>
+   ```
+   Azure then takes a sign-in from this repository's workflow on the `main` branch, and from nothing else; that
+   sign-in may sign with this one profile and do nothing more.
+4. **Tell CI** (none of these is a password):
+   ```
+   gh secret set AZURE_CLIENT_ID --body <app id>
+   gh secret set AZURE_TENANT_ID --body <tenant id>
+   gh secret set AZURE_SIGNING_ACCOUNT --body <account>
+   gh secret set AZURE_SIGNING_PROFILE --body <profile>
+   gh secret set AZURE_SIGNING_ENDPOINT --body https://<region>.codesigning.azure.net
+   ```
+   From the next push to `main`, CI signs the .exe, runs its self-test signed, has Inno Setup sign the uninstaller
+   and the installer, and stops unless Windows reads both files as signed, trusted and dated
+   (`build_exe.py --signed`). `BUILD-INFO.json` then says `"signed": true`. Other branches and pull requests build
+   unsigned.
+
+To sign a build made on your own computer: give your own account the Signer role on the profile (as in step 3,
+with your account as the assignee), `az login` with `az` on the PATH (signtool's plug-in runs it), set
+`FACE_SIGN_ACCOUNT`, `FACE_SIGN_PROFILE` and
+`FACE_SIGN_ENDPOINT`, and build (`python build_exe.py --no-copy --installer`); it needs the Windows SDK's
+`signtool.exe` and the .NET 10 runtime, and downloads Microsoft's signing plug-in for signtool from nuget.org (one
+version, checked by size and SHA-256). With a code signing certificate from a certificate authority instead (on its
+hardware token), set `FACE_SIGN_CERT` to the certificate's SHA-1 thumbprint.
 
 #### macOS 14+ on Apple Silicon → `FaceRecognizer.app`
 
@@ -213,7 +276,8 @@ The built app keeps its models and `data` in `~/.local/share/FaceRecognizer` and
 
 Every push builds the app on GitHub's Windows, macOS and Linux machines once the tests pass on all three
 (`.github/workflows/checks.yml`). Each run keeps, for 14 days, `FaceRecognizer-windows-x64` (the .exe and
-`FaceRecognizer-Setup-x64.exe`), `FaceRecognizer-macos-arm64` (the zipped .app and the .dmg; signed and notarized when
+`FaceRecognizer-Setup-x64.exe`; code-signed on pushes to `main` when the repository's Windows signing secrets are
+set), `FaceRecognizer-macos-arm64` (the zipped .app and the .dmg; signed and notarized when
 the repository's signing secrets are set) and `FaceRecognizer-linux-x64` (the .tar.gz and the .run installer, which
 the run also tries: install, check the menu entry and icons, uninstall), each with `BUILD-INFO.json` (commit, run,
 and the SHA-256 of both files). Download one with

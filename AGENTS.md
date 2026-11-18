@@ -38,7 +38,11 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - `checks`: Node tests, ruff and pytest (no LFS, no models).
   - `database`: the shared-database tests (`pytest -k "facedb or sync"`) against a pgvector service, with
     `FACE_TEST_PG`.
-  - `build`: the app on Windows, macOS and Linux (`build_exe.py --no-copy`, macOS signing when its secrets are set),
+  - `build`: the app on Windows, macOS and Linux (`build_exe.py --no-copy`, macOS signing when its secrets are set;
+    Windows signing when its secrets are set and the push is to `main`: `azure/login` as this repository's workflow,
+    with no stored password, right before each signing, since that sign-in lasts minutes: `build_exe.py --sign`,
+    then after the installer `--signed`, which stops the run unless Windows reads both files as signed, trusted
+    and dated),
     the built app's own check (`--self-test`, `app.self_test`: every library loads and works once; on macOS under
     its signature; on Windows also the window's own parts: pywebview's Windows platform with its .NET lines,
     WebView2's library and the types `allow_camera` uses), then its installer (`--installer-only`; the Linux one is tried there: install, icons,
@@ -117,6 +121,22 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     - Linux `FaceRecognizer-linux-x64.run`: `packaging/linux/install.sh`, the line `__APP__`, then the app's
       folder as .tar.gz (`linux_installer`). `sh` it: the app in `~/.local/lib/FaceRecognizer`, a menu entry, icons
       and a desktop icon; `uninstall.sh` there removes them and leaves `~/.local/share/FaceRecognizer`.
+  - Windows code signing (its section in the file; unsigned unless the environment says with what, `signing()`):
+    - `FACE_SIGN_ACCOUNT`, `FACE_SIGN_PROFILE`, `FACE_SIGN_ENDPOINT`: Azure Artifact Signing (once Trusted Signing).
+      The key stays in Microsoft's service; `signtool` (the Windows SDK's, `signtool()`) asks it through Microsoft's
+      plug-in (`sign_dlib`: one version from nuget.org, by size and SHA-256, `SIGN_DLIB`; needs the .NET runtime
+      `SIGN_DLIB_NET`), as whoever is signed in to Azure (`NOT_THESE_LOGINS` leaves the environment and the Azure
+      CLI). Or `FACE_SIGN_CERT`: a certificate in the user's Windows store, by thumbprint (a certificate
+      authority's on its token; a self-signed one to try the build).
+    - `--sign` signs the .exe in `build/dist` (a build with signing set signs it itself); the installer's build
+      passes Inno Setup `/DSign=1` and a sign tool that is this file's `--sign-file` (`iscc_args`), so Setup signs
+      the uninstaller it packs and itself (`#ifdef Sign` in the .iss); `--signed` (`check_signed`, `signature`)
+      reads both files' signatures as Windows does. Every signature is dated (`TIMESTAMP`): Artifact Signing's
+      certificates last three days.
+    - Tried 2026-11-17 with a self-signed certificate (the signed one-file .exe passes its self-test, and the
+      installer, the .exe it installs and `unins000.exe` are all signed) and, from the owner's computer, with the
+      real Artifact Signing profile (Windows reads the .exe as signed, trusted and dated). The owner's steps:
+      README, "Signing the Windows app".
 - `icons/` — the app's icon, drawn by `tools/make_icon.py` (a faceted face, half solid and half mesh, in a camera's
   corner marks; small sizes drawn again with fewer marks) and kept in git: `icon.ico` (the .exe, the installer, each
   server's `/favicon.ico`: `localguard.Handler.favicon`), `icon.icns` (the .app), `icon.png` and two smaller (the
@@ -544,7 +564,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - App window and tracker: `test_window_watchdog.py` (also the window's answer to the camera request, in place
     before any page loads), `test_window_caches.py`, `test_app_log.py`,
     `test_tracker_reload.py`, `test_skeleton.py`, `test_platforms.py` (also the icon files, the build's icon
-    options, the Windows installer's rules, and the Linux installer run for real on Linux).
+    options, the Windows installer's rules, Windows code signing: only when told with what, the plug-in only as
+    pinned; and the Linux installer run for real on Linux).
   - Shared database: `test_facedb.py`, `test_sync.py` (also a newly installed device, with no faces, joining;
     rows written with only the database's password), with `FACE_TEST_PG` (CI job `database`; each test makes and
     drops its own schema). `test_sync_rows.py` needs no database: rows that can't be used, a photo row that names
@@ -677,7 +698,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - The music log listens to audio interfaces (outputs and microphones) only while its switch is on, and keeps
   numbers only: the sound of any interface is analysed in memory and never stored (`music.record`), like the
   tracker's microphone.
-- Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`, `cudasupport.py`), and
+- Downloads are pinned and checked by size and SHA-256 (`fetch_models.py`, `florence.py`, `cudasupport.py`, the
+  build's signing plug-in: `build_exe.sign_dlib`), and
   so is a model file found already there (`fetch_models.is_good`, `florence.good`); the
   CUDA download starts only from its Settings button, and only `onnxruntime/` and `nvidia/` are unpacked from the
   wheels. `lmstudio.from_share` checks each file against the shared folder's own list (a damaged copy, not a
@@ -718,6 +740,10 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   a lock). Shared caches and counters used by request threads need a lock.
 - Every person's data can be exported and forgotten (`persondata.py`): a new place that keeps anything about a person
   must be added to its list, `export` and `forget`, and to `tests/test_persondata.py`.
+- Windows code signing keeps no key and no password anywhere: the key is in Azure Artifact Signing, and CI signs
+  in as this repository's workflow on `main` (GitHub's own token for the run, which Azure is told to trust for that
+  branch alone, with the Signer role on the one certificate profile). The five repository secrets are names and
+  ids. Don't add a client secret or a certificate file to sign with, and don't sign other branches or pull requests.
 - Open items from the 2026-11-09 review: `PROJECT_CONTEXT.md` section 10.
 
 ## Conventions and constraints
@@ -773,7 +799,10 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   `FaceRecognizer-macos-arm64.zip`, `FaceRecognizer-linux-x64.tar.gz` and `SHA256SUMS.txt`, from one CI run's
   builds of the tagged commit; never `data\`. An installer never deletes `models` or `data`, on install, update
   or uninstall. The macOS app and its .dmg are signed and notarized by CI (since 1.22.4, with the
-  repository's Apple secrets): release only a run whose macOS build says so (`BUILD-INFO.json` `signed`).
+  repository's Apple secrets): release only a run whose macOS build says so (`BUILD-INFO.json` `signed`). The
+  Windows .exe and installer are code-signed by CI on pushes to `main` (the Azure signing secrets are set since
+  2026-11-17): release only a run whose Windows build says `signed` too, and say in the notes what SmartScreen
+  still does (it warns about a new publisher until it has seen enough installs).
 - The presence log (who was in view, when) is opt-in, names and times only, in `HOME/presence/`, never `data/`.
 - Webcam faces named automatically don't enter the recognition gallery until confirmed (`LabelDB.gallery`).
 - Ignore deletes the face's print and picture (`LabelDB.forget_faces`, `Store.forget`; Undo restores them from memory

@@ -72,8 +72,10 @@ jobs:
 
   # The app, built on each system with build_exe.py (as build_app.bat does on Windows), once every system's checks
   # pass. Kept 14 days as build artifacts for testing; releases are still made by hand.
-  #   Windows  FaceRecognizer.exe
-  #   macOS    FaceRecognizer.app (Apple Silicon, macOS 14+), zipped; signed and notarized when the signing secrets
+  #   Windows  FaceRecognizer.exe; signed, with its installer and uninstaller, when the signing secrets are set and
+  #            the push is to main (build_exe.py, "Windows code signing": Azure Artifact Signing, which this job signs
+  #            in to as this repository's workflow, with no stored password), else unsigned
+  #   macOS   FaceRecognizer.app (Apple Silicon, macOS 14+), zipped; signed and notarized when the signing secrets
   #            are set (packaging/macos/sign_and_notarize.sh), else signed for local use only ("ad hoc")
   #   Linux    the FaceRecognizer folder with its Qt app window, as .tar.gz (built on Ubuntu 22.04: runs on 22.04+)
   build:
@@ -89,8 +91,13 @@ jobs:
           - os: ubuntu-22.04
             name: linux-x64
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write       # lets the job say to Azure which repository and branch it runs for (Windows signing)
     env:
       HAS_MAC_SIGNING: ${{ secrets.MACOS_CERT_P12_BASE64 != '' && secrets.APPLE_API_KEY_P8_BASE64 != '' }}
+      # Only pushes to main: Azure trusts this workflow for that branch alone (README, "Signing the Windows app")
+      HAS_WIN_SIGNING: ${{ matrix.name == 'windows-x64' && secrets.AZURE_SIGNING_ACCOUNT != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     defaults:
       run:
         working-directory: face-recognizer
@@ -132,9 +139,25 @@ jobs:
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
         run: packaging/macos/sign_and_notarize.sh build/dist/FaceRecognizer.app
+      # Windows: the sign-in is good for a few minutes only, so it comes right before each signing, not before the build
+      - name: Sign in to Azure (Windows, when the signing secrets are set)
+        if: env.HAS_WIN_SIGNING == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906   # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Sign the .exe (Windows, when the signing secrets are set)
+        if: env.HAS_WIN_SIGNING == 'true'
+        env:
+          FACE_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          FACE_SIGN_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          FACE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+        run: python build_exe.py --sign
       # The built app loads every library it is made of and uses each once (app.py --self-test): a library left out
       # of the package fails here. On macOS this runs after signing: the hardened runtime of a signed app refuses
-      # what an unsigned one loads, and there may be no Mac at hand to notice.
+      # what an unsigned one loads, and there may be no Mac at hand to notice. On Windows after signing too: the
+      # one-file .exe finds what it carries from its own end, where a signature is added.
       - name: Self-test of the built app
         shell: bash
         run: |
@@ -149,8 +172,22 @@ jobs:
           exit $code
       # The installer, which puts the app in place and gives it icons (build_exe.py: Inno Setup on Windows, which
       # GitHub's Windows machines have; a .dmg on macOS, after signing; a file that installs itself on Linux)
+      - name: Sign in to Azure again for the installer (Windows, when the signing secrets are set)
+        if: env.HAS_WIN_SIGNING == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906   # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
       - name: Installer
+        env:      # Windows, signing: Inno Setup signs the uninstaller and the installer through build_exe.py
+          FACE_SIGN_ACCOUNT: ${{ env.HAS_WIN_SIGNING == 'true' && secrets.AZURE_SIGNING_ACCOUNT || '' }}
+          FACE_SIGN_PROFILE: ${{ env.HAS_WIN_SIGNING == 'true' && secrets.AZURE_SIGNING_PROFILE || '' }}
+          FACE_SIGN_ENDPOINT: ${{ env.HAS_WIN_SIGNING == 'true' && secrets.AZURE_SIGNING_ENDPOINT || '' }}
         run: python build_exe.py --installer-only
+      - name: The .exe and the installer are signed, trusted by Windows and dated (Windows, when signing)
+        if: env.HAS_WIN_SIGNING == 'true'
+        run: python build_exe.py --signed
       - name: Sign and notarize the .dmg (macOS, when the signing secrets are set)
         if: runner.os == 'macOS' && env.HAS_MAC_SIGNING == 'true'
         env:
@@ -197,7 +234,7 @@ jobs:
           echo "SETUP=$SETUP" >> "$GITHUB_ENV"
         env:
           SYSTEM: ${{ matrix.name }}
-          SIGNED: ${{ runner.os == 'macOS' && env.HAS_MAC_SIGNING == 'true' }}
+          SIGNED: ${{ (runner.os == 'macOS' && env.HAS_MAC_SIGNING == 'true') || env.HAS_WIN_SIGNING == 'true' }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
           name: FaceRecognizer-${{ matrix.name }}

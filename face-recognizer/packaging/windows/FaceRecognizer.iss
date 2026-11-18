@@ -46,6 +46,12 @@ SolidCompression=no
 ; Windows' Restart Manager can't close the app (see CloseApp below, which does it): with it on, an install while the
 ; app was open stopped with "Setup was unable to automatically close all applications"
 CloseApplications=no
+; A signed build (build_exe.py passes /DSign=1 and what "sign" runs, when it is told what to sign with): Setup signs
+; the uninstaller it packs and then itself. The .exe it carries was signed before.
+#ifdef Sign
+SignTool=sign
+SignedUninstaller=yes
+#endif
 
 [Messages]
 SelectDirBrowseLabel=Face Recognizer keeps its face models and your data (faces, names, labels) in this folder too, so it must be one you can write to.%n%nIf you already use Face Recognizer, choose the folder its FaceRecognizer.exe is in: your data there is kept, and only the program is replaced.%n%nTo continue, click Next.

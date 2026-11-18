@@ -289,6 +289,8 @@ Set before starting the app (or a program) to change how it starts.
 | `XDG_DATA_HOME` | a folder | Linux: the private folder is `FaceLabels` inside it (default `~/.local/share`), unless `FACE_HOME` is set. |
 | `PYTHON` | a Python 3.12 command | `setup.sh` only: the Python to make `.venv` with (default `python3.12`). |
 | `FACE_RESTART_AFTER` | a process id | Set by the app itself when it starts again on Windows (the new copy waits for that process to end); not for use by hand. |
+| `FACE_SIGN_ACCOUNT`, `FACE_SIGN_PROFILE`, `FACE_SIGN_ENDPOINT` | an Azure Artifact Signing account, its certificate profile, its region's address (`https://<region>.codesigning.azure.net`) | `build_exe.py` on Windows only: code-sign the .exe, the installer and its uninstaller with that profile, as whoever is signed in to Azure (`az login`; CI signs in as the repository's workflow). All three or none. |
+| `FACE_SIGN_CERT` | a certificate's SHA-1 thumbprint | `build_exe.py` on Windows only: sign with that code signing certificate from this user's Windows certificate store instead. |
 | `FACE_TEST_PG` | a PostgreSQL connection string | Tests only: the database `test_facedb.py` and `test_sync.py` run against (each test makes and drops its own schema); without it they're skipped. |
 
 ---

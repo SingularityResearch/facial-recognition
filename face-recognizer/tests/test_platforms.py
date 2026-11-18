@@ -176,6 +176,91 @@ def test_the_windows_installer_needs_no_administrator_and_never_deletes_data(tmp
     assert build_exe.inno_setup({"LOCALAPPDATA": str(tmp_path)}) in (str(made / "ISCC.exe"), build_exe.shutil.which("iscc"))
 
 
+def test_the_windows_build_is_signed_only_when_told_with_what(tmp_path, monkeypatch):
+    """build_exe's Windows code signing: nothing set means an unsigned build, half of it set stops the build, and
+    the installer's Sign block (the uninstaller and Setup itself) is switched on only for a signed one."""
+    import json
+    import re
+
+    import build_exe
+    import pytest
+    thumb = "42614539A547167F5D35BFC1E9706F9F07D85776"
+    azure = {"FACE_SIGN_ACCOUNT": "acct", "FACE_SIGN_PROFILE": "prof", "FACE_SIGN_ENDPOINT": "https://eus.codesigning.azure.net"}
+    assert build_exe.signing({}) is None
+    assert build_exe.signing({"FACE_SIGN_ACCOUNT": "", "FACE_SIGN_PROFILE": " ", "FACE_SIGN_CERT": ""}) is None   # CI without the secrets
+    assert build_exe.signing(azure) == ("azure", {"account": "acct", "profile": "prof", "endpoint": azure["FACE_SIGN_ENDPOINT"]})
+    assert build_exe.signing({"FACE_SIGN_CERT": "42 61 45 39 a5 47 16 7f 5d 35 bf c1 e9 70 6f 9f 07 d8 57 76"}) == ("cert", thumb)
+    for wrong in ({"FACE_SIGN_ACCOUNT": "acct"},                                      # half of it
+                  {**azure, "FACE_SIGN_CERT": thumb},                                  # both
+                  {**azure, "FACE_SIGN_ENDPOINT": "https://eus.codesigning.azure.net.example.com/"},   # somewhere else
+                  {"FACE_SIGN_CERT": "1234"}):
+        with pytest.raises(SystemExit):
+            build_exe.signing(wrong)
+
+    cmd = build_exe.sign_command("signtool.exe", ("cert", thumb), ["a.exe"], tmp_path)
+    assert cmd[:2] == ["signtool.exe", "sign"] and cmd[cmd.index("/sha1") + 1] == thumb and cmd[-1] == "a.exe"
+    assert cmd[cmd.index("/tr") + 1] == build_exe.TIMESTAMP and cmd[cmd.index("/fd") + 1] == "SHA256"   # dated, SHA-256
+    monkeypatch.setattr(build_exe, "sign_dlib", lambda work: tmp_path / "plugin.dll")
+    cmd = build_exe.sign_command("signtool.exe", build_exe.signing(azure), ["a.exe", "b.exe"], tmp_path)
+    assert cmd[cmd.index("/dlib") + 1] == str(tmp_path / "plugin.dll") and cmd[-2:] == ["a.exe", "b.exe"]
+    meta = json.loads((tmp_path / "metadata.json").read_text("utf-8"))
+    assert cmd[cmd.index("/dmdf") + 1] == str(tmp_path / "metadata.json")
+    assert (meta["Endpoint"], meta["CodeSigningAccountName"], meta["CertificateProfileName"]) == \
+        (azure["FACE_SIGN_ENDPOINT"], "acct", "prof")
+    # signing in is left to the environment and the Azure CLI (CI: azure/login); nothing that opens a window
+    assert not {"AzureCliCredential", "EnvironmentCredential"} & set(meta["ExcludeCredentials"])
+    assert "InteractiveBrowserCredential" in meta["ExcludeCredentials"]
+
+    plain, signed = build_exe.iscc_args("1.2.3", tmp_path, False), build_exe.iscc_args("1.2.3", tmp_path, True)
+    assert not [a for a in plain if a.startswith(("/S", "/DSign"))] and plain[-1].endswith("FaceRecognizer.iss")
+    assert "/DSign=1" in signed and [a for a in signed if a.startswith("/Ssign=$q") and a.endswith("--sign-file $f")]
+    iss = (build_exe.HERE / "packaging" / "windows" / "FaceRecognizer.iss").read_text("utf-8")
+    assert "#ifdef Sign\nSignTool=sign\nSignedUninstaller=yes\n#endif" in iss.replace("\r\n", "\n")
+    ver, size, sha = build_exe.SIGN_DLIB
+    assert size > 0 and re.fullmatch(r"[0-9a-f]{64}", sha) and f"/{ver}/" in build_exe.SIGN_DLIB_URL.format(ver)
+
+
+def test_the_signing_plug_in_is_taken_only_as_pinned_and_signtool_only_when_new_enough(tmp_path, monkeypatch):
+    import hashlib
+    import io
+    import zipfile
+
+    import build_exe
+    import pytest
+    packed = io.BytesIO()
+    with zipfile.ZipFile(packed, "w") as z:
+        for name in ("bin/x64/Azure.CodeSigning.Dlib.dll", "bin/x64/Azure.Core.dll", "bin/x86/Azure.CodeSigning.Dlib.dll",
+                     "docs/README.md", "bin/x64/../../../outside.dll"):
+            z.writestr(name, b"x")
+    raw = packed.getvalue()
+
+    class Answer(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setattr(build_exe.urllib.request, "urlopen", lambda req, timeout=None: Answer(raw))
+    monkeypatch.setattr(build_exe, "SIGN_DLIB", ("9.9.9", len(raw), "0" * 64))
+    with pytest.raises(SystemExit):                              # not the file written down: nothing unpacked
+        build_exe.sign_dlib(tmp_path)
+    assert not list(tmp_path.rglob("*.dll"))
+    monkeypatch.setattr(build_exe, "SIGN_DLIB", ("9.9.9", len(raw), hashlib.sha256(raw).hexdigest()))
+    dll = build_exe.sign_dlib(tmp_path)
+    assert dll == tmp_path / "dlib-9.9.9" / "bin" / "x64" / "Azure.CodeSigning.Dlib.dll" and dll.is_file()
+    assert sorted(p.name for p in tmp_path.rglob("*") if p.is_file()) == ["Azure.CodeSigning.Dlib.dll", "Azure.Core.dll"]
+
+    kits = tmp_path / "pf" / "Windows Kits" / "10" / "bin"
+    for sdk in ("10.0.19041.0", "10.0.20348.0"):                 # older than the plug-in works with
+        (kits / sdk / "x64").mkdir(parents=True)
+        (kits / sdk / "x64" / "signtool.exe").write_bytes(b"")
+    assert build_exe.signtool({"ProgramFiles(x86)": str(tmp_path / "pf")}) is None
+    for sdk in ("10.0.22621.0", "10.0.26100.0"):
+        (kits / sdk / "x64").mkdir(parents=True)
+        (kits / sdk / "x64" / "signtool.exe").write_bytes(b"")
+    assert build_exe.signtool({"ProgramFiles(x86)": str(tmp_path / "pf")}) == str(kits / "10.0.26100.0" / "x64" / "signtool.exe")
+
+
 def test_the_linux_installer_is_one_file_that_installs_for_this_user(tmp_path):
     """build_exe.linux_installer: install.sh, the line __APP__, the app as .tar.gz. Run for real on Linux: the app,
     its menu entry, icons and desktop icon appear in a home folder of its own; an update replaces the app; the

@@ -1340,12 +1340,44 @@ Open from it, structure:
   the `/api/autoname` route have no caller.
 
 Other open items (2026-11-12):
-- The macOS app is still not signed or notarized: the Apple secrets aren't set in CI, and the release notes say so.
-  Being set up since 2026-11-14 (the owner is joining the Apple Developer Program; a Mac to try builds on arrives
-  the week after): `tools/apple_signing.py` makes the certificate request and the secrets without a Mac, CI signs
-  and notarizes the app and the .dmg, and runs the built app's `--self-test` under the signature. Not tried against
-  Apple yet: the entitlements are only the camera and microphone; if the hardened runtime refuses a library, the
-  self-test in that run says which, and `entitlements.plist` is where to allow it.
+- The macOS app is signed and notarized by CI since 1.22.4 (2026-11-14): `tools/apple_signing.py` made the
+  certificate request and the secrets without a Mac, and the built app's `--self-test` runs under the signature.
+  Still to see: the app used on a Mac with a camera.
+- **Windows code signing** (asked for 2026-11-17; built, set up in Azure and tried from the owner's computer the
+  same day; CI's first signed run is still to be seen). The .exe, the
+  installer and its uninstaller are signed when the build is told with what (`build_exe.py`, "Windows code
+  signing"); CI does it on pushes to `main` once five repository secrets are set. Chosen: Azure Artifact Signing
+  (about 10 USD a month; the key stays in Microsoft's service, and CI signs in as the repository's workflow, so
+  nothing secret is stored). Looked at and not chosen: a certificate authority's OV or EV certificate (150 to
+  400+ USD a year, and its key must live on a hardware token or a paid cloud HSM, which CI can't use without
+  storing a secret; EV no longer skips SmartScreen since 2024), and SignPath Foundation (free for open source,
+  but the publisher shown is theirs).
+  - Tried with a self-signed certificate on the 1.24.3 build: the signed one-file .exe passes its self-test (a
+    signature is added at the end of the file, where the .exe looks for what it carries); Inno Setup signed its
+    uninstaller and Setup through `--sign-file`; a copy under another app id installed, `unins000.exe` and the
+    installed .exe read as signed, and it uninstalled clean.
+  - Set up the same day with the owner signed in to Azure: the signing account (Basic), their identity check as
+    an individual (under an hour from the request to Completed), a Public Trust certificate profile, an app
+    registration with no password that Azure trusts for this repository's `main` branch alone and that may sign
+    with that one profile, and the five repository secrets. What it took that the guides don't say plainly:
+    - the owner's subscription was billed to a Business billing account, which can't take an individual's
+      check: a second subscription on their Individual billing account holds the signing account;
+    - the check's form takes its email address from the billing account and can't be edited; an alias of the
+      owner's own mailbox worked;
+    - the check's id, which the certificate profile needs, can be read in the portal only;
+    - the Azure CLI was unpacked from Microsoft's signed installer without administrator rights
+      (`msiexec /a`), and is called as its `python.exe -IBm azure.cli` from PowerShell (its `az.cmd` breaks
+      on brackets in an argument).
+  - Tried against the real service from the owner's computer (their own account given the Signer role for the
+    trial and taken off it again): a copy of the released 1.24.3 .exe was signed in 6 s, and Windows reads it as
+    Valid, dated, signed by the owner's legal name with city, state and country (what an individual's
+    certificate carries). The copy was deleted.
+  - Still to be seen in CI's first signed run: that the sign-in the job makes (`azure/login`, then the Azure CLI
+    through the plug-in) is taken by the service, and that GitHub's Windows machines have the .NET 10 runtime
+    the plug-in needs (the build says so when it is missing).
+  - What signing does not do: stop SmartScreen's warning at once. Windows warns about a new publisher until it
+    has seen enough installs, for any kind of certificate. The warning then names the publisher: the owner's
+    legal name with an individual account, as on the Mac.
 - `hand_landmarker.task` is fetched from MediaPipe storage only (optional in `fetch_models.py`); not yet in
   `models-v1`.
 - Asked for on 2026-11-12, for later: a setting on each picture of the Cameras tab (a gear on the tile, as on
