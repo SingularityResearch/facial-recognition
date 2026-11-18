@@ -460,26 +460,35 @@ def test_a_face_that_comes_to_or_leaves_someone_with_many_faces_is_not_every_fac
 def test_an_ignore_and_its_undo_keep_the_groups_of_unknown_faces(data, monkeypatch):
     """The unknown faces are shown in groups of look-alikes. An Ignored face only leaves its group, and comes back
     into it when the Ignore is undone: the groups aren't made anew for it (0.5 s on 16,000 faces after every
-    Ignore, for the same groups less one face)."""
+    Ignore, for the same groups less one face). (The grouping itself is stood in for: it needs scikit-learn,
+    which the tests don't, and what is checked here is when it is asked for.)"""
     rng = np.random.default_rng(5)
     make_faces(data, 40)
     db = L.LabelDB(folders=[], backup=False, log=lambda *a: None)
     db._faceness_job = lambda: None
     centres = rng.normal(size=(2, 512)).astype(np.float32)
-    for i in range(40):                                     # two people nobody has named: two groups of 20
+    for i in range(40):                                     # two people nobody has named
         e = centres[i % 2] + 0.3 * rng.normal(size=512).astype(np.float32)
         db.store.emb[i] = (e / np.linalg.norm(e)).astype(np.float32)
     db._forgot()
+    made = []
+
+    def regroup(idx):                                       # the two people, as the grouping would find them
+        made.append(len(idx))
+        db._grouped = set(idx)
+        db.groups = [[i for i in idx if i % 2 == 0], [i for i in idx if i % 2]]
+    monkeypatch.setattr(db, "_regroup", regroup)
 
     def groups():
         return sorted(sorted(f[0] for f in g["faces"]) for g in db.unknown()["groups"])
     before = groups()
-    assert [len(g) for g in before] == [20, 20]
-    made = []
-    monkeypatch.setattr(db, "_regroup", lambda idx: made.append(len(idx)))
+    assert [len(g) for g in before] == [20, 20] and made == [40]
     db.act("ignore", [4, 6])
-    assert groups() == [[i for i in g if i not in (4, 6)] for g in before] and not made
+    assert groups() == [[i for i in g if i not in (4, 6)] for g in before] and made == [40]
     db.undo()
-    assert groups() == before and not made                  # back where they were, and nothing grouped anew
+    assert groups() == before and made == [40]              # back where they were, and nothing grouped anew
     db.act("name", [0], "Ann")                              # a name never regrouped either: the faces like Ann's
-    assert groups() == [before[1]] and not made             # are suggestions now, the other group is as it was
+    assert groups() == [before[1]] and made == [40]         # are suggestions now, the other group is as it was
+    with db.lock:                                           # prints that came from another device do regroup
+        db._forgot()
+    assert groups() == [before[1]] and made == [40, 20]     # the 20 still unknown, grouped anew
