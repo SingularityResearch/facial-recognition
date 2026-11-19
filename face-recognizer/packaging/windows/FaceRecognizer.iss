@@ -70,8 +70,9 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// The app's processes started from this folder's FaceRecognizer.exe: two while it runs, as the .exe unpacks itself and
-// starts the app as a second process (a copy in another folder is left alone). How: 0 counts them, 1 asks each to
+// The app's processes started from this folder's FaceRecognizer.exe: three while it runs, as the .exe unpacks itself,
+// starts the app as a second process and that one the tracker as a third, which ends when the app does (a copy in
+// another folder is left alone). How: 0 counts them, 1 asks each to
 // close as closing its window does, 2 ends them.
 function AppRunning(How: Integer): Integer;
 var

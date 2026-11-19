@@ -245,3 +245,71 @@ def reveal(stored):
 def write_private(path, data):
     """atomic_write, readable only by this user (mode 600 outside Windows; HOME is per user on Windows)."""
     atomic_write(path, data, private=True)     # made with mode 600: never readable by others, not even briefly
+
+
+class SharedLock:
+    """One thread of one process at a time, for a file that two of the app's processes read, change and write back
+    (the tracker runs in a process of its own: its alerts and settings are the same files the sync writes). A
+    threading.Lock keeps this process's threads apart and a lock on HOME/locks/<name>.lock keeps the processes
+    apart. Used like the threading.Lock it replaces, and like it not re-entrant. Where the lock file can't be made
+    or locked (a folder that can't be written), it is the threading.Lock alone, as before."""
+
+    def __init__(self, name):
+        import threading
+        self.name, self._thread, self._file = name, threading.Lock(), None
+
+    def _lock_file(self):
+        if self._file is None:
+            folder = HOME / "locks"
+            folder.mkdir(parents=True, exist_ok=True)
+            self._file = open(folder / f"{self.name}.lock", "a+b")
+        return self._file
+
+    def acquire(self):
+        self._thread.acquire()
+        try:
+            f = self._lock_file()
+            if os.name == "nt":
+                import msvcrt
+                f.seek(0)
+                while True:
+                    try:
+                        msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)     # waits 10 s, then OSError: again
+                        break
+                    except OSError as e:
+                        if e.errno not in (13, 36):                       # denied / would deadlock: still held
+                            raise
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            self._held = True
+        except Exception:
+            self._held = False                    # this process's threads are still kept apart
+        return True
+
+    def release(self):
+        try:
+            if getattr(self, "_held", False):
+                f = self._file
+                if os.name == "nt":
+                    import msvcrt
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
+        finally:
+            self._held = False
+            self._thread.release()
+
+    def locked(self):
+        return self._thread.locked()
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self.release()

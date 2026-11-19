@@ -127,8 +127,16 @@ def renew():
         f.unlink(missing_ok=True)
 
 
+_cert_lock = paths.SharedLock("peer-cert")     # the sync's process and the tracker's both ask at a first start
+
+
 def certificate():
     """(certificate path, key path, SHA-256 of the certificate's DER), made once."""
+    with _cert_lock:
+        return _certificate()
+
+
+def _certificate():
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec

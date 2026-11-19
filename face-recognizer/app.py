@@ -52,7 +52,7 @@ def keep_font_list(env=os.environ, built=None):
 keep_font_list()
 
 TITLE = "Face Recognizer"
-VERSION = "1.24.10"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.25.0"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -130,6 +130,156 @@ def start(name, module, port, app):
 
 def bind(port):
     return localguard.bind(port)                     # no address reuse on Windows: a second copy gets OSError
+
+
+# ---- the tracker in a process of its own -----------------------------------------------------------------------------
+# The two programs used to share this one Python process, where one thread runs at a time: with the labeling tool
+# kept busy, the tracker answered a tiny question in 83 ms instead of 3.5 (measured on a copy of a real library,
+# 2026-11-19), and a library call that never came back stopped the camera's server with everything else. The
+# tracker (the camera's frames in, recognition, the camera's stream out) is now started as a second process:
+# this program again with --tracker-child. What the two ask of each other goes over 127.0.0.1 (trackerlink.py).
+# This process starts it, checks that what answers on its port is the process it started (trackerlink.hello),
+# starts it again when it ends or stops answering, and ends it when the app ends; the tracker ends itself when
+# this process is gone (tracker.watch_parent). FACE_TRACKER=inline keeps it in this process, as before.
+INLINE = (os.environ.get("FACE_TRACKER") or "").strip().lower() == "inline"
+CAMS_PORT = SHELL_PORT + 5      # the Cameras page's own port in the tracker's process (8769): its own window process
+CHILD_START = 300               # s the tracker's process may take to load its models and answer
+CHILD_SILENT = 30               # s without an answer before a running tracker's process is ended and started again
+CHILD_TRIES = (5, 600)          # at most 5 starts in 10 minutes; then its tab says so instead of trying forever
+CHILD_LOOK = 5                  # s between looks at the tracker's process
+PORT_TAKEN = 3                  # the child's exit code when its port was taken between this process's look and its own
+TRACKER = {"child": None, "stopping": False, "starts": []}
+
+
+class Child:
+    """The tracker's process as this app started it. In OWN like a program's thread (is_alive)."""
+
+    def __init__(self, proc, url):
+        self.proc, self.url = proc, url
+
+    def is_alive(self):
+        return self.proc.poll() is None
+
+
+def child_command(port):
+    """This program again, as the tracker: [exe, (app.py,) --tracker-child, its port, this process, the tab page's
+    port, the Cameras page's own port]."""
+    me = [] if getattr(sys, "frozen", False) else [str(Path(__file__).resolve())]
+    shell_port = (SHELL.get("url") or f"http://127.0.0.1:{SHELL_PORT}/").rstrip("/").rsplit(":", 1)[1]
+    return [sys.executable] + me + ["--tracker-child", str(port), str(os.getpid()), shell_port, str(CAMS_PORT)]
+
+
+def start_tracker(name, port):
+    """Start the tracker as a process of its own on the first free port from `port`. Returns its URL once it answers
+    and has shown that it is the process this app started. OSError when it can't be started."""
+    import subprocess
+
+    import trackerlink
+    if not trackerlink.TOKEN:
+        trackerlink.new_token()                      # this run's secret: in the child's environment, nowhere else
+    trackerlink.REMOTE = True
+    for p in range(port, port + PORT_TRIES):
+        url = f"http://127.0.0.1:{p}/"
+        try:
+            bind(p).server_close()                   # free now: the child takes it next
+        except OSError:
+            if answering(url, "tracker"):
+                raise OSError(f"It is already running at {url}, started on its own (its .bat) or by another Face "
+                              f"Recognizer window, and a copy started that way can't be shown in this window. "
+                              f"\nClose that copy (its black "
+                              f"window) and start the app again, or keep using it in your browser at {url}") from None
+            continue
+        std = {"stdin": subprocess.DEVNULL}
+        for key, stream in (("stdout", sys.__stdout__), ("stderr", sys.__stderr__)):
+            try:
+                stream.fileno()
+                std[key] = stream                    # a console or a redirected file: the child's lines go there too
+            except (AttributeError, OSError, ValueError):
+                std[key] = subprocess.DEVNULL        # no console (the built app): the child writes app.log itself
+        flags = {"creationflags": 0x08000000} if sys.platform == "win32" and sys.stdout is not sys.__stdout__ else {}
+        proc = subprocess.Popen(child_command(p), env=dict(os.environ), close_fds=True, **std, **flags)
+        child, end = Child(proc, url), time.time() + CHILD_START
+        while time.time() < end and proc.poll() is None:
+            if trackerlink.hello(url, timeout=2):
+                OWN[url] = TRACKER["child"] = child
+                trackerlink.TRACKER = url
+                cams = trackerlink.cameras_port()     # the Cameras page on a port of its own, when it could take it
+                TRACKER["cameras"] = f"http://127.0.0.1:{cams}/cameras" if cams else None
+                threading.Thread(target=watch_tracker, args=(child,), daemon=True, name="tracker's process").start()
+                print(f"{name}: serving at {url} (a process of its own, {proc.pid}"
+                      + (f"; the Cameras page on port {cams}" if cams else "") + ")")
+                return url
+            time.sleep(0.5)
+        if proc.poll() == PORT_TAKEN:
+            continue
+        if proc.poll() is None:
+            end_process(proc)
+            raise OSError(f"its process didn't answer in {CHILD_START} s")
+        raise OSError(f"its process ended while it started (exit {proc.returncode})")
+    raise OSError(f"No free port between {port} and {port + PORT_TRIES - 1}")
+
+
+def end_process(proc, wait=3):
+    """End a process and wait until it is gone, so that its port is free for the one started next. A process that
+    is stopped whole takes no polite end (on Linux a SIGSTOPped one ignores SIGTERM until it is let go on): then
+    it is killed. Without the second wait its successor found the port still taken and moved to the next one."""
+    try:
+        proc.terminate()
+        proc.wait(wait)
+    except Exception:
+        try:
+            proc.kill()
+            proc.wait(wait)
+        except Exception:
+            pass
+
+
+def stop_tracker():
+    """End the tracker's process (the app ends or starts again; Start again for a tracker that hangs)."""
+    child = TRACKER["child"]
+    TRACKER["child"] = None
+    if child is not None:
+        import trackerlink
+        trackerlink.TRACKER = None
+        OWN.pop(child.url, None)
+        end_process(child.proc)
+
+
+def tracker_start_due(now=None):
+    """May the tracker's process be started (again) now? Not more than CHILD_TRIES[0] times in CHILD_TRIES[1] s."""
+    now = time.time() if now is None else now
+    TRACKER["starts"] = [t for t in TRACKER["starts"] if now - t < CHILD_TRIES[1]]
+    if len(TRACKER["starts"]) >= CHILD_TRIES[0]:
+        return False
+    TRACKER["starts"].append(now)
+    return True
+
+
+def watch_tracker(child):
+    """While this is the tracker's process: start it again when it has ended, or when it runs and hasn't answered
+    for CHILD_SILENT s (a process stuck the way two were on 2026-11-19 can't bring itself back; this one can)."""
+    import trackerlink
+    heard = time.time()
+    while TRACKER["child"] is child and not TRACKER["stopping"]:
+        time.sleep(CHILD_LOOK)
+        if TRACKER["child"] is not child or TRACKER["stopping"]:
+            return
+        if child.is_alive() and trackerlink.hello(child.url, timeout=3):
+            heard = time.time()
+            continue
+        if child.is_alive() and time.time() - heard < CHILD_SILENT:
+            continue
+        why = (f"hasn't answered for {time.time() - heard:.0f} s" if child.is_alive()
+               else f"ended (exit {child.proc.returncode})")
+        with _restart_lock:
+            if TRACKER["child"] is not child or TRACKER["stopping"]:
+                return
+            print(f"Face tracker: its process {why}: starting it again.")
+            TRACKER["again"] = child.url
+            stop_tracker()
+            STATUS["track"] = {}
+            run_programs(("track",))
+        return
 
 
 STATUS = {"track": {}, "label": {}}         # {"url": ...} once serving, {"error": ...} if it failed
@@ -347,6 +497,9 @@ def restart_app():
     exe = sys.executable
     args = [exe] + ([] if getattr(sys, "frozen", False) else [str(Path(__file__).resolve())]) + sys.argv[1:]
     env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")       # a fresh start for a PyInstaller build
+    env.pop("FACE_LINK", None)                   # the new copy makes its own secret for its own tracker
+    TRACKER["stopping"] = True
+    stop_tracker()                               # its port and the peer service's are free for the new copy
     try:
         sys.stdout.flush()
     except Exception:
@@ -556,8 +709,11 @@ def window_memory():
         table, memory = _processes()
         if not table:
             return None
-        sizes = [m for m in (memory(p) for p in descendants(table, os.getpid())) if m]
+        child = TRACKER["child"]
+        own = set() if child is None else {child.proc.pid} | set(descendants(table, child.proc.pid))
+        sizes = [m for m in (memory(p) for p in descendants(table, os.getpid()) if p not in own) if m]
         mb = 1024 * 1024
+        TRACKER["mb"] = sum(m for m in (memory(p) for p in own) if m) / mb       # the tracker's own process(es)
         return len(sizes), sum(sizes) / mb, max(sizes, default=0) / mb, (memory(os.getpid()) or 0) / mb
     except Exception:
         return None
@@ -568,8 +724,9 @@ def note_memory():
     NAS's page did after 14 hours (2026-11-14, a renderer "OutOfMemory"), and nothing had recorded how it grew."""
     m = window_memory()
     if m:
+        own = f", the tracker's own process {TRACKER['mb']:,.0f} MB" if TRACKER.get("mb") else ""
         print(f"Memory: the window's {m[0]} processes hold {m[1]:,.0f} MB (the largest {m[2]:,.0f} MB), "
-              f"the app itself {m[3]:,.0f} MB.")
+              f"the app itself {m[3]:,.0f} MB{own}.")
 
 
 def watch_window():
@@ -682,7 +839,12 @@ def camera_allowed(uri):
     own scripts never use camera or microphone, and it hands them to the tracker's frame alone: allow= on that
     frame in app_ui.html, and its Permissions-Policy header (shell_handler) names only the programs' ports."""
     track = STATUS["track"].get("url")
-    if not track or track not in OWN:
+    if (not track or track not in OWN) and TRACKER.get("again"):
+        # The tracker's own process is being started again (it ended, or stopped answering): the page in its tab
+        # is still the one this app showed, and a camera it asks for meanwhile must not get the window's own
+        # question, which nobody answers.
+        track = TRACKER["again"]
+    elif not track or track not in OWN:
         return False
     u = urlparse(uri)
     return any((u.scheme, u.hostname, u.port) == (a.scheme, a.hostname, a.port)
@@ -899,6 +1061,14 @@ def restart(key):
             return "busy"
         if s.get("url") and answering(s["url"], "tracker" if key == "track" else "face-labels"):
             return "running"
+        if key == "track" and not INLINE and s.get("url"):
+            # A process of its own that doesn't answer can be ended and started again: nothing else lives in it.
+            print("Face tracker: it doesn't answer: ending its process and starting it again")
+            TRACKER["again"] = s["url"]
+            stop_tracker()
+            STATUS[key] = {}
+            run_programs((key,))
+            return "starting"
         if s.get("url") in OWN and OWN[s["url"]].is_alive():
             # It is loaded in this process and only slow or answering with an error. Starting it "again" found its
             # own port taken, moved to the next and loaded a second copy onto the same data files: two labeling
@@ -941,6 +1111,19 @@ def run_programs(keys=("track", "label")):
 
     def one(key, name, module, port, app):
         try:
+            if key == "track" and not INLINE:
+                TRACKER.pop("failed", None)
+                if not tracker_start_due():
+                    raise OSError(f"its process was started {CHILD_TRIES[0]} times in {CHILD_TRIES[1] // 60} minutes "
+                                  f"and ended or stopped answering each time")
+                old = (TRACKER.get("last") or "").rstrip("/").rsplit(":", 1)[-1]
+                try:
+                    url = start_tracker(name, int(old) if old.isdigit() else port)
+                    STATUS[key] = {"url": url, "cameras": TRACKER.get("cameras")} if TRACKER.get("cameras") else {"url": url}
+                finally:
+                    TRACKER.pop("again", None)
+                TRACKER["last"] = STATUS[key]["url"]            # started again: on the port its page is loaded from
+                return
             STATUS[key] = {"url": start(name, module, port, app)}
         except BaseException as e:               # incl. SystemExit (e.g. face_id.NotDownloaded) from loading
             fail(key, name, e)
@@ -949,8 +1132,10 @@ def run_programs(keys=("track", "label")):
         if not get_models():
             return
         try:
-            import label_tool
-            import tracker                          # imports face_id, which checks the model and data files
+            import label_tool                       # imports face_id, which checks the model and data files
+            tracker = None
+            if INLINE:
+                import tracker
         except BaseException as e:
             for key in keys:
                 fail(key, NAMES[key], e)
@@ -1162,6 +1347,49 @@ def keep_running_macos(window):
         return False
 
 
+# The window's .NET parts (Windows), by their full names, before the window library asks for them. pywebview's
+# winforms.py asks by short name (clr.AddReference('System.Reflection')), and three times that failed at one of a
+# new build's first starts with nothing else wrong: "Could not load file or assembly 'System.Threading'" (1.24.0's
+# tests, twice), "... 'System.Reflection'" (1.24.10's and 1.25.0's, 2026-11-19). No window then, and the app in the
+# web browser instead. Why the short name fails those times is not known; .NET remembers a failed load for the
+# life of the process, so asking again by the same name fails again. By its full name an assembly is taken from
+# the system's own store on another path, and a file's own path is a third; once it is loaded, the window
+# library's question by short name is answered from what is loaded. Each failure and what then worked is logged.
+WINDOW_PARTS = (("System.Windows.Forms", "b77a5c561934e089"), ("System.Collections", "b03f5f7f11d50a3a"),
+                ("System.Threading", "b03f5f7f11d50a3a"), ("System.Reflection", "b03f5f7f11d50a3a"))
+
+
+def preload_window_parts(say=print, add=None, sleep=time.sleep):
+    """Load WINDOW_PARTS before pywebview does. Returns how many are loaded (4 when all is well)."""
+    if sys.platform != "win32" and add is None:
+        return 0
+    if add is None:
+        try:
+            import clr
+            add = clr.AddReference
+        except Exception as e:
+            say(f"Window: .NET couldn't be loaded ({type(e).__name__}: {str(e).splitlines()[0][:150]})")
+            return 0
+    windir, loaded = os.environ.get("WINDIR", r"C:\Windows"), 0
+    for name, token in WINDOW_PARTS:
+        ways = (("its full name", f"{name}, Version=4.0.0.0, Culture=neutral, PublicKeyToken={token}"),
+                ("its file", rf"{windir}\Microsoft.NET\assembly\GAC_MSIL\{name}\v4.0_4.0.0.0__{token}\{name}.dll"))
+        failed = []
+        for how, what in ways:
+            try:
+                add(what)
+                loaded += 1
+                if failed:
+                    say(f"Window: {name} loaded by {how} after {'; '.join(failed)}")
+                break
+            except Exception as e:
+                failed.append(f"{how} failed ({type(e).__name__}: {str(e).splitlines()[0][:120]})")
+                sleep(0.5)
+        else:
+            say(f"Window: {name} couldn't be loaded: {'; '.join(failed)}")
+    return loaded
+
+
 class Stamped:
     """The log file, each line starting with the time in UTC (HH:MM:SS), so a freeze or a restart can be matched
     with what else happened then."""
@@ -1239,7 +1467,7 @@ def self_test():
     def own():
         names = ("face_id", "labels", "label_tool", "tracker", "facedb", "dbsync", "dbsync_home", "peer", "secretbox",
                  "describe", "websearch", "hardware", "lmstudio", "persondata", "exprlog", "camrelay", "cudasupport",
-                 "music", "musiclog", "spotify", "describejob", "label_settings", "forgotten", "waitlog")
+                 "music", "musiclog", "spotify", "describejob", "label_settings", "forgotten", "waitlog", "trackerlink")
         for n in names:
             importlib.import_module(n)
         return f"{len(names)} modules"
@@ -1307,12 +1535,42 @@ def self_test():
     return good
 
 
+def tracker_child(port, parent, shell_port, cameras_port=0):
+    """The tracker as the app's second process: no window, no tab page, nothing of the labeling tool. Its lines go
+    where the app's go (app.log, or the console), and a stuck interpreter's stacks too. Does not return."""
+    HOME.mkdir(parents=True, exist_ok=True)
+    if getattr(sys, "frozen", False) or sys.stdout is None:
+        log = Stamped(open(HOME / "app.log", "a", encoding="utf-8", buffering=1))
+        sys.stdout = sys.stderr = log
+        watch_interpreter(log.f)
+    else:
+        watch_interpreter(sys.stderr)
+    try:
+        import cudasupport                          # Linux app + NVIDIA: its downloaded CUDA, before onnxruntime loads
+        cudasupport.activate()
+        import tracker
+        tracker.serve_child(int(port), int(parent),
+                            {f"http://127.0.0.1:{int(shell_port)}", f"http://localhost:{int(shell_port)}"},
+                            int(cameras_port) or None)
+    except OSError as e:
+        print(f"Face tracker: couldn't start in its own process: {e}", flush=True)
+        os._exit(PORT_TAKEN if getattr(e, "errno", None) in (98, 48, 13, 10048, 10013) else 1)
+    except BaseException as e:                      # incl. SystemExit (face_id.NotDownloaded): its own message
+        if not isinstance(e, SystemExit):
+            traceback.print_exc()
+        print(f"Face tracker: couldn't start in its own process: {e}", flush=True)
+        os._exit(1)
+    os._exit(0)
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     if "--self-test" in args:
         os._exit(0 if self_test() else 1)        # at once: libraries loaded for the test may keep threads running
     if "--probe-window" in args:
         probe_window()
+    if "--tracker-child" in args:                   # this program as the tracker's own process (start_tracker)
+        tracker_child(*args[args.index("--tracker-child") + 1:][:4])
     wait_for_previous()                             # Windows, started again by restart_app: its ports free first
     HOME.mkdir(parents=True, exist_ok=True)
     if getattr(sys, "frozen", False) or sys.stdout is None:      # no console: keep the messages in a log
@@ -1357,7 +1615,16 @@ def main(argv=None):
         start = {"private_mode": False, "storage_path": str(HOME / "webview")}
         if sys.platform.startswith("linux") and WINDOW_ICON.is_file():
             start["icon"] = str(WINDOW_ICON)
-        webview.start(**start)
+        preload_window_parts()                      # Windows: its .NET parts by their full names first
+        try:
+            webview.start(**start)
+        except Exception as e:                      # they failed all the same: once more, a moment later
+            if sys.platform != "win32" or "Could not load file or assembly" not in str(e):
+                raise
+            print(f"Window: its .NET parts didn't load ({str(e).splitlines()[0][:150]}): trying once more.")
+            time.sleep(2)
+            preload_window_parts()
+            webview.start(**start)
         # in the log, so an app that is gone can be told from one that crashed (2026-11-15: an app that had
         # ended with nothing logged, and no way to say whether its window had been closed)
         print("The app window was closed: the app ends.", flush=True)
@@ -1366,6 +1633,8 @@ def main(argv=None):
         print("No app window could open here: using the web browser instead.")
         WINDOW, WATCHING["on"] = None, False          # no window: nothing to watch or to start again for (a closed
         in_browser(shell)                             # browser tab isn't a frozen window)
+    TRACKER["stopping"] = True
+    stop_tracker()                                  # the tracker's own process ends with the app
     os._exit(0)                                     # window closed: stop both servers and background readers
 
 

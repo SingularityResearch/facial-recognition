@@ -19,6 +19,7 @@ import argparse
 import base64
 import json
 import math
+import os
 import re
 import sys
 import threading
@@ -496,6 +497,8 @@ def make_handler(engine):
             path = self.path.split("?", 1)[0]
             if self.refused(write=False, own=path.startswith(localguard.OWN_ONLY)):
                 return
+            if path.startswith("/api/local/"):          # the app's other process asks (trackerlink.py): never a page
+                return self.send_json(*local_get(path, self.path.partition("?")[2], self.headers, engine))
             if path in ("/", "/index.html"):
                 return self.send(PAGE.read_bytes(), "text/html; charset=utf-8")   # re-read so edits show on refresh
             if path in SCRIPTS:
@@ -550,6 +553,8 @@ def make_handler(engine):
                 return
             path, _, query = self.path.partition("?")
             try:
+                if path == "/api/local/peer":           # the sync (the app's other process): the peer service on or off
+                    return self.send_json(*local_peer(json.loads(self.body(2000) or b"{}"), self.headers))
                 if path == "/api/stream/frame":         # this camera as the page shows it, for the other devices
                     import camstream
                     import peer
@@ -653,6 +658,143 @@ def make_handler(engine):
                 return self.send_json({"error": str(e)}, getattr(e, "code", 400))
 
     return Handler
+
+
+# ---- the tracker in a process of its own (trackerlink.py) -----------------------------------------------------------
+# What the rest of the app used to read from this program's memory, it now asks for here; and what the camera needs
+# of the shared database runs here, where the camera's frames are: the peer service (other devices watch this camera
+# and fetch its photos) and the camera's heartbeat. Only the app's own other process may ask (trackerlink.allowed).
+_peer_state = {"service": None, "key": None, "key_at": 0.0, "lock": threading.Lock()}
+LOCAL_LABEL = re.compile(r"http://127\.0\.0\.1:\d{2,5}/")
+
+
+def _cluster_key():
+    """The key the other devices sign their requests with, asked of the database at most every 30 s."""
+    st = _peer_state
+    if st["key"] is None or time.time() - st["key_at"] > 30:
+        st["key_at"] = time.time()
+        try:
+            import facedb
+            import peer
+            st["key"] = facedb.ask(peer.cluster_key)
+        except Exception:
+            pass                                    # the database can't be asked now: the key as it was
+    return st["key"]
+
+
+def local_get(path, query, headers, engine):
+    """(answer, code) for the app's other process: hello (prove this is the tracker that app started), who is in
+    view, where the models run."""
+    import trackerlink
+    q = dict(parse_qsl(query))
+    if path == "/api/local/hello":                  # answered to anyone: it gives nothing away, it proves
+        return {"proof": trackerlink.proof(q.get("n", ""))}, 200
+    if not trackerlink.allowed(headers):
+        return {"error": "only the app's own processes may ask for that"}, 403
+    if path == "/api/local/inview":
+        import camstream
+        try:
+            import facedb
+            if facedb.configured():
+                camstream.start_heartbeat()         # this device is there, and whether its camera streams
+        except Exception:
+            pass
+        try:
+            within = min(60.0, max(1.0, float(q.get("within", 6))))
+        except ValueError:
+            within = 6.0
+        return {"names": camstream.in_view(within)}, 200
+    if path == "/api/local/devices":
+        return {"devices": {k: v for k, v in F.LAST_DEVICES.items() if v}, "decisions": dict(F.GPU_DECISIONS)}, 200
+    if path == "/api/local/cameras":                # the port the Cameras page is served on, if it has its own
+        return {"port": CAMERAS.get("port")}, 200
+    return {"error": "not found"}, 404
+
+
+def local_peer(body, headers):
+    """(answer, code): the peer service started or stopped here at the sync's word. Photos another device asks for
+    are fetched from the labeling tool (trackerlink.photo); the camera's stream and readout are this process's."""
+    import peer
+    import trackerlink
+    if not trackerlink.allowed(headers):
+        return {"error": "only the app's own processes may ask for that"}, 403
+    label = body.get("label")
+    if isinstance(label, str) and LOCAL_LABEL.fullmatch(label):
+        trackerlink.LABEL = label
+    st = _peer_state
+    with st["lock"]:
+        if body.get("run") and st["service"] is None:
+            if _cluster_key() is None:
+                return {"running": False}, 200       # no word from the database yet: at the sync's next step
+            try:
+                st["service"] = peer.Service(trackerlink.photo, _cluster_key).start()
+            except OSError as e:
+                return {"running": False, "error": str(e)}, 200
+        elif not body.get("run") and st["service"] is not None:
+            st["service"].stop()
+            st["service"] = None
+        peer.RUNNING = st["service"] is not None
+    return {"running": peer.RUNNING}, 200
+
+
+CAMERAS = {}                # {"port": n} while the Cameras page is also served on a port of its own (also_serve)
+
+
+def also_serve(handler, port):
+    """The same pages and answers on a second port of 127.0.0.1, for the Cameras tab. The app window gives each
+    address a process of its own (localguard's Origin-Agent-Cluster), and the Cameras page and the tracker's
+    page were one address: kept busy, the Cameras page took the tracker's page from 57 frames read a second to 1
+    (measured 2026-11-19). On a port of its own it has its own process there; here, both ports are this one
+    program, answering from the same memory. Returns the server, or None when the port is taken (the Cameras
+    page then stays on the tracker's own port, as before)."""
+    try:
+        srv = localguard.bind(port)
+    except OSError:
+        return None
+    srv.RequestHandlerClass = handler
+    threading.Thread(target=srv.serve_forever, daemon=True, name="cameras page").start()
+    CAMERAS["port"] = port
+    return srv
+
+
+def serve_child(port, parent, frame_parents=(), cameras_port=None):
+    """This program as the app's second process (app.py starts it: --tracker-child): its server on 127.0.0.1:port,
+    its pages framed by the app's tab page, and ended when the app's own process is gone. cameras_port: a second
+    port for the Cameras page (also_serve). Does not return."""
+    import trackerlink
+    localguard.FRAME_PARENTS.update(frame_parents)
+    srv = bind(port)                                # OSError (taken): the app tries the next port
+    watch_parent(parent)
+    F.SAVED_HOOKS.append(trackerlink.note_saved)    # an alert or a visit saved here: the sync hears of it at once
+    trackerlink.start_telling()
+    print("Face tracker: loading ...", flush=True)
+    attach(srv)
+    if cameras_port and also_serve(srv.RequestHandlerClass, cameras_port) is None:
+        print(f"Face tracker: port {cameras_port} is taken: the Cameras page stays on the tracker's own port", flush=True)
+    srv.serve_forever()                             # the app says "serving at" once it has checked who answers here
+
+
+def watch_parent(pid, every=1.0):
+    """End this process when the app's own process (pid) is gone: closed, ended in Task Manager, or crashed. The
+    camera's server must not live on without its window."""
+    def gone():
+        if os.name == "nt":
+            import ctypes
+            k = ctypes.windll.kernel32
+            h = k.OpenProcess(0x00100000, False, int(pid))          # SYNCHRONIZE
+            if not h:
+                return True
+            try:
+                return k.WaitForSingleObject(h, 0) == 0             # signaled: it has ended
+            finally:
+                k.CloseHandle(h)
+        return os.getppid() != int(pid)
+
+    def run():
+        while not gone():
+            time.sleep(every)
+        os._exit(0)
+    threading.Thread(target=run, daemon=True, name="the app's process").start()
 
 
 def bind(port):

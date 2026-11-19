@@ -78,6 +78,16 @@ OTHER_CALLERS = {
     ("label", "/favicon.ico"): "the browser asks for a tab's icon by itself",
     ("tracker", "/favicon.ico"): "the browser asks for a tab's icon by itself",
     ("shell", "/favicon.ico"): "the browser asks for a tab's icon by itself",
+    # The tracker runs in a process of its own: what it and the rest of the app ask of each other (trackerlink.py),
+    # with the secret the app made for the run. Never a page's request.
+    ("tracker", "/api/local/"): "the app's own other process (trackerlink.py)",
+    ("tracker", "/api/local/hello"): "the app: is this the tracker's process it started? (trackerlink.hello)",
+    ("tracker", "/api/local/inview"): "the sync: who this device's camera sees (trackerlink.in_view)",
+    ("tracker", "/api/local/devices"): "Settings → This computer: where the tracker's models run (trackerlink.devices)",
+    ("tracker", "/api/local/peer"): "the sync: the peer service on or off (trackerlink.peer_service)",
+    ("tracker", "/api/local/cameras"): "the app: the Cameras page's own port, if it has one (trackerlink.cameras_port)",
+    ("label", "/api/local/"): "the tracker's own process: a photo for another device (trackerlink.photo)",
+    ("label", "/api/local/saved"): "the tracker's own process: something the sync sends was saved (trackerlink)",
 }
 # Entries of OTHER_CALLERS that may already be gone, while a route is being taken out: the test passes before and
 # after. Take the entry out of both once it is. (/api/autoname went this way on 2026-11-18.)

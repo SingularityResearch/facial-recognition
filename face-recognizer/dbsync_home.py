@@ -627,6 +627,7 @@ class HomePart:
         self.forget = forget
         self.peer_provider = peer_provider  # (hash, frame) -> JPEG: this device's photos for the others (peer.py)
         self.peer_service = None
+        self.peer_running = False           # as of the last step (the service may run in the tracker's own process)
         self.seen_before = set()            # names this device's camera saw at the last step (camera moves)
         self.key_current = False          # this device has the current passphrase (secretbox.catch_up): keys sync
         self.tables = {t.name: t(self) for t in TABLE_CLASSES}
@@ -751,14 +752,14 @@ class HomePart:
         on this device's alert list (the tracker's "alertWho"); nobody else's name and times are written. Rows older
         than KEEP_SIGHTINGS are deleted, every device's, so the table never becomes a record of who was where."""
         import alerts
-        import camstream
         import devicesettings
+        import trackerlink
         me = facedb.device()["id"]
-        camstream.start_heartbeat()                # streaming_at and last_seen, on their own thread
+        trackerlink.camera_services()              # streaming_at and last_seen, on their own thread
         track = devicesettings.settings("track")
         on = (track.get("ft-o-optAlertMove") or "0") == "1"       # off until switched on
         who = {s.strip().lower() for s in (track.get("ft-alertWho") or "").split(",") if s.strip()}
-        now_seen = [n for n in camstream.in_view() if n.lower() in who] if on else []
+        now_seen = [n for n in trackerlink.in_view() if n.lower() in who] if on else []
         conn.execute("DELETE FROM sightings WHERE last_seen < now() - make_interval(secs => %s)", (KEEP_SIGHTINGS,))
         if now_seen:
             conn.cursor().executemany("""INSERT INTO sightings (device, name) VALUES (%s, %s)
@@ -786,20 +787,22 @@ class HomePart:
     def _peer(self, conn):
         """The peer service: on while this device shares its photos (peer.sharing), its address in the database."""
         import peer
+        import trackerlink
         peer.CURRENT_KEY = peer.cluster_key(conn)
         want = self.peer_provider is not None and peer.sharing()
-        if want and self.peer_service is None:
-            try:
-                self.peer_service = peer.Service(self.peer_provider, lambda: peer.CURRENT_KEY).start()
-                print(f"Sharing photos with the other devices on port {peer.port()}.")
-            except OSError as e:
-                print(f"Couldn't share photos with the other devices (port {peer.port()}): {e}")
-                self.peer_provider = None              # don't try every few seconds
-        elif not want and self.peer_service is not None:
-            self.peer_service.stop()
-            self.peer_service = None
-        peer.RUNNING = self.peer_service is not None
-        peer.register(conn, peer.RUNNING)
+        # The service runs where the camera's frames are: in this process, or in the tracker's own (trackerlink),
+        # which this step tells to run it or not. While that process is starting again, nothing is shared.
+        try:
+            running, self.peer_service = trackerlink.peer_service(
+                want, self.peer_provider, lambda: peer.CURRENT_KEY, self.peer_service)
+        except OSError as e:
+            print(f"Couldn't share photos with the other devices (port {peer.port()}): {e}")
+            self.peer_provider = None                  # don't try every few seconds
+            running = False
+        if running and not self.peer_running:
+            print(f"Sharing photos with the other devices on port {peer.port()}.")
+        self.peer_running = peer.RUNNING = running
+        peer.register(conn, running)
 
     def after_push(self, conn, state):
         import exprlog

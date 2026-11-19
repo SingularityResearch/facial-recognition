@@ -1,6 +1,9 @@
 // app_ui.js - the app window's tab page (app_ui.html, served by app.py): switching tabs, start-up status,
 // Check for updates, and the Settings tab, which asks each program's page for its settings
 // (settings_bridge.js) and sends changes back.
+// The Cameras page's address: its own port in the tracker's process when it has one (each address is a process of
+// its own in this window, so a busy Cameras page can't slow the tracker's page), else the tracker's own address.
+const camsUrl = s => s.cameras || new URL("cameras", s.url).href;
 let current = "track";
 function show(k) {
   current = k;
@@ -24,7 +27,7 @@ async function poll() {                          // each program's URL once it's
     const f = document.getElementById("f-" + k), s = st[k] || {};
     if (s.url && !f.src) { f.src = s.url; document.getElementById("st-" + k).textContent = ""; }
     // the Cameras tab: the tracker's page of every device's camera
-    if (k === "track" && s.url && !document.getElementById("f-cams").src) document.getElementById("f-cams").src = new URL("cameras", s.url).href;
+    if (k === "track" && s.url && !document.getElementById("f-cams").src) document.getElementById("f-cams").src = camsUrl(s);
     if (s.error) { errors[k] = s.error; document.getElementById("st-" + k).textContent = "failed"; }
   }
   show(current);
@@ -72,6 +75,19 @@ setInterval(() => {
   const silent = silentTabs(Date.now());
   fetch("/alive" + (silent.length ? `?silent=${silent.join(",")}` : ""), { cache: "no-store" }).then(drop, () => {});
 }, 2000);
+// A program that was started again may be on another port than the one its tab was loaded from (the old one not
+// free yet): every 5 s this page asks where the programs are, and loads a tab again whose address has changed.
+setInterval(async () => {
+  let st = {};
+  try { st = await (await fetch("/status", { cache: "no-store" })).json(); } catch { return; }
+  for (const k of ["track", "label"]) {
+    const f = document.getElementById("f-" + k), url = st[k]?.url;
+    const cams = document.getElementById("f-cams");
+    if (k === "track" && url && cams.src && new URL(camsUrl(st[k])).origin !== new URL(cams.src).origin) cams.src = camsUrl(st[k]);
+    if (!url || !f.src || new URL(url).origin === new URL(f.src).origin) continue;
+    f.src = url;
+  }
+}, 5000);
 // Start again: a program that failed to start (the model download, say) or whose page says it stopped answering
 // (its "Start again" button asks this page, over postMessage). app.py starts it again, with any other program that
 // failed; one that still answers is left alone. Its frame is emptied until /status gives its (maybe new) address.

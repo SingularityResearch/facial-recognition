@@ -12,7 +12,6 @@ outside the project like the presence log; it names people, so persondata.py exp
 """
 import json
 import re
-import threading
 import time
 import uuid
 
@@ -24,7 +23,7 @@ STATES = ("new", "ack", "archived")
 KEEP = 500
 DETAIL_SETS = ("first", "later")
 DETAILS_MAX = 20_000                             # bytes of JSON per set of details
-_lock = threading.Lock()
+_lock = paths.SharedLock("alerts")             # the tracker (its own process) and the sync both rewrite the inbox
 
 
 def check_details(d, depth=0):

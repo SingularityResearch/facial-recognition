@@ -99,3 +99,29 @@ def test_the_window_keeps_running_in_the_background():
         assert env[var].count("--disable-background-timer-throttling") == 1
         assert "--disable-backgrounding-occluded-windows" in env[var]
     assert env["QTWEBENGINE_CHROMIUM_FLAGS"].startswith("--ignore-gpu-blocklist ")
+
+
+def test_the_windows_net_parts_are_loaded_by_full_name_first_and_by_file_when_that_fails(monkeypatch):
+    """pywebview asks for them by short name, which failed at some first starts of a new build (no window, the app
+    in the browser). By full name, then by the file itself; and whatever fails is said in the log."""
+    asked, said = [], []
+    assert app.preload_window_parts(say=said.append, add=asked.append, sleep=lambda s: None) == 4
+    assert [a.split(",")[0] for a in asked] == [name for name, _ in app.WINDOW_PARTS] and not said
+    assert all("Version=4.0.0.0" in a and "PublicKeyToken=" in a for a in asked)        # full names: no guessing
+
+    def flaky(what):
+        asked.append(what)
+        if what.startswith("System.Reflection,"):
+            raise FileNotFoundError("Could not load file or assembly 'System.Reflection' or one of its dependencies.")
+    asked.clear()
+    assert app.preload_window_parts(say=said.append, add=flaky, sleep=lambda s: None) == 4
+    assert asked[-1].endswith(r"GAC_MSIL\System.Reflection\v4.0_4.0.0.0__b03f5f7f11d50a3a\System.Reflection.dll")
+    assert len(said) == 1 and "loaded by its file after its full name failed" in said[0]
+
+    def never(what):
+        raise FileNotFoundError("gone")
+    said.clear()
+    assert app.preload_window_parts(say=said.append, add=never, sleep=lambda s: None) == 0
+    assert len(said) == 4 and all("couldn't be loaded" in s for s in said)              # the window is still tried
+    monkeypatch.setattr(app.sys, "platform", "linux")
+    assert app.preload_window_parts(say=said.append) == 0                               # nothing to do elsewhere

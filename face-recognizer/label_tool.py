@@ -175,6 +175,8 @@ def make_handler(db, importer):
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
             path, low = u.path, q.get("low") == "1"
             try:
+                if path.startswith("/api/local/"):   # the tracker's own process asks (trackerlink.py): never a page
+                    return local_get(self, path, q, db)
                 if path in ("/", "/index.html"):
                     return self.send(PAGE.read_bytes(), "text/html; charset=utf-8")
                 if path in ("/label_ui.js", "/settings_bridge.js", "/page_store.js", "/ask.js"):   # the page's scripts
@@ -277,6 +279,13 @@ def make_handler(db, importer):
                 if not isinstance(body, dict):
                     raise ValueError("expected an object")
                 path = self.path.split("?", 1)[0]
+                if path == "/api/local/saved":       # the tracker's own process saved an alert or a visit
+                    import trackerlink
+                    if not trackerlink.allowed(self.headers):
+                        return self.send({"error": "only the app's own processes may ask for that"}, code=403)
+                    if getattr(db, "sync", None):
+                        db.sync.note()
+                    return self.send({"ok": True})
                 if label_settings.post(self, path, body, db) is not False:   # what the Settings tab asks
                     return
                 if path == "/api/act":
@@ -467,11 +476,30 @@ def start_sync(db):
     return db.sync
 
 
+def local_get(handler, path, q, db):
+    """What the tracker's own process asks of this one: a photo of this device for another device. The peer service
+    (peer.py) runs where the camera's frames are; the photos are here. By content hash only, as the peer service
+    itself takes them, and only for the app's own other process."""
+    import peer
+    import trackerlink
+    if not trackerlink.allowed(handler.headers):
+        return handler.send({"error": "only the app's own processes may ask for that"}, code=403)
+    m = peer.PHOTO_RE.match(path[len("/api/local"):] + (f"?frame={q['frame']}" if q.get("frame") else ""))
+    if not m:
+        return handler.send({"error": "not found"}, code=404)
+    jpg = peer.own_photo(db.store, m.group(1), int(m.group(2)) if m.group(2) else None)
+    if jpg is None:
+        return handler.send({"error": "this device doesn't have that photo"}, code=404)
+    return handler.send(jpg, "image/jpeg")
+
+
 def attach(srv):
     """Load the faces and let srv (an HTTP server on 127.0.0.1) answer the labeling page; starts the
     background readers (photo dates and tags, webcam snapshots). Returns the LabelDB."""
     import face_id as F
     import labels as L
+    import trackerlink
+    trackerlink.LABEL_URL["url"] = f"http://127.0.0.1:{srv.server_address[1]}/"    # where the tracker's process asks
     F.require_models()
     db = L.LabelDB()
     # The Web search answers are guarded by the labeling data's own lock: the sync reads and writes them under

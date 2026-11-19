@@ -56,8 +56,40 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 
 - `app.py` / `build_app.bat` → `FaceRecognizer.exe` — one window (pywebview: WebView2 on Windows, Qt WebEngine on
   Linux) with the Face tracking, Labeling, Cameras and Settings tabs. `VERSION` in `app.py` is the release number.
-  - Starts both programs in one process (`tracker.bind`/`attach`, `label_tool.attach`), each still on its own port
-    and page. Ports 8764-8766 (tab page, labeling, tracker); `FACE_PORTS=<n>` uses n to n+2 (a second copy).
+  - Starts the labeling tool in its own process (`label_tool.attach`) and, since 1.25, the tracker as a second
+    process: this program again with `--tracker-child <port> <this pid> <tab page port> <Cameras page port>`
+    (`start_tracker`, `tracker_child`, `tracker.serve_child`). Each on its own port and page. Ports 8764-8766 (tab
+    page, labeling, tracker) and 8769 (the Cameras page, below); `FACE_PORTS=<n>` uses n to n+2 and n+5 (a second
+    copy). `FACE_TRACKER=inline` keeps the tracker in the app's process, as before (`tracker.bind`/`attach`).
+    - Why: one Python process runs one thread at a time. With the labeling tool kept busy (its summary asked for
+      by 4 threads) the tracker answered a tiny question in 83 to 97 ms instead of 3, and 204 of 221 answers
+      came later than 50 ms; in its own process 3 ms and none late, the camera at the other devices 20 frames a
+      second throughout (measured on a copy of a real library and in the PC's app, 2026-11-19). It costs 0.85 GB
+      more committed memory (2.8 to 3.7 GB), 50 MB more in use.
+    - The app checks that what answers on the tracker's port is the process it started (`trackerlink.hello`: an
+      answer only a holder of this run's secret can give), puts it in `OWN` (a `Child`), and watches it
+      (`watch_tracker`): ended, or running and silent for `CHILD_SILENT` (30 s), it is ended and started again on
+      the same port, at most `CHILD_TRIES` (5 times in 10 minutes). The tracker page keeps its camera through
+      that (measured in the app: answering again after 7 s, the camera at another device again after 19 s; a
+      process suspended whole: replaced after 35 s, on Linux 36). Start again for a tracker that doesn't answer
+      does the same.
+    - It is ended with the app (`stop_tracker` before every `os._exit` and before `restart_app`), and ends itself
+      when the app's process is gone (`tracker.watch_parent`). It writes the same `app.log` (or console), has its
+      own `watch_interpreter`, and is counted apart in the memory line.
+    - While it is being started again, the tracker page's camera request is still answered (`TRACKER["again"]`
+      in `camera_allowed`).
+    - The Cameras tab's page has a port of its own in the tracker's process (`CAMS_PORT`: the tab page's port + 5,
+      8769; `tracker.also_serve`: the same handler and the same memory on a second address of 127.0.0.1). The
+      window gives each address a process of its own, and the Cameras page was the tracker's address: kept busy,
+      it took the tracker's page from 57 frames read a second to 1; on its own port 55.7 (WebView2) and 57.5 (Qt
+      WebEngine; test copies, 2026-11-19). The app asks for the port over the link (`trackerlink.cameras_port`)
+      and gives the tab page the address in `/status` (`cameras`; `app_ui.js` `camsUrl`). A port that is taken,
+      `FACE_TRACKER=inline` and the tracker run by itself leave the page on the tracker's own port, as before.
+      The port must stay one of `TOOL_PORTS` (the tab page's `frame-src`; a test), and its frame is handed
+      neither camera nor microphone.
+    - The tab page looks at `/status` every 5 s and follows a program (and the Cameras page) to a changed
+      address: a tracker started again on another port was otherwise left behind in its frame.
+    - Tried on Windows and Linux, from source and as the built app; not yet on a Mac.
     A program already answering on a port that this process didn't start (`OWN`) is never shown in the window:
     `start` says it is already running (its .bat, another window, or anything answering like it).
   - The tab page itself (`app_ui.html` + `app_ui.js`, `{{VERSION}}` filled in) is served on `127.0.0.1:8764`:
@@ -89,6 +121,12 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     a busy test copy (it reads them without the lock). Don't shorten it, don't make it repeat.
   - `note_memory`: every `MEMORY_EVERY` (30 min) the log gets what the window's processes hold (`window_memory`:
     this process's descendants; Windows and Linux), so a page that keeps growing shows before it runs out of memory.
+  - `preload_window_parts`: Windows: loads the window's four .NET parts by their full names (then by their
+    files) before pywebview asks for them by short name. That short-name load failed at some first starts of a
+    new build ("Could not load file or assembly 'System.Threading'" in 1.24.0's tests, "'System.Reflection'"
+    in 1.24.10's and 1.25.0's): no window, and the app in the web browser. Why it fails is not known; a failed
+    load is remembered for the process's life, so the same name can't be asked again. If the window still fails
+    that way it is tried once more. Each failure and what then worked is logged.
   - `drop_request_hooks` (`unhook_requests`): Windows: takes pywebview's two request handlers off the window once
     its page has loaded. They passed every request of the pages through Python, and the second switched on the
     browser's network inspection, which keeps a record of every request while the page lives: the page grew 1.5
@@ -185,8 +223,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     camera and microphone). Also `Origin-Agent-Cluster: ?1`: in Chromium's windows (WebView2, Qt WebEngine) each
     server's pages then run in a process of their own, with their own main thread. Without it the tab page and
     all its tabs shared one: a Labeling page kept busy took the tracker from 46 frames read a second to 0.5
-    (measured on a test copy, 2026-11-19; 57 with the header). The tracker and the Cameras page are one server's
-    and still share theirs; WebKit (the macOS window) has one process whatever is sent;
+    (measured on a test copy, 2026-11-19; 57 with the header). The Cameras page is the tracker's server's too,
+    so in the app it is served on a second port (`app.CAMS_PORT`, see `app.py`); WebKit (the macOS window) has
+    one process whatever is sent;
   - `bind` (no port sharing on Windows; an accept queue of 128).
 - `settings_bridge.js` — the app window's **Settings** tab reads and changes each page's settings over postMessage.
   - Each page lists its own (`SettingsBridge.init` at the end of its script). The tab shows sections in list order,
@@ -215,11 +254,28 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `desktop.py` — what the app asks of the operating system on Windows, macOS and Linux: show a folder, draw the eye
   to the window for an alert, whether the screen is locked (`screen_locked`; Windows only, None elsewhere).
   `paths.user_data` gives each system's application-data folder.
+- `trackerlink.py` — what the tracker's process and the rest of the app ask of each other, over 127.0.0.1 to the
+  other one's own server, under `/api/local/` (never a page's request), with the secret the app makes for each run
+  (`FACE_LINK` in the child's environment; `allowed`, `hello`). With the tracker in the app's process (`REMOTE`
+  False: `FACE_TRACKER=inline`, the tests, the .bat files) the same functions look into memory as before.
+  - The label side asks the tracker: who the camera sees (`in_view`, for the sightings), where its models run
+    (`devices`, for Settings → This computer), and the peer service on or off (`peer_service`): the service and
+    the camera's heartbeat (`camstream.start_heartbeat`) run where the camera's frames are, in the tracker's
+    process, at the sync's word (`HomePart._peer`, `_cameras`). A tracker that doesn't answer (it is starting
+    again) means "not shared for this step", never an error: the sync stops sharing for good on an OSError.
+  - The tracker asks the label side: a photo another device asked its peer service for (`photo` →
+    `/api/local/photo/<hash>`, by content hash only), and "something was saved" (`note_saved` →
+    `/api/local/saved`: an alert or a visit goes out at once, not at the sync's next look a minute later).
+  - A new piece of the tracker's memory that the other side needs goes through here, with its route in both
+    servers and in `OTHER_CALLERS` (`tests/test_routes.py`).
 - `paths.py` — `ROOT` (`FACE_ROOT` overrides), `HOME` (`FACE_HOME` overrides), `atomic_write`/`replace_file`,
   `rows_json` (the large files that are rewritten whole, photos, labels and descriptions: one line per entry,
   through the fast encoder; `indent=` takes Python's slow one),
   `read_json` (a file that is there but can't be read raises instead of counting as empty: for files that are
-  rewritten whole), `utc_now`/`utc_stamp`/`parse_time`. Every module takes its folders from here. Importing it also makes HTTPS check
+  rewritten whole), `utc_now`/`utc_stamp`/`parse_time`, `SharedLock` (one thread of one process at a time: a
+  threading lock and a lock file in `HOME/locks/`; for the files the tracker's process and the rest of the app both
+  read, change and write back: the alert inbox, the settings and person signals, the waiting logs, the device id,
+  the peer certificate. A new file of that kind takes one, not a `threading.Lock`). Every module takes its folders from here. Importing it also makes HTTPS check
   certificates the operating system's way (`truststore`): a fresh Windows has few root certificates for Python, and
   the first-start model download from GitHub failed there (CERTIFICATE_VERIFY_FAILED; `tests/test_certificates.py`).
   On Linux it also sets how glibc hands out memory (`give_memory_back`, `MALLOC`: 8 arenas, a block of 8 MB or
@@ -438,7 +494,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Relaying (`camrelay.py`): one connection per watched device (`peer.open_stream`, never ending on a timer,
     reconnecting at once), keeping that device's newest frame and readout; closed after `IDLE` (60) s unwatched.
     At most `MAX_RELAYS` (64) at a time: a device id is whatever a request says.
-  - Watching (`cameras_ui.html` + `cameras_ui.js`, the tracker's `/cameras` page, the app's Cameras tab): every
+  - Watching (`cameras_ui.html` + `cameras_ui.js`, the tracker's `/cameras` page, the app's Cameras tab, there
+    on a port of its own: `app.CAMS_PORT`): every
     streaming device in a grid with its readout, drawn with text only, and an events fly-out (alerts from every
     device; closed state remembered, its button counting new events). A browser allows six connections per address,
     so the page's requests never grow with the number of cameras:
@@ -684,6 +741,11 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     a file path, a row that changes a device's settings, each handed to the code the sync hands them to.
   - Device to device: `test_peer.py` (no database needed: which address is tried first, what a refusal says about
     the clocks, a running service on this computer, a long computer name, the private key kept encrypted).
+  - Two processes: `test_trackerlink.py` (no models needed: the local routes answer only with the run's secret;
+    hello proves without being handed it; the app takes only the process it started, starts it again when it
+    ends, ends it; a tracker that is down is "not shared now", not an error; a file both processes rewrite is
+    locked across them, tried with a second process; the Cameras page on its second port: the page and its
+    answers there, only under that port's own Host, the port told over the link, a taken port left alone).
   - Tripwires: `test_routes.py` (every address a page asks for is answered by the server that sent the page: the
     page files as the test servers send them against the route strings in the files its `ROUTE_FILES` names; every
     route has a page that asks for it or an entry in `OTHER_CALLERS`; every GET a page sends is sent for real, but
@@ -732,7 +794,8 @@ Platform differences live in:
   built Linux app gets CUDA from `cudasupport.py`;
 - online-only cloud files (`photofiles.py`) are handled on Windows only.
 
-Ports: `FACE_PORTS=<n>` moves the app window's 8764-8766 (and so the peer port, n+3).
+Ports: `FACE_PORTS=<n>` moves the app window's 8764-8766 (and so the peer port, n+3, Spotify's answer, n+4, and
+the Cameras page, n+5).
 
 ## Checks before committing
 
@@ -777,7 +840,14 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   database, on by default there, Settings switch): LAN, TLS with the device's pinned certificate, HMAC-signed
   requests from the cluster key, original photos by content hash only, never a path or anything else; and
   the device's live camera as its tracker page shows it (`/stream`) with its readout (`/readout`, and as JSON parts
-  in `/stream`), only while "Stream this camera" is on.
+  in `/stream`), only while "Stream this camera" is on. The Cameras page's own port (`app.CAMS_PORT`) is the
+  tracker's server a second time, on 127.0.0.1 with the same checks: each port answers only requests that name it
+  (Host and Origin), so a page of one is another origin to the other.
+- The app's two processes ask each other only under `/api/local/` (`trackerlink.py`), and those routes answer
+  only with this run's secret (`X-Face-Link`; made by the app, in the environment of the process it starts, in no
+  file, page or log). `hello` is the one exception: it takes no secret and proves the answerer has it, so the app
+  never sends the secret to a server it hasn't checked. A photo is given to the tracker's process by content hash
+  only, as the peer service takes them.
 - Every endpoint goes through `localguard.refuse_reason` (exact Host and port; POST needs `X-Face-Tool: 1` and its
   own Origin). The `app.py` shell uses it too: its GETs that do something (`/update`, `/open-release`, `/open`,
   `/attention`, `/restart`, `/restart-app`: `acts` in `shell_handler`) need the header.

@@ -4,8 +4,9 @@ dbsync_home.HomePart).
 
 The tracker page sends a JPEG frame about 20 times a second all the time (the owner's choice), whether anyone watches
 or not (put() answers how many watch). Frames are kept in memory only, never on disk: the newest one, for the watchers.
-Shared by the tracker's server (which takes the page's frames) and the peer service (which serves them); both run in
-the app window's one process."""
+Shared by the tracker's server (which takes the page's frames) and the peer service (which serves them): both run in
+the tracker's process, which since 1.25 is a process of its own (trackerlink.py); what the rest of the app needs of
+this (who is in view, the heartbeat) it asks that process for."""
 import threading
 import time
 

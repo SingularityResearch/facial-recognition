@@ -118,6 +118,8 @@ def test_the_windows_memory_goes_to_the_log(capsys, monkeypatch):
     if sys.platform == "win32" or sys.platform.startswith("linux"):              # for real: this test and a child
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         try:
+            import time
+            time.sleep(1)                            # a process just started has hardly any memory of its own yet
             n, total, largest, own = app.window_memory()
             assert n >= 1 and 1 < largest <= total < 4000 and 5 < own < 8000
         finally:

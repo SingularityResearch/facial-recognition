@@ -10,7 +10,6 @@ Values are the pages' own localStorage strings. Nothing here is a measured thres
 those. Without a shared database these files are this device's own copy, as browser storage was before."""
 import json
 import re
-import threading
 
 import forgotten
 import paths
@@ -24,7 +23,7 @@ ALL_KINDS = tuple(KINDS) + OWN_KINDS                            # (music.picture
 NOT_SETTINGS = set(KINDS.values()) | {"ft-forgot-done"}         # person data or page bookkeeping, never a setting
 MAX_VALUE = 20_000
 MAX_SIGNALS = 5_000_000
-_lock = threading.Lock()
+_lock = paths.SharedLock("settings")           # the tracker (its own process) and the labeling side both rewrite these
 
 
 def _read(name):

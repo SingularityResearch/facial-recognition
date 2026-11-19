@@ -182,8 +182,12 @@ def describe():
 def uses():
     """What the programs chose on this computer, for each job (filled in as the models load)."""
     import face_id as F
-    devices = dict(F.LAST_DEVICES)
-    return {"device_setting": F.DEVICE, "devices": devices, "decisions": dict(F.GPU_DECISIONS),
+    devices, decisions = dict(F.LAST_DEVICES), dict(F.GPU_DECISIONS)
+    import trackerlink
+    theirs = trackerlink.devices()             # the tracker's models, when it runs in a process of its own
+    devices.update(theirs[0])
+    decisions.update(theirs[1])
+    return {"device_setting": F.DEVICE, "devices": devices, "decisions": decisions,
             "import_workers": import_workers(),
             "photos": "decoded on the processor (JPEG straight at reduced size), read once each",
             "videos": "decoded on the processor, about one frame a second looked at",

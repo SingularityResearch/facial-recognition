@@ -26,7 +26,6 @@ HomePart.after_push, its rows deleted in dbsync_home._forget_on_server, and its 
 its top, export, forget) with a test.
 """
 import json
-import threading
 import time
 from datetime import datetime, timezone
 
@@ -49,7 +48,7 @@ class WaitLog:
     def __init__(self, folder, table, columns, values, key, needs=()):
         self.folder_name, self.columns, self.values, self.key = folder, tuple(columns), values, key
         self.needs = tuple(needs)
-        self.lock = threading.Lock()
+        self.lock = paths.SharedLock(f"waitlog-{folder}")     # appended to by the tracker, sent and rewritten by the sync
         # table and columns are the log's own constants, never anything read from a file or a request
         cols = ", ".join(("device", "name", "at") + self.columns)
         self.insert = (f"INSERT INTO {table} ({cols}) VALUES ({', '.join(['%s'] * (3 + len(self.columns)))}) "

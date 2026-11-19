@@ -141,7 +141,7 @@ def _conninfo():
 
 # --- this device -------------------------------------------------------------------------------------------------
 
-_device_lock = threading.Lock()
+_device_lock = paths.SharedLock("device")     # two processes at a first start must not each make an id
 
 
 def device():

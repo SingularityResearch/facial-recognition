@@ -277,7 +277,8 @@ Set before starting the app (or a program) to change how it starts.
 | `FACE_LMSTUDIO` | `off` (or `0`, `no`) | Don't keep LM Studio on all interfaces, announce it, or put its models in the shared models folder. |
 | `FACE_LLM_URL` | an address | The default Describe photo server (before one is set in Settings). |
 | `GOOGLE_VISION_API_KEY` | a key | Google key for Web search, instead of saving one. |
-| `FACE_PORTS` | a port n | The app window's ports: n to n+2 instead of 8764 to 8766 (to run a second copy). The peer service then uses n+3, and Spotify's one-time answer to **Connect** n+4 (8768 by default: the redirect address of your Spotify key must name that port). |
+| `FACE_PORTS` | a port n | The app window's ports: n to n+2 instead of 8764 to 8766 (to run a second copy). The peer service then uses n+3, Spotify's one-time answer to **Connect** n+4 (8768 by default: the redirect address of your Spotify key must name that port), and the Cameras tab's page n+5 (8769 by default; on 127.0.0.1 like the others). |
+| `FACE_TRACKER` | `inline` | Keep the live tracker in the app's own process, as before 1.25, instead of a process of its own (then heavy work in the labeling tool can delay the camera's server again). For comparing the two. |
 | `FACE_UI` | `browser`, `none` | browser: open the app in the web browser instead of its window (same as `--browser`). none: start the servers only, with no window and no browser (for test copies; open `http://127.0.0.1:8764/` yourself). |
 | `FACE_ROOT` | a folder | Another folder with `models` and `data`. |
 | `FACE_HOME` | a folder | Another folder instead of the private `FaceLabels` folder. |
