@@ -803,9 +803,9 @@ database; a device's camera appears while that device has **Stream this camera t
   list seen on one device's camera appears on another's within 10 minutes. Every device shows it.
 - Every camera runs and streams all the time at full rate, about 20 frames a second (**Keep this camera running**
   and **Stream this camera to my other devices**, both on by default), also while the app's window is behind
-  others. A minimized window is the exception on Windows and on a Mac (and on a Mac a hidden one, Cmd+H): the
-  system slows its page, and the camera reaches your other devices slower, on Windows at about 1 frame a
-  second. Leave the window open behind your other windows instead. Frames are only passed on, never stored. The tab fetches every camera's new frames in one request
+  others, and on Windows also while it is minimized (since 1.24.9; before, a minimized window sent about 1 frame
+  a second). On a Mac a minimized or hidden (Cmd+H) window is still the exception: the system slows its page, and
+  the camera reaches your other devices slower. Leave the window open behind your other windows there. Frames are only passed on, never stored. The tab fetches every camera's new frames in one request
   and every readout in another, so many cameras fit on one page.
 
 ## Files
