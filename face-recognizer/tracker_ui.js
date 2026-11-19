@@ -576,6 +576,65 @@ function begin() {
   if (!running) { running = true; requestAnimationFrame(draw); sendLoop(); }
 }
 
+// ---------------------------------------------------------------- JPEGs, made off the page's main thread
+// canvas.toBlob makes its picture when the page has idle time, and with none only after a second. Measured
+// 2026-11-19 (WebView2 157, a 1280x720 JPEG): 13 ms with the page idle, 26 ms with its main thread half busy,
+// 101 ms at 80%, 1,100 ms from 96%. So a page busy enough read faces once a second and sent its camera to the
+// other devices at 1 frame a second, with the computer far from busy. A worker (jpeg_worker.js) has no such wait:
+// 10, 13, 24 and 25 ms at the same loads. Where there is no worker or no OffscreenCanvas, or the worker fails
+// (three times in a row, or its script doesn't load), toBlob as before; the log says which (pageNote).
+// Only in Chromium's browsers (WebView2 on Windows, Qt WebEngine on Linux: both measured, the same wait). WebKit
+// (the macOS window) makes toBlob's picture at once however busy the page is (4 ms on the Mac, 2026-11-19), and
+// the worker there gave the same picture later (23 ms with the page 80% busy): there, toBlob stays.
+const jpegs = { worker: null, n: 0, waiting: new Map(), fails: 0, off: false, said: false,
+                waits: typeof navigator !== "undefined" && /\bChrome\//.test(navigator.userAgent) };
+const toBlobJpeg = (c, q) => new Promise(r => c.toBlob(r, "image/jpeg", q));
+function jpegsOff(why) {
+  if (jpegs.off) return;
+  jpegs.off = true;
+  try { jpegs.worker?.terminate(); } catch {}
+  jpegs.worker = null;
+  for (const [, [, no]] of jpegs.waiting) no(new Error(why));
+  jpegs.waiting.clear();
+  pageNote(`JPEGs are made on the page itself (toBlob): ${why}`);
+}
+function jpegWorker() {
+  if (jpegs.worker) return jpegs.worker;
+  const w = jpegs.worker = new Worker("/jpeg_worker.js");
+  w.onmessage = e => {
+    const wait = jpegs.waiting.get(e.data.n);
+    if (!wait) return;
+    jpegs.waiting.delete(e.data.n);
+    if (e.data.blob) wait[0](e.data.blob); else wait[1](new Error(e.data.error || "no picture"));
+  };
+  w.onerror = e => { try { e.preventDefault(); } catch {} jpegsOff(`the worker stopped (${e.message || "its script didn't load"})`); };
+  return w;
+}
+async function jpegOf(c, q) {
+  if (jpegs.off || !jpegs.waits || !window.Worker || !window.OffscreenCanvas || !window.createImageBitmap) {
+    if (!jpegs.off) jpegsOff(jpegs.waits ? "this browser has no worker canvas" : "this browser makes them at once");
+    return toBlobJpeg(c, q);
+  }
+  let bmp = null;
+  try {
+    const w = jpegWorker();
+    bmp = await createImageBitmap(c);                       // the canvas as it is now; the worker gets it, not a copy
+    const blob = await new Promise((yes, no) => {
+      const n = ++jpegs.n;
+      jpegs.waiting.set(n, [yes, no]);
+      w.postMessage({ n, bmp, q }, [bmp]);
+      setTimeout(() => { if (jpegs.waiting.delete(n)) no(new Error("no answer in 5 s")); }, 5000);
+    });
+    jpegs.fails = 0;
+    if (!jpegs.said) { jpegs.said = true; pageNote("JPEGs are made in a worker"); }
+    return blob;
+  } catch (e) {
+    try { bmp?.close(); } catch {}
+    if (++jpegs.fails >= 3) jpegsOff(`the worker failed three times (${e.message})`);
+    return toBlobJpeg(c, q);
+  }
+}
+
 // ---------------------------------------------------------------- recognition requests
 async function sendLoop() {
   while (running) {
@@ -592,7 +651,7 @@ async function sendLoop() {
       shown = null;
       gctx.drawImage(video, 0, 0, grab.width, grab.height);
     }
-    const blob = await new Promise(r => grab.toBlob(r, "image/jpeg", 0.85));
+    const blob = await jpegOf(grab, 0.85);
     busy = true;
     try {
       const want = new URLSearchParams({ t: $("optThresh").value });
@@ -1203,7 +1262,7 @@ async function streamFrame() {
     cctx.drawImage(video, 0, 0, comp.width, comp.height);
     cctx.drawImage(canvas, 0, 0, comp.width, comp.height);                              // names, boxes, markers
     cctx.restore();
-    const blob = await new Promise(r => comp.toBlob(r, "image/jpeg", 0.72));
+    const blob = await jpegOf(comp, 0.72);
     if (!blob) throw new Error("couldn't make the JPEG");
     const headers = { "Content-Type": "image/jpeg", "X-Face-Tool": "1" };
     if (streamWhy) headers["X-Stream-Failed"] = streamWhy.replace(/[^\x20-\x7e]/g, "?").slice(0, 200);  // logged

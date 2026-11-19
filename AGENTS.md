@@ -72,6 +72,11 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     (`window_restart_due`: `WINDOW_BACKOFF` 2 min, doubling, at most an hour; `HOME/restarted.json` `window`).
     A gap of more than 20 s between its own checks means the computer slept: it starts counting again.
     `recover_renderer` reloads a page whose renderer died.
+  - Each tab's page has a process of its own on Windows and Linux (`localguard.page_headers`), so a hung tab no
+    longer stops the tab page. The tab page asks every loaded tab every 2 s whether it runs (`{ fs: "ping" }`,
+    answered by `settings_bridge.js`) and names those silent for `ANSWER_IN` (10 s) in `/alive?silent=track,cams`
+    (`app_ui.js` `silentTabs`): `alive_said` then doesn't count the window as running, and the watchdog does what
+    it does for a window that says nothing; the log names the tab (`not_answering`).
   - A camera that won't start even after a page reload: the tracker page tells the tab page (`fs: "camstuck"`),
     which asks `/restart-app`; `restart_soon` restarts the app at most once every `RESTART_EVERY` (an hour,
     `HOME/restarted.json`), and only in the app window. Under a locked screen the rule is once per lock
@@ -171,7 +176,11 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     kept the pictures of faces Ignored or forgotten since;
   - the page headers (`page_headers`: Content-Security-Policy `POLICY` plus each server's `policy`,
     frame-ancestors, CORP, nosniff; and a handler's `permissions` as `Permissions-Policy`: the tab page's, for
-    camera and microphone);
+    camera and microphone). Also `Origin-Agent-Cluster: ?1`: in Chromium's windows (WebView2, Qt WebEngine) each
+    server's pages then run in a process of their own, with their own main thread. Without it the tab page and
+    all its tabs shared one: a Labeling page kept busy took the tracker from 46 frames read a second to 0.5
+    (measured on a test copy, 2026-11-19; 57 with the header). The tracker and the Cameras page are one server's
+    and still share theirs; WebKit (the macOS window) has one process whatever is sent;
   - `bind` (no port sharing on Windows; an accept queue of 128).
 - `settings_bridge.js` — the app window's **Settings** tab reads and changes each page's settings over postMessage.
   - Each page lists its own (`SettingsBridge.init` at the end of its script). The tab shows sections in list order,
@@ -182,7 +191,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Pages also send the tab page notices this way (`SettingsBridge.notify`: alerts, `camstuck`). Served by both
     servers.
   - It also passes Ctrl+1 to Ctrl+4 pressed inside a tab on to the tab page (`fs: "key"`; a key pressed in a tab
-    never reaches the page around it). The Cameras page loads it for this alone.
+    never reaches the page around it), and answers the tab page's "does this page run?" (`fs: "ping"` → `"pong"`,
+    nothing else sent with it: see the watchdog in `app.py`). The Cameras page loads it for these two alone.
 - `ask.js` — `askUser(text, yes)`: a yes-or-no question asked in the page itself (a `<dialog>`), served by all
   three servers. Pages never use `confirm()`, `alert()` or `prompt()`: those stop every script of the window (the
   tab page and its tabs share one process), so the camera and its stream stopped and the watchdog took the window
@@ -312,6 +322,13 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 
 - `tracker.py` + `tracker_ui.html` + `tracker_ui.js` / `recognize.bat`, `recognize.sh` — the live tracker on
   `http://127.0.0.1:8766`. Also serves the Cameras page and the alert inbox.
+  - The page's JPEGs (the frame sent to be read, the camera's picture for the other devices) are made by `jpegOf`:
+    in Chromium's windows in a worker (`jpeg_worker.js`, served by the tracker, started by the page), elsewhere and
+    when the worker fails with `canvas.toBlob`. Chromium makes toBlob's picture when the page has idle time, and
+    with none only after a second: a page 96% busy read faces and sent its camera once a second (13 ms a picture
+    idle, 1,100 ms then; the worker 10 and 25 ms; the same bytes; WebView2 157 and Qt WebEngine, 2026-11-19).
+    WebKit doesn't wait (4 ms on the Mac however busy), so the macOS window keeps toBlob. Never call `toBlob` for
+    a picture of the camera outside `jpegOf` (a test).
   - **Collect faces** saves each collected face + the tracker's verdict to `HOME/webcam/` (`face_id.WEBCAM`); never
     the whole frame: the face with `CAPTURE_MARGIN` (0.6 face widths) around it, the room `face_id.rebuild_crop`
     re-detects in, other faces greyed out. `label_tool.py` imports them by itself and shows the verdict as a clue.
@@ -626,7 +643,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Node (`*.test.js`): `expression.js`, `signals.js`, `settings_bridge.js`, `page_store.js` (person signals sent
     per person, `refresh`); `pages.test.js`: every page script
     parses and is served and packed, no inline handlers, no internet fonts, no `confirm()`/`alert()`/`prompt()`,
-    and `askUser` (`ask.js`).
+    `askUser` (`ask.js`), the tab page's silent tabs, and the tracker's JPEGs (worker, its fallbacks, no `toBlob`
+    outside `jpegOf`; `jpeg_worker.js` itself).
   - Servers and security: `test_servers.py` (the three servers on test servers: CSP, CORP, cross-site refusals,
     request sizes, Collect faces, presence log, feeling reports, `/api/who`, no page loading from the internet,
     data only for a page's own requests, no program shown that the app didn't start),
@@ -756,7 +774,8 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   `frame-ancestors` lets only the page itself frame it, plus the app's tab page when `app.py` started the program
   (`localguard.FRAME_PARENTS` is empty until `app.shell_server` adds its real port; a .bat copy trusts nobody, and
   the app says so instead of showing it); the shell page can't be framed at all; `Cross-Origin-Resource-Policy:
-  same-origin` and `nosniff`. The tab page also sends `Permissions-Policy`: camera and microphone for itself and the
+  same-origin`, `nosniff` and `Origin-Agent-Cluster: ?1` (each server's pages in a process of their own: one page
+  can't slow or read into another's). The tab page also sends `Permissions-Policy`: camera and microphone for itself and the
   programs' ports only (itself, because a page can't hand on what it may not use). Pages load nothing from the internet (a test checks every page file).
 - Requests with `Sec-Fetch-Site: cross-site` are refused (another website's page, even as an `<img>`); same-site is
   how the tab page loads a program's page into its frame (the page's own requests after that are same-origin).

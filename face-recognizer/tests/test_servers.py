@@ -120,6 +120,8 @@ def test_every_answer_says_what_the_page_may_load(label_url, track, shell_url):
         assert p["connect-src"] == ["'self'"] and "'unsafe-eval'" not in p["script-src"]
         assert "'unsafe-inline'" not in p["script-src"]           # the pages keep no code inline (pages.test.js)
         assert h["Cross-Origin-Resource-Policy"] == "same-origin" and h["X-Content-Type-Options"] == "nosniff"
+        # each server's pages in a process of their own in the app window (a busy Labeling page slowed the camera)
+        assert h["Origin-Agent-Cluster"] == "?1"
 
 
 def test_no_browser_keeps_a_picture_or_an_answer(label_url, track, shell_url):
@@ -230,6 +232,16 @@ def test_other_websites_get_nothing(label_url, track, shell_url):
         assert request(track[0], path, headers={"Sec-Fetch-Site": "same-site"})[0] == 403, path
     assert request(shell_url, "/alive", headers={"Sec-Fetch-Site": "same-site"})[0] == 403
     assert request(label_url, "/api/undo", b"{}", {"Sec-Fetch-Site": "cross-site"})[0] == 403
+
+
+def test_the_tab_page_tells_the_watchdog_which_tabs_dont_answer(shell_url, monkeypatch):
+    monkeypatch.setattr(app, "ALIVE", {"at": None})
+    assert request(shell_url, "/alive")[0] == 200 and app.ALIVE["at"] is not None
+    at = app.ALIVE["at"]
+    assert request(shell_url, "/alive?silent=track,cams")[0] == 200
+    assert app.ALIVE["at"] == at and app.ALIVE["silent"] == ["track", "cams"]      # the window isn't running
+    app.ALIVE["at"] = at - 5                                    # (the clock's steps are coarser than these requests)
+    assert request(shell_url, "/alive?silent=")[0] == 200 and app.ALIVE["at"] >= at and not app.ALIVE["silent"]
 
 
 def test_no_page_loads_anything_from_the_internet():

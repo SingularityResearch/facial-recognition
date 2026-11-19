@@ -63,6 +63,9 @@ const SettingsBridge = (() => {
     if (framer() !== undefined && framer() !== e.origin) return;
     const m = e.data;
     if (!m || typeof m.fs !== "string") return;
+    // "Does this page run?" (the tab page, every 2 s): each tab's page has a process of its own, so one that hangs
+    // no longer stops the tab page, whose /alive is what the app's watchdog goes by. Answered at once, nothing else.
+    if (m.fs === "ping") { parent.postMessage({ fs: "pong", app }, e.origin); return; }
     origin = e.origin;
     const it = items.find(x => x.id === m.id);
     if (m.fs === "set" && it?.set && !(it.disabled?.())) {

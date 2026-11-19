@@ -55,7 +55,8 @@ ENTRY = {"label": ("/",), "tracker": ("/", "/cameras"), "shell": ("/",)}
 
 # How a page script's request goes out, by the function the address is handed to. "fetch": POST when its options
 # say so. "body": POST when it is called with a body, GET without (tracker_ui.js alertApi).
-SENDS = {"fetch": "fetch", "get": "GET", "got": "GET", "post": "POST", "alertApi": "body"}
+SENDS = {"fetch": "fetch", "get": "GET", "got": "GET", "post": "POST", "alertApi": "body",
+         "Worker": "GET"}                  # new Worker("/jpeg_worker.js"): the browser loads the worker's script
 # Functions that look at an address and send nothing (label_ui.js: is this picture's address a face's?)
 LOOKS_ONLY = {"startsWith", "endsWith", "includes", "indexOf"}
 
@@ -354,7 +355,7 @@ class Servers:
 
     def pages(self):
         """{server: {address: text}}: each server's pages (ENTRY) and the scripts and styles they load from it, as
-        the server sends them."""
+        the server sends them; also a script that a script loads (a worker: tracker_ui.js and jpeg_worker.js)."""
         out = {}
         for server in self.urls:
             got, todo = {}, list(ENTRY[server])
@@ -368,6 +369,9 @@ class Servers:
                 if "html" in headers["Content-Type"]:
                     todo += [p for _, m, p, dyn in asks_in(got[path])[0]
                              if m == "GET" and not dyn and p.endswith((".js", ".mjs", ".css", ".html"))]
+                elif "javascript" in headers["Content-Type"]:
+                    todo += [p for _, m, p, dyn in asks_in(got[path])[0]
+                             if m == "GET" and not dyn and p.endswith((".js", ".mjs"))]
             out[server] = got
         return out
 

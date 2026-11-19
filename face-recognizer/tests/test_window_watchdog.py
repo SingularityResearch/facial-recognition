@@ -79,6 +79,24 @@ def test_windows_restarts_without_kill(monkeypatch):
     assert "kill" not in out and "restart" in out
 
 
+def test_a_tab_whose_page_stopped_answering_counts_as_a_window_that_stopped(monkeypatch):
+    """Each tab's page has a process of its own, so a hung tracker page no longer stops the tab page: that one
+    keeps saying /alive, but names the tab. The window then doesn't count as running, and the watchdog does what it
+    does for a window that says nothing; the log says which tab it was."""
+    monkeypatch.setattr(app, "ALIVE", {"at": None})
+    assert app.alive_said("", now=100.0) == [] and app.ALIVE["at"] == 100.0
+    assert app.not_answering() == "The window's page"
+    assert app.alive_said("track,cams", now=102.0) == ["track", "cams"]
+    assert app.ALIVE["at"] == 100.0                                # not running: the last good word stays
+    assert app.not_answering() == "The page of the Face tracking tab and the Cameras tab"
+    assert app.alive_said("nonsense,<b>", now=104.0) == [] and app.ALIVE["at"] == 104.0    # only tabs there are
+    assert app.alive_said("label", now=106.0) == ["label"] and app.ALIVE["at"] == 104.0
+    # the watchdog, with a tab named from second 10 on: as with a page that went silent then
+    out = run(range(5, 120, 5), lambda t: min(t, 10.0), monkeypatch=monkeypatch)
+    assert out.index("kill") * 5 + 5 == 10 + app.HUNG_AFTER and "restart" in out
+    assert app.alive_said("", now=200.0) == [] and app.not_answering() == "The window's page"   # it answers again
+
+
 def test_the_windows_memory_goes_to_the_log(capsys, monkeypatch):
     """A page that keeps growing runs out in the end (the NAS's did after 14 hours): the log now says, every half
     hour, what the window's processes hold. They are this process's descendants."""

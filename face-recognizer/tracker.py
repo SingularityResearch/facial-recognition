@@ -40,7 +40,8 @@ HERE = Path(__file__).resolve().parent
 PAGE = HERE / "tracker_ui.html"
 SCRIPTS = {"/expression.js": HERE / "expression.js", "/signals.js": HERE / "signals.js",
            "/settings_bridge.js": HERE / "settings_bridge.js", "/page_store.js": HERE / "page_store.js", "/tracker_ui.js": HERE / "tracker_ui.js",
-           "/cameras_ui.js": HERE / "cameras_ui.js", "/ask.js": HERE / "ask.js"}
+           "/cameras_ui.js": HERE / "cameras_ui.js", "/ask.js": HERE / "ask.js",
+           "/jpeg_worker.js": HERE / "jpeg_worker.js"}      # the page's worker (tracker_ui.js jpegOf), not a script tag
 CAMERAS_PAGE = HERE / "cameras_ui.html"            # the other devices' live cameras, in a grid (camstream.py, peer.py)
 PEOPLE = F.DATA / "people.npz"
 CALIBRATION = F.DATA / "expr_calibration.json"   # written by tools/expr_eval.py

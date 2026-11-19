@@ -86,3 +86,15 @@ test("notify tells only the window around the page, and only one on this compute
   alone.bridge.notify({ fs: "forgot", name: "Ann" });
   assert.strictEqual(alone.posted.length, 0);
 });
+
+test("says that it runs when the tab page asks, and sends nothing else with it", async () => {
+  // Each tab's page has a process of its own, so the tab page asks every 2 s (app_ui.js silentTabs): an answer
+  // must cost nothing (no settings described) and go only to the window around the page.
+  const p = page();
+  await p.send({ fs: "ping" });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p.posted.map(m => [m.msg, m.origin]))), [[{ fs: "pong", app: "test" }, "http://127.0.0.1:8764"]]);
+  const other = page();
+  await other.send({ fs: "ping" }, "https://evil.example");
+  await other.send({ fs: "ping" }, "http://127.0.0.1:8764", {});      // not the window around it
+  assert.strictEqual(other.posted.length, 0);
+});

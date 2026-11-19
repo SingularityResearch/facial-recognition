@@ -52,7 +52,7 @@ def keep_font_list(env=os.environ, built=None):
 keep_font_list()
 
 TITLE = "Face Recognizer"
-VERSION = "1.24.8"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.24.9"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -188,8 +188,8 @@ def shell_handler():
                 q = dict(parse_qsl(self.path.partition("?")[2]))
                 attention(int(q.get("unread", "0") or 0), q.get("flash") == "1")
                 return self.send({})
-            if path == "/alive":                         # the window's page runs (watch_window)
-                ALIVE["at"] = time.monotonic()
+            if path == "/alive":                         # the window's page runs (watch_window), and its tabs' pages
+                alive_said(dict(parse_qsl(self.path.partition("?")[2])).get("silent", ""))
                 return self.send({})
             if path == "/restart-app":                   # the camera won't start even after a page reload
                 return self.send({"restarting": restart_soon("the camera wouldn't start")})
@@ -250,6 +250,25 @@ WINDOW = None                               # the app window, once made (main)
 ALIVE = {"at": None}
 HUNG_AFTER = 30
 RESTART_AFTER = 30
+TABS = {"track": "Face tracking", "label": "Labeling", "cams": "Cameras"}
+
+
+def alive_said(silent="", now=None):
+    """The tab page's word, every 2 s (/alive). Each tab's page has a process of its own (localguard's
+    Origin-Agent-Cluster header), so a page that hangs no longer stops the tab page: that one asks its tabs whether
+    they run and names those that haven't answered (silent: "track,cams"). Then the window does not count as
+    running, and the watchdog brings it back as it does a window that says nothing at all. Returns the tabs named."""
+    names = [k for k in silent.split(",") if k in TABS]
+    ALIVE["silent"] = names
+    if not names:
+        ALIVE["at"] = time.monotonic() if now is None else now
+    return names
+
+
+def not_answering():
+    """For the log: what hasn't answered, the window's page or the tabs it named."""
+    names = ALIVE.get("silent") or []
+    return "The window's page" if not names else "The page of " + " and ".join(f"the {TABS[k]} tab" for k in names)
 
 
 def watch_step(st, now, alive_at):
@@ -572,8 +591,8 @@ def watch_window():
                 ALIVE["at"] = now
             elif what == "kill":
                 pids = renderer_pids()
-                print(f"The window's page hasn't answered for {now - ALIVE['at']:.0f} s: stopping its renderer "
-                      f"{pids} so it loads again.")
+                print(f"{not_answering()} hasn't answered for {now - ALIVE['at']:.0f} s: stopping the window's page "
+                      f"processes {pids} so it loads again.")
                 for p in pids:
                     try:
                         os.kill(p, signal.SIGKILL)
@@ -583,11 +602,11 @@ def watch_window():
                 due, n = window_restart_due(_restarts().get("window", {}), time.time())
                 if not due:
                     if not st.get("held"):
-                        print(f"The window's page hasn't answered for {now - ALIVE['at']:.0f} s, but the app was "
+                        print(f"{not_answering()} hasn't answered for {now - ALIVE['at']:.0f} s, but the app was "
                               f"started again for that {n} time(s) lately: waiting longer before the next.")
                     st["held"] = True
                     continue
-                print(f"The window's page hasn't answered for {now - ALIVE['at']:.0f} s: starting the app again.")
+                print(f"{not_answering()} hasn't answered for {now - ALIVE['at']:.0f} s: starting the app again.")
                 try:
                     _note_restart("window", {"at": time.time(), "n": n + 1})
                     restart_app()

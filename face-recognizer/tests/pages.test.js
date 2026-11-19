@@ -9,7 +9,7 @@ const vm = require("node:vm");
 const dir = path.join(__dirname, "..");
 const read = f => fs.readFileSync(path.join(dir, f), "utf8");
 
-const SCRIPTS = ["tracker_ui.js", "label_ui.js", "app_ui.js", "expression.js", "signals.js", "settings_bridge.js", "page_store.js", "cameras_ui.js", "ask.js"];
+const SCRIPTS = ["tracker_ui.js", "label_ui.js", "app_ui.js", "expression.js", "signals.js", "settings_bridge.js", "page_store.js", "cameras_ui.js", "ask.js", "jpeg_worker.js"];
 for (const file of SCRIPTS) {
   test(`${file} parses`, () => assert.doesNotThrow(() => new vm.Script(read(file), { filename: file })));
 }
@@ -26,7 +26,8 @@ test("each page loads its scripts, in order, and each is served and packed into 
   const c = order(read("cameras_ui.html"), ["settings_bridge.js", "cameras_ui.js"]);   // the bridge: Ctrl+1 to Ctrl+4 from this tab
   for (const pos of [t, l, a, c]) assert.deepStrictEqual(pos.filter(p => p < 0), [], "a script tag is missing");
   for (const pos of [t, l, a, c]) assert.deepStrictEqual(pos, [...pos].sort((a, b) => a - b), "scripts out of order");
-  for (const n of ["expression.js", "signals.js", "settings_bridge.js", "page_store.js", "tracker_ui.js", "cameras_ui.js", "ask.js"]) assert.match(read("tracker.py"), new RegExp(`"/${n.replace(".", "\\.")}"`));
+  for (const n of ["expression.js", "signals.js", "settings_bridge.js", "page_store.js", "tracker_ui.js", "cameras_ui.js", "ask.js", "jpeg_worker.js"]) assert.match(read("tracker.py"), new RegExp(`"/${n.replace(".", "\\.")}"`));
+  assert.match(read("tracker_ui.js"), /new Worker\("\/jpeg_worker\.js"\)/);          // the worker is the file the server sends
   for (const n of ["label_ui.js", "settings_bridge.js", "page_store.js", "ask.js"]) assert.match(read("label_tool.py"), new RegExp(`"/${n.replace(".", "\\.")}"`));
   for (const n of ["app_ui.js", "ask.js"]) assert.match(read("app.py"), new RegExp(`"/${n.replace(".", "\\.")}"`));
   const build = read("build_exe.py");                      // the .exe build (build_app.bat and CI both run it)
@@ -104,4 +105,107 @@ test("no inline event handlers either (the pages' Content-Security-Policy refuse
 test("the tracker page uses the computer's own fonts, nothing from the internet", () => {
   assert.doesNotMatch(read("tracker_ui.html"), /fonts\.googleapis|<link[^>]+https?:/);
   assert.doesNotMatch(read("tracker_ui.js"), /Plex/);
+});
+
+test("the tab page names a tab whose page stopped answering, and only such a tab", () => {
+  // Each tab's page runs in a process of its own (localguard.py: Origin-Agent-Cluster), so a hung page no longer
+  // stops the tab page and its /alive: the tab page asks every tab and tells the watchdog which are silent.
+  const code = read("app_ui.js");
+  const head = code.match(/const ANSWER_IN = (\d+), answered = \{\};/), fn = code.match(/const loadedTabs = [^\n]*\nfunction silentTabs\(now\) \{\r?\n[\s\S]*?\n\}/);
+  assert.ok(head && fn, "silentTabs, loadedTabs or ANSWER_IN isn't written the way this test reads it");
+  const T = "http://127.0.0.1:8766/", L = "http://127.0.0.1:8765/", C = "http://127.0.0.1:8766/cameras";
+  const frames = { "f-track": { src: T }, "f-label": { src: "" }, "f-cams": { src: C } };
+  const ctx = { document: { getElementById: id => frames[id] } };
+  vm.createContext(ctx);
+  vm.runInContext(`const ANSWER_IN = ${head[1]}, answered = {}; ${fn[0]}; this.silentTabs = silentTabs; this.loadedTabs = loadedTabs; this.answered = answered;`, ctx);
+  const named = now => [...ctx.silentTabs(now)], asked = () => [...ctx.loadedTabs()];
+  assert.deepStrictEqual([named(1e6), asked()], [[], []]);             // loaded pages only: nothing has loaded yet
+  Object.assign(ctx.answered, { track: { src: T, at: 1e6 }, label: { src: L, at: 1e6 - 60000 }, cams: { src: C, at: 1e6 } });
+  assert.deepStrictEqual(asked(), ["track", "cams"]);                  // Labeling has no page now (being started again)
+  assert.deepStrictEqual(named(1e6 + 9000), []);                       // answered 9 s ago
+  assert.deepStrictEqual(named(1e6 + 11000), ["track", "cams"]);
+  ctx.answered.cams.at = 1e6 + 10000;
+  assert.deepStrictEqual(named(1e6 + 11000), ["track"]);
+  frames["f-label"].src = L;
+  assert.deepStrictEqual(named(1e6 + 11000), ["track", "label"]);
+  frames["f-track"].src = "http://127.0.0.1:9766/";                    // started again at another address: not loaded yet
+  assert.deepStrictEqual([named(1e6 + 11000), asked()], [["label"], ["label", "cams"]]);
+  assert.ok(+head[1] >= 6000, "a page busy for a few seconds (a large Labeling view) must not count as hung");
+  assert.match(code, /for \(const k of loadedTabs\(\)\) tell\(k, \{ fs: "ping" \}\)/);
+  assert.match(code, /fetch\("\/alive" \+ \(silent\.length \? `\?silent=\$\{silent\.join\(","\)\}` : ""\)/);
+  assert.match(code, /m\.fs === "pong"\) \{ if \(answered\[k\]\) answered\[k\]\.at = Date\.now\(\)/);
+  assert.match(code, /addEventListener\("load", e => \{\r?\n\s*if \(e\.target\.getAttribute\("src"\)\) answered\[k\] = \{ src: e\.target\.src, at: Date\.now\(\) \}/);
+});
+
+test("the tracker page makes its JPEGs in a worker, and by itself where that fails", async () => {
+  // canvas.toBlob waits for the page's idle time (a second when there is none: the camera at 1 frame a second).
+  const code = read("tracker_ui.js");
+  const block = code.match(/const jpegs = \{[\s\S]*?\n(?=\/\/ -+ recognition requests)/);
+  assert.ok(block, "the JPEG block isn't where this test reads it");
+  assert.doesNotMatch(code.replace(block[0], ""), /\.toBlob\(/, "a JPEG made with toBlob outside jpegOf");
+  const CHROMIUM = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0";
+  const WEBKIT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
+  const make = ({ worker = true, reply = n => ({ n, blob: "from the worker" }), browser = CHROMIUM } = {}) => {
+    const notes = [], posted = [], made = [];
+    class Worker { constructor(url) { this.url = url; made.push(this); }
+      postMessage(m) { posted.push(m); const r = reply(m.n); if (r) Promise.resolve().then(() => this.onmessage({ data: r })); }
+      terminate() { this.ended = true; } }
+    const window = worker ? { Worker, OffscreenCanvas: class {}, createImageBitmap: true } : {};
+    const ctx = { window, Worker, navigator: { userAgent: browser }, pageNote: t => notes.push(t), createImageBitmap: async () => ({ close() {} }),
+                  setTimeout: (fn, ms) => { const t = setTimeout(fn, ms); t.unref(); return t; } };
+    vm.createContext(ctx);
+    vm.runInContext(block[0] + "\nthis.jpegOf = jpegOf; this.jpegs = jpegs;", ctx);
+    const canvas = { toBlob: (done, type, q) => done(`toBlob ${type} ${q}`) };
+    return { ctx, notes, posted, made, jpeg: q => ctx.jpegOf(canvas, q) };
+  };
+  let p = make();
+  assert.strictEqual(await p.jpeg(0.72), "from the worker");
+  assert.strictEqual(await p.jpeg(0.85), "from the worker");
+  assert.deepStrictEqual([p.made.length, p.made[0].url, p.posted.map(m => m.q).join()], [1, "/jpeg_worker.js", "0.72,0.85"]);
+  assert.deepStrictEqual(p.notes, ["JPEGs are made in a worker"]);                 // said once
+  p = make({ worker: false });                                                     // no worker canvas in this browser
+  assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
+  assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
+  assert.strictEqual(p.notes.length, 1);
+  assert.match(p.notes[0], /on the page itself \(toBlob\)/);
+  p = make({ browser: WEBKIT });                                                   // the macOS window: toBlob doesn't wait there (measured)
+  assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
+  assert.deepStrictEqual([p.made.length, p.notes.length], [0, 1]);
+  assert.match(p.notes[0], /makes them at once/);
+  p = make({ reply: n => ({ n, error: "no canvas" }) });                           // the worker can't: three tries, then never again
+  for (let i = 0; i < 5; i++) assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
+  assert.deepStrictEqual([p.posted.length, p.made[0].ended, p.ctx.jpegs.off], [3, true, true]);
+  assert.match(p.notes.at(-1), /failed three times \(no canvas\)/);
+  p = make();                                                                      // a failure among good ones doesn't end it
+  await p.jpeg(0.72);
+  p.ctx.jpegs.fails = 2;
+  assert.strictEqual(await p.jpeg(0.72), "from the worker");
+  assert.strictEqual(p.ctx.jpegs.fails, 0);
+  p = make({ reply: () => null });                                                 // its script doesn't load: the picture waiting is made here
+  const waiting = p.jpeg(0.72);
+  await new Promise(r => setTimeout(r, 5));
+  p.made[0].onerror({ message: "", preventDefault() {} });
+  assert.strictEqual(await waiting, "toBlob image/jpeg 0.72");
+  assert.strictEqual(p.ctx.jpegs.off, true);
+});
+
+test("the worker makes a JPEG of the picture it is handed, and keeps a canvas per size", async () => {
+  const made = [];
+  global.OffscreenCanvas = class { constructor(w, h) { this.width = w; this.height = h; this.log = []; made.push(this); }
+    getContext(kind) { if (kind === "bitmaprenderer" && !global.noRenderer) return { transferFromImageBitmap: b => this.log.push(["shown", b.width]) };
+                       return kind === "2d" ? { drawImage: b => this.log.push(["drawn", b.width]) } : null; }
+    convertToBlob(o) { return Promise.resolve({ ...o, of: this.width + "x" + this.height }); } };
+  const W = require("../jpeg_worker.js");
+  const bmp = (w, h) => ({ width: w, height: h, closed: false, close() { this.closed = true; } });
+  assert.deepStrictEqual(await W.jpeg(bmp(960, 540), 0.72), { type: "image/jpeg", quality: 0.72, of: "960x540" });
+  await W.jpeg(bmp(960, 540), 0.72);
+  await W.jpeg(bmp(640, 360), 0.85);
+  assert.deepStrictEqual([made.length, made[0].log.length, made[1].log[0][0]], [2, 2, "shown"]);
+  global.noRenderer = true;                                            // a browser without that canvas: drawn, and the picture let go
+  const b = bmp(320, 180);
+  await W.jpeg(b, 0.8);
+  assert.deepStrictEqual([made.at(-1).log[0][0], b.closed], ["drawn", true]);
+  for (let i = 0; i < 12; i++) await W.jpeg(bmp(100 + i, 50), 0.8);    // sizes come and go: the canvases kept stay few
+  assert.ok(W.canvases.size <= 8);
+  delete global.OffscreenCanvas; delete global.noRenderer;
 });

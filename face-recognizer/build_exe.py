@@ -48,7 +48,7 @@ HERE = Path(__file__).resolve().parent
 # Every page file the three servers send: packed into the app (a test checks each page's scripts are listed here)
 PAGES = ["tracker_ui.html", "label_ui.html", "app_ui.html", "tracker_ui.js", "label_ui.js", "app_ui.js",
          "expression.js", "signals.js", "settings_bridge.js", "page_store.js", "cameras_ui.html", "cameras_ui.js",
-         "ask.js"]
+         "ask.js", "jpeg_worker.js"]
 # The app's icon, made by tools/make_icon.py: packed into the app too (the pages' favicon, the Linux window and
 # launcher), in a folder of the same name
 ICONS = ["icon.ico", "icon.png", "icon-256.png", "icon-64.png"]

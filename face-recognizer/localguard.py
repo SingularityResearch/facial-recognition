@@ -68,6 +68,12 @@ def page_headers(handler, frame_ancestors=None, extra=None):
         handler.send_header("Permissions-Policy", handler.permissions)
     handler.send_header("Cross-Origin-Resource-Policy", "same-origin")
     handler.send_header("X-Content-Type-Options", "nosniff")
+    # Each server's pages in a process of their own (Chromium: WebView2, Qt WebEngine). The three servers are one
+    # "site" to a browser (127.0.0.1, whatever the port), so the app window ran its tab page and every tab in one
+    # process, on one main thread: a Labeling page kept busy took the tracker from 46 frames read a second to 0.5
+    # (a test copy, 2026-11-19; 57 with this header), and a real one with thousands of faces drawn took the camera
+    # to 1 frame a second. The tab page checks that each tab's page still runs (app_ui.js silentTabs).
+    handler.send_header("Origin-Agent-Cluster", "?1")
 
 
 class RequestError(ValueError):

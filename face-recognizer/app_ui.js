@@ -51,7 +51,27 @@ poll();
 // every-second requests used them all in ten minutes and the window froze; the watchdog then restarted the app,
 // about every 90 minutes after that. drop(answer) lets the body go; a test checks every fetch reads or drops.
 const drop = r => { try { r?.body?.cancel().catch(() => {}); } catch {} return r; };
-setInterval(() => { fetch("/alive", { cache: "no-store" }).then(drop, () => {}); }, 2000);
+// Each tab's page runs in a process of its own (the servers' Origin-Agent-Cluster header, localguard.py), so that
+// nothing one tab does can slow another: a Labeling view with thousands of faces took the camera to 1 frame a
+// second while they shared one. A tab's page that hangs therefore no longer stops this page. So this page asks every
+// loaded tab whether it runs (settings_bridge.js answers "pong") and tells the watchdog which haven't answered for
+// ANSWER_IN: the window then counts as not running, as it did when a hung tab stopped everything.
+// Only a page that has loaded is asked and counted, and only for the address it was loaded from: a tab still
+// starting, or one being started again, has no page to answer (and a message to a frame whose page isn't there yet
+// is an error line in the log).
+const ANSWER_IN = 10000, answered = {};            // tab -> { src, at }: its page, and when that last answered or loaded
+for (const k of ["track", "label", "cams"]) document.getElementById("f-" + k).addEventListener("load", e => {
+  if (e.target.getAttribute("src")) answered[k] = { src: e.target.src, at: Date.now() };
+});
+const loadedTabs = () => ["track", "label", "cams"].filter(k => { const f = document.getElementById("f-" + k); return f.src && answered[k]?.src === f.src; });
+function silentTabs(now) {
+  return loadedTabs().filter(k => now - answered[k].at > ANSWER_IN);
+}
+setInterval(() => {
+  for (const k of loadedTabs()) tell(k, { fs: "ping" });
+  const silent = silentTabs(Date.now());
+  fetch("/alive" + (silent.length ? `?silent=${silent.join(",")}` : ""), { cache: "no-store" }).then(drop, () => {});
+}, 2000);
 // Start again: a program that failed to start (the model download, say) or whose page says it stopped answering
 // (its "Start again" button asks this page, over postMessage). app.py starts it again, with any other program that
 // failed; one that still answers is left alone. Its frame is emptied until /status gives its (maybe new) address.
@@ -111,6 +131,7 @@ addEventListener("message", e => {
   const k = ["track", "label", "cams"].find(k => frame(k).contentWindow === e.source && originOf(k) === e.origin);
   const m = e.data;
   if (!k || !m) return;
+  if (m.fs === "pong") { if (answered[k]) answered[k].at = Date.now(); return; }   // this tab's page runs (see silentTabs)
   if (m.fs === "key") { hotkey(String(m.key)); return; }                 // Ctrl+1 to Ctrl+4 pressed inside a tab
   if (k === "cams") return;                                               // the Cameras page says nothing else
   if (m.fs === "state") { STATE[k] = m.items; drawPrograms(); }
