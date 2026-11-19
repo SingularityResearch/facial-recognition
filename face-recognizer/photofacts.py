@@ -3,6 +3,7 @@ photofacts.py - what a photo says about itself: camera dates and people tags (XM
 Takeout .json), matched to the faces found, read in the background (PhotoFacts). Split out of labels.py;
 `labels` re-exports it.
 """
+import bisect
 import hashlib
 import json
 import threading
@@ -130,6 +131,7 @@ class PhotoFacts:
         self.status = {"running": False, "done": 0, "total": 0, "read": 0}
         self.version = 0
         self._dirs = {}
+        self._names = {}                 # (folder, ending) -> that listing's file names, sorted (_beside)
         self.thread = None
         idx_of = {f: i for i, f in enumerate(db.store.fid)}
         for h, f in F.load_json(self.FILE, {}).items():
@@ -147,8 +149,8 @@ class PhotoFacts:
         p = Path(self.db.store.photos[h]["path"])
         st = p.stat()
         n = p.name.lower()
-        side = [(k, v.stat().st_mtime) for ext in (".xmp", ".json") for k, v in sorted(self._listing(p.parent, ext).items())
-                if k.startswith(p.stem.lower()) or k.startswith(n[:40])]
+        side = [(k, v.stat().st_mtime) for ext in (".xmp", ".json")
+                for k, v in self._beside(p.parent, ext, (p.stem.lower(), n[:40]))]
         with self.db.lock:
             geo = [[round(float(v)) for v in self.db.store.box[i][:4]] for i in self.db.by_photo().get(h, [])]
         return hashlib.sha1(repr((st.st_size, int(st.st_mtime), side, geo)).encode()).hexdigest()[:16]
@@ -220,6 +222,25 @@ class PhotoFacts:
             except OSError:
                 self._dirs[k] = {}
         return self._dirs[k]
+
+    def _beside(self, folder, ext, starts):
+        """The files of `folder` ending in ext whose names begin with one of `starts`: [(name, path)] in name
+        order, found in the folder's sorted names. Before 1.24.8 key() sorted and went through the folder's whole
+        list for every photo: in a folder of 10,000 photos with a file beside each (the Collect faces folder:
+        every snapshot has its verdict .json) that was 5.6 ms a photo, a minute of pure Python at every start
+        and growing with the square of the folder, while the sync and the pages waited for the interpreter."""
+        k = (folder, ext)
+        listing = self._listing(folder, ext)
+        names = self._names.get(k)
+        if names is None or len(names) != len(listing):
+            names = self._names[k] = sorted(listing)
+        found = set()
+        for start in starts:
+            i = bisect.bisect_left(names, start)
+            while i < len(names) and names[i].startswith(start):
+                found.add(names[i])
+                i += 1
+        return [(name, listing[name]) for name in sorted(found)]
 
     def read(self, h):
         t, tags = self.tags(h)

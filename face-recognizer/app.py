@@ -52,7 +52,7 @@ def keep_font_list(env=os.environ, built=None):
 keep_font_list()
 
 TITLE = "Face Recognizer"
-VERSION = "1.24.7"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.24.8"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 

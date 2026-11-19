@@ -2,6 +2,7 @@
 start, and moving face pictures out of faces.npz."""
 import json
 import threading
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -75,6 +76,37 @@ def test_prints_asked_for_during_a_change_wait_for_it(data):
         s.put("new", s.photo[0], s.file[0], s.box[0], np.ones(F.REC["dim"], np.float32), b"", 0.9)
     t.join(5)
     assert db.n == 7 and out == [(False, 7)]
+
+
+def test_a_photos_side_files_are_found_without_going_through_its_folder(tmp_path):
+    """At every start each photo's facts are checked against the files beside it (photo.xmp, photo.jpg.json, a
+    Takeout name cut short). That went through the folder's whole sorted list for every photo: in the Collect
+    faces folder, 10,000 snapshots with a verdict .json each, a minute of every start (and four times that at
+    twice the snapshots), while the sync waited. The same files, found in the sorted names."""
+    import photofacts
+    long = "x" * 45
+    for n in ("a.jpg.json", "a.json", "ab.json", "a-edited.json", "b.json", "webcam-1-0.json", "webcam-1-01.json",
+              "webcam-10-0.json", long + ".jpg.json", long + "(1).json", "zz.json", "a.xmp", "A.JPG.xmp", "notes.txt"):
+        (tmp_path / n).write_text("{}")
+    pf = photofacts.PhotoFacts.__new__(photofacts.PhotoFacts)
+    pf._dirs, pf._names = {}, {}
+    for photo in ("a.jpg", "ab.png", "webcam-1-0.jpg", long + ".jpg", "none.jpg", "b.jpg", "Z.jpg"):
+        stem, name = Path(photo).stem.lower(), photo.lower()
+        for ext in (".xmp", ".json"):
+            before = [(k, v) for k, v in sorted(pf._listing(tmp_path, ext).items())
+                      if k.startswith(stem) or k.startswith(name[:40])]
+            assert pf._beside(tmp_path, ext, (stem, name[:40])) == before, (photo, ext)
+    assert [k for k, _ in pf._beside(tmp_path, ".json", ("webcam-1-0", "webcam-1-0.jpg"))] == \
+        ["webcam-1-0.json", "webcam-1-01.json"]
+
+    class Listing(dict):                             # the folder's list as key() once went through it, per photo
+        def items(self):
+            raise AssertionError("went through the whole folder for one photo")
+    pf._dirs[(tmp_path, ".json")] = Listing(pf._dirs[(tmp_path, ".json")])
+    assert [k for k, _ in pf._beside(tmp_path, ".json", ("a", "a.jpg"))] == \
+        ["a-edited.json", "a.jpg.json", "a.json", "ab.json"]
+    pf._dirs[(tmp_path, ".json")]["a2.json"] = tmp_path / "a2.json"          # a list that grew is sorted again
+    assert "a2.json" in [k for k, _ in pf._beside(tmp_path, ".json", ("a", "a.jpg"))]
 
 
 @pytest.mark.parametrize("action, idx, name", [

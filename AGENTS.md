@@ -239,6 +239,11 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - `photofiles.py` — content hashes, picture fingerprints, online-only cloud files (Windows only), camera dates,
     photo folders.
   - `photofacts.py` — `PhotoFacts`: camera dates + people tags (XMP, Google Takeout), in `data/photo_facts.json`.
+    At every start each photo's saved facts are checked against the photo and the files beside it (`key`); those
+    are found in the folder's sorted names (`_beside`), never by going through the folder's list for each photo:
+    that was a minute of pure Python at every start once the Collect faces folder held 10,000 snapshots (each
+    has its verdict .json beside it), growing with the square of the folder, and the sync's first step and the
+    pages waited for the interpreter meanwhile. Work on every photo at start must stay linear in the library.
   - `relocate.py` — `migrate` (one-time upgrade to per-face labels) and `relocate` (finds photos and videos that
     moved, e.g. a changed drive letter, at start).
   - `importer.py` — the background photo/video `Importer`:
