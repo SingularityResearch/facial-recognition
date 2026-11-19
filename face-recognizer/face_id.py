@@ -330,6 +330,42 @@ def _preload_cuda(ort):
             pass
 
 
+# A GPU session that failed is never let go of: it stays here for as long as the process lives. On 2026-11-19 a
+# graphics driver was installed under the running app on two computers. Face finding's run was cut off (DirectML,
+# CommandQueue.cpp(29)), the code said so and let go of the detector's sessions, and that was the last thing either
+# process did: one thread used a whole processor core, and the servers and the window's watchdog stood still. What
+# that thread did was never read; the likeliest is the teardown of a session whose run the loss of its device cut
+# off, which runs with the interpreter's lock held. Forced graphics resets on test copies showed the rest
+# (PROJECT_CONTEXT.md section 10): with the sessions kept, the same failure of face finding is survived; sessions
+# that fail later (ExecutionProvider.cpp(952): the device already known to be gone) can be let go of without harm;
+# and the released code then answered every frame with an error for good, because recognition and quality had no
+# way over to the CPU (_or_cpu gives them one). A run that fails only raises.
+_LOST = []
+_lost_lock = threading.Lock()
+
+
+def _or_cpu(run, path, what, changed):
+    """run(x) on the GPU, and after its first failure on the CPU (OpenCV) for the rest of this process: a graphics
+    device that is gone (a driver installed or reset under the app) doesn't come back for a session made on it.
+    `what` names the model in the log; changed() is called once, when the CPU takes over."""
+    state = {"run": run, "gpu": True}
+
+    def go(x):
+        if state["gpu"]:
+            try:
+                return state["run"](x)
+            except Exception as e:
+                with _lost_lock:
+                    if state["gpu"]:
+                        print(f"{what} on the GPU failed ({str(e)[:160]}); using the CPU (OpenCV) from now on",
+                              file=sys.stderr, flush=True)
+                        _LOST.append(state["run"])           # never destroyed: see _LOST
+                        state["run"], state["gpu"] = _cv_runner(path), False
+                        changed()
+        return state["run"](x)
+    return go
+
+
 def _locked(sess, every_output=False):
     name = sess.get_inputs()[0].name
 
@@ -483,16 +519,17 @@ class Faces:
             self._feature = sface_feature
             self.device = "CPU (OpenCV)"
         else:
-            run, self.device = (_ort_runner(path, MODELS / "npu" / (path.stem + "_b1.onnx"))
-                                or (_cv_runner(path), "CPU (OpenCV)"))
+            got = _ort_runner(path, MODELS / "npu" / (path.stem + "_b1.onnx"))
+            run, self.device = ((_or_cpu(got[0], path, "Recognition", lambda: self._on_cpu("recognition")), got[1])
+                                if got else (_cv_runner(path), "CPU (OpenCV)"))
 
             def arcface(crop):
                 x = (cv2.cvtColor(crop, cv2.COLOR_BGR2RGB).astype(np.float32) - 127.5) / 127.5
                 return run(np.ascontiguousarray(x.transpose(2, 0, 1)[None]))   # one face per call
             self._feature = arcface
         self._yunet = _yunet_runner()                    # the face detector on a GPU, or None: OpenCV's
-        self._qrun, qdev = self._optional(QUAL_MODEL)    # quality and expression models: GPU or CPU
-        self._xrun, xdev = self._optional(EXPR_MODEL)
+        self._qrun, qdev = self._optional(QUAL_MODEL, "quality")        # quality and expression models: GPU or CPU
+        self._xrun, xdev = self._optional(EXPR_MODEL, "expression")
         self.expression_model = EXPR_MODEL.name if self._xrun else None
         self._landmarker = None                          # MediaPipe, loaded on first use of cues()
         self.cues_available = CUE_MODEL.exists() and _has_module("mediapipe")
@@ -507,13 +544,25 @@ class Faces:
                         "hands": "CPU (MediaPipe)" if self.hands_available else None}
         LAST_DEVICES.update(self.devices)
 
-    @staticmethod
-    def _optional(path):
+    def _optional(self, path, job):
         """(runner, device name) for an optional small ONNX model: ONNX Runtime on the GPU when
         available, else OpenCV on the CPU. (None, None) when the file isn't installed."""
         if not path.exists():
             return None, None
-        return (_ort_runner(path) if DEVICE != "npu" else None) or (_cv_runner(path), "CPU (OpenCV)")
+        got = _ort_runner(path) if DEVICE != "npu" else None
+        if not got:
+            return _cv_runner(path), "CPU (OpenCV)"
+        return _or_cpu(got[0], path, job.capitalize(), lambda: self._on_cpu(job)), got[1]
+
+    def _on_cpu(self, job):
+        """A model's GPU failed while the program ran and the CPU took over (_or_cpu): say so where the devices are
+        shown (Settings → This computer, /api/hardware)."""
+        name = "CPU (OpenCV, after a GPU error)"
+        if job == "recognition":
+            self.device = name
+        if hasattr(self, "devices"):
+            self.devices[job] = name
+        LAST_DEVICES[job] = name
 
     def warmup(self):
         """Run each model once on a blank face so the first live frame isn't the slow one (GPU
@@ -661,6 +710,7 @@ class Faces:
             except Exception as e:                       # e.g. the GPU ran out of memory: the CPU from now on
                 print(f"Face finding on the GPU failed ({str(e)[:160]}); using the CPU (OpenCV) from now on",
                       file=sys.stderr, flush=True)
+                _LOST.append(self._yunet)                # its sessions are never destroyed: see _LOST
                 self._yunet, self.devices["detection"] = None, "CPU (OpenCV, after a GPU error)"
                 LAST_DEVICES["detection"] = self.devices["detection"]
         if rows is not None:

@@ -146,17 +146,17 @@ test("the tracker page makes its JPEGs in a worker, and by itself where that fai
   const CHROMIUM = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36 Edg/157.0.0.0";
   const WEBKIT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
   const make = ({ worker = true, reply = n => ({ n, blob: "from the worker" }), browser = CHROMIUM } = {}) => {
-    const notes = [], posted = [], made = [];
+    const notes = [], posted = [], made = [], clock = { t: 5000 };
     class Worker { constructor(url) { this.url = url; made.push(this); }
       postMessage(m) { posted.push(m); const r = reply(m.n); if (r) Promise.resolve().then(() => this.onmessage({ data: r })); }
       terminate() { this.ended = true; } }
     const window = worker ? { Worker, OffscreenCanvas: class {}, createImageBitmap: true } : {};
     const ctx = { window, Worker, navigator: { userAgent: browser }, pageNote: t => notes.push(t), createImageBitmap: async () => ({ close() {} }),
-                  setTimeout: (fn, ms) => { const t = setTimeout(fn, ms); t.unref(); return t; } };
+                  performance: { now: () => clock.t }, setTimeout: (fn, ms) => { const t = setTimeout(fn, ms); t.unref(); return t; } };
     vm.createContext(ctx);
     vm.runInContext(block[0] + "\nthis.jpegOf = jpegOf; this.jpegs = jpegs;", ctx);
     const canvas = { toBlob: (done, type, q) => done(`toBlob ${type} ${q}`) };
-    return { ctx, notes, posted, made, jpeg: q => ctx.jpegOf(canvas, q) };
+    return { ctx, notes, posted, made, clock, jpeg: q => ctx.jpegOf(canvas, q) };
   };
   let p = make();
   assert.strictEqual(await p.jpeg(0.72), "from the worker");
@@ -168,14 +168,31 @@ test("the tracker page makes its JPEGs in a worker, and by itself where that fai
   assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
   assert.strictEqual(p.notes.length, 1);
   assert.match(p.notes[0], /on the page itself \(toBlob\)/);
+  p.clock.t += 3600e3;                                                             // and that is for good
+  assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
+  assert.deepStrictEqual([p.ctx.jpegs.off, p.notes.length], [Infinity, 1]);
   p = make({ browser: WEBKIT });                                                   // the macOS window: toBlob doesn't wait there (measured)
   assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
-  assert.deepStrictEqual([p.made.length, p.notes.length], [0, 1]);
+  assert.deepStrictEqual([p.made.length, p.notes.length, p.ctx.jpegs.off], [0, 1, Infinity]);
   assert.match(p.notes[0], /makes them at once/);
-  p = make({ reply: n => ({ n, error: "no canvas" }) });                           // the worker can't: three tries, then never again
+  // The worker can't (a graphics driver reset under the app takes its canvas for a moment): three tries, then
+  // toBlob for a minute, then a new worker; not off until the page's next start.
+  let works = false;
+  p = make({ reply: n => works ? { n, blob: "from the worker" } : { n, error: "no canvas" } });
   for (let i = 0; i < 5; i++) assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
-  assert.deepStrictEqual([p.posted.length, p.made[0].ended, p.ctx.jpegs.off], [3, true, true]);
-  assert.match(p.notes.at(-1), /failed three times \(no canvas\)/);
+  assert.deepStrictEqual([p.posted.length, p.made.length, p.made[0].ended, p.ctx.jpegs.off], [3, 1, true, 5000 + 60000]);
+  assert.match(p.notes.at(-1), /tried again in 1 min: the worker failed three times \(no canvas\)/);
+  p.clock.t += 59000;
+  assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
+  assert.strictEqual(p.made.length, 1);                                            // not yet
+  p.clock.t += 2000;
+  for (let i = 0; i < 4; i++) assert.strictEqual(await p.jpeg(0.72), "toBlob image/jpeg 0.72");
+  assert.deepStrictEqual([p.made.length, p.posted.length, p.made[1].ended], [2, 6, true]);   // a new worker, which failed too
+  assert.match(p.notes.at(-1), /tried again in 2 min/);                            // twice as long later
+  works = true;
+  p.clock.t += 121000;
+  assert.strictEqual(await p.jpeg(0.72), "from the worker");
+  assert.deepStrictEqual([p.made.length, p.ctx.jpegs.off, p.notes.at(-1)], [3, 0, "JPEGs are made in a worker"]);
   p = make();                                                                      // a failure among good ones doesn't end it
   await p.jpeg(0.72);
   p.ctx.jpegs.fails = 2;
@@ -186,7 +203,7 @@ test("the tracker page makes its JPEGs in a worker, and by itself where that fai
   await new Promise(r => setTimeout(r, 5));
   p.made[0].onerror({ message: "", preventDefault() {} });
   assert.strictEqual(await waiting, "toBlob image/jpeg 0.72");
-  assert.strictEqual(p.ctx.jpegs.off, true);
+  assert.strictEqual(p.ctx.jpegs.off, 5000 + 60000);                               // tried again in a minute, too
 });
 
 test("the worker makes a JPEG of the picture it is handed, and keeps a canvas per size", async () => {

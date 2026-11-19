@@ -581,22 +581,29 @@ function begin() {
 // 2026-11-19 (WebView2 157, a 1280x720 JPEG): 13 ms with the page idle, 26 ms with its main thread half busy,
 // 101 ms at 80%, 1,100 ms from 96%. So a page busy enough read faces once a second and sent its camera to the
 // other devices at 1 frame a second, with the computer far from busy. A worker (jpeg_worker.js) has no such wait:
-// 10, 13, 24 and 25 ms at the same loads. Where there is no worker or no OffscreenCanvas, or the worker fails
-// (three times in a row, or its script doesn't load), toBlob as before; the log says which (pageNote).
+// 10, 13, 24 and 25 ms at the same loads. Where there is no worker or no OffscreenCanvas: toBlob as before. When
+// the worker fails (three times in a row, or its script doesn't load): toBlob for a minute, then a new worker is
+// tried, and after each further failure twice as long later (at most half an hour). Not "off for good": a graphics
+// driver that is installed or reset under the app takes the worker's canvas with it for a moment (2026-11-19), and
+// the page would have kept toBlob's wait until its next start. The log says each change (pageNote).
 // Only in Chromium's browsers (WebView2 on Windows, Qt WebEngine on Linux: both measured, the same wait). WebKit
 // (the macOS window) makes toBlob's picture at once however busy the page is (4 ms on the Mac, 2026-11-19), and
 // the worker there gave the same picture later (23 ms with the page 80% busy): there, toBlob stays.
-const jpegs = { worker: null, n: 0, waiting: new Map(), fails: 0, off: false, said: false,
+// off: 0 while the worker is used, else when (performance.now()) it is tried again; Infinity: never.
+const jpegs = { worker: null, n: 0, waiting: new Map(), fails: 0, off: 0, wait: 60000, okAt: 0, said: false,
                 waits: typeof navigator !== "undefined" && /\bChrome\//.test(navigator.userAgent) };
 const toBlobJpeg = (c, q) => new Promise(r => c.toBlob(r, "image/jpeg", q));
-function jpegsOff(why) {
+function jpegsOff(why, again) {
   if (jpegs.off) return;
-  jpegs.off = true;
+  const now = performance.now();
+  if (again && jpegs.okAt && now - jpegs.okAt > 10 * 60000) jpegs.wait = 60000;    // it had worked for a while: start over
+  jpegs.off = again ? now + jpegs.wait : Infinity;
   try { jpegs.worker?.terminate(); } catch {}
-  jpegs.worker = null;
+  jpegs.worker = null; jpegs.fails = 0; jpegs.said = false;
   for (const [, [, no]] of jpegs.waiting) no(new Error(why));
   jpegs.waiting.clear();
-  pageNote(`JPEGs are made on the page itself (toBlob): ${why}`);
+  pageNote(`JPEGs are made on the page itself (toBlob)${again ? `, the worker is tried again in ${Math.round(jpegs.wait / 60000)} min` : ""}: ${why}`);
+  if (again) jpegs.wait = Math.min(jpegs.wait * 2, 30 * 60000);
 }
 function jpegWorker() {
   if (jpegs.worker) return jpegs.worker;
@@ -607,12 +614,13 @@ function jpegWorker() {
     jpegs.waiting.delete(e.data.n);
     if (e.data.blob) wait[0](e.data.blob); else wait[1](new Error(e.data.error || "no picture"));
   };
-  w.onerror = e => { try { e.preventDefault(); } catch {} jpegsOff(`the worker stopped (${e.message || "its script didn't load"})`); };
+  w.onerror = e => { try { e.preventDefault(); } catch {} if (jpegs.worker === w) jpegsOff(`the worker stopped (${e.message || "its script didn't load"})`, true); };
   return w;
 }
 async function jpegOf(c, q) {
+  if (jpegs.off && performance.now() >= jpegs.off) jpegs.off = 0;          // time to try the worker again
   if (jpegs.off || !jpegs.waits || !window.Worker || !window.OffscreenCanvas || !window.createImageBitmap) {
-    if (!jpegs.off) jpegsOff(jpegs.waits ? "this browser has no worker canvas" : "this browser makes them at once");
+    if (!jpegs.off) jpegsOff(jpegs.waits ? "this browser has no worker canvas" : "this browser makes them at once", false);
     return toBlobJpeg(c, q);
   }
   let bmp = null;
@@ -626,11 +634,11 @@ async function jpegOf(c, q) {
       setTimeout(() => { if (jpegs.waiting.delete(n)) no(new Error("no answer in 5 s")); }, 5000);
     });
     jpegs.fails = 0;
-    if (!jpegs.said) { jpegs.said = true; pageNote("JPEGs are made in a worker"); }
+    if (!jpegs.said) { jpegs.said = true; jpegs.okAt = performance.now(); pageNote("JPEGs are made in a worker"); }
     return blob;
   } catch (e) {
     try { bmp?.close(); } catch {}
-    if (++jpegs.fails >= 3) jpegsOff(`the worker failed three times (${e.message})`);
+    if (++jpegs.fails >= 3) jpegsOff(`the worker failed three times (${e.message})`, true);
     return toBlobJpeg(c, q);
   }
 }

@@ -52,7 +52,7 @@ def keep_font_list(env=os.environ, built=None):
 keep_font_list()
 
 TITLE = "Face Recognizer"
-VERSION = "1.24.9"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.24.10"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -615,6 +615,46 @@ def watch_window():
             elif ALIVE["at"] is not None and now - ALIVE["at"] < HUNG_AFTER:
                 st["held"] = False
     threading.Thread(target=run, daemon=True, name="window watchdog").start()
+
+
+# ---- what a stuck process was doing --------------------------------------------------------------------------------
+# The watchdog above is a thread of this process. When the interpreter itself stops (a library call that never
+# returns while it holds the interpreter's lock: on 2026-11-19 a graphics driver was installed under the app on two
+# computers, and each process sat there with its servers silent), the watchdog stops with it, and nothing says what
+# the process was doing. Python's faulthandler has a timer that needs no interpreter. It is set again every quarter
+# of STUCK_AFTER, so it only goes off when the interpreter hasn't run for that long, and then it writes every
+# thread's Python stack to the log: a block that begins "Timeout (0:01:00)!". It ends nothing and starts nothing.
+# It must never go off while the interpreter runs: it reads the threads' stacks without the interpreter's lock, which
+# is safe only while nothing changes them. Set to write every 20 s whatever the process did, it crashed a busy test
+# copy at its third block (an access violation in python312.dll in the middle of a stack, 2026-11-19). So: one
+# long time-out, set again by a thread that does nothing else, and taken away if that thread ever ends.
+STUCK_AFTER = 60
+
+
+def watch_interpreter(file, after=STUCK_AFTER):
+    """Write every thread's stack to `file` (a real file: it is written to without the interpreter) when the
+    interpreter hasn't run for `after` s. Returns stop(), or None where it can't be set up."""
+    import faulthandler
+    try:
+        file.fileno()
+    except (AttributeError, OSError, ValueError):
+        return None
+    done = threading.Event()
+
+    def beat():
+        try:
+            while not done.is_set():
+                faulthandler.dump_traceback_later(after, file=file)      # replaces the timer set before
+                done.wait(after / 4)
+        finally:                                     # never a timer left behind that nobody sets again
+            faulthandler.cancel_dump_traceback_later()
+    t = threading.Thread(target=beat, daemon=True, name="interpreter watch")
+    t.start()
+
+    def stop():
+        done.set()
+        t.join(after)
+    return stop
 
 
 def attention(unread, flash):
@@ -1279,6 +1319,9 @@ def main(argv=None):
         log = Stamped(open(HOME / "app.log", "a", encoding="utf-8", buffering=1))
         sys.stdout = sys.stderr = log
         print(f"\n--- {paths.utc_now()} {TITLE} starting")
+        watch_interpreter(log.f)                    # a stuck process's stacks go to the log too
+    else:
+        watch_interpreter(sys.stderr)
     import cudasupport                              # Linux app + NVIDIA: its downloaded CUDA, before onnxruntime loads
     cudasupport.activate()
     shell = shell_server()                          # first: the programs started next trust this page to frame them

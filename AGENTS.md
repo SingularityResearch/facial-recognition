@@ -81,6 +81,12 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     which asks `/restart-app`; `restart_soon` restarts the app at most once every `RESTART_EVERY` (an hour,
     `HOME/restarted.json`), and only in the app window. Under a locked screen the rule is once per lock
     instead (see the tracker's locked-screen bullet).
+  - `watch_interpreter`: what a stuck process was doing. The watchdog is a thread of the process, so when the
+    interpreter itself stops (a library call that never returns with the interpreter's lock held) it stops too.
+    `faulthandler`'s timer needs no interpreter: set again every quarter of `STUCK_AFTER` (60 s), it goes off only
+    when the interpreter hasn't run that long, and writes every thread's stack to the log (a block beginning
+    "Timeout (0:01:00)!"). It must never go off while the interpreter runs: writing the stacks every 20 s crashed
+    a busy test copy (it reads them without the lock). Don't shorten it, don't make it repeat.
   - `note_memory`: every `MEMORY_EVERY` (30 min) the log gets what the window's processes hold (`window_memory`:
     this process's descendants; Windows and Linux), so a page that keeps growing shows before it runs out of memory.
   - `drop_request_hooks` (`unhook_requests`): Windows: takes pywebview's two request handlers off the window once
@@ -226,6 +232,13 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `face_id.py` — core library + CLI (`scan`, `cluster`, `name`, `people`, `recognize`, `reembed`, `migrate`):
   models, face finding, prints, `Store` (faces, pictures), `require_models`/`check_downloaded`, and where each model
   runs (`auto`, `_gpu_check`, `_yunet_runner`; see Running). `SAVED_HOOKS` are called after each save.
+  - A graphics device that goes while the program runs (a driver installed or reset under it): every model's GPU
+    runner hands over to the CPU (OpenCV) at its first failure and stays there for the rest of the process
+    (`_or_cpu` for recognition, quality and expression; `Faces._detect_at` for face finding), the log and
+    Settings → This computer say so ("CPU (OpenCV, after a GPU error)"), and the failed runner goes into `_LOST`
+    and is never let go of. Two apps hung on 2026-11-19 right after letting go of face finding's sessions, and
+    until 1.24.9 the other models had no way to the CPU: every frame was answered with an error for good. Never
+    drop or replace a GPU session that failed; a new GPU runner needs the same hand-over.
 - `labels.py` — labeling engine: per-face labels (`LabelDB`), auto-naming, duplicate-photo detection, undo history and
   clues for unnamed faces (`hints`: closest people, photo tags, same occasion). Nobody can be named a word in
   `NOT_NAMES` (`constructor`, `__proto__`, ...: the pages keep people's data in objects by name).
@@ -328,7 +341,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     with none only after a second: a page 96% busy read faces and sent its camera once a second (13 ms a picture
     idle, 1,100 ms then; the worker 10 and 25 ms; the same bytes; WebView2 157 and Qt WebEngine, 2026-11-19).
     WebKit doesn't wait (4 ms on the Mac however busy), so the macOS window keeps toBlob. Never call `toBlob` for
-    a picture of the camera outside `jpegOf` (a test).
+    a picture of the camera outside `jpegOf` (a test). A worker that fails three times in a row (or whose script
+    doesn't load) is left for a minute and then tried again with a new one, twice as long later after each further
+    failure, at most half an hour: a graphics reset takes its canvas for a moment, and "off until the next start"
+    would bring toBlob's wait back.
   - **Collect faces** saves each collected face + the tracker's verdict to `HOME/webcam/` (`face_id.WEBCAM`); never
     the whole frame: the face with `CAPTURE_MARGIN` (0.6 face widths) around it, the room `face_id.rebuild_crop`
     re-detects in, other faces greyed out. `label_tool.py` imports them by itself and shows the verdict as a clue.
@@ -655,9 +671,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Signing: `test_apple_signing.py` (the request, the secrets from a made-up certificate, what is refused; on
     macOS the .p12 goes through the system's own `security import`).
   - Services and downloads: `test_describe.py`, `test_websearch.py` (keys, caps), `test_fetch_models.py` (against a
-    local server), `test_cudasupport.py`, `test_lmstudio.py`, `test_hardware.py`, `test_gpu_choice.py`.
+    local server), `test_cudasupport.py`, `test_lmstudio.py`, `test_hardware.py`, `test_gpu_choice.py` (also a GPU
+    that fails while the program runs: the CPU takes over once, the failed session is never destroyed).
   - App window and tracker: `test_window_watchdog.py` (also the window's answer to the camera request, in place
-    before any page loads), `test_window_caches.py`, `test_app_log.py`,
+    before any page loads), `test_window_caches.py`, `test_app_log.py` (also a stuck process: its stacks in the log),
     `test_tracker_reload.py`, `test_skeleton.py`, `test_platforms.py` (also the icon files, the build's icon
     options, the Windows installer's rules, Windows code signing: only when told with what, the plug-in only as
     pinned; and the Linux installer run for real on Linux).
