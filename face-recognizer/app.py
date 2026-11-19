@@ -52,7 +52,7 @@ def keep_font_list(env=os.environ, built=None):
 keep_font_list()
 
 TITLE = "Face Recognizer"
-VERSION = "1.24.6"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.24.7"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -1047,6 +1047,62 @@ def keep_running_in_background(env=os.environ):
             env[var] = (have + " " + KEEP_RUNNING_FLAGS).strip()
 
 
+# The same for the macOS window, whose browser is WebKit and takes no such flags: its own switches, by their
+# names in WebKit (private ones: asked for, and left alone where a WebKit lacks them). Found on the first real Mac
+# (2026-11-19): with another window over the app's, the camera reached the other devices at 1 frame a second.
+# Measured there in a window with a counting page (a 25 ms timer, drawn frames a second):
+#   covered by another window   1.0 and 0     ->  35.8 and 60 with the occlusion check off (as when shown)
+#   hidden, or minimized        1.3 and 0     ->  13.5 to 15.7 and 0 with the three page switches off
+MAC_OCCLUSION = "_setWindowOcclusionDetectionEnabled:"           # the web view: am I covered? Off: it counts as shown
+MAC_HIDDEN_PAGES = ("_setHiddenPageDOMTimerThrottlingEnabled:",  # its preferences: a hidden page's timers once a second,
+                    "_setHiddenPageDOMTimerThrottlingAutoIncreases:",        # then slower still,
+                    "_setPageVisibilityBasedProcessSuppressionEnabled:")     # and its process put to sleep
+_MAC_RUNNING = []                                # said in the log once
+
+
+def mac_keep_running(view):
+    """Switch WebKit's slowing of a covered or hidden window's pages off on `view` (a WKWebView). Returns
+    (the switches set, the ones this WebKit doesn't have), by name."""
+    done, missing = [], []
+    prefs = view.configuration().preferences()
+    for target, selector in [(view, MAC_OCCLUSION)] + [(prefs, s) for s in MAC_HIDDEN_PAGES]:
+        if target.respondsToSelector_(selector):
+            getattr(target, selector.replace(":", "_"))(False)
+            done.append(selector.strip("_:"))
+        else:
+            missing.append(selector.strip("_:"))
+    return done, missing
+
+
+def keep_running_macos(window):
+    """macOS: the window keeps tracking and streaming its camera at full pace with another window over it, and
+    as well as WebKit allows when hidden or minimized (mac_keep_running), like keep_running_in_background does
+    for the other systems' windows. On the main thread, as everything of the window's; says in the log what was
+    switched. True when asked for."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        from PyObjCTools import AppHelper
+        from webview.platforms import cocoa
+        view = cocoa.BrowserView.instances[window.uid].webview
+
+        def switch():
+            try:
+                done, missing = mac_keep_running(view)
+                if not _MAC_RUNNING:
+                    _MAC_RUNNING.append(1)
+                    print("Window: its pages keep their pace when it is covered or hidden (" + ", ".join(done) + ": off)"
+                          + (f"; this macOS lacks {', '.join(missing)}" if missing else ""), flush=True)
+            except Exception:
+                traceback.print_exc()
+        AppHelper.callAfter(switch)
+        return True
+    except Exception:
+        print("Window: couldn't keep its pages running in the background (a covered window's camera will slow down):")
+        traceback.print_exc()
+        return False
+
+
 class Stamped:
     """The log file, each line starting with the time in UTC (HH:MM:SS), so a freeze or a restart can be matched
     with what else happened then."""
@@ -1158,7 +1214,13 @@ def self_test():
             importlib.import_module("webview.platforms.cocoa")
             if not allow_camera_macos():         # the tracker's camera without a question at each page load
                 raise RuntimeError("the window can't answer a page's camera request (see the lines above)")
-            return f"pywebview {getattr(webview, '__version__', '')}, answers the tracker's camera request".strip()
+            # the switches that keep a covered or hidden window's pages running: which this macOS's WebKit has
+            WebKit = importlib.import_module("WebKit")
+            have = [s.strip("_:") for kind, names in ((WebKit.WKWebView, (MAC_OCCLUSION,)),
+                                                       (WebKit.WKPreferences, MAC_HIDDEN_PAGES))
+                    for s in names if kind.instancesRespondToSelector_(s)]
+            return (f"pywebview {getattr(webview, '__version__', '')}, answers the tracker's camera request, "
+                    f"{len(have)} of {1 + len(MAC_HIDDEN_PAGES)} switches to keep running when covered").strip()
         return f"pywebview {getattr(webview, '__version__', '')}".strip()
 
     for what, use in (("numbers", numbers), ("pictures", pictures), ("recognition models", models),
@@ -1219,6 +1281,7 @@ def main(argv=None):
         global WINDOW
         WINDOW = window
         window.events.before_show += lambda: allow_camera(window, early=True)   # before any page can ask
+        window.events.before_show += lambda: keep_running_macos(window)         # before any page runs
         window.events.loaded += lambda: allow_camera(window)
         window.events.loaded += lambda: recover_renderer(window)
         window.events.loaded += lambda: drop_request_hooks(window)

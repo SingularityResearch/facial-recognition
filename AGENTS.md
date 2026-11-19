@@ -94,6 +94,13 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - `KEEP_RUNNING_FLAGS`: the window's browser runs pages unthrottled in the background (the camera stream needs it),
     and on Windows keeps camera frames in ordinary memory (`MediaFoundationD3D11VideoCapture` off: reading them back
     from the graphics processor stalled the page in a disconnected desktop session).
+  - `keep_running_macos` (`mac_keep_running`): the same for the macOS window, which is WebKit and takes no such
+    flags: WebKit's own switches, set on the window's web view before any page runs, each only where this WebKit
+    has it (private names: `MAC_OCCLUSION`, `MAC_HIDDEN_PAGES`), and said in the log. With another window over the
+    app's, a page's timers ran once a second and nothing was drawn (the camera reached the other devices at 1
+    frame a second, the first real Mac, 2026-11-19); with the occlusion check off a covered window counts as
+    shown. A hidden or minimized window is only helped part of the way (measured in a counting page: timers 1.3
+    a second before, 13.5 to 15.7 after, 36 when shown). The self-test says how many of the switches this macOS has.
   - `allow_more_open_files`: Linux, macOS: the app and its window's processes may have 8192 files open (systemd
     starts programs with 1024).
   - Linux: `OPENBLAS_NUM_THREADS=1` is set at the top of `app.py`, before numpy loads (several OpenBLAS thread
@@ -676,7 +683,9 @@ Platform differences live in:
 - `paths.py` (folders) and `desktop.py` (open a folder, attention);
 - `app.py` (the tracker's camera without a question: WebView2's permission hook on Windows, `allow_camera_macos`
   on macOS, where WebKit otherwise asks at every page load; on Linux the window is first tried in a child process,
-  `--probe-window`, falling back to the browser; the watchdog stops a hung renderer on Linux and macOS only);
+  `--probe-window`, falling back to the browser; the watchdog stops a hung renderer on Linux and macOS only; the
+  window's pages kept running in the background by Chromium flags on Windows and Linux, `KEEP_RUNNING_FLAGS`, and
+  by WebKit's own switches on macOS, `keep_running_macos`);
 - `face_id.py`: `auto` decides from the hardware: DirectML on Windows; CUDA or CoreML per model after a start-up check
   against the CPU (`_gpu_check`); face finding too (`_yunet_runner`, with `DET_DYNAMIC` and a session per input
   size). `setup.sh` installs `onnxruntime-gpu[cuda,cudnn]` instead of `onnxruntime` when `nvidia-smi` works; the

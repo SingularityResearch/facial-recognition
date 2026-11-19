@@ -33,6 +33,49 @@ def test_the_same_version_leaves_everything_alone(tmp_path):
     assert app.clear_graphics_caches(w, "10.0") == [gpu] and not gpu.exists()
 
 
+def test_the_macos_window_keeps_its_pace_when_covered(monkeypatch):
+    """macOS's window is WebKit, which takes no Chromium flags: with another window over the app's, a page's timers
+    ran once a second and nothing was drawn, so the camera reached the other devices at 1 frame a second (the first
+    real Mac, 2026-11-19). WebKit's own switches are set on the window's web view, each only where this WebKit has
+    it: a missing one is said, never an error."""
+    class Part:
+        def __init__(self, has):
+            self.has, self.set = set(has), {}
+
+        def respondsToSelector_(self, selector):
+            return selector in self.has
+
+        def __getattr__(self, name):                 # _setX_ as pyobjc spells the selector _setX:
+            if name.startswith("_set") and name.endswith("_"):
+                return lambda value: self.set.__setitem__(name, value)
+            raise AttributeError(name)
+
+    class View(Part):
+        def __init__(self, has, prefs):
+            super().__init__(has)
+            self.prefs = prefs
+
+        def configuration(self):
+            return self
+
+        def preferences(self):
+            return self.prefs
+
+    prefs = Part(app.MAC_HIDDEN_PAGES)
+    view = View([app.MAC_OCCLUSION], prefs)
+    done, missing = app.mac_keep_running(view)
+    assert view.set == {"_setWindowOcclusionDetectionEnabled_": False}                 # covered counts as shown
+    assert set(prefs.set) == {s.replace(":", "_") for s in app.MAC_HIDDEN_PAGES} and not any(prefs.set.values())
+    assert len(done) == 4 and missing == [] and "setWindowOcclusionDetectionEnabled" in done
+    older = View([], Part(app.MAC_HIDDEN_PAGES[:1]))                                   # a WebKit without some of them
+    done, missing = app.mac_keep_running(older)
+    assert done == ["setHiddenPageDOMTimerThrottlingEnabled"] and len(missing) == 3 and older.set == {}
+    monkeypatch.setattr(app.sys, "platform", "linux")
+    assert app.keep_running_macos(object()) is False                                   # the Mac's window only
+    src = (app.HERE / "app.py").read_text("utf-8")                                     # set before any page runs
+    assert "window.events.before_show += lambda: keep_running_macos(window)" in src
+
+
 def test_the_built_app_lists_the_systems_fonts_once():
     """MediaPipe imports matplotlib, which lists every font of the system into its folder; PyInstaller gives the
     built app a new temporary folder at every start, so each start listed them again (over 5 s on a Mac). The built
