@@ -61,7 +61,9 @@ _saved = None
 
 
 class Unavailable(Exception):
-    """No local vision model to ask (LM Studio not running, or no vision model in it)."""
+    """No local vision model to ask (LM Studio not running, or no vision model in it). code: what a server that
+    did answer refused with (401: it wants a key), else None."""
+    code = None
 
 
 # --------------------------------------------------------------------------- settings
@@ -227,8 +229,10 @@ def server_models(url=None, key=None):
         ms = _get("/v1/models", 3, url, key).get("data", [])
         return [(m["id"], None) for m in ms if isinstance(m, dict) and m.get("id")], []
     except urllib.error.HTTPError as e:
-        raise Unavailable(f"The describe server at {url or config()['url']} refused ({e.code}"
-                          f"{': check the API key' if e.code in (401, 403) else ''})") from e
+        refused = Unavailable(f"The describe server at {url or config()['url']} refused ({e.code}"
+                              f"{': check the API key' if e.code in (401, 403) else ''})")
+        refused.code = e.code
+        raise refused from e
     except (OSError, ValueError, AttributeError) as e:
         raise Unavailable(no_answer) from e
 

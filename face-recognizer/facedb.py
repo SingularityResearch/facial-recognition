@@ -153,7 +153,8 @@ def device():
             return d
         except (OSError, ValueError, KeyError, TypeError):
             pass
-        d = {"id": str(uuid.uuid4()), "name": socket.gethostname() or "this device"}
+        # the name without its domain: macOS gives "name.local", which every other device would then show
+        d = {"id": str(uuid.uuid4()), "name": socket.gethostname().split(".")[0] or "this device"}
         paths.HOME.mkdir(parents=True, exist_ok=True)
         paths.atomic_write(DEVICE, json.dumps(d).encode())
         return d

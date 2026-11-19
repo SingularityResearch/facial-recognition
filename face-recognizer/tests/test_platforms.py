@@ -120,6 +120,20 @@ def test_the_macos_window_lets_only_this_apps_tracker_use_the_camera_unasked(mon
     assert app.allow_camera_macos() is False                                # the Mac's window only
 
 
+def test_a_device_is_named_without_its_domain(monkeypatch, tmp_path):
+    """macOS gives its name as "name.local": the first Mac to join would have shown that on every other device,
+    among devices named plainly."""
+    import facedb
+    monkeypatch.setattr(facedb, "DEVICE", tmp_path / "device.json")
+    monkeypatch.setattr(facedb.socket, "gethostname", lambda: "studio.local")
+    assert facedb.device()["name"] == "studio"
+    monkeypatch.setattr(facedb.socket, "gethostname", lambda: "renamed")
+    assert facedb.device()["name"] == "studio"                              # made once: the file's name stays
+    (tmp_path / "device.json").unlink()
+    monkeypatch.setattr(facedb.socket, "gethostname", lambda: "")
+    assert facedb.device()["name"] == "this device"
+
+
 def test_the_linux_build_leaves_graphics_libraries_to_the_system(tmp_path):
     import build_exe
     names = ["libgbm.so.1", "libX11.so.6", "libGLX_mesa.so.0", "libwayland-client.so.0",      # the system's own

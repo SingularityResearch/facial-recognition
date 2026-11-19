@@ -378,6 +378,10 @@ def ai_apps(max_age=60):
     out, seen = [], set()
 
     def probe(app, url, key_from_settings=False):
+        """Lists what answers at url as app. A usual port (not the server set in Settings) is listed only when a
+        model server answers there, with its models or asking for a key (401): the same ports are other programs'
+        too (macOS's own AirPlay Receiver has 5000 and answers 403: every Mac showed text-generation-webui as
+        running). False when nothing was listed."""
         entry = {"app": app, "url": url, "running": True, "models": 0, "vision": [], "note": ""}
         try:
             found, loaded = describe.server_models(None if key_from_settings else url)
@@ -386,17 +390,19 @@ def ai_apps(max_age=60):
             if loaded:
                 entry["note"] = "loaded: " + ", ".join(loaded[:3])
         except describe.Unavailable as e:
+            if not key_from_settings and e.code != 401:
+                return False
             entry["running"], entry["note"] = _port_open(int(url.rsplit(":", 1)[1].split("/")[0])) \
                 if url.startswith("http://127.0.0.1:") else False, str(e)[:200]
         except (ValueError, IndexError) as e:
             entry["running"], entry["note"] = False, str(e)[:200]
         out.append(entry)
+        return True
 
     for port, app in AI_PORTS:
-        if _port_open(port):
-            url = f"http://127.0.0.1:{port}"
+        url = f"http://127.0.0.1:{port}"
+        if _port_open(port) and probe(app, url):
             seen.add(url)
-            probe(app, url)
             # served to the network too? then other devices (Describe photo on them) can use this address
             out[-1]["lan"] = [f"http://{ip}:{port}" for ip in own_addresses() if _port_open(port, ip)]
     configured = describe.config()["url"]

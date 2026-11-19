@@ -33,6 +33,19 @@ def test_the_same_version_leaves_everything_alone(tmp_path):
     assert app.clear_graphics_caches(w, "10.0") == [gpu] and not gpu.exists()
 
 
+def test_the_built_app_lists_the_systems_fonts_once():
+    """MediaPipe imports matplotlib, which lists every font of the system into its folder; PyInstaller gives the
+    built app a new temporary folder at every start, so each start listed them again (over 5 s on a Mac). The built
+    app keeps the folder in the private one; from source matplotlib's own stays."""
+    env = {"MPLCONFIGDIR": "/tmp/made-by-the-start-up-hook"}
+    app.keep_font_list(env, built=False)
+    assert env["MPLCONFIGDIR"] == "/tmp/made-by-the-start-up-hook"
+    app.keep_font_list(env, built=True)
+    assert env["MPLCONFIGDIR"] == str(app.paths.HOME / "matplotlib")
+    src = (app.HERE / "app.py").read_text("utf-8")              # set before the programs (and so MediaPipe) load
+    assert src.index("\nkeep_font_list()") < src.index("\nTITLE = ")
+
+
 def test_the_window_keeps_running_in_the_background():
     """Minimized or covered, the window's browser must not slow its timers or stop drawing: the tracker (and the
     camera other devices watch) froze. Flags already set are kept, and nothing is added twice."""

@@ -98,6 +98,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     starts programs with 1024).
   - Linux: `OPENBLAS_NUM_THREADS=1` is set at the top of `app.py`, before numpy loads (several OpenBLAS thread
     pools in the packed app got a matrix product in the labeling tool stuck for good).
+  - `keep_font_list`: the built app keeps matplotlib's folder in `HOME/matplotlib` (`MPLCONFIGDIR`), set at the top
+    of `app.py` before MediaPipe (which imports matplotlib) loads. PyInstaller's start-up hook gives it a new
+    temporary folder at every start, so the system's fonts were listed again each time: over 5 s of every start
+    on a Mac.
   - Without a console (the built app) messages go to `HOME/app.log`, each line stamped with the UTC time (`Stamped`;
     `tests/test_app_log.py`).
   - On Linux the window is first tried in a child process (`--probe-window`); without a working window the app uses
@@ -408,7 +412,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `facedb.py` + `db/NNN_*.sql` — the optional shared database (PostgreSQL + pgvector on a server the devices share;
   since v1.16). Without `HOME/database.json` (or `FACE_DB`) nothing changes: files only.
   - Connection settings in `HOME/database.json` (password DPAPI-protected on Windows, mode 600 elsewhere); TLS
-    `verify-ca` against the server's own CA (made by `tools/db_certs.py`). This device's id in `HOME/device.json`.
+    `verify-ca` against the server's own CA (made by `tools/db_certs.py`). This device's id and name in
+    `HOME/device.json` (`device()`: made once; the name is the computer's without its domain, macOS says
+    "name.local").
     Settings without a CA (older, or written by hand) connect with channel binding instead, as `setup` does.
   - `facedb.setup` (Settings → Shared database → Connect) logs in with sslmode=require and
     channel_binding=require, takes the server's CA from the `server_ca` table (the SCRAM login, bound to this TLS
@@ -513,7 +519,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - `describe`: processor, memory, GPUs, NPU, ONNX Runtime providers (from the registry, /proc and /sys, sysctl).
   - `uses`: `face_id.LAST_DEVICES`, `GPU_DECISIONS`, `import_workers`.
   - `ai_apps`: AI model apps for Describe photo (the usual local ports, the configured describe server, installed
-    apps, LM Studio's downloads, the LAN address when served to the network; cached a minute).
+    apps, LM Studio's downloads, the LAN address when served to the network; cached a minute). A usual port
+    counts only when a model server answers there (its models, or 401 for a key): other programs use the same
+    ports (macOS's AirPlay Receiver has 5000).
   - `lmstudio_network`: every LM Studio server on the local network (name, addresses, port, models).
 - `cudasupport.py` — NVIDIA CUDA for the built Linux app (built with plain ONNX Runtime). `FACE_CUDA=off` turns it off.
   - `check`: driver 525.60+, compute capability 5.2+.

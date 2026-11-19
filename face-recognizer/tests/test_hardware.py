@@ -39,6 +39,31 @@ def test_ai_apps_reports_servers_and_installed_apps(monkeypatch):
     assert sum(e["app"] == "LM Studio" for e in found) == 1              # running, so not listed again as installed
 
 
+def test_another_program_on_a_usual_port_is_not_listed_as_an_ai_app(monkeypatch):
+    """The usual ports are other programs' too: macOS's AirPlay Receiver listens on 5000 and answers 403, and every
+    Mac's Settings showed text-generation-webui as running. Listed: a port where a model server answers, with its
+    models or asking for a key (401); and the server set in Settings, whatever it says."""
+    import describe
+
+    def refuses(code):
+        e = describe.Unavailable(f"refused ({code})")
+        e.code = code
+        return e
+
+    def models(url=None, key=None):
+        if url is None:                                       # the server set in Settings, with its own key
+            raise describe.Unavailable("No describe server answers")
+        raise refuses({"5000": 403, "8000": 401, "8080": None}[url.rsplit(":", 1)[1]])
+    monkeypatch.setattr(hardware, "_port_open", lambda port, host="127.0.0.1", timeout=0.25: port in (5000, 8000, 8080))
+    monkeypatch.setattr(describe, "server_models", models)
+    monkeypatch.setattr(describe, "config", lambda: {"url": "http://127.0.0.1:1234", "key": ""})
+    monkeypatch.setattr(hardware, "_installed_ai_apps", lambda: [])
+    found = {e["app"]: e for e in hardware.ai_apps(max_age=0)}
+    assert set(found) == {"vLLM", "LM Studio"}                # 5000 and 8080: something else; 1234: set in Settings
+    assert found["vLLM"]["running"] and "401" in found["vLLM"]["note"]
+    assert not found["LM Studio"]["running"] and found["LM Studio"]["note"].startswith("set in Settings")
+
+
 def test_an_nvidia_card_without_cuda_is_explained(monkeypatch):
     monkeypatch.setattr(hardware, "describe", lambda: {"gpus": ["NVIDIA GeForce RTX 4060"], "onnxruntime": ["CPU"]})
     assert "setup.sh" in hardware.gpu_note()

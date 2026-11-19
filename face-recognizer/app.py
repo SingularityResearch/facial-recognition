@@ -39,6 +39,18 @@ import paths
 if sys.platform.startswith("linux"):
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
+
+def keep_font_list(env=os.environ, built=None):
+    """The built app: matplotlib's folder is one that stays. MediaPipe imports matplotlib, and PyInstaller's start-up
+    hook points it at a new temporary folder at every start, so it listed the system's fonts again each time: more
+    than 5 s of every start on a Mac ("Matplotlib is building the font cache" in the log, found on the first real
+    one). In the private folder the list is made once. Before anything imports MediaPipe."""
+    if getattr(sys, "frozen", False) if built is None else built:
+        env["MPLCONFIGDIR"] = str(paths.HOME / "matplotlib")
+
+
+keep_font_list()
+
 TITLE = "Face Recognizer"
 VERSION = "1.24.6"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
