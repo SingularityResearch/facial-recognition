@@ -294,6 +294,13 @@ def test_the_linux_installer_is_one_file_that_installs_for_this_user(tmp_path):
         (app / "_internal" / "icons" / f).write_bytes((build_exe.HERE / "icons" / f).read_bytes())
     run = build_exe.linux_installer(app, tmp_path / build_exe.INSTALLERS["linux"])
     script, _, packed = run.read_bytes().partition(b"\n__APP__\n")
+    assert b"__MACHINE__" not in script and script.count(b'BUILT_FOR="') == 1      # it says what it was built for
+    assert [build_exe.linux_system(m) for m in ("x86_64", "AMD64", "aarch64", "arm64", "riscv64")] == [
+        "linux-x64", "linux-x64", "raspberrypi-arm64", "raspberrypi-arm64", "linux-riscv64"]
+    # the Raspberry Pi's build is an artifact of its own, not a second kind of the Linux one
+    assert build_exe.INSTALLERS["linux"] in ("FaceRecognizer-linux-x64.run", "FaceRecognizer-raspberrypi-arm64.run")
+    arm = build_exe.linux_installer(app, tmp_path / "arm.run", machine="arm64").read_bytes().partition(b"\n__APP__\n")[0]
+    assert b'BUILT_FOR="aarch64"' in arm and b"Raspberry Pi" in arm
     assert script.startswith(b"#!/bin/sh\n") and b"\r" not in script and b"sudo" not in script.replace(b"(no sudo)", b"")
     with tarfile.open(fileobj=io.BytesIO(packed), mode="r:gz") as tar:
         assert "FaceRecognizer/FaceRecognizer" in tar.getnames() and "FaceRecognizer/_internal/icons/icon.png" in tar.getnames()
@@ -309,10 +316,13 @@ def test_the_linux_installer_is_one_file_that_installs_for_this_user(tmp_path):
 
     def sh(*args):
         return subprocess.run(["sh", *args], env=env, capture_output=True, text=True, timeout=60)
-    r = sh(str(run))
-    if platform.machine() != "x86_64":
-        assert r.returncode == 1 and "x86_64" in r.stdout
-        return
+    # an installer made for another kind of processor refuses this computer and says which it is for
+    other = "aarch64" if platform.machine() == "x86_64" else "x86_64"
+    wrong = build_exe.linux_installer(app, tmp_path / "other.run", machine=other)
+    r = sh(str(wrong))
+    assert r.returncode == 1 and other in r.stdout and platform.machine() in r.stdout
+    assert not (home / ".local" / "lib" / "FaceRecognizer").exists()
+    r = sh(str(run))                                                  # made here, for this computer
     assert r.returncode == 0, r.stdout + r.stderr
     installed, entry = home / ".local" / "lib" / "FaceRecognizer", share / "applications" / "FaceRecognizer.desktop"
     icon = share / "icons" / "hicolor" / "512x512" / "apps" / "FaceRecognizer.png"

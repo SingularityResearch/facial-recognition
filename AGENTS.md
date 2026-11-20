@@ -38,7 +38,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - `checks`: Node tests, ruff and pytest (no LFS, no models).
   - `database`: the shared-database tests (`pytest -k "facedb or sync"`) against a pgvector service, with
     `FACE_TEST_PG`.
-  - `build`: the app on Windows, macOS and Linux (`build_exe.py --no-copy`, macOS signing when its secrets are set;
+  - `build`: the app on Windows, macOS, Linux and for the Raspberry Pi (GitHub's 64-bit ARM Linux runner,
+    `ubuntu-24.04-arm`, as `raspberrypi-arm64`: an artifact of its own, never a second kind of the Linux one)
+    (`build_exe.py --no-copy`, macOS signing when its secrets are set;
     Windows signing when its secrets are set and the push is to `main`: `azure/login` as this repository's workflow,
     with no stored password, right before each signing, since that sign-in lasts minutes: `build_exe.py --sign`,
     then after the installer `--signed`, which stops the run unless Windows reads both files as signed, trusted
@@ -47,7 +49,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     its signature; on Windows also the window's own parts: pywebview's Windows platform with its .NET lines,
     WebView2's library and the types `allow_camera` uses), then its installer (`--installer-only`; the Linux one is tried there: install, icons,
     uninstall; the .dmg signed and notarized too);
-    keeps the `FaceRecognizer-windows-x64`, `-macos-arm64` and `-linux-x64` artifacts 14 days, each with the app,
+    keeps the `FaceRecognizer-windows-x64`, `-macos-arm64`, `-linux-x64` and `-raspberrypi-arm64` artifacts 14
+    days, each with the app,
     its installer and `BUILD-INFO.json` (commit, run, both files' SHA-256, signed).
   - Actions are pinned to full commit SHAs, the release in a comment; look new ones up with
     `git ls-remote https://github.com/actions/<name> refs/tags/<tag>`.
@@ -193,6 +196,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     - Linux `FaceRecognizer-linux-x64.run`: `packaging/linux/install.sh`, the line `__APP__`, then the app's
       folder as .tar.gz (`linux_installer`). `sh` it: the app in `~/.local/lib/FaceRecognizer`, a menu entry, icons
       and a desktop icon; `uninstall.sh` there removes them and leaves `~/.local/share/FaceRecognizer`.
+    - Raspberry Pi `FaceRecognizer-raspberrypi-arm64.run`: the same script and layout, from a build made on
+      64-bit ARM Linux. `linux_system` names a Linux build's files after its processor (`linux-x64`,
+      `raspberrypi-arm64`), and `linux_installer` writes into the script which processor the app was built for
+      (`BUILT_FOR`): the installer refuses any other computer, saying which it is for.
   - Windows code signing (its section in the file; unsigned unless the environment says with what, `signing()`):
     - `FACE_SIGN_ACCOUNT`, `FACE_SIGN_PROFILE`, `FACE_SIGN_ENDPOINT`: Azure Artifact Signing (once Trusted Signing).
       The key stays in Microsoft's service; `signtool` (the Windows SDK's, `signtool()`) asks it through Microsoft's
@@ -307,6 +314,13 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     and is never let go of. Two apps hung on 2026-11-19 right after letting go of face finding's sessions, and
     until 1.24.9 the other models had no way to the CPU: every frame was answered with an error for good. Never
     drop or replace a GPU session that failed; a new GPU runner needs the same hand-over.
+  - MediaPipe on 64-bit ARM Linux (`mediapipe_usable`, `mediapipe_check`, `arm_features`): its build there needs
+    the processor's AES instruction and ends the whole process without it (signal 4, "compiled with aes enabled,
+    but this feature is not available on this processor": nothing to catch) the moment a model is made; importing
+    it is fine. A Raspberry Pi 4 has no such instruction (a Pi 5 has): the tracker ended at its start there
+    (2026-11-20). So where /proc/cpuinfo's Features lack what `MEDIAPIPE_NEEDS` names, MediaPipe counts as not
+    there (cues, posture, hands, `music.sounds`), the log says why and Settings → This computer shows it
+    (`GPU_DECISIONS`). Anything new that makes a MediaPipe model asks `mediapipe_usable()` first.
 - `labels.py` — labeling engine: per-face labels (`LabelDB`), auto-naming, duplicate-photo detection, undo history and
   clues for unnamed faces (`hints`: closest people, photo tags, same occasion). Nobody can be named a word in
   `NOT_NAMES` (`constructor`, `__proto__`, ...: the pages keep people's data in objects by name).
@@ -631,6 +645,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `hardware.py` — what the computer has and how the programs use it; the labeling tool's `/api/hardware` and
   `/api/hardware/network`, shown in Settings → This computer and → LM Studio.
   - `describe`: processor, memory, GPUs, NPU, ONNX Runtime providers (from the registry, /proc and /sys, sysctl).
+    An ARM Linux computer's /proc/cpuinfo has no "model name": `arm_cpu_name` gives the board's own name with the
+    kind of core ("Raspberry Pi 4 Model B Rev 1.4 (Cortex-A72)").
   - `uses`: `face_id.LAST_DEVICES`, `GPU_DECISIONS`, `import_workers`.
   - `ai_apps`: AI model apps for Describe photo (the usual local ports, the configured describe server, installed
     apps, LM Studio's downloads, the LAN address when served to the network; cached a minute). A usual port
@@ -696,7 +712,8 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   developer's computer built with different ones.
 - `setup.sh`, `start.sh`, `label.sh`, `recognize.sh`, `FaceRecognizer.command` — macOS and Linux: a `.venv` with the
   pinned libraries (Linux adds `pywebview[qt]` for the app window), the models, and starting the app (`--browser`
-  for the web browser).
+  for the web browser). On a Raspberry Pi (64-bit ARM Linux) with no `python3.12`, `setup.sh` takes the system's
+  own Python when it is 3.12 or newer (Raspberry Pi OS 13 has 3.13); every other system keeps 3.12.
 - `packaging/windows/FaceRecognizer.iss`, `packaging/linux/install.sh` — the Windows and Linux installers (see
   `build_exe.py`).
 - `tools/apple_signing.py` — signing the macOS builds without a Mac: `request` makes the private key (in
@@ -751,6 +768,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     rows written with only the database's password), with `FACE_TEST_PG` (CI job `database`; each test makes and
     drops its own schema). `test_sync_rows.py` needs no database: rows that can't be used, a photo row that names
     a file path, a row that changes a device's settings, each handed to the code the sync hands them to.
+  - The Raspberry Pi: `test_arm.py` (no ARM needed: the processor's feature list read, MediaPipe counted as not
+    there without AES and nothing of it made, the processor's name, `setup.sh` taking a newer system Python on
+    ARM only); the installer's processor check is in `test_platforms.py`.
   - Device to device: `test_peer.py` (no database needed: which address is tried first, what a refusal says about
     the clocks, a running service on this computer, a long computer name, the private key kept encrypted).
   - Two processes: `test_trackerlink.py` (no models needed: the local routes answer only with the run's secret;
@@ -793,6 +813,11 @@ macOS (14+, Apple Silicon) and Linux (Ubuntu 22.04+), from `face-recognizer/`:
 .venv/bin/python tracker.py                  # or label_tool.py, face_id.py --help: as on Windows
 .venv/bin/python -m pip install -r requirements-build.txt && .venv/bin/python build_exe.py   # build the app
 ```
+A Raspberry Pi (a Pi 4 tried, 2026-11-20; Raspberry Pi OS 13 "trixie", 64-bit) runs the same commands:
+`./setup.sh` (the system's Python 3.13), `./start.sh`, and `build_exe.py --installer` for
+`FaceRecognizer-raspberrypi-arm64.run`. The window's Qt for ARM needs glibc 2.39 or newer (Raspberry Pi OS 12
+has 2.36: the app would open in the web browser there).
+
 Platform differences live in:
 - `paths.py` (folders) and `desktop.py` (open a folder, attention);
 - `app.py` (the tracker's camera without a question: WebView2's permission hook on Windows, `allow_camera_macos`
@@ -1025,4 +1050,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   and the page says so. Only an Ignored face may be without a print (`lost_prints`, `mend`: faces older versions
   left that way, mended at the labeling tool's start).
 - Collect faces never saves whole frames, only each face with room around it and the others greyed out.
+- The Raspberry Pi has its own code flow (the owner's rule, 2026-11-20): nothing changes how the other hardware
+  works to make the Pi easier. What is done for the Pi is done only there (64-bit ARM Linux), in functions of its
+  own that the other systems never enter, and a test says so for each. Its release files are its own artifact
+  (`FaceRecognizer-raspberrypi-arm64.*`), like each other system's. Measure on the Pi before choosing anything
+  for it: a Pi 4 takes 0.55 s to recognize one face (PROJECT_CONTEXT.md section 10).
 - InsightFace ArcFace and audEERING Wav2Small weights are non-commercial; note this if the project is ever redistributed.

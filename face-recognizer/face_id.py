@@ -531,12 +531,13 @@ class Faces:
         self._qrun, qdev = self._optional(QUAL_MODEL, "quality")        # quality and expression models: GPU or CPU
         self._xrun, xdev = self._optional(EXPR_MODEL, "expression")
         self.expression_model = EXPR_MODEL.name if self._xrun else None
+        mediapipe = mediapipe_usable()[0]                # installed, and this processor can run it
         self._landmarker = None                          # MediaPipe, loaded on first use of cues()
-        self.cues_available = CUE_MODEL.exists() and _has_module("mediapipe")
+        self.cues_available = CUE_MODEL.exists() and mediapipe
         self._poser = None                               # MediaPipe pose, loaded on first use of poses()
-        self.pose_available = POSE_MODEL.exists() and _has_module("mediapipe")
+        self.pose_available = POSE_MODEL.exists() and mediapipe
         self._hander = None                              # MediaPipe hands, loaded on first use of hands()
-        self.hands_available = HAND_MODEL.exists() and _has_module("mediapipe")
+        self.hands_available = HAND_MODEL.exists() and mediapipe
         # Which processor runs each model, so a silent fall back to the CPU shows up in the startup log
         self.devices = {"detection": self._yunet[1] if self._yunet else "CPU (OpenCV)", "recognition": self.device, "quality": qdev,
                         "expression": xdev, "cues": "CPU (MediaPipe)" if self.cues_available else None,
@@ -773,6 +774,8 @@ def mesh_triangles():
     """MediaPipe's face-mesh tessellation as a flat list of landmark indices, three per triangle
     (852 triangles over the 468 face points; the 10 iris points aren't in it), or None without
     MediaPipe. For drawing the points Faces.face_mesh returns."""
+    if not mediapipe_usable()[0]:
+        return None
     try:
         from mediapipe.tasks.python.vision import FaceLandmarksConnections
     except ImportError:
@@ -884,7 +887,62 @@ class Voice:
 
 def _has_module(name):
     import importlib.util
-    return importlib.util.find_spec(name) is not None
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):            # a finder that refuses the name: not there
+        return False
+
+
+# MediaPipe on 64-bit ARM Linux. Its builds there are made for processors with the AES instruction, and on one
+# without it the first model made ends the whole process ("FATAL ERROR: This binary was compiled with aes enabled,
+# but this feature is not available on this processor": signal 4, nothing to catch). A Raspberry Pi 4 is such a
+# processor (Cortex-A72 without ARM's crypto extension; its /proc/cpuinfo says "fp asimd evtstrm crc32 cpuid"); a
+# Raspberry Pi 5 has it. Seen 2026-11-20 on a Pi 4 with MediaPipe 1.2.3: importing it was fine, the tracker ended
+# at its start (the models' warm-up), and so did the room-sound model. Everything else ran there: OpenCV, ONNX
+# Runtime, the encryption. So on such a processor MediaPipe counts as not there (cues, posture, hands, kinds of
+# sound: all optional), and Settings → This computer says why.
+MEDIAPIPE_NEEDS = ("aes",)
+_MEDIAPIPE = []                                  # [(usable, why)] once asked
+
+
+def arm_features(cpuinfo="/proc/cpuinfo"):
+    """The instruction sets a 64-bit ARM Linux processor says it has ("fp asimd aes pmull ..."), as a set. None
+    when the file isn't there or names none (another system or processor)."""
+    try:
+        for line in Path(cpuinfo).read_text(errors="replace").splitlines():
+            if line.lower().startswith("features"):
+                return set(line.partition(":")[2].split())
+    except OSError:
+        pass
+    return None
+
+
+def mediapipe_check(installed, system, machine, features):
+    """(True, "") when MediaPipe can be used, else (False, why). system: sys.platform; machine: the processor's
+    kind (platform.machine()); features: arm_features()."""
+    if not installed:
+        return False, "MediaPipe isn't installed"
+    if system.startswith("linux") and machine.lower() in ("aarch64", "arm64") and features is not None:
+        missing = [f for f in MEDIAPIPE_NEEDS if f not in features]
+        if missing:
+            return False, (f"this processor has no {' and '.join(f.upper() for f in missing)} instruction, which "
+                           "MediaPipe's build for 64-bit ARM needs (a Raspberry Pi 4 has none, a Raspberry Pi 5 has)")
+    return True, ""
+
+
+def mediapipe_usable():
+    """mediapipe_check for this computer, asked once. A MediaPipe that is installed but can't be used is said in
+    the log and kept for Settings → This computer (GPU_DECISIONS)."""
+    if not _MEDIAPIPE:
+        import platform
+        installed = _has_module("mediapipe")
+        ok, why = mediapipe_check(installed, sys.platform, platform.machine(),
+                                  arm_features() if sys.platform.startswith("linux") else None)
+        if installed and not ok:
+            GPU_DECISIONS["MediaPipe (face-shape cues, body posture, hands, kinds of sound)"] = "not used: " + why
+            print("MediaPipe is not used (face-shape cues, body posture, hands, kinds of sound): " + why, flush=True)
+        _MEDIAPIPE.append((ok, why))
+    return _MEDIAPIPE[0]
 
 
 def iou(a, b):

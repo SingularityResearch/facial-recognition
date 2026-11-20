@@ -70,6 +70,32 @@ def _reg_values(key, name):
     return out
 
 
+ARM_CORES = {"0xd03": "Cortex-A53", "0xd04": "Cortex-A35", "0xd05": "Cortex-A55", "0xd07": "Cortex-A57",
+             "0xd08": "Cortex-A72", "0xd09": "Cortex-A73", "0xd0a": "Cortex-A75", "0xd0b": "Cortex-A76",
+             "0xd0d": "Cortex-A77", "0xd41": "Cortex-A78", "0xd44": "Cortex-X1", "0xd46": "Cortex-A510",
+             "0xd47": "Cortex-A710", "0xd48": "Cortex-X2", "0xd4d": "Cortex-A715", "0xd4e": "Cortex-X3"}
+
+
+def arm_cpu_name(cpuinfo, board=""):
+    """A name for an ARM Linux computer's processor, whose /proc/cpuinfo has no "model name" line: the board's own
+    name when it has one (a Raspberry Pi says "Raspberry Pi 4 Model B Rev 1.4" in /proc/device-tree/model) with
+    the kind of core ("CPU part", for Arm's own designs). None when the text names neither."""
+    part = implementer = None
+    for line in cpuinfo.splitlines():
+        key, _, value = line.partition(":")
+        key, value = key.strip().lower(), value.strip().lower()
+        if key == "cpu part" and part is None:
+            part = value
+        elif key == "cpu implementer" and implementer is None:
+            implementer = value
+    core = (ARM_CORES.get(part) or f"ARM core {part}") if part and implementer in ("0x41", None) else \
+        (f"ARM core {part} (maker {implementer})" if part else None)
+    board = board.replace("\0", "").strip()
+    if board and core:
+        return f"{board} ({core})"
+    return board or core
+
+
 def cpu_name():
     s = platform.system()
     if s == "Windows":
@@ -78,9 +104,17 @@ def cpu_name():
             return names[0].strip()
     elif s == "Linux":
         try:
-            for line in Path("/proc/cpuinfo").read_text(errors="replace").splitlines():
+            text = Path("/proc/cpuinfo").read_text(errors="replace")
+            for line in text.splitlines():
                 if line.startswith("model name"):
                     return line.split(":", 1)[1].strip()
+            try:
+                board = Path("/proc/device-tree/model").read_text(errors="replace")
+            except OSError:
+                board = ""
+            name = arm_cpu_name(text, board)           # ARM: no "model name" there
+            if name:
+                return name
         except OSError:
             pass
     elif s == "Darwin":

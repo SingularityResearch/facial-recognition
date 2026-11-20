@@ -24,6 +24,7 @@ The installers put the app where it belongs and give it icons (the app's own: ic
                                                         and desktop icons, no administrator rights
     macOS    build/dist/FaceRecognizer-macos-arm64.dmg  the app beside a link to Applications, to drag across
     Linux    build/dist/FaceRecognizer-linux-x64.run    "sh FaceRecognizer-linux-x64.run": the app for this user, in the
+             (FaceRecognizer-raspberrypi-arm64.run when built on 64-bit ARM: the Raspberry Pi's own build)
                                                         applications menu and on the desktop (packaging/linux/install.sh)
 
 Needs requirements-build.txt installed (on Linux also pywebview[qt], for the app window); the Windows installer
@@ -52,8 +53,20 @@ PAGES = ["tracker_ui.html", "label_ui.html", "app_ui.html", "tracker_ui.js", "la
 # The app's icon, made by tools/make_icon.py: packed into the app too (the pages' favicon, the Linux window and
 # launcher), in a folder of the same name
 ICONS = ["icon.ico", "icon.png", "icon-256.png", "icon-64.png"]
+
+
+def linux_system(machine=None):
+    """What a Linux build's files are called after: "linux-x64" (x86_64 computers, as always) or
+    "raspberrypi-arm64" (aarch64: the Raspberry Pi's own build, for a Pi 4 or 5 with a 64-bit system; its own
+    artifact in a release, like each of the other systems). machine: `uname -m`, this computer's by default."""
+    import platform
+    m = (machine or platform.machine()).lower()
+    return {"x86_64": "linux-x64", "amd64": "linux-x64", "aarch64": "raspberrypi-arm64",
+            "arm64": "raspberrypi-arm64"}.get(m, "linux-" + m)
+
+
 INSTALLERS = {"win32": "FaceRecognizer-Setup-x64.exe", "darwin": "FaceRecognizer-macos-arm64.dmg",
-              "linux": "FaceRecognizer-linux-x64.run"}
+              "linux": f"FaceRecognizer-{linux_system() if sys.platform.startswith('linux') else 'linux-x64'}.run"}
 EXCLUDE = ["torch", "torchvision", "torchaudio", "torchgen", "tensorflow", "pandas", "IPython"]
 BUNDLE_ID = "io.github.singularityresearch.facerecognizer"
 MACOS_MIN = "14.0"                     # onnxruntime's macOS wheels need macOS 14 (Apple Silicon only)
@@ -332,10 +345,17 @@ def macos_installer(dist):
     return out
 
 
-def linux_installer(folder, out):
+def linux_installer(folder, out, machine=None):
     """A file that installs itself: packaging/linux/install.sh, the line __APP__, then `folder` (the built app) as
-    a .tar.gz. The user's computer needs only sh and tar. Plain Python: made the same on any system."""
+    a .tar.gz. The user's computer needs only sh and tar. Plain Python: made the same on any system.
+    machine: the processor kind the app in `folder` was built for (`uname -m`: x86_64, aarch64), this computer's
+    by default; the installer refuses any other computer (the app would not start there)."""
+    import platform
+    machine = (machine or platform.machine()).lower()
+    machine = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
     script = (HERE / "packaging" / "linux" / "install.sh").read_bytes().replace(b"\r\n", b"\n")
+    assert script.count(b'BUILT_FOR="__MACHINE__"') == 1, "install.sh no longer says what it was built for"
+    script = script.replace(b'BUILT_FOR="__MACHINE__"', f'BUILT_FOR="{machine}"'.encode())
     packed = io.BytesIO()
     with tarfile.open(fileobj=packed, mode="w:gz") as tar:
         tar.add(folder, arcname="FaceRecognizer")

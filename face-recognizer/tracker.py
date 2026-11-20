@@ -829,10 +829,11 @@ def main():
     url = f"http://127.0.0.1:{a.port}/"
     print(f"Recognition model: {F.REC_NAME} on {engine.faces.device}")
     print(f"Expression model: {engine.faces.expression_model or 'not installed (optional: models/' + F.EXPR_MODEL.name + ')'}")
-    if not engine.faces.cues_available:
+    unusable = F._has_module("mediapipe") and not F.mediapipe_usable()[0]      # said already, with the reason
+    if not engine.faces.cues_available and not unusable:
         print(f"Face-shape cues: not installed (optional: pip install mediapipe, and models/{F.CUE_MODEL.name})")
     print(f"Voice model: {engine.voice.model or 'not installed (optional: python tools/get_wav2small.py)'}")
-    if not engine.faces.pose_available:
+    if not engine.faces.pose_available and not unusable:
         print(f"Body posture: not installed (optional: pip install mediapipe, and models/{F.POSE_MODEL.name})")
     print("Models: " + ", ".join(f"{k} on {v} ({engine.warmup_ms.get(k, '-')} ms first run)"
                                  for k, v in engine.faces.devices.items() if v))

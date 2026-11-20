@@ -184,6 +184,9 @@ def sounds(x, rate=RATE, top=6):
     model = sound_model()
     if model is None or x is None or len(x) < rate:
         return None
+    import face_id
+    if not face_id.mediapipe_usable()[0]:            # e.g. a processor MediaPipe's build would end the process on
+        return None
     try:
         import threading
 

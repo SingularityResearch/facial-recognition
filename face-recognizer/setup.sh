@@ -7,8 +7,16 @@
 set -e
 cd "$(dirname "$0")"
 PY="${PYTHON:-python3.12}"
+# A Raspberry Pi (64-bit ARM Linux) with no python3.12 but a newer Python of its own (Raspberry Pi OS 13 has 3.13):
+# use that. The pinned libraries have builds for it, and the project's tests pass on it there. Every other
+# system is left as it was: 3.12, what the released apps are built and tested with.
+if [ -z "${PYTHON:-}" ] && [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = aarch64 ] \
+   && ! command -v "$PY" >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 \
+   && python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'; then
+  PY=python3
+fi
 if ! command -v "$PY" >/dev/null 2>&1; then
-  echo "Python 3.12 is needed first."
+  echo "Python 3.12 (or newer) is needed first."
   echo "  macOS:  brew install python@3.12        (https://brew.sh)"
   echo "  Ubuntu: sudo apt install python3.12 python3.12-venv"
   exit 1

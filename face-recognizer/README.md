@@ -27,6 +27,7 @@ Everything runs locally. No photos leave your computer, with one exception you s
   - **Windows:** `FaceRecognizer-Setup-x64.exe`. It installs into `%LOCALAPPDATA%\Programs\FaceRecognizer` (you can choose another folder you may write to) and adds **Face Recognizer** to the Start menu and the desktop. Windows SmartScreen may warn the first time (**More info → Run anyway**): a release's notes say whether its Windows files are code-signed. A signed one names its publisher in that warning, and Windows stops warning once it has seen enough installs of that publisher's files; an unsigned one is from an "Unknown publisher". If you already use FaceRecognizer.exe from a folder of your own, choose that folder in the installer: your `data` there is kept and only the program is replaced. If Face Recognizer is open, the installer closes it (and offers to start it again at the end). Uninstall from Windows' **Installed apps**; that leaves the face models and your `data` where they are and tells you where.
   - **macOS 14+ on Apple Silicon:** `FaceRecognizer-macos-arm64.dmg`. Open it and drag **FaceRecognizer** onto **Applications**; it is then in Launchpad.
   - **Linux (Ubuntu 22.04+, x86_64):** `sh FaceRecognizer-linux-x64.run`. It installs for you alone into `~/.local/lib/FaceRecognizer` and adds **Face Recognizer** to the applications menu and the desktop (`--no-desktop`: menu only). `sh ~/.local/lib/FaceRecognizer/uninstall.sh` removes it and leaves your data.
+  - **Raspberry Pi (a Pi 4 or 5 with 64-bit Raspberry Pi OS 13 or later):** `sh FaceRecognizer-raspberrypi-arm64.run`, as on Linux. Not in a release yet: it comes with 1.26. It works on a Pi 4 but slowly (about 1 frame a second), and the face-shape cues, body posture, hands and room-sound model are off there (that board's processor can't run them; a Pi 5's can).
   - **Without installing:** `FaceRecognizer-win64.zip` (unzip it anywhere and double-click **FaceRecognizer.exe**), `FaceRecognizer-macos-arm64.zip` (**FaceRecognizer.app**) or `FaceRecognizer-linux-x64.tar.gz` (unpack it and run `FaceRecognizer/FaceRecognizer`).
 
   It starts with no faces or names: add your own photos in the Labeling tab (**Add photos**). On first start it downloads the face models (about 243 MB): on Windows into the `models\` folder beside it, on macOS and Linux into your application-data folder (see **macOS and Linux**). After that it works offline.
@@ -249,6 +250,13 @@ macOS's hardened runtime, which can refuse what an unsigned app loads.
 The built app keeps its models and `data` in `~/Library/Application Support/FaceRecognizer` and what's private to you
 in `~/Library/Application Support/FaceLabels` (a signed app can't change itself).
 
+#### Raspberry Pi (64-bit Raspberry Pi OS 13 or later) → the same, as `FaceRecognizer-raspberrypi-arm64.run`
+
+The steps below for Linux work on a Raspberry Pi as they are: `./setup.sh` uses the system's own Python 3.13 there
+(no `python3.12` is needed), and `build_exe.py --installer` names the result after the Pi
+(`build/dist/FaceRecognizer-raspberrypi-arm64.run`). Building takes about 15 minutes on a Pi 4. The installer made
+there installs only on 64-bit ARM computers and says so on any other.
+
 #### Linux (Ubuntu 22.04 or later, x86_64) → the `FaceRecognizer` folder
 
 1. **Python 3.12 and the build's system libraries:**
@@ -283,7 +291,8 @@ Every push builds the app on GitHub's Windows, macOS and Linux machines once the
 (`.github/workflows/checks.yml`). Each run keeps, for 14 days, `FaceRecognizer-windows-x64` (the .exe and
 `FaceRecognizer-Setup-x64.exe`; code-signed on pushes to `main` when the repository's Windows signing secrets are
 set), `FaceRecognizer-macos-arm64` (the zipped .app and the .dmg; signed and notarized when
-the repository's signing secrets are set) and `FaceRecognizer-linux-x64` (the .tar.gz and the .run installer, which
+the repository's signing secrets are set), `FaceRecognizer-linux-x64` and, for the Raspberry Pi,
+`FaceRecognizer-raspberrypi-arm64` (each the .tar.gz and the .run installer, which
 the run also tries: install, check the menu entry and icons, uninstall), each with `BUILD-INFO.json` (commit, run,
 and the SHA-256 of both files). Download one with
 `gh run download <run id> -R SingularityResearch/facial-recognition -n FaceRecognizer-linux-x64`, or, with an older

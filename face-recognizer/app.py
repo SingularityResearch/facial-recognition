@@ -52,7 +52,7 @@ def keep_font_list(env=os.environ, built=None):
 keep_font_list()
 
 TITLE = "Face Recognizer"
-VERSION = "1.25.1"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.26.0"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -1449,6 +1449,11 @@ def self_test():
     def landmarks():
         import mediapipe
         from mediapipe.tasks.python import vision
+
+        import face_id
+        ok, why = face_id.mediapipe_usable()
+        if not ok:                                   # not a failure: the app runs without it (and says so in Settings)
+            return f"MediaPipe {mediapipe.__version__}: not used here ({why})"
         return f"MediaPipe {mediapipe.__version__}, {vision.FaceLandmarker.__name__}"
 
     def secrets_():

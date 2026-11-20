@@ -5,6 +5,7 @@
 #                                                 menu and on the desktop
 #   sh FaceRecognizer-linux-x64.run --no-desktop  the same, without the desktop icon
 #   sh FaceRecognizer-linux-x64.run --uninstall   remove the app and its icons (also: sh ~/.local/lib/FaceRecognizer/uninstall.sh)
+# (FaceRecognizer-raspberrypi-arm64.run is the Raspberry Pi's: the same script, a build for 64-bit ARM.)
 #
 # Where things go:   the app            ~/.local/lib/FaceRecognizer
 #                    the menu entry     ~/.local/share/applications/FaceRecognizer.desktop
@@ -66,7 +67,13 @@ done
 if [ "$MODE" = uninstall ]; then uninstall; exit 0; fi
 
 [ "$(uname -s)" = Linux ] || { echo "This installer is for Linux."; exit 1; }
-[ "$(uname -m)" = x86_64 ] || { echo "This build is for 64-bit Intel and AMD computers (x86_64); this one is $(uname -m)."; exit 1; }
+BUILT_FOR="__MACHINE__"       # filled in when the installer is made (build_exe.linux_installer): x86_64 or aarch64
+case "$BUILT_FOR" in
+  x86_64) FOR_WHOM="64-bit Intel and AMD computers (x86_64)" ;;
+  aarch64) FOR_WHOM="64-bit ARM computers (aarch64), such as a Raspberry Pi 4 or 5 with a 64-bit system" ;;
+  *) FOR_WHOM="$BUILT_FOR computers" ;;
+esac
+[ "$(uname -m)" = "$BUILT_FOR" ] || { echo "This build is for $FOR_WHOM; this one is $(uname -m)."; exit 1; }
 START="$(awk '/^__APP__$/ { print NR + 1; exit }' "$0")"
 [ -n "$START" ] || { echo "This file holds no app (it is only the installer's script)."; exit 1; }
 if running; then echo "$TITLE is running: close it first, then run this again."; exit 1; fi

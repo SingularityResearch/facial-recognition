@@ -16,7 +16,8 @@ taken from inside: brain activity from an EEG headset, recorded on the same cloc
 microphones measure, so that what a face shows can be compared with how the person's brain responded at that
 moment (see [EEG](#eeg-the-response-from-inside-next)).
 
-Everything runs on your own computers: Windows, macOS (14+, Apple Silicon) or Linux (Ubuntu 22.04+). One computer
+Everything runs on your own computers: Windows, macOS (14+, Apple Silicon), Linux (Ubuntu 22.04+) or, since
+1.26, a Raspberry Pi (a Pi 4 works, slowly; 64-bit Raspberry Pi OS 13). One computer
 is enough; it identifies its processor, graphics processors and NPU at start and runs each job the fastest way that
 gives the same answers (Settings, **This computer**). No photos, video, audio or face data leave the machine unless
 you send them on purpose:

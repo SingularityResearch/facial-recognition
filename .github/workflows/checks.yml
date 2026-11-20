@@ -90,6 +90,11 @@ jobs:
             name: macos-arm64
           - os: ubuntu-22.04
             name: linux-x64
+          # The Raspberry Pi's own build (a Pi 4 or 5 with a 64-bit system): GitHub's 64-bit ARM Linux runner.
+          # Built on Ubuntu 24.04 (glibc 2.39, which the window's Qt for ARM needs anyway): runs on Raspberry Pi
+          # OS 13 "trixie" and later. build_exe.py names its files after the processor (linux_system).
+          - os: ubuntu-24.04-arm
+            name: raspberrypi-arm64
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -117,8 +122,10 @@ jobs:
         # The runner's Azure package mirror sometimes can't be resolved (2026-11-11: two runs failed): try again,
         # from Ubuntu's own mirror, before giving up.
         run: |
+          # Ubuntu 24.04 (the Raspberry Pi build's runner) calls the sound library libasound2t64
+          SND=libasound2; apt-cache show libasound2t64 > /dev/null 2>&1 && SND=libasound2t64
           PKGS="libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libnss3
-                libxcomposite1 libxdamage1 libxrandr2 libxtst6 libasound2"
+                libxcomposite1 libxdamage1 libxrandr2 libxtst6 $SND"
           for try in 1 2 3; do
             if sudo apt-get update && sudo apt-get install -y -o Acquire::Retries=3 $PKGS; then break; fi
             echo "apt failed (try $try): using archive.ubuntu.com instead of the Azure mirror"
@@ -202,7 +209,7 @@ jobs:
         run: |
           export HOME="$RUNNER_TEMP/home" XDG_DATA_HOME=
           mkdir -p "$HOME/Desktop" "$HOME/.local/share/FaceRecognizer/data"
-          sh build/dist/FaceRecognizer-linux-x64.run
+          sh build/dist/FaceRecognizer-${{ matrix.name }}.run
           test -x "$HOME/.local/lib/FaceRecognizer/FaceRecognizer"
           grep -q '^Icon=.*FaceRecognizer.png$' "$HOME/.local/share/applications/FaceRecognizer.desktop"
           test -s "$HOME/.local/share/icons/hicolor/512x512/apps/FaceRecognizer.png" -a -f "$HOME/Desktop/FaceRecognizer.desktop"
@@ -217,7 +224,7 @@ jobs:
             Windows) PKG=FaceRecognizer.exe; SETUP=FaceRecognizer-Setup-x64.exe ;;
             macOS)   PKG=FaceRecognizer-macos-arm64.zip; SETUP=FaceRecognizer-macos-arm64.dmg
                      ditto -c -k --keepParent FaceRecognizer.app "$PKG" ;;
-            Linux)   PKG=FaceRecognizer-linux-x64.tar.gz; SETUP=FaceRecognizer-linux-x64.run
+            Linux)   PKG=FaceRecognizer-${{ matrix.name }}.tar.gz; SETUP=FaceRecognizer-${{ matrix.name }}.run
                      tar czf "$PKG" FaceRecognizer ;;
           esac
           python - "$PKG" "$SETUP" <<'PY'
