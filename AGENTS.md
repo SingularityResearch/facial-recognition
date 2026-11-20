@@ -1046,10 +1046,11 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   the older local-time text.
 - Describe photo is local by default. Pointing it at another device (Settings) sends each described photo there; the
   Settings tab must say so (`describe.where`). Descriptions and `describe.json` live in `HOME`.
-- Releases: the three installers (`FaceRecognizer-Setup-x64.exe`, `FaceRecognizer-macos-arm64.dmg`,
-  `FaceRecognizer-linux-x64.run`), `FaceRecognizer-win64.zip` (`FaceRecognizer.exe` and a new-user `README.txt`),
-  `FaceRecognizer-macos-arm64.zip`, `FaceRecognizer-linux-x64.tar.gz` and `SHA256SUMS.txt`, from one CI run's
-  builds of the tagged commit; never `data\`. An installer never deletes `models` or `data`, on install, update
+- Releases: the four installers (`FaceRecognizer-Setup-x64.exe`, `FaceRecognizer-macos-arm64.dmg`,
+  `FaceRecognizer-linux-x64.run`, `FaceRecognizer-raspberrypi-arm64.run`), `FaceRecognizer-win64.zip`
+  (`FaceRecognizer.exe` and a new-user `README.txt`), `FaceRecognizer-macos-arm64.zip`,
+  `FaceRecognizer-linux-x64.tar.gz`, `FaceRecognizer-raspberrypi-arm64.tar.gz` and `SHA256SUMS.txt`, from one CI
+  run's builds of the tagged commit (the Raspberry Pi's two since 1.26.0); never `data\`. An installer never deletes `models` or `data`, on install, update
   or uninstall. The macOS app and its .dmg are signed and notarized by CI (since 1.22.4, with the
   repository's Apple secrets): release only a run whose macOS build says so (`BUILD-INFO.json` `signed`). The
   Windows .exe and installer are code-signed by CI on pushes to `main` (the Azure signing secrets are set since

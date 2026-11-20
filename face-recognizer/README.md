@@ -27,7 +27,7 @@ Everything runs locally. No photos leave your computer, with one exception you s
   - **Windows:** `FaceRecognizer-Setup-x64.exe`. It installs into `%LOCALAPPDATA%\Programs\FaceRecognizer` (you can choose another folder you may write to) and adds **Face Recognizer** to the Start menu and the desktop. Windows SmartScreen may warn the first time (**More info → Run anyway**): a release's notes say whether its Windows files are code-signed. A signed one names its publisher in that warning, and Windows stops warning once it has seen enough installs of that publisher's files; an unsigned one is from an "Unknown publisher". If you already use FaceRecognizer.exe from a folder of your own, choose that folder in the installer: your `data` there is kept and only the program is replaced. If Face Recognizer is open, the installer closes it (and offers to start it again at the end). Uninstall from Windows' **Installed apps**; that leaves the face models and your `data` where they are and tells you where.
   - **macOS 14+ on Apple Silicon:** `FaceRecognizer-macos-arm64.dmg`. Open it and drag **FaceRecognizer** onto **Applications**; it is then in Launchpad.
   - **Linux (Ubuntu 22.04+, x86_64):** `sh FaceRecognizer-linux-x64.run`. It installs for you alone into `~/.local/lib/FaceRecognizer` and adds **Face Recognizer** to the applications menu and the desktop (`--no-desktop`: menu only). `sh ~/.local/lib/FaceRecognizer/uninstall.sh` removes it and leaves your data.
-  - **Raspberry Pi (a Pi 4 or 5 with 64-bit Raspberry Pi OS 13 or later):** `sh FaceRecognizer-raspberrypi-arm64.run`, as on Linux. Not in a release yet: it comes with 1.26. It works on a Pi 4 but slowly (about 1 frame a second), and the face-shape cues, body posture, hands and room-sound model are off there (that board's processor can't run them; a Pi 5's can).
+  - **Raspberry Pi (a Pi 4 or 5 with 64-bit Raspberry Pi OS 13 or later):** `sh FaceRecognizer-raspberrypi-arm64.run`, as on Linux (add `--autostart` and it starts with the Pi). Since 1.26. It works on a Pi 4 but slowly (its camera reaches your other devices at 2 to 3 frames a second), and the face-shape cues, body posture, hands and room-sound model are off there (that board's processor can't run them; a Pi 5's can).
   - **Without installing:** `FaceRecognizer-win64.zip` (unzip it anywhere and double-click **FaceRecognizer.exe**), `FaceRecognizer-macos-arm64.zip` (**FaceRecognizer.app**) or `FaceRecognizer-linux-x64.tar.gz` (unpack it and run `FaceRecognizer/FaceRecognizer`).
 
   It starts with no faces or names: add your own photos in the Labeling tab (**Add photos**). On first start it downloads the face models (about 243 MB): on Windows into the `models\` folder beside it, on macOS and Linux into your application-data folder (see **macOS and Linux**). After that it works offline.
@@ -308,11 +308,12 @@ and the SHA-256 of both files). Download one with
 To make a release:
 1. Raise `VERSION` in `app.py` (for example `"1.22"`), commit, push, and wait for the run to pass. Test its builds.
 2. From that run's artifacts: zip `FaceRecognizer.exe` with a short `README.txt` for new users (it isn't in the repository: take it from the previous release's zip and bring it up to date) as
-   `FaceRecognizer-win64.zip`; take the three installers (`FaceRecognizer-Setup-x64.exe`,
-   `FaceRecognizer-macos-arm64.dmg`, `FaceRecognizer-linux-x64.run`), `FaceRecognizer-macos-arm64.zip` and
-   `FaceRecognizer-linux-x64.tar.gz` as they are; list every file's SHA-256 in `SHA256SUMS.txt`. **Never include
+   `FaceRecognizer-win64.zip`; take the four installers (`FaceRecognizer-Setup-x64.exe`,
+   `FaceRecognizer-macos-arm64.dmg`, `FaceRecognizer-linux-x64.run`, `FaceRecognizer-raspberrypi-arm64.run`),
+   `FaceRecognizer-macos-arm64.zip`, `FaceRecognizer-linux-x64.tar.gz` and `FaceRecognizer-raspberrypi-arm64.tar.gz`
+   as they are; list every file's SHA-256 in `SHA256SUMS.txt`. **Never include
    `data`**: it holds your faces, names and labels. A new user's copy starts empty.
-3. Attach the seven files to a release tagged `v1.22` (`v` and the version) at that commit, with notes saying how to start it on each system.
+3. Attach the nine files to a release tagged `v1.22` (`v` and the version) at that commit, with notes saying how to start it on each system.
 
 Leave out the models: the app downloads them on first start (`fetch_models.py`): YuNet, eDifFIQA and the expression
 model from OpenCV Zoo on Hugging Face, the face, pose and hand landmarkers from Google's MediaPipe storage (the hand landmarker only from there; it's optional), ArcFace from
