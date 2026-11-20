@@ -132,9 +132,54 @@ test("the tab page names a tab whose page stopped answering, and only such a tab
   assert.deepStrictEqual([named(1e6 + 11000), asked()], [["label"], ["label", "cams"]]);
   assert.ok(+head[1] >= 6000, "a page busy for a few seconds (a large Labeling view) must not count as hung");
   assert.match(code, /for \(const k of loadedTabs\(\)\) tell\(k, \{ fs: "ping" \}\)/);
-  assert.match(code, /fetch\("\/alive" \+ \(silent\.length \? `\?silent=\$\{silent\.join\(","\)\}` : ""\)/);
+  assert.match(code, /silent\.length \? `silent=\$\{silent\.join\(","\)\}` : ""/);
+  assert.match(code, /fetch\("\/alive" \+ \(said \? "\?" \+ said : ""\)/);
   assert.match(code, /m\.fs === "pong"\) \{ if \(answered\[k\]\) answered\[k\]\.at = Date\.now\(\)/);
   assert.match(code, /addEventListener\("load", e => \{\r?\n\s*if \(e\.target\.getAttribute\("src"\)\) answered\[k\] = \{ src: e\.target\.src, at: Date\.now\(\) \}/);
+});
+
+test("the tab page gives a tab its address again when its page never began to load", () => {
+  // Seen with 1.25.0 on Windows: now and then the Labeling frame kept the empty page it began with, address set,
+  // nothing loading, no error and no load event: blank until the app was started again. Its address given again
+  // loads it. A page that has begun to load (slow or not) is never touched.
+  const code = read("app_ui.js");
+  const head = code.match(/const START_IN = (\d+), AGAIN = (\d+), unbegun = \{\};/);
+  const still = code.match(/function emptyStill\(f\) \{\r?\n[\s\S]*?\n\}/);
+  const fn = code.match(/function lateTabs\(now, empty\) \{[\s\S]*?\n\}\r?\nconst gaveUp = [^\n]*/);
+  assert.ok(head && still && fn, "lateTabs, gaveUp, emptyStill or START_IN isn't written the way this test reads it");
+  const START = +head[1], AGAIN = +head[2], L = "http://127.0.0.1:8765/";
+  const frames = { "f-track": { src: "" }, "f-label": { src: L }, "f-cams": { src: "" } };
+  const ctx = { document: { getElementById: id => frames[id] } };
+  vm.createContext(ctx);
+  vm.runInContext(`const START_IN = ${START}, AGAIN = ${AGAIN}, unbegun = {}; ${still[0]}; ${fn[0]};
+    this.lateTabs = lateTabs; this.gaveUp = gaveUp; this.emptyStill = emptyStill;`, ctx);
+  // the frame as the browser shows it: its empty first page can be looked into, a page of another address can't
+  const frame = (src, doc) => ({ getAttribute: () => src, get contentDocument() { if (doc === "throws") throw new Error("SecurityError"); return doc; } });
+  assert.equal(ctx.emptyStill(frame(L, { URL: "about:blank" })), true);
+  assert.equal(ctx.emptyStill(frame(L, null)), false);                 // its page is there (another address: nothing to see)
+  assert.equal(ctx.emptyStill(frame(L, "throws")), false);
+  assert.equal(ctx.emptyStill(frame("", { URL: "about:blank" })), false);   // no address yet: the program is still starting
+  let stuck = true;
+  const late = now => [...ctx.lateTabs(now, f => f === frames["f-label"] && stuck)], gone = now => [...ctx.gaveUp(now)];
+  const t0 = 1e6;
+  assert.deepStrictEqual(late(t0), []);                                // first seen: it gets START_IN to begin
+  assert.deepStrictEqual(late(t0 + START - 1000), []);
+  assert.deepStrictEqual(late(t0 + START + 1), ["label"]);             // its address again
+  assert.deepStrictEqual(late(t0 + START + 2001), []);                 // and twice as long before the next
+  assert.deepStrictEqual(late(t0 + START + 1 + 2 * START + 1), ["label"]);
+  stuck = false;                                                       // it began to load: left alone from here on
+  assert.deepStrictEqual([late(t0 + 60000), gone(t0 + 60000)], [[], []]);
+  stuck = true;                                                        // one that never begins: AGAIN tries, then given up
+  let t = t0 + 100000, tries = 0;
+  for (let i = 0; i < 400; i++, t += 2000) tries += late(t).length;
+  assert.equal(tries, AGAIN);
+  assert.deepStrictEqual(gone(t), ["label"]);                          // now it counts as a tab that doesn't answer
+  frames["f-label"].src = "http://127.0.0.1:9765/";                    // started again at another address: counted anew
+  assert.deepStrictEqual([late(t), gone(t)], [[], []]);
+  assert.ok(START >= 2000 && START * (AGAIN * (AGAIN + 1) / 2) <= 90000, "long enough for a busy start, short enough to matter");
+  assert.match(code, /for \(const k of again\) \{ const f = document\.getElementById\("f-" \+ k\); f\.src = f\.src; \}/);
+  assert.match(code, /new Set\(\[\.\.\.silentTabs\(now\), \.\.\.gaveUp\(now\)\]\)/);
+  assert.match(code, /again\.length \? `again=\$\{again\.join\(","\)\}` : ""/);
 });
 
 test("the tracker page makes its JPEGs in a worker, and by itself where that fails", async () => {

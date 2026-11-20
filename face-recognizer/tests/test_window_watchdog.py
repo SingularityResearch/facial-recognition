@@ -97,6 +97,17 @@ def test_a_tab_whose_page_stopped_answering_counts_as_a_window_that_stopped(monk
     assert app.alive_said("", now=200.0) == [] and app.not_answering() == "The window's page"   # it answers again
 
 
+def test_a_tab_given_its_address_again_is_on_record(capsys, monkeypatch):
+    """A tab whose page never began to load is given its address again by the tab page (app_ui.js lateTabs; seen
+    with 1.25.0 on Windows: the Labeling tab blank until the app was started again). The log says so, for tabs
+    there are only, and the window still counts as running."""
+    monkeypatch.setattr(app, "ALIVE", {"at": None})
+    assert app.alive_said("", now=50.0, again="label,<script>,nonsense") == [] and app.ALIVE["at"] == 50.0
+    out = capsys.readouterr().out
+    assert out.count("\n") == 1 and "the Labeling tab's page hadn't begun to load" in out and "script" not in out
+    assert app.alive_said("", now=52.0) == [] and capsys.readouterr().out == ""
+
+
 def test_the_windows_memory_goes_to_the_log(capsys, monkeypatch):
     """A page that keeps growing runs out in the end (the NAS's did after 14 hours): the log now says, every half
     hour, what the window's processes hold. They are this process's descendants."""

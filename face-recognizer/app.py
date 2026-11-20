@@ -52,7 +52,7 @@ def keep_font_list(env=os.environ, built=None):
 keep_font_list()
 
 TITLE = "Face Recognizer"
-VERSION = "1.25.0"                             # this build; GitHub release tags are "v" + VERSION
+VERSION = "1.25.1"                             # this build; GitHub release tags are "v" + VERSION
 REPO = "SingularityResearch/facial-recognition"
 HOME = paths.HOME                                  # %APPDATA%\FaceLabels: private, outside the project
 
@@ -339,7 +339,8 @@ def shell_handler():
                 attention(int(q.get("unread", "0") or 0), q.get("flash") == "1")
                 return self.send({})
             if path == "/alive":                         # the window's page runs (watch_window), and its tabs' pages
-                alive_said(dict(parse_qsl(self.path.partition("?")[2])).get("silent", ""))
+                q = dict(parse_qsl(self.path.partition("?")[2]))
+                alive_said(q.get("silent", ""), again=q.get("again", ""))
                 return self.send({})
             if path == "/restart-app":                   # the camera won't start even after a page reload
                 return self.send({"restarting": restart_soon("the camera wouldn't start")})
@@ -403,11 +404,16 @@ RESTART_AFTER = 30
 TABS = {"track": "Face tracking", "label": "Labeling", "cams": "Cameras"}
 
 
-def alive_said(silent="", now=None):
+def alive_said(silent="", now=None, again=""):
     """The tab page's word, every 2 s (/alive). Each tab's page has a process of its own (localguard's
     Origin-Agent-Cluster header), so a page that hangs no longer stops the tab page: that one asks its tabs whether
     they run and names those that haven't answered (silent: "track,cams"). Then the window does not count as
-    running, and the watchdog brings it back as it does a window that says nothing at all. Returns the tabs named."""
+    running, and the watchdog brings it back as it does a window that says nothing at all. Returns the tabs named.
+    again: tabs whose page hadn't begun to load and were given their address again (app_ui.js lateTabs): for the
+    log only, so that a tab that started late is on record."""
+    for k in again.split(","):
+        if k in TABS:
+            print(f"Tab page: the {TABS[k]} tab's page hadn't begun to load: given its address again.", flush=True)
     names = [k for k in silent.split(",") if k in TABS]
     ALIVE["silent"] = names
     if not names:

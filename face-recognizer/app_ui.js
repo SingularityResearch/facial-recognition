@@ -70,10 +70,38 @@ const loadedTabs = () => ["track", "label", "cams"].filter(k => { const f = docu
 function silentTabs(now) {
   return loadedTabs().filter(k => now - answered[k].at > ANSWER_IN);
 }
+// A tab that was given its address and never began to load it. Seen on Windows with 1.25.0, about one start in
+// twenty (and once in six on a real installation): the Labeling frame kept the empty page every frame begins with,
+// its address set and nothing loading. No error and no load event, so nothing above noticed, and the tab stayed
+// blank until the app was started again. Giving the frame its address again loads the page (tried on a window
+// stuck that way: half a second). What drops the first try is not shown; it happens when a program is already up
+// while the window is still being made (the labeling tool serves a second after the start since 1.25).
+// A frame that still has that empty page START_IN after it was first seen with an address is given the address
+// again, then after twice as long, and so on, AGAIN times at most; after that the tab counts as one that doesn't
+// answer, which is the watchdog's business. A page that is merely slow is not touched: once its address has been
+// taken up the frame no longer has the empty page (a page of another address can't be looked into at all).
+const START_IN = 3000, AGAIN = 5, unbegun = {};    // tab -> { src, since, tries }: a frame seen with its empty first page
+function emptyStill(f) {
+  try { return !!f.getAttribute("src") && f.contentDocument?.URL === "about:blank"; } catch { return false; }
+}
+function lateTabs(now, empty) {                    // the tabs to give their address again now
+  const late = [];
+  for (const k of ["track", "label", "cams"]) {
+    const f = document.getElementById("f-" + k);
+    if (!empty(f)) { delete unbegun[k]; continue; }
+    const w = unbegun[k]?.src === f.src ? unbegun[k] : (unbegun[k] = { src: f.src, since: now, tries: 0 });
+    if (w.tries < AGAIN && now - w.since > START_IN * (w.tries + 1)) { w.tries++; w.since = now; late.push(k); }
+  }
+  return late;
+}
+const gaveUp = now => ["track", "label", "cams"].filter(k => unbegun[k]?.tries >= AGAIN && now - unbegun[k].since > START_IN * AGAIN);
 setInterval(() => {
   for (const k of loadedTabs()) tell(k, { fs: "ping" });
-  const silent = silentTabs(Date.now());
-  fetch("/alive" + (silent.length ? `?silent=${silent.join(",")}` : ""), { cache: "no-store" }).then(drop, () => {});
+  const now = Date.now(), again = lateTabs(now, emptyStill);
+  for (const k of again) { const f = document.getElementById("f-" + k); f.src = f.src; }
+  const silent = [...new Set([...silentTabs(now), ...gaveUp(now)])];
+  const said = [silent.length ? `silent=${silent.join(",")}` : "", again.length ? `again=${again.join(",")}` : ""].filter(Boolean).join("&");
+  fetch("/alive" + (said ? "?" + said : ""), { cache: "no-store" }).then(drop, () => {});
 }, 2000);
 // A program that was started again may be on another port than the one its tab was loaded from (the old one not
 // free yet): every 5 s this page asks where the programs are, and loads a tab again whose address has changed.

@@ -89,7 +89,9 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
       neither camera nor microphone.
     - The tab page looks at `/status` every 5 s and follows a program (and the Cameras page) to a changed
       address: a tracker started again on another port was otherwise left behind in its frame.
-    - Tried on Windows and Linux, from source and as the built app; not yet on a Mac.
+    - Tried as CI's builds on Windows, Linux and a Mac (2026-11-19; numbers in PROJECT_CONTEXT.md's row for
+      1.25.0). On a Mac the window is WebKit, one process for every page: the Cameras page's own port changes
+      nothing there. macOS lists the app once: the tracker's process shows no icon of its own.
     A program already answering on a port that this process didn't start (`OWN`) is never shown in the window:
     `start` says it is already running (its .bat, another window, or anything answering like it).
   - The tab page itself (`app_ui.html` + `app_ui.js`, `{{VERSION}}` filled in) is served on `127.0.0.1:8764`:
@@ -109,6 +111,16 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     answered by `settings_bridge.js`) and names those silent for `ANSWER_IN` (10 s) in `/alive?silent=track,cams`
     (`app_ui.js` `silentTabs`): `alive_said` then doesn't count the window as running, and the watchdog does what
     it does for a window that says nothing; the log names the tab (`not_answering`).
+  - A tab given its address whose page never begins to load: the tab page gives the frame its address again
+    (`app_ui.js` `lateTabs`: a frame that still has the empty page it began with, `emptyStill`, `START_IN` (3 s)
+    after it was first seen with an address; then after twice as long, `AGAIN` (5) times at most), tells the app
+    (`/alive?again=label`: a "Tab page:" line in the log) and after that names the tab as silent. A page that has
+    begun to load is never touched (the frame then has no empty page, and a page of another address can't be
+    looked into). Why: with 1.25.0 on Windows the Labeling frame now and then kept its empty first page, address
+    set, no error and no load event, blank until the app was started again (1 start in 24 as a test copy, 1 in 6
+    in a real installation, none in 30 of 1.24.10). Since 1.25 the labeling tool serves a second after the start,
+    while the window is still being made; what drops that first load is not shown (the likeliest: pywebview's
+    request handlers being taken off, `drop_request_hooks`, while the frame's request is on its way through them).
   - A camera that won't start even after a page reload: the tracker page tells the tab page (`fs: "camstuck"`),
     which asks `/restart-app`; `restart_soon` restarts the app at most once every `RESTART_EVERY` (an hour,
     `HOME/restarted.json`), and only in the app window. Under a locked screen the rule is once per lock
@@ -716,7 +728,7 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
   - Node (`*.test.js`): `expression.js`, `signals.js`, `settings_bridge.js`, `page_store.js` (person signals sent
     per person, `refresh`); `pages.test.js`: every page script
     parses and is served and packed, no inline handlers, no internet fonts, no `confirm()`/`alert()`/`prompt()`,
-    `askUser` (`ask.js`), the tab page's silent tabs, and the tracker's JPEGs (worker, its fallbacks, no `toBlob`
+    `askUser` (`ask.js`), the tab page's silent tabs and a tab whose page never began to load, and the tracker's JPEGs (worker, its fallbacks, no `toBlob`
     outside `jpegOf`; `jpeg_worker.js` itself).
   - Servers and security: `test_servers.py` (the three servers on test servers: CSP, CORP, cross-site refusals,
     request sizes, Collect faces, presence log, feeling reports, `/api/who`, no page loading from the internet,
