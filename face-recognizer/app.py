@@ -1478,7 +1478,7 @@ def self_test():
     def own():
         names = ("face_id", "labels", "label_tool", "tracker", "facedb", "dbsync", "dbsync_home", "peer", "secretbox",
                  "describe", "websearch", "hardware", "lmstudio", "persondata", "exprlog", "camrelay", "cudasupport",
-                 "music", "musiclog", "spotify", "describejob", "label_settings", "forgotten", "waitlog", "trackerlink")
+                 "music", "musiclog", "spotify", "describejob", "label_settings", "forgotten", "waitlog", "trackerlink", "pi")
         for n in names:
             importlib.import_module(n)
         return f"{len(names)} modules"

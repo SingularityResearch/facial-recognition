@@ -36,6 +36,7 @@ import alerts
 import forgotten
 import localguard
 import paths
+import pi
 
 HERE = Path(__file__).resolve().parent
 PAGE = HERE / "tracker_ui.html"
@@ -278,6 +279,10 @@ class Engine:
         with self.lock:
             self._reload()
             self.warmup_ms = self.faces.warmup()
+        # A Raspberry Pi has a flow of its own for a frame's faces (pi.py): None on every other computer
+        self.pi = pi.Prints(self.faces) if pi.here() else None
+        if self.pi is not None:
+            print("Raspberry Pi: faces' prints are made behind the frames, one at a time (pi.py).", flush=True)
 
     def _reload(self):                         # call with self.lock held
         mtime = PEOPLE.stat().st_mtime if PEOPLE.exists() else None
@@ -329,7 +334,9 @@ class Engine:
         with self.lock:
             self._reload()
             ident = self.ident                 # snapshot: a reload mid-request can't swap it out
-            found = self.faces.detect(img, sizes=(640,))   # one pass: webcam faces are large
+            # one pass: webcam faces are large. On a Raspberry Pi (pi.py, its own flow) the faces come without
+            # waiting for their prints: a face's print is None in a frame that brought no new one.
+            found = self.faces.detect(img, sizes=(640,)) if self.pi is None else self.pi.find(img)
             # Expression and cues only from faces the model can read: sharp enough, and facing the camera.
             skips = [F.expression_skip(row, quality) for row, _, _, quality in found]
             exprs = [self.faces.expression(crop) if skip is None else None
@@ -343,9 +350,14 @@ class Engine:
         bodies = [F.pose_for_face(poses, row) for row, _, _, _ in found]
         their_hands = F.hands_for_faces(hand_pts, [row for row, _, _, _ in found], poses, bodies)
         out = []
-        for (row, emb, crop, quality), skip, expr, bs, (_, pts), bi, hs in zip(found, skips, exprs, shapes, meshes, bodies,
-                                                                              their_hands):
-            name, sim = ident.who(emb, threshold) if ident else ("Unknown", 0.0)
+        for k, ((row, emb, crop, quality), skip, expr, bs, (_, pts), bi, hs) in enumerate(zip(
+                found, skips, exprs, shapes, meshes, bodies, their_hands)):
+            if emb is None:                    # only on a Raspberry Pi: the name its last print gave this face
+                name, sim = self.pi.named(k)
+            else:
+                name, sim = ident.who(emb, threshold) if ident else ("Unknown", 0.0)
+                if self.pi is not None:
+                    self.pi.name(k, name, sim)
             out.append({
                 "box": [round(float(v), 1) for v in row[:4]],
                 "kps": [[round(float(row[4 + 2 * k]), 1), round(float(row[5 + 2 * k]), 1)] for k in range(5)],
@@ -353,7 +365,7 @@ class Engine:
                 "name": name,
                 "sim": round(float(sim), 3),
                 # the face print (float32, base64): the page averages a face's recent prints and asks /api/who
-                "emb": base64.b64encode(np.asarray(emb, "<f4").tobytes()).decode("ascii"),
+                "emb": None if emb is None else base64.b64encode(np.asarray(emb, "<f4").tobytes()).decode("ascii"),
                 "quality": None if np.isnan(quality) else round(float(quality), 3),
                 "turn": round(float(F.head_turn(row)), 2),
                 "light": round(float(crop.mean()) / 255, 2),   # face brightness, for per-condition accuracy
@@ -541,6 +553,8 @@ def make_handler(engine):
                                        "cues": engine.faces.cues_available, "voice": bool(engine.voice.model),
                                        "meshTriangles": MESH_TRIANGLES if engine.faces.cues_available else None,
                                        "qEnroll": F.Q_ENROLL, "captureDir": str(F.WEBCAM),
+                                       # only on a Raspberry Pi: the page's own picture sizes there (pi.PAGE)
+                                       **({"pi": pi.PAGE} if getattr(engine, "pi", None) is not None else {}),
                                        "pose": engine.faces.pose_available, "posePoints": list(F.POSE_POINTS),
                                        "hands": engine.faces.hands_available,
                                        "calibration": _read_json(CALIBRATION), "vaFit": _read_json(VA_FIT),

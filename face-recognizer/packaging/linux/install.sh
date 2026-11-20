@@ -4,6 +4,8 @@
 #   sh FaceRecognizer-linux-x64.run               install, or update: Face Recognizer is then in the applications
 #                                                 menu and on the desktop
 #   sh FaceRecognizer-linux-x64.run --no-desktop  the same, without the desktop icon
+#   sh FaceRecognizer-linux-x64.run --autostart   the same, and it starts whenever you sign in (so at boot, on
+#                                                 a computer that signs in by itself: a Raspberry Pi's desktop)
 #   sh FaceRecognizer-linux-x64.run --uninstall   remove the app and its icons (also: sh ~/.local/lib/FaceRecognizer/uninstall.sh)
 # (FaceRecognizer-raspberrypi-arm64.run is the Raspberry Pi's: the same script, a build for 64-bit ARM.)
 #
@@ -24,6 +26,7 @@ BIN="$HOME/.local/bin"
 ENTRY="$SHARE/applications/$NAME.desktop"
 ICONS="$SHARE/icons/hicolor"
 SIZES="64 256 512"
+AUTO="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/$NAME.desktop"      # there only when --autostart was asked for
 
 desktop_dir() {
   d="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
@@ -46,7 +49,7 @@ running() {                         # the installed copy is running: its files c
 uninstall() {
   if running; then echo "$TITLE is running: close it first, then run this again."; exit 1; fi
   rm -rf "$APP"
-  rm -f "$ENTRY" "$BIN/facerecognizer" "$(desktop_dir)/$NAME.desktop"
+  rm -f "$ENTRY" "$BIN/facerecognizer" "$(desktop_dir)/$NAME.desktop" "$AUTO"
   for s in $SIZES; do rm -f "$ICONS/${s}x${s}/apps/$NAME.png"; done
   refresh
   echo "$TITLE was removed. Its face models and your data were left in $SHARE/$NAME"
@@ -55,12 +58,14 @@ uninstall() {
 
 MODE=install
 DESKTOP=yes
+AUTOSTART=no
 case "$0" in *uninstall.sh) MODE=uninstall ;; esac
 for arg in "$@"; do
   case "$arg" in
     --uninstall) MODE=uninstall ;;
     --no-desktop) DESKTOP=no ;;
-    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --autostart) AUTOSTART=yes ;;
+    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $arg (see --help)"; exit 2 ;;
   esac
 done
@@ -126,6 +131,13 @@ if [ "$DESKTOP" = yes ]; then
     chmod +x "$DESK/$NAME.desktop"
     gio set "$DESK/$NAME.desktop" metadata::trusted true >/dev/null 2>&1 || true   # GNOME: no "Allow Launching" step
   fi
+fi
+# Starting at sign-in is the desktop's own way (an entry in its autostart folder): made when asked for, and kept
+# in step by a later update that doesn't say; never made by itself.
+if [ "$AUTOSTART" = yes ] || [ -f "$AUTO" ]; then
+  mkdir -p "$(dirname "$AUTO")"
+  cp "$ENTRY" "$AUTO"
+  [ "$AUTOSTART" = yes ] && echo "It starts whenever you sign in ($AUTO; delete that file to stop it)."
 fi
 refresh
 

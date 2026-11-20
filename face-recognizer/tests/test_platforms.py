@@ -331,13 +331,21 @@ def test_the_linux_installer_is_one_file_that_installs_for_this_user(tmp_path):
     assert icon.read_bytes() == (build_exe.HERE / "icons" / "icon.png").read_bytes()
     assert (home / "Desktop" / "FaceRecognizer.desktop").read_text() == text
     assert subprocess.run([str(home / ".local" / "bin" / "facerecognizer")], capture_output=True, text=True).stdout == "started\n"
+    auto = home / ".config" / "autostart" / "FaceRecognizer.desktop"
+    assert not auto.exists()                                          # never by itself
     (installed / "old-file").write_text("from the version before")
     assert sh(str(run), "--no-desktop").returncode == 0 and not (installed / "old-file").exists()   # an update: all new
+    assert not auto.exists()
+    r = sh(str(run), "--autostart")                                   # asked for: it starts at sign-in from now on
+    assert r.returncode == 0 and "starts whenever you sign in" in r.stdout and auto.read_text() == text
+    auto.write_text("an older entry")
+    assert sh(str(run)).returncode == 0 and auto.read_text() == text  # an update keeps it, and in step
     assert sh(str(run), "--what").returncode == 2
     r = sh(str(installed / "uninstall.sh"))
     assert r.returncode == 0 and "left in" in r.stdout
     assert not installed.exists() and not entry.exists() and not icon.exists()
     assert not (home / "Desktop" / "FaceRecognizer.desktop").exists() and not (home / ".local" / "bin" / "facerecognizer").exists()
+    assert not auto.exists()                                          # uninstalling takes the start at sign-in away
     assert (share / "FaceRecognizer" / "data" / "labels.json").read_text() == "{}"                 # never touched
 
 

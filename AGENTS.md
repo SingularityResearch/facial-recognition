@@ -273,6 +273,22 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
 - `desktop.py` — what the app asks of the operating system on Windows, macOS and Linux: show a folder, draw the eye
   to the window for an alert, whether the screen is locked (`screen_locked`; Windows only, None elsewhere).
   `paths.user_data` gives each system's application-data folder.
+- `pi.py` — the Raspberry Pi's own code flow (`here()`: a Raspberry Pi with a 64-bit system; `FACE_PI=off` there
+  for the general flow, `FACE_PI=on` elsewhere to try it). Nothing in it runs on another computer.
+  - `Prints`: a frame's faces without waiting for their prints. The general flow makes every face's print in every
+    frame (`face_id.Faces.detect`); on a Pi 4 a print takes 0.55 s, so one frame with one face took 0.7 s. Here a
+    frame finds the faces and reads their quality as everywhere, follows each face by its box from frame to
+    frame, and one thread makes prints behind the frames, one face at a time (a face new in view first, then each
+    again every `REFRESH` 1.5 s), with `Faces.embed` itself. A frame carries a face's new print once, else
+    `"emb": null` with the name its last print gave (the page has always taken a face without a print as "none to
+    add"). `tracker.Engine.pi` is None everywhere else, and its frames go the general way.
+  - Measured on a Pi 4, the tracker alone: one face 5.0 frames a second (1.4 the general way), two 2.7 (0.7),
+    four 1.5 (0.4). A runner of its own for the prints on two of the four cores was tried and gave nothing.
+  - `PAGE`: the tracker page's two pictures of the camera on a Pi, 640 px on their longer side (the one sent to
+    be read and the one for the other devices; 960 everywhere else). The page learns it from `/api/people`
+    (`"pi"`, there only on a Pi) and keeps its own sizes without it. The owner's choice (2026-11-20): each JPEG
+    took that board 170 ms; the Pi's camera looks coarser on the other devices and far faces are read less well.
+  - Anything more for the Pi goes here too, with a test in `tests/test_pi.py` that the other systems don't enter it.
 - `trackerlink.py` — what the tracker's process and the rest of the app ask of each other, over 127.0.0.1 to the
   other one's own server, under `/api/local/` (never a page's request), with the secret the app makes for each run
   (`FACE_LINK` in the child's environment; `allowed`, `hello`). With the tracker in the app's process (`REMOTE`
@@ -770,7 +786,10 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     a file path, a row that changes a device's settings, each handed to the code the sync hands them to.
   - The Raspberry Pi: `test_arm.py` (no ARM needed: the processor's feature list read, MediaPipe counted as not
     there without AES and nothing of it made, the processor's name, `setup.sh` taking a newer system Python on
-    ARM only); the installer's processor check is in `test_platforms.py`.
+    ARM only); `test_pi.py` (the Pi's flow is entered on a Raspberry Pi only; its frames find what the general
+    flow finds, never wait for a print and carry each new one once; a new face comes first, one that left is
+    forgotten; the tracker's answer both ways); the installer's processor check and `--autostart` are in
+    `test_platforms.py`.
   - Device to device: `test_peer.py` (no database needed: which address is tried first, what a refusal says about
     the clocks, a running service on this computer, a long computer name, the private key kept encrypted).
   - Two processes: `test_trackerlink.py` (no models needed: the local routes answer only with the run's secret;
@@ -1054,5 +1073,9 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
   works to make the Pi easier. What is done for the Pi is done only there (64-bit ARM Linux), in functions of its
   own that the other systems never enter, and a test says so for each. Its release files are its own artifact
   (`FaceRecognizer-raspberrypi-arm64.*`), like each other system's. Measure on the Pi before choosing anything
-  for it: a Pi 4 takes 0.55 s to recognize one face (PROJECT_CONTEXT.md section 10).
+  for it: a Pi 4 takes 0.55 s to recognize one face (PROJECT_CONTEXT.md section 10). The Pi's flow lives in
+  `pi.py`.
+- The Linux and Raspberry Pi installers start the app at sign-in only when asked (`--autostart`: an entry in the
+  desktop's autostart folder, which a later update keeps in step and `uninstall.sh` removes). A Raspberry Pi's
+  desktop signs in by itself at boot, so there that is "start at boot".
 - InsightFace ArcFace and audEERING Wav2Small weights are non-commercial; note this if the project is ever redistributed.
