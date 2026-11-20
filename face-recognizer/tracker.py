@@ -553,8 +553,6 @@ def make_handler(engine):
                                        "cues": engine.faces.cues_available, "voice": bool(engine.voice.model),
                                        "meshTriangles": MESH_TRIANGLES if engine.faces.cues_available else None,
                                        "qEnroll": F.Q_ENROLL, "captureDir": str(F.WEBCAM),
-                                       # only on a Raspberry Pi: the page's own picture sizes there (pi.PAGE)
-                                       **({"pi": pi.PAGE} if getattr(engine, "pi", None) is not None else {}),
                                        "pose": engine.faces.pose_available, "posePoints": list(F.POSE_POINTS),
                                        "hands": engine.faces.hands_available,
                                        "calibration": _read_json(CALIBRATION), "vaFit": _read_json(VA_FIT),

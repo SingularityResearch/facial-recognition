@@ -10,7 +10,6 @@ import numpy as np
 import face_id as F
 import pi
 import tracker
-from test_servers import request, track  # noqa: F401  (track: a fixture)
 
 
 class Faces:
@@ -177,20 +176,3 @@ def test_the_tracker_answers_a_pi_frame_without_a_print_and_the_general_flow_as_
     # the page takes a face without a print as it always has
     page = (tracker.HERE / "tracker_ui.js").read_text(encoding="utf-8")
     assert "if (d.emb) {" in page
-
-
-def test_only_a_pis_page_is_told_to_make_smaller_pictures(track):  # noqa: F811
-    """The owner's choice for the Pi (2026-11-20): its page sends smaller pictures to be read and to the other
-    devices. Every other computer's page hears nothing of it and keeps 960 px."""
-    import json
-    url, engine = track
-    code, _, body = request(url, "/api/people", headers={"X-Face-Tool": "1"})
-    assert code == 200 and "pi" not in json.loads(body)                       # not a Pi: no word of it
-    engine.pi = object()                                                      # as tracker.Engine has on a Pi
-    code, _, body = request(url, "/api/people", headers={"X-Face-Tool": "1"})
-    assert json.loads(body)["pi"] == {"send": 640, "stream": 640} == pi.PAGE
-    page = (tracker.HERE / "tracker_ui.js").read_text(encoding="utf-8")
-    assert "const SEND_MAX = 960;" in page and "let sendMax = SEND_MAX, streamMax = 960;" in page
-    assert "if (r.pi) { if (r.pi.send > 0) sendMax = +r.pi.send; if (r.pi.stream > 0) streamMax = +r.pi.stream; }" in page
-    assert "Math.min(1, sendMax / Math.max(vw, vh))" in page and "Math.min(1, streamMax / video.videoWidth)" in page
-    assert page.count("sendMax") == 3 and page.count("streamMax") == 3        # set nowhere else

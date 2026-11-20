@@ -20,7 +20,12 @@ So here a frame never waits for a print (`Prints`):
     last print gave it (unknown until its first). The tracker page takes a frame without a print as it always
     has: it adds none to that face's average.
 What that costs: a face new in view has its name about a second later, not in the same frame, and its average
-is built from about one print a second instead of one a frame."""
+is built from about one print a second instead of one a frame.
+
+Tried for the Pi and not kept: smaller pictures from its page (640 px instead of 960 for the one sent to be read
+and the one for the other devices). It gave nothing on a Pi 4 (its camera at the other devices 2.5 to 3.2 frames a
+second with them, 3.2 to 3.5 without; a JPEG took the page 150 ms either way: it waits for a free core, not on
+pixels) and cost a coarser picture, so it was taken out again before any release (2026-11-20)."""
 import os
 import platform
 import sys
@@ -33,13 +38,6 @@ import face_id as F
 REFRESH = 1.5        # s between two prints of the same face (the thread makes one print at a time, 0.55 s each on a Pi 4)
 SAME = 0.3           # a face is the one followed when its box overlaps that one's last box at least this much (IoU)
 FORGET = 2.0         # s without being seen before a followed face is let go
-# The tracker page's two pictures of the camera on a Pi, by their longer side in px (every other computer: 960
-# both, tracker_ui.js): the one sent to be read and the one for the other devices. The page makes each as a
-# JPEG, 170 ms apiece at 960x540 on a Pi 4 with the app running (2026-11-20). The owner's choice, knowing what
-# it costs: the Pi's camera looks coarser on the other devices, and a face far from it is read less well (a
-# face must still be 40 px wide in the picture sent, face_id.MIN_FACE). Face finding itself works at 640 px
-# everywhere (tracker.Engine.recognize).
-PAGE = {"send": 640, "stream": 640}
 
 
 def board(model="/proc/device-tree/model"):

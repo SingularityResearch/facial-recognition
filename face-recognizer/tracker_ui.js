@@ -7,10 +7,6 @@ const video = $("video"), canvas = $("overlay"), ctx = canvas.getContext("2d");
 const COLORS = ["#34d399", "#60a5fa", "#f472b6", "#fbbf24", "#a78bfa", "#2dd4bf", "#fb923c", "#a3e635"];
 const UNKNOWN = getComputedStyle(document.documentElement).getPropertyValue("--unknown").trim() || "#e0574a";
 const SEND_MAX = 960;                      // frames are shrunk to this before being sent for recognition
-// The two pictures this page makes of the camera: the one sent to be read and the one for the other devices.
-// A Raspberry Pi makes both smaller (its tracker says so in /api/people "pi": pi.py), since each JPEG takes that
-// board 170 ms at 960 px; every other computer keeps these.
-let sendMax = SEND_MAX, streamMax = 960;
 const grab = document.createElement("canvas"), gctx = grab.getContext("2d");
 // With the face mesh on, the page shows the frame that was analysed (not the live video) so the
 // mesh sits exactly on the face: the live video runs one round trip ahead of any result, and a
@@ -48,7 +44,6 @@ async function loadPeople() {
     handsOn = !!r.hands; $("optFingers").disabled = !handsOn;
     meshTris = r.meshTriangles || null; $("optMesh").disabled = !meshTris;
     if (r.qEnroll != null) qEnroll = r.qEnroll;
-    if (r.pi) { if (r.pi.send > 0) sendMax = +r.pi.send; if (r.pi.stream > 0) streamMax = +r.pi.stream; }
     if (r.captureDir) $("optCollect").parentElement.title = `Saves snapshots to ${r.captureDir} for the labeling tool`;
     $("testCount").textContent = [r.sessions ? `${r.sessions} tests` : "", r.reports ? `${r.reports} reports` : ""].filter(Boolean).join(" · ");
     if (r.threshold) $("optThresh").defaultValue = r.threshold;   // "Reset to defaults" in the app's Settings tab
@@ -652,7 +647,7 @@ async function jpegOf(c, q) {
 async function sendLoop() {
   while (running) {
     if (video.readyState < 2 || busy || camPaused()) { await new Promise(r => setTimeout(r, 30)); continue; }
-    const vw = video.videoWidth, vh = video.videoHeight, s = Math.min(1, sendMax / Math.max(vw, vh));
+    const vw = video.videoWidth, vh = video.videoHeight, s = Math.min(1, SEND_MAX / Math.max(vw, vh));
     grab.width = Math.round(vw * s); grab.height = Math.round(vh * s);
     const sync = !!meshTris && $("optMesh").checked;
     const hold = holds[0] === shown ? holds[1] : holds[0];
@@ -1268,7 +1263,7 @@ async function streamFrame() {
   if (!running || !$("optStream").checked || streamBusy || now < streamNext || now < streamOff || !video.videoWidth) return;
   streamBusy = true;
   try {
-    const s = Math.min(1, streamMax / video.videoWidth);
+    const s = Math.min(1, 960 / video.videoWidth);
     comp.width = Math.round(video.videoWidth * s); comp.height = Math.round(video.videoHeight * s);
     cctx.save();
     if ($("optMirror").checked) { cctx.translate(comp.width, 0); cctx.scale(-1, 1); }   // as this page shows it

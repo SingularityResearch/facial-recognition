@@ -1243,14 +1243,18 @@ Open after the 2026-11-12 review and v1.22 (not fixed yet):
   in) reads rose from 1.4 to 2.0 a second and the stream from 3.0 to 3.8. Each sync step takes 44 to 47 s of
   every minute there (2 s on the PC: the work that is linear in the 10,000 collected snapshots, already an open
   item), a start with the full library about 4 minutes, the join 12.
-  Asked which of three further Pi-only changes to make, the owner chose one: **smaller pictures on the Pi** (the
-  page's picture to be read and the one for the other devices, 640 px instead of 960: `pi.PAGE`; done). Not
-  chosen, so not done: the Cameras tab pulling the other cameras in only while it is shown, and the sync looking
-  less often there. The smaller pictures' effect is NOT measured yet: while the Pi's app was being started for
-  that measurement its storage dropped out (an NVMe drive on a USB adapter: every file read gave "Input/output
-  error", the board still answered pings); it needs its power cycled, and the kernel's log from before read.
-  Also open: start at sign-in is set on the Pi and not yet seen through a boot; a row in the release routine; a
-  Pi 5 when it comes (MediaPipe should work there: not tried).
+  Asked which of three further Pi-only changes to make, the owner chose one: smaller pictures on the Pi (the
+  page's picture to be read and the one for the other devices, 640 px instead of 960). **Built, measured, and
+  taken out again**: in the settled app its camera reached the other devices at 2.5 to 3.2 frames a second with
+  them and 3.2 to 3.5 without (a browser was open on the Pi during the second measurement), and a JPEG took the
+  page 150 ms either way: the page waits for a free core, not on pixels. With no gain and a coarser picture as
+  its cost, the owner had it removed before the release. Not chosen, so not done: the Cameras tab pulling the
+  other cameras in only while it is shown, and the sync looking less often there.
+  The Pi's storage dropped out once under this work (every file read gave "Input/output error" while the board
+  still answered pings; a power cycle brought it back with its data whole, the first one did not). It boots from
+  a USB flash stick in a USB 2 port; its NVMe adapter reports an empty drive. The kernel's log of that boot was
+  not kept. Start at sign-in was seen through that boot: the app was running a minute after power-on.
+  Also open: a row in the release routine; a Pi 5 when it comes (MediaPipe should work there: not tried).
 - **A Linux build made on the test machine held 1.9 GB in its window; CI's build of the same code 0.17**
   (2026-11-19, 1.25.0's tests). In the window of the build made there, the Face tracking page's process grew 12 MB
   a second from the start and levelled at 1.83 GB after two minutes, with the tracker in its own process or not

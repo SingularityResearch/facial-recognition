@@ -259,9 +259,7 @@ there installs only on 64-bit ARM computers and says so on any other.
 
 On a Raspberry Pi the tracker works its own way, because recognizing one face takes that board half a second: a
 frame no longer waits for it. Faces are found and followed in every frame, and one face at a time is recognized
-behind the frames, so a face new in view gets its name about a second after its box. Its page also makes
-smaller pictures of the camera than the other systems (640 px wide instead of 960, both the one it reads and the
-one your other devices see), because each picture costs that board much more to make. `FACE_PI=off` runs the
+behind the frames, so a face new in view gets its name about a second after its box. `FACE_PI=off` runs the
 general way there, to compare. To have the app start by itself when the Pi boots (its desktop signs in by itself),
 install with `sh FaceRecognizer-raspberrypi-arm64.run --autostart`; the Linux installer takes the same option.
 

@@ -284,10 +284,6 @@ is shared by all programs; `HOME` holds keys, settings and everything private th
     add"). `tracker.Engine.pi` is None everywhere else, and its frames go the general way.
   - Measured on a Pi 4, the tracker alone: one face 5.0 frames a second (1.4 the general way), two 2.7 (0.7),
     four 1.5 (0.4). A runner of its own for the prints on two of the four cores was tried and gave nothing.
-  - `PAGE`: the tracker page's two pictures of the camera on a Pi, 640 px on their longer side (the one sent to
-    be read and the one for the other devices; 960 everywhere else). The page learns it from `/api/people`
-    (`"pi"`, there only on a Pi) and keeps its own sizes without it. The owner's choice (2026-11-20): each JPEG
-    took that board 170 ms; the Pi's camera looks coarser on the other devices and far faces are read less well.
   - Anything more for the Pi goes here too, with a test in `tests/test_pi.py` that the other systems don't enter it.
 - `trackerlink.py` — what the tracker's process and the rest of the app ask of each other, over 127.0.0.1 to the
   other one's own server, under `/api/local/` (never a page's request), with the secret the app makes for each run
