@@ -10,9 +10,10 @@
   location and tells your other devices none.
 - **Where the location comes from.** The device's own location service: Windows, a Mac, an iPhone and an
   Android phone each ask you once, when you switch it on. Or a place you type, which asks nobody: a town
-  (`Springfield, Illinois`, `Paris, France`) or latitude and longitude. A computer without GPS is placed by
-  its system from the networks around it, often only to within a few kilometres, so a computer that stays
-  where it is does better with a typed place. Linux and a Raspberry Pi have no location service, so there a
+  (`Springfield, Illinois`, `Paris, France`) or latitude and longitude. A computer has no GPS: its system
+  places it by the Wi-Fi networks around it, so it needs its Wi-Fi switched on, and it says so beside its
+  place. Without Wi-Fi a Windows computer is placed only roughly (to within kilometres) and a Mac not at all,
+  and each says that too: switch Wi-Fi on, or type the place. Linux and a Raspberry Pi have no location service, so there a
   place is typed. The town's name comes from a list of 70,000 towns inside the app (from GeoNames): nothing is
   looked up on the internet.
 - **A location history, in your shared database.** A row is written when you switch the location on, and then

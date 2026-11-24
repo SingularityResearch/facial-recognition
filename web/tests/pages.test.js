@@ -523,6 +523,12 @@ test("a device's location: off as the page comes, asked of the page's own server
   // what the server says is checked and put into the page as text
   assert.match(js, /placeNow = j && j\.on \? Place\.clean\(j\.place\) : null;/);
   assert.match(js, /if \(line\.textContent !== text\) line\.textContent = text;/);
+  // a device that is placed by Wi-Fi says so with its place: its server's words, put in as text
+  assert.match(js, /placeNote = j && j\.on && placeNow && typeof j\.note === "string" \? j\.note\.slice\(0, 400\) : "";/);
+  assert.match(js, /if \(says\.textContent !== note\) says\.textContent = note;/);
+  assert.match(html, /<p class="hint" id="placeNote" hidden><\/p>/);
+  assert.match(html, /its system places it by the Wi-Fi networks around it, so it needs Wi-Fi switched on/);
+  assert.match(read("../crates/face-server/src/location.rs"), /pub const BY_WIFI: bool = cfg!\(any\(windows, target_os = "macos"\)\);/);
   // the typed place is marked secret: it is not among the settings this node publishes (busSettings leaves those out)
   assert.match(js, /c\("optPlace", L, \{ label: "This device's place, typed", secret: true,/);
   assert.match(js, /\|\| s\.secret\) continue;/);

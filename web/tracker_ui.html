@@ -308,9 +308,10 @@
       <div class="label">Location</div>
       <label class="toggle" for="optLocation" title="Off unless you switch it on: this device then shows where it is, here and in your other devices' Cameras tab, and its moves are kept in your shared database for 90 days">Show and keep this device's location <input type="checkbox" id="optLocation"></label>
       <p class="place" id="placeLine" aria-live="polite" hidden></p>
+      <p class="hint" id="placeNote" hidden></p>
       <label for="optPlace" class="label">This device's place, typed (optional)</label>
       <input type="text" id="optPlace" maxlength="120" placeholder="A town, or latitude, longitude" autocomplete="off">
-      <p class="hint" id="placeHint">Off unless you switch it on. While it is on, this device shows where it is here and in your other devices' Cameras tab, and each move of more than about 100 m is kept in your shared database for 90 days. The place comes from this device's own location service (the system asks you once; a computer without GPS is placed by its system's service from the networks around it), or from a place you type here: a town, as in Springfield, Illinois, or latitude and longitude. Linux and a Raspberry Pi have no location service, so there a place is typed. The town's name comes from a list inside the app: nothing is looked up on the internet.</p>
+      <p class="hint" id="placeHint">Off unless you switch it on. While it is on, this device shows where it is here and in your other devices' Cameras tab, and each move of more than about 100 m is kept in your shared database for 90 days. The place comes from this device's own location service (the system asks you once), or from a place you type here: a town, as in Springfield, Illinois, or latitude and longitude. A computer has no GPS: its system places it by the Wi-Fi networks around it, so it needs Wi-Fi switched on. Without Wi-Fi a Windows computer is placed only roughly (to within kilometres) and a Mac not at all: type the place for those. Linux and a Raspberry Pi have no location service, so there a place is typed. The town's name comes from a list inside the app: nothing is looked up on the internet.</p>
     </div>
 
     <div class="card">

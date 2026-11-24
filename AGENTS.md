@@ -314,6 +314,11 @@ device's library at the same time: each would send what the other took.
     its system, and the system its owner, only while the answer to the first is yes; while the app is in use,
     never in the background). Linux and the Raspberry Pi have none: there a place is typed. Never an address
     lookup at an outside service, and never a map from the internet (the pages load nothing from there).
+    A device that is placed by Wi-Fi says so (the owner, 2026-11-24: "All devices that rely on Wi-Fi for
+    location should note that"): a computer (`BY_WIFI`: Windows, a Mac) has a note with its place on its own
+    page (`wifi_note`, `/api/location`'s `note`), which says "only roughly" for a reading beyond `ROUGH`
+    (a Windows computer with its Wi-Fi off or without any is placed by its internet address, to within
+    kilometres; a Mac with its Wi-Fi off not at all, and its words say why).
     What the system's own service does with the networks it sees is said in `PRIVACY.md` and in
     `docs/SETTINGS.md`'s "What reaches the network": keep both true.
   - The towns (`towns.rs`, `crates/face-server/data/towns.tsv`, made by `examples/towns.rs` from GeoNames'

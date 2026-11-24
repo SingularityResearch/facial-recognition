@@ -88,7 +88,7 @@ with that is under its own privacy policy.
 | You point **Describe photo** at a server on another computer | Each photo that is described. | That server, which you chose |
 | You connect **Spotify** | A question for your liked songs. | Spotify, under your own account |
 | You click a download in Settings (a describe model) | A download. No data of yours. | Hugging Face, LM Studio's sources |
-| You switch on **Show and keep this device's location** and type no place | Nothing by the app itself. The device's own location service then works out where the device is. For a computer without GPS it does that from the networks around it, which the system sends to its maker; what the maker does with them is under its own privacy policy. A place you type asks nobody. | The maker of the device's system, by the system itself: Microsoft (Windows), Apple (Mac, iPhone) or Google (Android) |
+| You switch on **Show and keep this device's location** and type no place | Nothing by the app itself. The device's own location service then works out where the device is. A computer has no GPS: its system does that from the Wi-Fi networks around it, which the system sends to its maker; what the maker does with them is under its own privacy policy. A place you type asks nobody. | The maker of the device's system, by the system itself: Microsoft (Windows), Apple (Mac, iPhone) or Google (Android) |
 | You set up a **shared database** | The records described above. | Your own server |
 
 [docs/SETTINGS.md](docs/SETTINGS.md#what-reaches-the-network) lists every setting that reaches the network in

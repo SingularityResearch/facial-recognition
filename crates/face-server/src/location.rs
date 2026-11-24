@@ -48,6 +48,25 @@ pub const SWITCHED_OFF: u8 = 3;
 /// the system was asked and couldn't tell
 pub const NOT_FOUND: u8 = 4;
 
+/// Whether this device's system places it by the Wi-Fi networks around it: a computer, which has no
+/// satellite receiver. A phone has one. Such a device says so with its place (the owner, 2026-11-24: "All
+/// devices that rely on Wi-Fi for location should note that").
+pub const BY_WIFI: bool = cfg!(any(windows, target_os = "macos"));
+/// metres: a computer's reading less sure than this did not come from Wi-Fi networks (a Windows computer
+/// with its Wi-Fi off, or without any, is placed by its internet address, to within kilometres)
+const ROUGH: f64 = 1000.0;
+
+/// What a device that is placed by Wi-Fi says with its place; nothing for a phone's reading or a typed place.
+fn wifi_note(fix: &Fix) -> &'static str {
+    match (BY_WIFI && fix.source == Source::System, fix.accuracy) {
+        (true, Some(m)) if m > ROUGH => {
+            "Placed only roughly. A computer is placed by the Wi-Fi networks around it, and this one's Wi-Fi is switched off, or it has none. Switch its Wi-Fi on, or type this device's place."
+        }
+        (true, _) => "Placed by the Wi-Fi networks around this computer: it needs its Wi-Fi switched on for that.",
+        _ => "",
+    }
+}
+
 /// Whether this system has a location service the app asks.
 pub const SYSTEM_HAS: bool = cfg!(any(windows, target_os = "macos", target_os = "ios", target_os = "android"));
 
@@ -140,6 +159,9 @@ fn why_words(why: u8) -> &'static str {
         }
         NOT_FOUND if cfg!(target_os = "macos") => {
             "This Mac's location service couldn't tell where it is. A Mac finds its place by Wi-Fi: with Wi-Fi switched off it can't. It is asked again; or type this device's place."
+        }
+        NOT_FOUND if BY_WIFI => {
+            "Windows' location service couldn't tell where this computer is. A computer is placed by the Wi-Fi networks around it: switch its Wi-Fi on. It is asked again; or type this device's place."
         }
         NOT_FOUND => {
             "The system's location service couldn't tell where this device is. It is asked again; or type this device's place."
@@ -271,7 +293,8 @@ impl Location {
     }
 
     /// What the page asks (`/api/location`): whether the switch is on, where the device is with the town
-    /// in words, or why there is no location; and whether this system has a location service to ask.
+    /// in words, or why there is no location; a note where the place came by Wi-Fi (`wifi_note`); and
+    /// whether this system has a location service to ask.
     pub fn answer(&self) -> Value {
         let s = self.shown();
         let place = s.fix.map(|f| {
@@ -279,7 +302,8 @@ impl Location {
             place["town"] = json!(s.town);
             place
         });
-        json!({"on": s.on, "place": place, "why": s.why, "system": SYSTEM_HAS, "typed": !s.typed.is_empty()})
+        let note = s.fix.as_ref().map_or("", wifi_note);
+        json!({"on": s.on, "place": place, "why": s.why, "note": note, "system": SYSTEM_HAS, "typed": !s.typed.is_empty()})
     }
 
     /// The settings as the tracker page keeps them, read and a step taken; the node's `place` after it.
@@ -512,6 +536,7 @@ mod tests {
         let a = here.answer();
         assert_eq!(a["place"]["town"], "Springfield, Illinois, United States");
         assert_eq!((a["on"].clone(), a["why"].clone(), a["typed"].clone()), (json!(true), json!(""), json!(true)));
+        assert_eq!(a["note"], "", "a typed place came by nobody's Wi-Fi");
         // the history: a row for where it is when switched on, none for staying, one for a new place
         assert_eq!(Log::new(&dir).waiting().len(), 1);
         here.step(true, "39.8017, -89.6437", true);
@@ -566,6 +591,15 @@ mod tests {
                 (json!(47.6062), json!("system"), json!(35.0))
             );
             assert_eq!(here.answer()["place"]["town"], "Seattle, Washington, United States");
+            // a computer is placed by Wi-Fi and says so; a rough reading says that its Wi-Fi is off or missing
+            let note = here.answer()["note"].as_str().unwrap().to_string();
+            assert_eq!(note.contains("Wi-Fi"), BY_WIFI, "{note}");
+            told(47.7062, -122.3321, 6410.0);
+            here.step(true, "", true);
+            let rough = here.answer()["note"].as_str().unwrap().to_string();
+            assert_eq!(rough.contains("only roughly"), BY_WIFI, "{rough}");
+            told(47.6062, -122.3321, 35.0);
+            here.step(true, "", true);
             assert_eq!(Log::new(&dir).waiting().len(), 1);
             // the owner said no: the app no longer knows, and says why
             refused(i32::from(NOT_ALLOWED));

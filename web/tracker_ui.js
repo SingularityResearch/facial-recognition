@@ -1984,23 +1984,28 @@ micSync();
 // answers with where the device is or why it can't say. Shown as one line of text. The server publishes the
 // location to the owner's other devices and writes the history's rows; this page only shows it.
 const PLACE_EVERY = 5000;
-let placeNow = null, placeWhy = "";
+let placeNow = null, placeWhy = "", placeNote = "";
 function placeText() { return placeNow ? Place.words(placeNow) : placeWhy; }
 function placeShow() {
   const on = $("optLocation").checked, text = on ? placeText() : "", line = $("placeLine");
   line.hidden = !text;
   if (line.textContent !== text) line.textContent = text;
   line.classList.toggle("why", !!text && !placeNow);
+  // a device that is placed by Wi-Fi says so with its place (its server's words, put in as text)
+  const note = on && placeNow ? placeNote : "", says = $("placeNote");
+  says.hidden = !note;
+  if (says.textContent !== note) says.textContent = note;
   SettingsBridge.changed();                                    // the Settings tab's "This device is"
 }
 // (while the switch is off the server is not asked every few seconds: only when the switch or the typed place
 // changes, so that it hears of the change at once)
 async function placeStep(changed) {
-  if (changed !== true && !$("optLocation").checked) { placeNow = null; placeWhy = ""; placeShow(); return; }
+  if (changed !== true && !$("optLocation").checked) { placeNow = null; placeWhy = placeNote = ""; placeShow(); return; }
   let j = null;
   try { j = await (await fetch("/api/location", { headers: { "X-Face-Tool": "1" } })).json(); } catch {}
   placeNow = j && j.on ? Place.clean(j.place) : null;
   placeWhy = j && j.on && !placeNow && typeof j.why === "string" ? j.why.slice(0, 400) : "";
+  placeNote = j && j.on && placeNow && typeof j.note === "string" ? j.note.slice(0, 400) : "";
   placeShow();
 }
 setInterval(() => placeStep(), PLACE_EVERY);
@@ -2039,7 +2044,7 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
     // as its location, and only while the switch is on.)
     c("optPlace", L, { label: "This device's place, typed", secret: true, hint: "Leave it empty and the device's own location service is asked. Type a place and nothing is asked of anyone: a town (Springfield, or Springfield, Illinois, or Paris, France), or latitude and longitude (39.8017, -89.6437). Best for a computer that stays where it is, which its system often places only to within a few kilometres." }),
     { section: L, id: "placeNow", label: "This device is", type: "info",
-      get: () => $("optLocation").checked ? placeText() || "Not known yet." : "Not shown: the switch above is off." },
+      get: () => $("optLocation").checked ? [placeText() || "Not known yet.", placeNow ? placeNote : ""].filter(Boolean).join("\n") : "Not shown: the switch above is off." },
     { section: A, id: "alertList", label: "Alert me about these people", type: "multi",
       hint: "Pick the people to be told about (their arrive, leave and unusual-signal events, as switched on below). Unknown: a face the recognizer can't name stays the set time.",
       options: () => {
