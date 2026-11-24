@@ -1,0 +1,83 @@
+/* The Signals chart (signals_chart.js), on the tracker page and under each camera of the Cameras page. Everything
+   is inside .sg and takes the page's own colours and fonts (--bg, --panel, --fg, --muted, --line, --accent, --warn,
+   --sans, --mono); the seven colours of the looks and of what a sound interface heard are its own.
+   Layout: the events of the time shown on top, then one expander a section. Closed, a section is one row (name,
+   sparkline, value now); open, a grid of small charts that share one time axis. It lays itself out by its own
+   width (a container), so the same chart fits a wide panel and a narrow tile. */
+.sg {
+  --x0: #c0392b; --x1: #7a8b1f; --x2: #7c4dbb; --x3: #d98e04; --x4: #8a9894; --x5: #2f6fbf; --x6: #c2437f;
+  container-type: inline-size; display: flex; flex-direction: column; gap: 12px; min-width: 0;
+  color: var(--fg); font: 14px/1.5 var(--sans); text-align: left;
+}
+@media (prefers-color-scheme: dark) {
+  .sg { --x0: #f0776a; --x1: #b3c44a; --x2: #b192ee; --x3: #f5bd4a; --x4: #7f8f8a; --x5: #6aa5ee; --x6: #ee7fb2; }
+}
+.sg * { box-sizing: border-box; }
+.sg [hidden] { display: none !important; }
+.sg .top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+.sg .top > div { min-width: 0; }
+.sg .title { margin: 0; font: 600 22px var(--mono); letter-spacing: -.01em; text-transform: none; color: var(--fg); }
+.sg .sub { margin: 2px 0 0; color: var(--muted); max-width: 58ch; }
+.sg .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.sg .seg button { font: 12px var(--mono); color: var(--muted); background: none; border: 0; border-radius: 0; padding: 7px 11px; cursor: pointer;
+                  min-height: 0; max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg .seg button + button { border-left: 1px solid var(--line); }
+.sg .seg button[aria-pressed="true"] { background: var(--fg); color: var(--panel); }
+.sg button:focus-visible, .sg summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sg .panel, .sg .sec { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.sg .panel { padding: 10px 12px 8px; }
+.sg .gl, .sg .name { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sg canvas { display: block; width: 100%; }
+.sg .strip { height: 58px; margin-top: 4px; }
+.sg .axis { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; font: 10px var(--mono); color: var(--muted);
+            font-variant-numeric: tabular-nums; }
+.sg .group { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.sg .gh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.sg h3 { margin: 0; font: 600 15px var(--mono); color: var(--fg); }
+.sg .gnote, .sg .later { color: var(--muted); font-size: 13px; }
+.sg .later { margin: 0; }
+.sg .secs { display: flex; flex-direction: column; gap: 8px; }
+.sg .why { margin: 0; padding: 9px 12px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--warn);
+           border-radius: 6px; font-size: 13px; max-width: none; }
+
+.sg .sec > summary { display: grid; grid-template-columns: 12.5em minmax(0, 1fr) auto; align-items: center; gap: 12px;
+                     padding: 10px 12px; cursor: pointer; list-style: none; min-height: 0; }
+.sg .sec > summary::-webkit-details-marker { display: none; }
+.sg .sec > summary .name { color: var(--fg); display: flex; align-items: center; gap: 9px; }
+.sg .sec > summary .name::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 2px solid var(--muted);
+                                   border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
+.sg .sec[open] > summary .name::before { transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .sg .sec > summary .name::before { transition: none; } }
+.sg .spark { height: 26px; }
+.sg .now { font: 12px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 10.5em; text-align: right; }
+.sg .hot { color: var(--warn); }
+.sg .na { color: var(--muted); }
+.sg .about { margin: 0; padding: 0 12px 10px; color: var(--muted); font-size: 13px; max-width: 72ch; }
+.sg .off { margin: 0 12px 10px; padding: 7px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px;
+           border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 6px; }
+.sg .off button.on { font: 600 12px var(--sans); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 5px;
+                     padding: 2px 9px; min-height: 0; cursor: pointer; }
+.sg .off button.on:hover { border-color: var(--accent); }
+.sg .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 14px; padding: 0 12px; }
+.sg .ch { margin: 0; min-width: 0; }
+.sg .ch.wide { grid-column: 1 / -1; }
+.sg figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 3px;
+                 font: 11px var(--mono); color: var(--muted); }
+.sg figcaption b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sg figcaption b.hot { color: var(--warn); }
+.sg figcaption b.na { color: var(--muted); }
+.sg .plot { height: 56px; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); touch-action: pan-y; }
+.sg .plot.flag, .sg .plot.cat { height: 22px; }
+.sg .plot.stack { height: 84px; }
+.sg .plot.heat, .sg .plot.lanes { border: 0; border-radius: 0; background: none; }
+.sg .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font: 11px var(--mono); color: var(--muted); }
+.sg .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+.sg .legend b { color: var(--fg); font-weight: 600; margin-left: 5px; font-variant-numeric: tabular-nums; }
+.sg .sec .axis { padding: 0 12px 10px; margin-top: 6px; }
+.sg .foot { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 76ch; }
+@container (max-width: 520px) {
+  .sg .sec > summary { grid-template-columns: 8em minmax(0, 1fr); }
+  .sg .now { grid-column: 1 / -1; text-align: left; min-width: 0; }
+  .sg .title { font-size: 18px; }
+}

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Face Tracker: shared database</title>
+<style>
+  :root { color-scheme: dark; --bg: #0f1115; --fg: #e8eaf0; --muted: #9aa3b2; --accent: #5aa9ff; --card: #181b22;
+          --line: #2a2f3a; --bad: #ff7b72; --good: #56d364; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+                  max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  main { max-width: 560px; margin: 0 auto; display: grid; gap: 14px; }
+  header { display: flex; align-items: center; gap: 12px; }
+  h1 { font-size: 20px; margin: 0; flex: 1; }
+  section, .part { display: grid; gap: 14px; }
+  a.back, button { font: inherit; min-height: 44px; padding: 10px 16px; border-radius: 10px;
+                   border: 1px solid var(--line); background: var(--card); color: var(--fg); text-decoration: none;
+                   display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  button.main { background: var(--accent); color: #04121f; border-color: transparent; font-weight: 600; }
+  button:disabled { opacity: .55; cursor: default; }
+  input[type=text] { font: inherit; min-height: 44px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+                     background: var(--card); color: var(--fg); flex: 1 1 14ch; min-width: 0; }
+  #namePart { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  #namePart.ask { border-color: var(--accent); }
+  .ways { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ways button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  p { margin: 0; color: var(--muted); }
+  p b { color: var(--fg); }
+  .view { position: relative; border-radius: 14px; overflow: hidden; background: #000; aspect-ratio: 3 / 4; }
+  .view video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .view .aim { position: absolute; inset: 14% 10%; border: 3px solid color-mix(in srgb, var(--accent) 85%, transparent);
+               border-radius: 18px; pointer-events: none; }
+  #code { width: 100%; background: #fff; border-radius: 14px; display: block; }
+  .say { color: var(--fg); font-weight: 600; min-height: 1.45em; }
+  .say.bad { color: var(--bad); }
+  .say.good { color: var(--good); }
+  .who { border: 1px solid var(--line); background: var(--card); border-radius: 14px; padding: 14px 16px; display: grid; gap: 4px; }
+  .who b { font-size: 18px; overflow-wrap: anywhere; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  [hidden] { display: none !important; }
+  @media (orientation: landscape) and (max-height: 500px) { .view { aspect-ratio: 16 / 9; max-height: 60vh; } }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Shared database</h1><a class="back" href="/">Back to the camera</a></header>
+
+  <!-- a join code that the phone's own camera app read and opened this page with -->
+  <section id="opened" hidden>
+    <p>A join code was opened on this device. Join the shared database of the device that shows it? This
+      device then gets that database's login, and its passphrase for keys when that device has it, and is listed
+      there with your other devices.</p>
+    <p class="say" id="openSay" role="status"></p>
+    <div class="row">
+      <button class="main" id="joinBtn" type="button">Join</button>
+      <button id="notNowBtn" type="button">Not now</button>
+    </div>
+  </section>
+
+  <!-- this device is in a shared database and read the code of a device that wants to join -->
+  <section id="asked" hidden>
+    <p>Let this device into your shared database?</p>
+    <div class="who"><b id="askedName"></b><span id="askedAddr"></span></div>
+    <p>It gets the database's login and the passphrase for keys: <b>everything this device can read</b>, and it
+      can let other devices in the same way. Say yes only for a device of your own whose screen you are
+      looking at.</p>
+    <p class="say" id="askedSay" role="status"></p>
+    <div class="row">
+      <button class="main" id="giveBtn" type="button">Let it in</button>
+      <button id="notGiveBtn" type="button">Not now</button>
+    </div>
+  </section>
+
+  <!-- what this device is called in the shared database: whoever is at it can name it, and is asked to when the
+       name is only a number the app gave it to tell it from another device of the same name -->
+  <section class="part" id="namePart" hidden>
+    <p id="nameHelp"></p>
+    <div class="row">
+      <input id="nameField" type="text" maxlength="40" autocomplete="off" aria-label="This device's name">
+      <button id="nameBtn" type="button">Save name</button>
+    </div>
+    <p class="say" id="nameSay" role="status"></p>
+  </section>
+
+  <section id="ways" hidden>
+    <p id="intro"></p>
+    <p class="say" id="mainSay" role="status"></p>
+    <div class="ways">
+      <button id="scanWay" type="button" aria-pressed="false">Scan a code</button>
+      <button id="showWay" type="button" aria-pressed="false">Show a code</button>
+    </div>
+
+    <div class="part" id="scanPart" hidden>
+      <p id="scanHelp"></p>
+      <div class="view"><video id="cam" playsinline muted autoplay></video><div class="aim"></div></div>
+      <p class="say" id="scanSay" role="status"></p>
+      <div class="row"><button id="flipBtn" type="button">Use the other camera</button></div>
+    </div>
+
+    <div class="part" id="showPart" hidden>
+      <p id="showHelp"></p>
+      <p class="say" id="showSay" role="status"></p>
+      <img id="code" alt="The join code" hidden>
+      <div class="row">
+        <button class="main" id="showBtn" type="button">Show a join code</button>
+        <button id="hideBtn" type="button" hidden>Stop showing</button>
+      </div>
+    </div>
+
+    <p>A code works once, for two minutes, and only between two devices on this network. It holds no login: the
+      login and the passphrase come from the device of the database, encrypted, once each device has shown the
+      other that it holds the code's key.</p>
+  </section>
+</main>
+<script src="/join_ui.js"></script>
+</body>
+</html>

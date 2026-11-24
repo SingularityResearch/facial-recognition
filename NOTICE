@@ -1,0 +1,32 @@
+Face Recognizer
+Copyright Singularity Research
+
+Face Recognizer is the property of Singularity Research and is licensed under the Singularity Research
+Commercial License (see LICENSE).
+
+The parts below are other people's and keep their own licences. Where one of them is under the Apache License,
+Version 2.0, that licence's text is in licenses/Apache-2.0.txt.
+
+The app does not contain the models it uses. It downloads them at its first start, each from its publisher or
+from this project's release "models-v2", and each has its own licence:
+
+- Opsis 1, the face recognizer: made by Singularity Research. It is a work derived from SFace of the OpenCV
+  Zoo (Apache License 2.0), changed by training it further; the changes are Singularity Research's and under
+  this project's licence.
+- Melos 1, the voice model: made by Singularity Research, and under this project's licence. It contains
+  information from the Crowd-sourced Emotional Multimodal Actors Dataset (CREMA-D), which is made available
+  under the Open Database License 1.0 (opendatacommons.org/licenses/odbl/1.0).
+- From the OpenCV Zoo, each under its own licence there: YuNet face detection (MIT), the facial expression model
+  (Apache 2.0), and eDifFIQA face quality (CC BY 4.0: Creative Commons Attribution; by Žiga Babnik, Peter Peer
+  and Vitomir Štruc).
+- MediaPipe face, pose and hand landmark models and MediaPipe's web runtime (Google): Apache 2.0.
+- YAMNet sound classification (Google): Apache 2.0.
+- Florence-2 (Microsoft), the optional built-in photo describer: MIT.
+
+What the installers carry beside the program:
+
+- ONNX Runtime (Microsoft): MIT.
+- FFmpeg, as separate programs, built with LGPL options only: LGPL 2.1 or later.
+- libheif and libde265, as separate libraries: LGPL 3.0.
+- On Windows, the Microsoft Visual C++ runtime libraries and Microsoft's WebView2 Runtime bootstrapper, as
+  Microsoft allows them to be redistributed.

@@ -1,0 +1,9 @@
+# Windows: the C runtime is linked into the programs. Linked the usual way they need VCRUNTIME140.dll, which is
+# not part of Windows (it comes with the Visual C++ redistributable, which a computer may not have): nothing
+# may be assumed to be installed (the owner's rule, 2026-11-20). The C libraries built with the programs
+# (libjpeg-turbo) follow this setting.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

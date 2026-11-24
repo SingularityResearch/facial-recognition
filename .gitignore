@@ -1,0 +1,18 @@
+# What cargo builds, and what the checks fetch and make there (target/root: models and runtime; target/dist)
+/target/
+
+# On the owner's computers this folder may hold an installed app, its models and a library (data/):
+# never in git, never deleted by a tool.
+/face-recognizer/
+
+# Checks that are not Rust tests yet are kept outside the repository: a copy here to run them is never in git.
+/checks/
+*.pyc
+
+# Logs and scratch files from running the tools
+*.log
+*.tmp
+*.download
+
+# Cloudflare's tool keeps its working files here (the Store address Worker)
+.wrangler/

@@ -1,0 +1,15 @@
+[package]
+name = "face-home"
+description = "What the programs keep in the private folder: the alert inbox, the presence log, the pages' settings, each person's signals, the expression log"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# the day a visit falls on by this device's clock (the presence log's file names)
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+face-files = { version = "2.0.0", path = "../face-files" }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+# an alert's id
+uuid = { version = "1.29.3", features = ["v4"] }

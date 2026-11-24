@@ -1,0 +1,105 @@
+[package]
+name = "face-server"
+description = "The programs' local servers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["import", "fetch", "sync"]
+# Asking at the first start for what is missing (models, the model runtime, FFmpeg, the HEIC libraries) and
+# fetching it: for the programs on a computer. A phone's app brings everything it needs inside it.
+fetch = ["dep:face-tools"]
+# Reading photos and videos into the library (and showing a photo): this builds libjpeg-turbo with the program
+# and uses the decoders beside it. A phone's app is built without: it tracks, it doesn't keep a photo library.
+import = ["dep:face-import", "dep:ureq", "dep:cpal", "sound", "dep:objc2-core-audio", "dep:objc2-core-foundation"]
+# Measuring a stretch of sound (sound.rs, soundheard.rs): on a computer what its audio interfaces play and hear,
+# on a phone what its own page heard with the microphone. The phones' app has this without the sound library.
+sound = ["dep:rustfft"]
+# the labeling tool keeps its library and the shared database the same (not in the phones' app: a phone keeps no library)
+sync = ["dep:face-sync"]
+
+[dependencies]
+base64 = "0.23.1"
+bytes = "1.12.2"
+# the day a visit falls on by this device's clock (the presence log's file names)
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+face-core = { version = "2.0.0", path = "../face-core" }
+face-db = { version = "2.0.0", path = "../face-db" }
+face-files = { version = "2.0.0", path = "../face-files" }
+face-home = { version = "2.0.0", path = "../face-home" }
+face-import = { version = "2.0.0", path = "../face-import", optional = true }
+face-library = { version = "2.0.0", path = "../face-library" }
+face-sync = { version = "2.0.0", path = "../face-sync", optional = true }
+face-tools = { version = "2.0.0", path = "../face-tools", optional = true }
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
+# a join code as a QR code: drawn (the squares only; the picture is this program's own) and read off a
+# camera's picture
+qrcode = { version = "0.15.0", default-features = false }
+rqrr = { version = "0.11.0", default-features = false }
+# the peer service (peer.rs): this device's own certificate, TLS for the devices that watch its camera
+rcgen = "0.14.10"
+ring = "0.17"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+time = "0.3"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+tokio-postgres = "0.7"
+# Music's listening (the computers only): every audio interface's sound; and a sound's spectrum (phones too)
+cpal = { version = "0.18.2", optional = true }
+rustfft = { version = "6.4", optional = true }
+# asking a describe server (LM Studio or any server with its API), also over plain http on this computer
+ureq = { version = "3.5", default-features = false, features = ["rustls"], optional = true }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "macros", "time", "signal"] }
+
+# this computer's name as Windows says it (lib.rs `host_name`); its processor, memory, graphics and network
+# adapters for Settings (hardware.rs)
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_Dns",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+    "Win32_System_Power",
+    "Win32_System_Registry",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# this computer's network adapters (hardware.rs)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# on a Mac the system is asked how each microphone is connected: an iPhone's or iPad's is never listened to
+# (listen.rs). The bindings the sound library itself uses, in its versions and with its features.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-audio = { version = "0.3", default-features = false, features = [
+    "std",
+    "AudioHardware",
+    "AudioHardwareDeprecated",
+    "objc2",
+    "objc2-foundation",
+], optional = true }
+objc2-core-foundation = { version = "0.3.1", optional = true }
+
+# on Linux the sound server is asked (PulseAudio's protocol, which PipeWire speaks too): an output's sound is
+# its monitor's there. Spoken by the program itself: no library of the sound server's is needed.
+[target.'cfg(target_os = "linux")'.dependencies]
+cpal = { version = "0.18.2", optional = true, features = ["pulseaudio"] }
+
+[[example]]
+name = "music_try"
+required-features = ["import"]
+
+[[example]]
+name = "florence_try"
+required-features = ["import"]
+
+[[example]]
+name = "lmstudio_try"
+required-features = ["import"]

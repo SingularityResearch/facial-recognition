@@ -1,0 +1,17 @@
+[package]
+name = "face-files"
+description = "Where the programs keep things, and the fixed spelling of the files they write"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# a JSON object keeps its keys in the order they were given: a file that devices share must not be reordered
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+# what is kept for this user alone is written as text (protect.rs)
+base64 = "0.23.1"
+
+# A saved key or password is protected for the Windows user there (DPAPI).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

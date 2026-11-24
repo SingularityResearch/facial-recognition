@@ -1,0 +1,354 @@
+# Face Recognizer's CI: the tests on the four kinds of computer, and what a user installs, built from them.
+#
+# - test: cargo fmt, every unit test (no models, no camera, no network beyond 127.0.0.1) and the pages' own tests
+#   (Node), on Windows, a Mac, Linux and 64-bit ARM Linux (the Raspberry Pi's kind).
+# - build: the app's program for each, with what it runs with fetched by the project's own tool (each download
+#   pinned by size and SHA-256; the HEIC libraries built from their pinned sources), packed as each system's own
+#   installer: Windows' (packaging/windows), the Mac's disk image (packaging/macos), and the .run of Linux and of
+#   the Raspberry Pi (packaging/linux). Each artifact holds the installer, the plain package and BUILD-INFO.json
+#   (commit, run, both files' SHA-256, signed) and is kept 14 days.
+# - Signing: the Mac's app and its disk image are signed with the Developer ID and notarized when the
+#   repository's Apple secrets are set; the Windows program, uninstaller and installer are signed with Azure
+#   Artifact Signing on pushes to main only (Azure trusts this workflow for that branch alone; no key and no
+#   password is stored anywhere). A release is made only from a run whose builds say `signed`.
+#
+# What needs a desktop, a camera's page or the shared database is tried on the project's own computers, not here.
+name: ci
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest      # Apple Silicon
+            name: macos-arm64
+          - os: ubuntu-22.04      # the oldest Linux the app supports
+            name: linux-x64
+          - os: ubuntu-24.04-arm  # 64-bit ARM Linux, the Raspberry Pi's kind
+            name: raspberrypi-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - name: Rust
+        shell: bash
+        run: rustup toolchain install stable --profile minimal --component rustfmt && rustup default stable && rustc --version
+      # What cargo compiled before, of the libraries the project is built on, for this system, this compiler and
+      # these versions of them (Cargo.lock): a run then compiles the project's own code and little else. The
+      # project's own code is always compiled from what was checked out (its files are newer than anything
+      # kept). Only pushes to main run this workflow, so nothing else ever writes what is kept.
+      - name: The compiler's version (part of the name of what is kept)
+        id: rustc
+        shell: bash
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      - name: What was compiled before
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/release
+          key: cargo-${{ matrix.name }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.name }}-${{ steps.rustc.outputs.version }}-
+      - name: What the sound library is built against (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Formatting
+        run: cargo fmt --check
+      - name: Tests
+        run: cargo test --workspace --release
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7.1.0
+        with:
+          node-version: 24
+      - name: The pages' own tests
+        shell: bash
+        run: node --test web/tests/*.test.js crates/face-server/pages/tests/*.test.js
+
+  # The phones' app for Android (apps/android): the same sources as a package for 64-bit ARM phones, built on
+  # Windows as a developer builds it (build.ps1, no Gradle). On main it is the release form, signed with the
+  # app's own key, which the repository holds as two secrets (the keystore and its password); elsewhere the
+  # form for trying, with a key made on the spot.
+  android:
+    name: build android-arm64
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      HAS_ANDROID_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - name: Rust, with the phones' kind of processor
+        shell: bash
+        run: rustup toolchain install stable --profile minimal && rustup default stable && rustup target add aarch64-linux-android && rustc --version
+      # What cargo compiled before, of the libraries the project is built on, for this system, this compiler and
+      # these versions of them (Cargo.lock): a run then compiles the project's own code and little else. The
+      # project's own code is always compiled from what was checked out (its files are newer than anything
+      # kept). Only pushes to main run this workflow, so nothing else ever writes what is kept.
+      - name: The compiler's version (part of the name of what is kept)
+        id: rustc
+        shell: bash
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      - name: What was compiled before
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/release
+            target/aarch64-linux-android/release
+          key: cargo-android-${{ steps.rustc.outputs.version }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-android-${{ steps.rustc.outputs.version }}-
+      - name: The models and MediaPipe's web runtime the app carries (pinned downloads)
+        shell: bash
+        run: cargo build -p face-tools --release && ./target/release/face-tools get --root target/root models mediapipe
+      - name: The model runtime for Android (a pinned download)
+        shell: pwsh
+        run: |
+          # 1.31.1, as a Mac has: 1.24's convolution for Arm's SME2 keeps memory for every new picture, and the
+          # newest phones have those processors (face-tools parts.rs says what was measured)
+          $aar = "$env:RUNNER_TEMP\onnxruntime-android-1.31.1.aar"
+          Invoke-WebRequest 'https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.31.1/onnxruntime-android-1.31.1.aar' -OutFile $aar
+          if ((Get-Item $aar).Length -ne 55138794 -or (Get-FileHash $aar).Hash -ne 'D4D50660300ED2C4F38FFDFD5AB5BFA3A22F995F282DDA24F42EA3EA55467B49') { throw 'that is not the pinned file' }
+          "FACE_ORT_ANDROID_AAR=$aar" >> $env:GITHUB_ENV
+      - name: Google's bundletool, which makes the app bundle for Google Play (a pinned download)
+        if: env.HAS_ANDROID_KEY == 'true'
+        shell: pwsh
+        run: |
+          $jar = "$env:RUNNER_TEMP\bundletool-all-1.18.3.jar"
+          Invoke-WebRequest 'https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar' -OutFile $jar
+          if ((Get-Item $jar).Length -ne 32520401 -or (Get-FileHash $jar).Hash -ne 'A099CFA1543F55593BC2ED16A70A7C67FE54B1747BB7301F37FDFD6D91028E29') { throw 'that is not the pinned file' }
+          "FACE_BUNDLETOOL=$jar" >> $env:GITHUB_ENV
+      - name: The package, signed with the app's own key on main
+        shell: pwsh
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          # the Java a developer builds it with (21), not this machine's default; build.ps1 names the other tools
+          $env:JAVA_HOME = $env:JAVA_HOME_21_X64
+          if ($env:HAS_ANDROID_KEY -eq 'true') {
+            $env:ANDROID_KEYSTORE = "$env:RUNNER_TEMP\release.keystore"
+            [IO.File]::WriteAllBytes($env:ANDROID_KEYSTORE, [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
+            try { ./apps/android/build.ps1 -Release -Bundle } finally { Remove-Item $env:ANDROID_KEYSTORE -Force }
+            if (-not (Test-Path target/android-app/FaceRecognizer-android.aab)) { throw 'no app bundle was made' }
+          } else {
+            ./apps/android/build.ps1
+          }
+          $apk = 'target/android-app/FaceRecognizer-android-arm64.apk'
+          if (-not (Test-Path $apk)) { throw 'no package was made' }
+          New-Item -ItemType Directory -Force target/dist | Out-Null
+          Copy-Item $apk target/dist/
+          $info = [ordered]@{ project = 'facial-recognition'; system = 'android-arm64'; file = 'FaceRecognizer-android-arm64.apk'; commit = $env:GITHUB_SHA
+                              ref = $env:GITHUB_REF_NAME; run = $env:GITHUB_RUN_ID; signed = ($env:HAS_ANDROID_KEY -eq 'true')
+                              sha256 = (Get-FileHash $apk).Hash.ToLower() }
+          $info | ConvertTo-Json | Set-Content target/dist/BUILD-INFO.json
+          Get-Content target/dist/BUILD-INFO.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: FaceRecognizer-android-arm64
+          path: |
+            target/dist/FaceRecognizer-android-arm64.apk
+            target/dist/BUILD-INFO.json
+          retention-days: 14
+          if-no-files-found: error
+      # the same app as Google Play takes it (not a release file: it is uploaded to Play)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        if: env.HAS_ANDROID_KEY == 'true'
+        with:
+          name: FaceRecognizer-android-bundle
+          path: target/android-app/FaceRecognizer-android.aab
+          retention-days: 14
+          if-no-files-found: error
+
+  build:
+    name: build ${{ matrix.name }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest
+            name: macos-arm64
+          - os: ubuntu-22.04
+            name: linux-x64
+          - os: ubuntu-24.04-arm
+            name: raspberrypi-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write       # lets the job say to Azure which repository and branch it runs for (Windows signing)
+    env:
+      HAS_MAC_SIGNING: ${{ secrets.MACOS_CERT_P12_BASE64 != '' && secrets.APPLE_API_KEY_P8_BASE64 != '' }}
+      # Only pushes to main: Azure trusts this workflow for that branch alone
+      HAS_WIN_SIGNING: ${{ matrix.name == 'windows-x64' && secrets.AZURE_SIGNING_ACCOUNT != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - name: Rust
+        shell: bash
+        run: rustup toolchain install stable --profile minimal && rustup default stable && rustc --version
+      # What cargo compiled before, of the libraries the project is built on, for this system, this compiler and
+      # these versions of them (Cargo.lock): a run then compiles the project's own code and little else. The
+      # project's own code is always compiled from what was checked out (its files are newer than anything
+      # kept). Only pushes to main run this workflow, so nothing else ever writes what is kept.
+      - name: The compiler's version (part of the name of what is kept)
+        id: rustc
+        shell: bash
+        run: echo "version=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
+      - name: What was compiled before
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/release
+          key: cargo-${{ matrix.name }}-${{ steps.rustc.outputs.version }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.name }}-${{ steps.rustc.outputs.version }}-
+      - name: What the sound library is built against (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: The program and the tool that fetches what it runs with
+        run: cargo build -p face-desktop -p face-tools --release
+      - name: What the program runs with (pinned downloads; the HEIC libraries built from source)
+        shell: bash
+        timeout-minutes: 25
+        run: |
+          # (each by itself: one that there is no package of yet doesn't keep the others out)
+          for part in runtime ffmpeg; do ./target/release/face-tools get --root target/root "$part" || true; done
+          # The HEIC libraries, with a limit of their own where the system has a way to set one: on GitHub's Mac
+          # this build once never ended (2026-11-21; on a real Mac it takes 15 s). Without them the app is built
+          # all the same, and says at its start that HEIC photos can't be read.
+          if [ "$RUNNER_OS" = Windows ]; then
+            ./target/release/face-tools get --root target/root heif || true
+          else
+            perl -e 'alarm 600; exec @ARGV' ./target/release/face-tools get --root target/root heif || echo "The HEIC libraries were not built on this runner."
+          fi
+          ./target/release/face-tools have --root target/root
+
+      # --- Windows: the sign-in is good for a few minutes only, so it comes right before each signing
+      - name: Sign in to Azure (Windows, when signing)
+        if: env.HAS_WIN_SIGNING == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906   # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Sign the program (Windows, when signing)
+        if: env.HAS_WIN_SIGNING == 'true'
+        shell: pwsh
+        env:
+          FACE_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          FACE_SIGN_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          FACE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+        run: packaging/windows/sign.ps1 -Files target/release/FaceRecognizer.exe
+      - name: Sign in to Azure again for the installer (Windows, when signing)
+        if: env.HAS_WIN_SIGNING == 'true'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906   # v3.1.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: The Windows installer, signed and its signatures read as Windows does (when signing)
+        if: runner.os == 'Windows' && env.HAS_WIN_SIGNING == 'true'
+        shell: pwsh
+        env:
+          FACE_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          FACE_SIGN_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          FACE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+        run: packaging/windows/build.ps1 -NoBuild -Sign
+      - name: The Windows installer (not signing)
+        if: runner.os == 'Windows' && env.HAS_WIN_SIGNING != 'true'
+        shell: pwsh
+        run: packaging/windows/build.ps1 -NoBuild
+
+      # --- macOS: the app is signed and notarized before it goes into the disk image, and the image after
+      - name: The Mac's app
+        if: runner.os == 'macOS'
+        run: sh packaging/macos/build.sh --no-build --app
+      - name: Sign and notarize the app (macOS, when the signing secrets are set)
+        if: runner.os == 'macOS' && env.HAS_MAC_SIGNING == 'true'
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: sh packaging/macos/sign_and_notarize.sh target/dist/FaceRecognizer.app
+      - name: The Mac's disk image
+        if: runner.os == 'macOS'
+        run: sh packaging/macos/build.sh --dmg
+      - name: Sign and notarize the disk image (macOS, when the signing secrets are set)
+        if: runner.os == 'macOS' && env.HAS_MAC_SIGNING == 'true'
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: sh packaging/macos/sign_and_notarize.sh target/dist/FaceRecognizer-macos-arm64.dmg
+
+      # --- Linux and the Raspberry Pi
+      - name: The Linux installer, or on 64-bit ARM the Raspberry Pi's
+        if: runner.os == 'Linux'
+        run: sh packaging/linux/build.sh --no-build
+      - name: Try the Linux installer (install, menu entry and icons, uninstall; in a home folder of its own)
+        if: runner.os == 'Linux'
+        run: |
+          export HOME="$RUNNER_TEMP/home" XDG_DATA_HOME=
+          mkdir -p "$HOME/Desktop" "$HOME/.local/share/FaceRecognizer/data"
+          sh "$GITHUB_WORKSPACE/target/dist/FaceRecognizer-${{ matrix.name }}.run"
+          test -x "$HOME/.local/lib/FaceRecognizer/FaceRecognizer"
+          grep -q '^Icon=.*FaceRecognizer.png$' "$HOME/.local/share/applications/FaceRecognizer.desktop"
+          test -s "$HOME/.local/share/icons/hicolor/512x512/apps/FaceRecognizer.png" -a -f "$HOME/Desktop/FaceRecognizer.desktop"
+          sh "$HOME/.local/lib/FaceRecognizer/uninstall.sh"
+          test ! -e "$HOME/.local/lib/FaceRecognizer" -a ! -e "$HOME/.local/share/applications/FaceRecognizer.desktop"
+          test -d "$HOME/.local/share/FaceRecognizer/data"
+
+      - name: Package
+        shell: bash
+        env:
+          SYSTEM: ${{ matrix.name }}
+          SIGNED: ${{ (runner.os == 'macOS' && env.HAS_MAC_SIGNING == 'true') || env.HAS_WIN_SIGNING == 'true' }}
+        run: |
+          cd target/dist
+          case "$RUNNER_OS" in
+            Windows) PKG=FaceRecognizer-win64.zip; SETUP=FaceRecognizer-Setup-x64.exe ;;
+            macOS)   PKG=FaceRecognizer-macos-arm64.zip; SETUP=FaceRecognizer-macos-arm64.dmg
+                     ditto -c -k --keepParent FaceRecognizer.app "$PKG" ;;
+            Linux)   PKG=FaceRecognizer-$SYSTEM.tar.gz; SETUP=FaceRecognizer-$SYSTEM.run ;;
+          esac
+          sha() { if command -v sha256sum > /dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+          printf '{\n "project": "facial-recognition",\n "system": "%s",\n "file": "%s",\n "commit": "%s",\n "ref": "%s",\n "run": "%s",\n "signed": %s,\n "sha256": "%s",\n "installer": "%s",\n "installer_sha256": "%s"\n}\n' \
+            "$SYSTEM" "$PKG" "$GITHUB_SHA" "$GITHUB_REF_NAME" "$GITHUB_RUN_ID" "$SIGNED" "$(sha "$PKG")" "$SETUP" "$(sha "$SETUP")" > BUILD-INFO.json
+          cat BUILD-INFO.json
+          echo "PKG=$PKG" >> "$GITHUB_ENV"
+          echo "SETUP=$SETUP" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: FaceRecognizer-${{ matrix.name }}
+          path: |
+            target/dist/${{ env.PKG }}
+            target/dist/${{ env.SETUP }}
+            target/dist/BUILD-INFO.json
+          retention-days: 14
+          if-no-files-found: error

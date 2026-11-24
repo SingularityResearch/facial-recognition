@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["crates/face-core", "crates/face-files", "crates/face-home", "crates/face-library", "crates/face-import", "crates/face-sync", "crates/face-tools", "crates/face-server", "crates/face-app", "crates/face-db", "apps/desktop"]
+
+[workspace.package]
+version = "2.5.2"
+edition = "2024"
+license = "LicenseRef-Singularity-Research-Commercial"
+publish = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+panic = "abort"
+strip = "symbols"
+
+# The picture work (resize, warp, JPEG) is far too slow unoptimized to try the tracker in a debug build
+[profile.dev.package."*"]
+opt-level = 3
+[profile.dev]
+opt-level = 1

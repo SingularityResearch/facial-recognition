@@ -1,0 +1,20 @@
+[package]
+name = "face-library"
+description = "The photo library: faces, their pictures and photos, as the labeling side keeps them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+face-core = { version = "2.0.0", path = "../face-core" }
+face-files = { version = "2.0.0", path = "../face-files" }
+# a list by name that keeps its order (serde_json's own, for its maps)
+indexmap = "2"
+# local time as the C library gives it (mktime, localtime): camera dates are placed by this computer's own time zone
+libc = "0.2"
+# SHA-1, the photos' content hashes (the database's crate uses it already)
+ring = "0.17"
+# XMP packets: the people tags photo apps write
+roxmltree = "0.21"
+serde_json = { version = "1.0.154", features = ["preserve_order"] }

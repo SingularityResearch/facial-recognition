@@ -1,0 +1,24 @@
+[package]
+name = "face-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+# the saved database password, kept for this user alone
+face-files = { version = "2.0.0", path = "../face-files" }
+# the join exchange (join.rs); the same library the TLS connection already uses
+ring = "0.17"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt", "net", "time"] }
+tokio-postgres = "0.7"
+tokio-postgres-rustls = "0.14.0"
+uuid = { version = "1.29.3", features = ["v4"] }
+
+[dev-dependencies]
+# a test's story caught where it fails, so that what it made on the server is still removed
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+face-core = { path = "../face-core" }

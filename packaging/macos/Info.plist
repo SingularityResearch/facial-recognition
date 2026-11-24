@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- What macOS needs to know of the app (bundle.sh fills in the three __...__ values): why it asks for the
+     camera and the microphone (without these texts the system refuses them), and for the local network (the
+     shared database, the other devices, LM Studio), the oldest macOS it runs on, and its version. The texts
+     are what macOS shows when it asks for each. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>FaceRecognizer</string>
+  <key>CFBundleDisplayName</key>
+  <string>__NAME__</string>
+  <key>CFBundleIdentifier</key>
+  <string>__ID__</string>
+  <key>CFBundleExecutable</key>
+  <string>FaceRecognizer</string>
+  <key>CFBundleIconFile</key>
+  <string>icon.icns</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>__VERSION__</string>
+  <key>CFBundleVersion</key>
+  <string>__VERSION__</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSCameraUsageDescription</key>
+  <string>The live tracker recognizes the people you have named, from the camera. Pictures stay on this Mac: only numbers are kept, unless you turn on Collect faces.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>The live tracker can measure voice signals (loudness, pitch, speaking rate) from the microphone. Nothing is recorded.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Face Recognizer reaches the shared database you set up and your other devices (their photos and live cameras), and finds LM Studio on your network for Describe photo.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_lmstudio._tcp</string>
+    <string>_http._tcp</string>
+  </array>
+</dict>
+</plist>

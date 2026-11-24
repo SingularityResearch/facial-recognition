@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's icon in two layers, which the phone cuts to its own shape (a circle, a rounded square): the face and
+     the corner marks over the icon's dark green. Both are the app's one drawing (assets/icons); the marks lie
+     inside the middle 66 of 108 dp, which every shape shows. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>

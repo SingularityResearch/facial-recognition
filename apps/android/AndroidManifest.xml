@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="io.github.singularityresearch.facerecognizer"
+    android:versionCode="2" android:versionName="2.1">
+    <!-- the camera for the tracker page; the network permission is for the server the app runs for its
+         page on this device (127.0.0.1), and for the owner's shared database on their own network -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- the microphone for the tracker page's voice signals and the Signals chart's sound, each only while its
+         option is switched on there; what is heard is measured on the phone and never kept -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <application android:label="Face Recognizer" android:icon="@mipmap/ic_launcher"
+        android:extractNativeLibs="true" android:allowBackup="false"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- a join code read by the phone's own camera app: it holds no secret, and the join page asks
+                 the owner before anything is done with it -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="facetracker-join" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Face Tracker</title>
+<link rel="stylesheet" href="/signals_chart.css">
+<style>
+  /* Layout: viewfinder on the left, controls and readout on the right; stacks on narrow screens */
+  :root {
+    --bg: #eef1f0; --panel: #ffffff; --fg: #18211f; --muted: #5d6b67;
+    --line: #d3dbd8; --accent: #0e9f6e; --warn: #c2410c; --unknown: #e0574a;
+    /* the computer's own fonts: the page loads nothing from the internet */
+    --sans: system-ui, "Segoe UI", sans-serif;
+    --mono: ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1413; --panel: #171e1c; --fg: #e4ebe8; --muted: #8b9a95;
+            --line: #2a3431; --accent: #34d399; --warn: #fb923c; --unknown: #ff7b6e; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); overflow: hidden; }
+  /* Full window: header on top, the video filling the rest. The controls are a fly-out panel on the
+     right: open, it takes its column and the video shrinks beside it (on narrow windows it slides over
+     the video instead); closed, the video gets the whole width. */
+  .wrap { height: 100vh; padding: 12px 16px 16px; display: grid; column-gap: 0; row-gap: 12px;
+          grid-template-columns: minmax(0, 1fr) var(--side, 356px); grid-template-rows: auto minmax(0, 1fr);
+          transition: grid-template-columns .22s ease; }
+  .wrap.closed { --side: 0px; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #sideBtn { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; }
+  #sideBtn .bars { display: inline-block; width: 14px; height: 10px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; position: relative; }
+  #sideBtn .bars::after { content: ""; position: absolute; left: 0; right: 0; top: 2px; border-top: 2px solid currentColor; }
+  h1 { margin: 0; font: 600 22px var(--mono); letter-spacing: -.01em; }
+  .status { font: 12px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; }
+  .status.live .dot { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .status.err { color: var(--warn); } .status.err .dot { background: var(--warn); }
+
+  .stage { position: relative; background: #000; border-radius: 6px; overflow: hidden; min-height: 0; height: 100%; }
+  .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .stage.mirror video, .stage.mirror canvas { transform: scaleX(-1); }
+  .empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 12px; color: #c9d4d0; padding: 24px; }
+  /* a phone's two cameras: one small round button on the picture, bottom right, within the thumb's reach (it is
+     not mirrored with the picture: only the video and the drawing are) */
+  .camswitch { position: absolute; z-index: 4; right: calc(14px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom));
+               width: 48px; height: 48px; min-height: 0; padding: 0; border-radius: 50%; display: grid; place-items: center;
+               background: #0009; color: #fff; border: 1px solid #fff6; }
+  .camswitch:disabled { opacity: .6; }
+  .empty p { margin: 0; max-width: 44ch; }
+  [hidden] { display: none !important; }
+  /* The Signals chart (signals_chart.js): a drawer under the video, as wide as the video, opened with the header's
+     button. Open, the video shrinks above it; the controls keep their column beside both. */
+  .wrap.charted { grid-template-rows: auto minmax(0, 1fr) minmax(0, 46vh); }
+  .wrap.charted .stage { grid-column: 1; grid-row: 2; }
+  .wrap.charted aside { grid-column: 2; grid-row: 2 / 4; }
+  .signals { grid-column: 1; grid-row: 3; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px 24px;
+             background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+
+  aside { min-width: 0; height: 100%; overflow: hidden; }
+  aside .side-in { width: 340px; margin-left: 16px; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+                   display: flex; flex-direction: column; gap: 16px; padding-right: 4px; transition: opacity .18s; }
+  .wrap.closed aside .side-in { opacity: 0; visibility: hidden; transition: opacity .18s, visibility 0s .22s; }
+  @media (max-width: 900px) {          /* narrow: the panel slides over the video */
+    .wrap { --side: 0px; }
+    aside { position: fixed; top: 60px; right: 0; bottom: 0; width: min(372px, 92vw);   /* below the header's button */ z-index: 10; overflow: visible;
+            background: var(--bg); box-shadow: -12px 0 32px #0006; padding: 12px 12px 12px 0;
+            transform: translateX(0); transition: transform .22s ease; }
+    aside .side-in { width: auto; margin-left: 12px; }
+    .wrap.closed aside { transform: translateX(105%); box-shadow: none; }
+  }
+  /* A phone (and any window that small): the camera's picture is the whole screen, the header lies over its
+     top edge, and the controls are a sheet that slides up from the bottom, within a thumb's reach. Held
+     sideways, the sheet is on the right. Nothing is taken away: the same page, the same controls, laid out
+     for the screen they are on. env(safe-area-inset-*) keeps clear of a notch and the home indicator. */
+  @media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
+    body { font-size: 15px; }
+    .wrap, .wrap.charted { padding: 0; row-gap: 0; grid-template-rows: minmax(0, 1fr); }
+    .wrap.charted .stage { grid-row: 1; grid-column: 1 / -1; }
+    /* the Signals chart is a sheet over the lower part of the picture here */
+    .signals { position: fixed; z-index: 9; left: 0; right: 0; bottom: 0; height: min(70vh, 640px); border-width: 1px 0 0;
+               border-radius: 16px 16px 0 0; padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 32px #0008; }
+    header { position: fixed; z-index: 5; top: 0; left: 0; right: 0; gap: 8px; flex-wrap: nowrap; color: #fff;
+             padding: calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 20px calc(12px + env(safe-area-inset-left));
+             background: linear-gradient(#000c, #0000); pointer-events: none; }
+    header > * { pointer-events: auto; }
+    h1 { font-size: 16px; white-space: nowrap; }
+    .status { color: #e4ebe8; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stage { grid-row: 1; grid-column: 1 / -1; border-radius: 0; }
+    .stage video, .stage canvas { object-fit: cover; }
+    .empty { padding: 96px 24px; }
+    button, select, summary, input[type=text], input[type=number] { min-height: 44px; }     /* a finger's size */
+    select, input[type=text], input[type=number] { font-size: 16px; }      /* smaller, iOS zooms the page in on focus */
+    #sideBtn, .bell { min-width: 44px; justify-content: center; background: #0007; color: #fff; border-color: #fff5; }
+    #sideBtnText { display: none; }
+    aside { top: auto; left: 0; right: 0; bottom: 0; width: auto; height: min(74vh, 680px); padding: 8px 0 env(safe-area-inset-bottom) 0;
+            border-radius: 16px 16px 0 0; box-shadow: 0 -12px 32px #0008; transform: translateY(0); }
+    aside::before { content: ""; display: block; width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 8px; }
+    aside .side-in { margin: 0 12px; height: calc(100% - 20px); padding-right: 0; }
+    .wrap.closed aside { transform: translateY(105%); }
+    details.card:not([open]) { padding-top: 4px; padding-bottom: 4px; }      /* a closed card is one line to tap */
+    .alerts, .alerts.wide { top: 0; right: 0; left: 0; bottom: 0; width: auto; max-height: none; border-radius: 0;
+                            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  }
+  @media (max-height: 500px) and (pointer: coarse) {
+    .wrap { --side: 0px; }                 /* a large phone sideways is wider than 900 px: the panel still lies over the picture */
+    aside { position: fixed; z-index: 10; overflow: visible; background: var(--bg); transition: transform .22s ease;
+            top: calc(64px + env(safe-area-inset-top)); left: auto; right: 0; bottom: 0;       /* below the header's buttons, which close it */
+            width: min(380px, 55vw); height: auto; border-radius: 16px 0 0 0; padding: 8px env(safe-area-inset-right) 8px 0; }
+    aside .side-in { width: auto; }
+    aside::before { display: none; }
+    aside .side-in { height: 100%; }
+    .wrap.closed aside { transform: translateX(105%); }
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .label { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat b { display: block; font: 600 26px var(--mono); font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  button { font: 600 13px var(--sans); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--panel); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06231a; }
+  button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=text] { font: 13px var(--sans); padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); width: 100%; box-sizing: border-box; }
+  .toast { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; background: var(--panel); color: var(--fg);
+           border: 2px solid var(--warn); border-radius: 10px; padding: 12px 14px 12px 18px; font: 600 16px var(--sans);
+           box-shadow: 0 8px 32px #000a; display: flex; align-items: center; gap: 12px; animation: pop .35s ease; }
+  .toast[hidden] { display: none; }
+  .toast button { padding: 6px 12px; }
+  @keyframes pop { from { transform: translate(-50%, -12px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+  /* Alerts: the bell in the header (with how many are new) and the inbox panel it opens */
+  .bell { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; margin-left: auto; }
+  .bell.has { border-color: var(--warn); color: var(--warn); }
+  #chartBtn + .bell { margin-left: 0; }                /* the two buttons stay together */
+  #chartBtn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+  .bell.ring svg { animation: ring .9s ease 3; transform-origin: 50% 10%; }
+  @keyframes ring { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(16deg); } 40% { transform: rotate(-14deg); }
+                    60% { transform: rotate(10deg); } 80% { transform: rotate(-6deg); } }
+  .badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--warn); color: #fff;
+           font: 700 12px/20px var(--sans); text-align: center; }
+  .badge[hidden] { display: none; }
+  .alerts { position: fixed; top: 64px; right: 16px; z-index: 20; width: min(440px, calc(100vw - 32px));
+            max-height: calc(100vh - 88px); display: flex; flex-direction: column; background: var(--panel);
+            border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px #000a; }
+  .alerts[hidden] { display: none; }
+  .alerts .ahead { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .alerts .ahead b { font-size: 15px; margin-right: auto; }
+  .alerts .atabs { display: flex; gap: 4px; width: 100%; order: 3; }
+  .alerts .atabs button { padding: 5px 10px; font-size: 12.5px; }
+  .alerts .atabs button[aria-selected="true"] { border-color: var(--accent); color: var(--accent); }
+  .alerts .alist { list-style: none; margin: 0; padding: 4px 0; overflow: auto; flex: 1; }
+  .alerts .alist li { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 9px 12px; border-top: 1px solid var(--line); }
+  .alerts .alist li:first-child { border-top: 0; }
+  .alerts .alist .when { color: var(--muted); font-size: 12px; }
+  .alerts .alist .acts { grid-row: 1 / 3; grid-column: 2; display: flex; gap: 6px; align-items: center; }
+  .alerts .alist .acts button { padding: 5px 9px; font-size: 12px; }
+  .alerts .alist .none { display: block; color: var(--muted); text-align: center; padding: 18px; }
+  .alerts.wide { width: min(980px, calc(100vw - 32px)); }
+  .alerts .details { grid-column: 1 / -1; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+                     background: var(--bg); font-size: 13px; }
+  .alerts .details .dsets { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .alerts .details h3 { font-size: 13.5px; margin: 0 0 4px; }
+  .alerts .details h4 { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 12px 0 4px; }
+  .alerts .details h5 { font-size: 12px; margin: 8px 0 2px; color: var(--muted); }
+  .alerts .details table { width: 100%; border-collapse: collapse; }
+  .alerts .details th, .alerts .details td { text-align: left; padding: 2px 6px 2px 0; font-weight: normal; vertical-align: top; }
+  .alerts .details .kv th { color: var(--muted); width: 55%; }
+  .alerts .details .vs th { color: var(--muted); font-size: 12px; }
+  .alerts .details td { font-variant-numeric: tabular-nums; }
+  .alerts .details .far { color: var(--warn); font-weight: 600; }
+  .alerts .details .na { color: var(--muted); }
+  .alerts .details .hint { color: var(--muted); font-size: 12px; margin: 4px 0; }
+  .alerts .details .bars div { display: grid; grid-template-columns: 80px 1fr 42px; gap: 8px; align-items: center; }
+  .alerts .details .bars i { display: block; height: 8px; border-radius: 4px; background: var(--accent); min-width: 1px; }
+  .alerts .details .bars b { font-weight: normal; text-align: right; }
+  .alerts .details .bars.dim i { background: var(--muted); }
+  .alerts .details ul.ev { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .alerts .details ul.ev li { font: 12.5px/1.45 var(--mono); padding: 4px 8px; border-left: 3px solid var(--accent);
+                              background: var(--panel); border-radius: 0 4px 4px 0; }
+  .alerts .details ul.ev b { font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+                             margin-right: 6px; }
+  .alerts .afoot { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 12px; border-top: 1px solid var(--line); }
+  select { font: 13px var(--sans); padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); width: 100%; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--muted); margin: -6px 0 0; }
+  /* the way into (or for another device into) a shared database: a button to look at, a link to the join page */
+  #joinLink { display: flex; align-items: center; justify-content: center; min-height: 40px; margin: 8px 0 2px; padding: 8px 14px;
+              border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); font: 600 13px var(--sans); text-decoration: none; }
+  #joinLink[hidden] { display: none; }
+  #privacyLink { display: inline-block; padding: 8px 0; color: var(--accent); font-size: 13px; }
+  /* the privacy policy, over the whole page: the camera and its checks go on behind it */
+  .policy { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); }
+  .policyHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px;
+                padding-top: max(10px, env(safe-area-inset-top)); border-bottom: 1px solid var(--line); }
+  .policy iframe { flex: 1; width: 100%; border: 0; }
+  .faces { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+  .faces li { display: flex; justify-content: space-between; gap: 8px; }
+  .faces .who { font-weight: 600; font-family: var(--sans); font-size: 13px; }
+  .faces .unk { color: var(--unknown); }
+  .faces .none { color: var(--muted); }
+  .faces .usual, .faces .unsure { color: var(--muted); }
+  .faces .change { color: var(--accent); font-weight: 600; }
+  .faces .evidence { color: var(--muted); font-size: 11px; justify-content: flex-start; margin-top: -4px; padding-left: 16px; }
+  /* Live readout: one block a face; readings in fixed labeled cells so changing numbers stay in place */
+  #faces { gap: 10px; }
+  #faces li.face { display: block; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--bg); }
+  #faces li.face.lost { opacity: .55; }
+  #faces .fhead { display: flex; align-items: center; gap: 2px; }
+  #faces .fhead .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #faces .match { font: 600 18px var(--mono); font-variant-numeric: tabular-nums; }
+  #faces .meter { height: 3px; border-radius: 2px; background: var(--line); margin: 4px 0 6px; overflow: hidden; }
+  #faces .meter i { display: block; height: 100%; background: var(--accent); }
+  #faces .fsub { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); white-space: nowrap; }
+  #faces .fsub span:first-child { color: var(--fg); font-family: var(--sans); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #faces .fsub span.usual, #faces .fsub span.unsure, #faces .fsub span.none { color: var(--muted); }
+  #faces .fsub span.change { color: var(--accent); font-weight: 600; }
+  #faces .grp { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
+  #faces .gl { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 4px;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #faces .cell.wide { grid-column: 1 / -1; }
+  #faces .gl em { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--warn); }
+  #faces .cells { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 8px; }
+  #faces .cell { min-width: 0; display: flex; flex-direction: column; }
+  #faces .cell span { font: 10.5px var(--sans); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #faces .cell b { font: 600 12.5px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #faces .cell b.na { color: var(--muted); font-weight: 400; }
+  #faces .cell b.hot { color: var(--warn); }
+  button.small { font-size: 12px; padding: 6px 10px; }
+  .flat { border: 1px solid var(--warn); border-radius: 6px; padding: 8px 10px; font-size: 12.5px; color: var(--fg);
+          background: color-mix(in srgb, var(--warn) 10%, transparent); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .people { display: flex; flex-wrap: wrap; gap: 6px; }
+  details.card > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; user-select: none; }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+                                   transform: rotate(-45deg); transition: transform .15s; margin: 0 2px 2px 0; }
+  details.card[open] > summary::before { transform: rotate(45deg); margin-bottom: 4px; }
+  details.card > summary .num { margin-left: auto; text-transform: none; letter-spacing: 0; }
+  .chip { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .chip.on { border-color: var(--accent); color: var(--fg); background: color-mix(in srgb, var(--accent) 18%, transparent); font-weight: 600; }
+  .feel { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .scale { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  .scale span:last-child { text-align: right; }
+  .scale b { font: 600 15px var(--mono); color: var(--fg); min-width: 2ch; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap">
+  <header>
+    <h1>Face Tracker</h1>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Connecting to recognizer…</span>
+      <button class="small" id="againBtn" type="button" hidden>Start again</button></div>
+    <button id="chartBtn" class="bell" aria-controls="chartPanel" aria-expanded="false" title="Signals: every sensor reading of the last minutes as charts, one section each"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M3 17l5-6 4 3 4-8 5 9"/></svg><span>Signals</span></button>
+    <button id="bellBtn" class="bell" aria-controls="alertsPanel" aria-expanded="false" aria-label="Alerts" title="Alerts: see, acknowledge or archive"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 22a2.4 2.4 0 0 0 2.4-2.2H9.6A2.4 2.4 0 0 0 12 22Zm7-5.6V11a7 7 0 0 0-5.3-6.8V3.6a1.7 1.7 0 0 0-3.4 0v.6A7 7 0 0 0 5 11v5.4L3 18.5v.8h18v-.8Z"/></svg><span>Alerts</span><span class="badge" id="bellCount" hidden>0</span></button>
+    <button id="sideBtn" aria-controls="side" aria-expanded="true" title="Show or hide the controls (Ctrl+.)"><span class="bars"></span><span id="sideBtnText">Hide controls</span></button>
+  </header>
+
+  <section class="alerts" id="alertsPanel" hidden aria-label="Alerts">
+    <div class="ahead">
+      <b>Alerts</b>
+      <button id="alertsClose" aria-label="Close alerts" title="Close (Esc)">Close</button>
+      <div class="atabs" role="tablist" aria-label="Which alerts">
+        <button role="tab" data-astate="new" aria-selected="true">New <span id="cnt-new"></span></button>
+        <button role="tab" data-astate="ack" aria-selected="false">Acknowledged <span id="cnt-ack"></span></button>
+        <button role="tab" data-astate="archived" aria-selected="false">Archived <span id="cnt-archived"></span></button>
+      </div>
+    </div>
+    <ul class="alist" id="alertItems"></ul>
+    <div class="afoot"><button id="alertsBulk"></button></div>
+  </section>
+
+  <div class="stage mirror" id="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div class="empty" id="empty">
+      <p>Pick a camera and press Start camera, or open a video file. Faces you named in the labeling tool are shown by name.</p>
+    </div>
+    <button id="camSwitch" class="camswitch" type="button" hidden aria-label="Switch between the front and the back camera" title="Switch between the front and the back camera"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><path d="M9.2 12.6a3 3 0 0 1 5.3-1.4"/><path d="M14.8 9.4v2h-2"/><path d="M14.8 14.4a3 3 0 0 1-5.3 1.4"/><path d="M9.2 17.6v-2h2"/></svg></button>
+  </div>
+
+  <section class="signals" id="chartPanel" aria-label="Signals" hidden></section>
+
+  <aside id="side" aria-label="Controls"><div class="side-in">
+    <div class="card">
+      <div class="label">Source</div>
+      <div class="row">
+        <button class="primary" id="camBtn">Start camera</button>
+        <button id="fileBtn">Open video</button>
+        <input type="file" id="fileInput" accept="video/*" hidden>
+      </div>
+      <label for="camSelect" class="label">Camera</label>
+      <select id="camSelect"><option value="">Default camera</option></select>
+      <div class="flat" id="camFlat" role="alert" hidden><span id="camFlatText"></span>
+        <button class="small" id="camFlatTry" type="button" hidden></button></div>
+      <a id="joinLink" hidden title="Let a new phone or computer into your shared database, or join this device to one: one device shows a code, the other scans it">Join a shared database…</a>
+      <a id="privacyLink" href="/privacy" title="What the app handles, where it is kept and what leaves this device: readable here, without the internet">Privacy policy</a>
+    </div>
+
+    <div class="card">
+      <div class="label">Live readout</div>
+      <div class="stats">
+        <div class="stat"><b id="count">0</b><span>faces</span></div>
+        <div class="stat"><b id="known">0</b><span>recognized</span></div>
+        <div class="stat"><b id="fps">0</b><span>checks / sec</span></div>
+      </div>
+      <ul class="faces" id="faces"><li class="none">No faces tracked</li></ul>
+      <p class="hint" id="devices" hidden></p>
+    </div>
+
+    <details class="card" id="peopleCard">
+      <summary class="label">Known people <span id="peopleCount" class="num"></span></summary>
+      <div class="people" id="people"><span class="chip">Loading…</span></div>
+    </details>
+
+    <details class="card" id="alertCard">
+      <summary class="label">Alerts and presence log</summary>
+      <label for="alertWho" class="label">Alert me about these people</label>
+      <input type="text" id="alertWho" list="peopleList" placeholder="Names, separated by commas" autocomplete="off">
+      <datalist id="peopleList"></datalist>
+      <p class="label">Events that raise an alert</p>
+      <label class="toggle" for="optAlertArrive">They arrive <input type="checkbox" id="optAlertArrive" checked></label>
+      <label class="toggle" for="optAlertLeave">They leave <input type="checkbox" id="optAlertLeave"></label>
+      <label class="toggle" for="optAlertMove" title="Someone on your alert list was on another device's camera in the last 10 minutes and is now on this one (with a shared database). Only the people on the list are shared with your other devices for this, and only for 20 minutes">They move between cameras <input type="checkbox" id="optAlertMove"></label>
+      <label class="toggle" for="optAlertUnusual">Their signals are unusual for them <input type="checkbox" id="optAlertUnusual"></label>
+      <label class="toggle" for="optAlertUnknown">An unknown face stays <input type="checkbox" id="optAlertUnknown"></label>
+      <p class="label">Timing</p>
+      <label class="toggle" for="optArriveGap">"Arrive": out of view at least <select id="optArriveGap" style="width:auto"><option value="60">1 min</option><option value="120">2 min</option><option value="300">5 min</option><option value="600" selected>10 min</option><option value="900">15 min</option><option value="1800">30 min</option><option value="3600">60 min</option></select></label>
+      <label class="toggle" for="optLeaveGap">"Leave": out of view for <select id="optLeaveGap" style="width:auto"><option value="60">1 min</option><option value="120">2 min</option><option value="300" selected>5 min</option><option value="600">10 min</option><option value="900">15 min</option><option value="1800">30 min</option></select></label>
+      <label class="toggle" for="optUnknownStay">Unknown face: stays <select id="optUnknownStay" style="width:auto"><option value="5">5 s</option><option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">60 s</option><option value="120">120 s</option></select></label>
+      <label class="toggle" for="optUnusualZ">Unusual: at least <select id="optUnusualZ" style="width:auto"><option value="2">2 spreads</option><option value="2.5">2.5 spreads</option><option value="3" selected>3 spreads</option><option value="4">4 spreads</option></select></label>
+      <label class="toggle" for="optUnusualFor">Unusual: for at least <select id="optUnusualFor" style="width:auto"><option value="10">10 s</option><option value="20">20 s</option><option value="30" selected>30 s</option><option value="60">60 s</option><option value="120">120 s</option></select></label>
+      <label class="toggle" for="optUnusualRepeat">Unusual: at most one alert a person every <select id="optUnusualRepeat" style="width:auto"><option value="300">5 min</option><option value="600">10 min</option><option value="1800" selected>30 min</option><option value="3600">60 min</option></select></label>
+      <label class="toggle" for="optDetailsAfter">Measure again after <select id="optDetailsAfter" style="width:auto"><option value="5">5 s</option><option value="10">10 s</option><option value="15" selected>15 s</option><option value="30">30 s</option><option value="60">60 s</option></select></label>
+      <label class="toggle" for="optBannerFor">Banner stays <select id="optBannerFor" style="width:auto"><option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">1 min</option><option value="120">2 min</option><option value="0">until dismissed</option></select></label>
+      <label class="toggle" for="optAlertSound">Play a sound with alerts <input type="checkbox" id="optAlertSound" checked></label>
+      <p class="hint" id="alertHint">"Arrive": first seen after being out of view at least that long. "Leave": out of view that long. "Unusual": any of their signals that many spreads from their normal for that long (needs "Calibrate to each person"; these thresholds are guesses, not yet measured). Each alert keeps what was measured then and again after the set time (numbers only). Alerts show on the video, on the Alerts bell (where they stay until you acknowledge or archive them) and, if you allow it, as Windows notifications.</p>
+      <label class="toggle" for="optPresence">Keep a presence log <input type="checkbox" id="optPresence"></label>
+      <p class="hint" id="presenceHint">Off by default. When on, it notes who was in view and when (names and times only, no pictures), in <code>%APPDATA%\FaceLabels\presence\</code> on this computer, not in <code>data\</code>.</p>
+      <div class="row"><button class="small" id="presenceShow">Show today</button></div>
+      <ul class="faces" id="presenceList" hidden></ul>
+    </details>
+
+    <div class="card feel" id="feelCard" hidden>
+      <div class="label">How do you feel right now?</div>
+      <label for="feelWho" class="label">Who's answering</label>
+      <select id="feelWho"></select>
+      <div>
+        <div class="scale"><span>Unpleasant</span><b id="feelVOut">4</b><span>Pleasant</span></div>
+        <input type="range" id="feelV" min="1" max="7" step="1" value="4" aria-label="Unpleasant to pleasant, 1 to 7">
+      </div>
+      <div>
+        <div class="scale"><span>Calm</span><b id="feelAOut">4</b><span>Energized</span></div>
+        <input type="range" id="feelA" min="1" max="7" step="1" value="4" aria-label="Calm to energized, 1 to 7">
+      </div>
+      <div class="row">
+        <button class="small primary" id="feelSave">Save</button>
+        <button class="small" id="feelSkip">Skip</button>
+      </div>
+      <p class="hint" style="margin:0">Saved with numbers summarizing the 30 seconds before this question (no pictures, no audio).</p>
+    </div>
+
+    <details class="card" id="testCard">
+      <summary class="label">Expression test <span id="testCount" class="num"></span></summary>
+      <p class="hint" style="margin:0">Measures how well expression reading works on your own face and webcam. You're asked to make each of the 7 expressions for a few seconds, then to talk for a few seconds and to rest your chin on your hand (to measure the talking and hand detectors). Only numbers are saved (the expression asked for, the model's scores, face-shape cues, body points and talking signals; no pictures, no audio) in data\expr_eval.</p>
+      <div class="row">
+        <button class="small" id="testBtn">Start test</button>
+      </div>
+      <div class="label">Feeling check</div>
+      <p class="hint" style="margin:0">The only way to learn whether any of these signals track how you actually feel: now and then you say how you feel (two 1-7 scales). The answers are kept with the signals of that moment, to compare the two and, once there are enough, to fit valence/arousal to you.</p>
+      <div class="row">
+        <button class="small" id="feelBtn">Report how I feel</button>
+        <select id="feelEvery" aria-label="Ask me how I feel" style="width:auto">
+          <option value="0">Don't ask</option><option value="2">Ask every 2 min</option>
+          <option value="5">Ask every 5 min</option><option value="10">Ask every 10 min</option>
+        </select>
+      </div>
+      <div class="row"><button class="small" id="testDelete">Delete test data</button></div>
+    </details>
+
+    <div class="card">
+      <div class="label">Display</div>
+      <label class="toggle" for="optMirror">Mirror view <input type="checkbox" id="optMirror" checked></label>
+      <label class="toggle" for="optPoints">Keypoints (eyes, nose, mouth) <input type="checkbox" id="optPoints" checked></label>
+      <label class="toggle" for="optMesh" title="MediaPipe's 478 face points joined into triangles, each shaded by the angle it faces">Face mesh (triangles) <input type="checkbox" id="optMesh"></label>
+      <label class="toggle" for="optMeshStrength">Mesh strength <select id="optMeshStrength" style="width:auto"><option value="0.6">Light</option><option value="1" selected>Normal</option><option value="1.6">Strong</option></select></label>
+      <label class="toggle" for="optSkeleton" title="The body points the posture model finds below the face, joined: shoulders, arms, rough hands, hips, legs and feet">Full body skeleton <input type="checkbox" id="optSkeleton"></label>
+      <label class="toggle" for="optFingers" title="21 points on each hand, the joints of every finger (a second model: about 10-20 ms more a frame)">Hand skeleton (fingers) <input type="checkbox" id="optFingers"></label>
+      <label class="toggle" for="optTrail">Motion trail <input type="checkbox" id="optTrail" checked></label>
+      <label class="toggle" for="optUnknown">Show unknown faces <input type="checkbox" id="optUnknown" checked></label>
+      <label class="toggle" for="optBlur">Blur unknown faces <input type="checkbox" id="optBlur"></label>
+      <label class="toggle" for="optExpr">Show expression <input type="checkbox" id="optExpr" checked></label>
+      <label class="toggle" for="optCalib">Calibrate to each person <input type="checkbox" id="optCalib" checked></label>
+      <p class="hint" id="exprHint">Expression is read from sharp, camera-facing frames and averaged over the last second. With calibration on, each named person's usual look is learned over about a minute; a reading that departs from it is highlighted, one that matches it is marked "usual". Calibration also learns each person's normal for every other signal (posture, movement, voice, pulse...), alone and in company, over a few minutes, and the evidence shows what is unusual for them. It is kept on this computer (and in the shared database, if one is set up, so your other devices know it too); it never goes anywhere else.</p>
+      <label class="toggle" for="optEvidence">Show expression evidence <input type="checkbox" id="optEvidence" checked></label>
+      <label class="toggle" for="optExprLog" title="With a shared database: every few seconds, what each named person's face looks like is kept there (the expression shown, its scores, alone or in company), for reports later. It says how a face looked, not what the person felt. Nothing is kept without a shared database.">Keep expression readings <input type="checkbox" id="optExprLog" checked></label>
+      <div class="row">
+        <select id="forgetWho" aria-label="Person to forget" style="width:auto"></select>
+        <button class="small" id="calibReset">Forget what's learned</button>
+      </div>
+      <label class="toggle" for="optVoice">Listen to voice (microphone) <input type="checkbox" id="optVoice"></label>
+      <label class="toggle" for="optPulse">Webcam pulse (experimental) <input type="checkbox" id="optPulse"></label>
+      <label class="toggle" for="optTalkGate">Skip expression while talking <input type="checkbox" id="optTalkGate"></label>
+      <label class="toggle" for="optState">Use state model for expression <input type="checkbox" id="optState"></label>
+      <label class="toggle" for="optPose">Body posture <input type="checkbox" id="optPose"></label>
+      <label class="toggle" for="optHandGate">Skip expression when a hand is on the face <input type="checkbox" id="optHandGate"></label>
+      <label class="toggle" for="optSoundChart" title="While this is on, every audio interface of this computer (each output: what it plays; each microphone: what sounds in the room) is listened to, 4 seconds at a time, one stretch after another, and measured in memory. Only numbers and one word are kept, for 15 minutes, for the Signals chart; the sound itself is never kept.">Chart this device's sound (speakers and microphones) <input type="checkbox" id="optSoundChart"></label>
+      <p class="hint" id="soundChartHint" hidden></p>
+      <p class="hint" id="signalsHint">Voice is analysed live and never recorded: loudness, pitch, speaking rate, and the voice model's arousal/valence. Pulse reads tiny skin-colour changes and needs a still face in steady light. Body posture adds head height, shoulders, lean, body movement, breathing, hand on face and crossed arms. The "skip" and "state model" options change the expression reading and aren't measured yet; run the Expression test first.</p>
+      <p class="hint" id="medicalHint">Pulse, breathing and the other body readings are estimates for your own information. Face Recognizer is not a medical device and does not diagnose, treat, cure or prevent any medical condition. For medical advice, ask a healthcare professional.</p>
+      <div>
+        <div class="toggle"><span>Smoothing</span><span id="smoothVal" class="num">0.50</span></div>
+        <input type="range" id="optSmooth" min="0" max="0.9" step="0.05" value="0.5" aria-label="Smoothing">
+      </div>
+      <div>
+        <div class="toggle"><span>Match strictness</span><span id="threshVal" class="num">0.55</span></div>
+        <input type="range" id="optStrict" min="0.25" max="0.75" step="0.01" value="0.55" aria-label="Match strictness">
+      </div>
+      <p class="hint">Higher strictness means fewer wrong names but more "Unknown". The default is the measured best for the app's recognition model.</p>
+      <label class="toggle" for="optCollect" title="Save pictures of the faces in view for the labeling tool">Collect faces for labeling <input type="checkbox" id="optCollect"></label>
+      <label class="toggle" for="optKeepCam" title="Starts the camera when the app starts, and again within 10 s if it stops. Stop camera turns this off.">Keep this camera running <input type="checkbox" id="optKeepCam" checked></label>
+      <label class="toggle" for="optStream" title="Your other devices can watch this camera, with everything drawn on it, in their Cameras tab (with a shared database)">Stream this camera to my other devices <input type="checkbox" id="optStream" checked></label>
+      <p class="hint" id="collectHint">While a face stays in view, a sharp picture of that face is saved every few seconds (up to 12 per face) with who the tracker thinks it is and how sure: just the face with a little room around it, never the whole frame, and any other face in that room greyed out. The labeling tool picks them up by itself: it names the ones it's sure of and asks you about the rest.</p>
+    </div>
+  </div></aside>
+</div>
+
+<div id="privacySheet" class="policy" role="dialog" aria-modal="true" aria-label="Privacy policy" hidden>
+  <div class="policyHead"><strong>Privacy policy</strong><button class="small" id="privacyClose" type="button">Close</button></div>
+  <iframe id="privacyFrame" title="Privacy policy"></iframe>
+</div>
+
+<script src="/expression.js"></script>
+<script src="/signals.js"></script>
+<script src="/settings_bridge.js"></script>
+<script src="/page_store.js"></script>
+<script src="/ask.js"></script>
+<script src="/signals_chart.js"></script>
+<script src="/tracker_ui.js"></script>
+</body>
+</html>

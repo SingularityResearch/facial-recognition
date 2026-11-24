@@ -1,0 +1,68 @@
+Face Recognizer
+Copyright (c) 2026 Singularity Research. All rights reserved.
+
+SINGULARITY RESEARCH COMMERCIAL LICENSE
+Version 1.1, 24 November 2026
+
+This licence covers Face Recognizer from version 2.4.0 on: the programs, their source code, the models
+Singularity Research made for them (Opsis 1 and Melos 1), the pages, the documents, and everything else in
+this repository that is Singularity Research's. Together they are "the Work".
+
+1. The Work is commercial and proprietary.
+
+   The Work belongs to Singularity Research. It is protected by copyright, and the methods it uses are
+   inventions of Singularity Research in which all patent rights are reserved. Its source is public so that
+   anyone can read what the app does. Making the source public grants no right to it beyond section 2.
+
+2. What you may do without asking.
+
+   (a) Read the source and the documents, and discuss and quote them as the law allows.
+
+   (b) Install and use a copy of the app that Singularity Research itself published (in an app store, or on
+       this project's releases page), unchanged, on the terms shown where you got it.
+
+3. What needs a written licence from Singularity Research.
+
+   Everything else. Without such a licence you may not:
+
+   - build the Work, or use the Work or anything built from it, other than under 2(b);
+   - copy the Work, or any part of it, into other software or any other work;
+   - change it, translate it, or make anything derived from it;
+   - distribute, sublicense, sell, rent or lend it, or offer it, or what it does, as a service;
+   - use its models outside the app, or use the Work to train or to evaluate other models;
+   - remove or change this licence or any notice of Singularity Research's rights.
+
+4. No patent licence.
+
+   Nothing in this licence, and nothing about the source being public, grants a licence to any patent or
+   patent application of Singularity Research, by implication, by estoppel or otherwise, except as far as
+   using an app under 2(b) needs one.
+
+5. Other people's parts.
+
+   Parts of the app that are not Singularity Research's keep their own licences. NOTICE names them.
+
+6. A hosting service's terms.
+
+   Where this repository is kept on a service whose terms let its users view and copy public repositories
+   within that service, this licence does not take that away. It grants nothing more.
+
+7. Ending.
+
+   This licence ends for you at once if you break it. You must then stop using the Work and destroy your
+   copies of it.
+
+8. No warranty, and the limit of liability.
+
+   THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. AS FAR AS THE LAW ALLOWS, SINGULARITY
+   RESEARCH IS NOT LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
+   ARISING FROM THE WORK OR FROM ITS USE.
+
+   The app's readings of a body (a pulse estimate, a breathing rate) are estimates for a person's own
+   information. Face Recognizer is not a medical device and does not diagnose, treat, cure or prevent any
+   medical condition.
+
+9. Asking for a licence.
+
+   For a licence to do anything this one does not allow: chris@singularityresearch.net

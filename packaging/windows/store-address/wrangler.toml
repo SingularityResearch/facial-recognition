@@ -1,0 +1,11 @@
+# The Cloudflare Worker behind the Microsoft Store's package address (worker.js says what it does).
+# Put there with:  npx wrangler deploy   (in this folder, signed in to the Cloudflare account that has the domain)
+name = "facerecognizer-downloads"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+workers_dev = false
+# its own name on the owner's domain: Cloudflare makes the DNS entry and the certificate for it
+routes = [{ pattern = "downloads.singularityresearch.net", custom_domain = true }]
+
+[observability]
+enabled = false

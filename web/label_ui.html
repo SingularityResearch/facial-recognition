@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Face Labels</title>
+<style>
+[hidden] { display: none !important; }   /* whatever display a class gives, hidden hides */
+  :root {
+    --bg: #f3f4f2; --panel: #ffffff; --fg: #1b1f1d; --muted: #66706b; --line: #dde1de; --hover: #e9ecea;
+    --accent: #1f7a68; --accent-ink: #ffffff; --accent-soft: #dcefe9; --warn: #b7791f; --bad: #c2362b; --bad-bg: #fbe9e7;
+    --shade: rgb(10 14 12 / .86);
+    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --tile: 88px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121614; --panel: #1a201d; --fg: #e5eae7; --muted: #8f9a95; --line: #2b3330; --hover: #222a26;
+            --accent: #3fb59b; --accent-ink: #06231c; --accent-soft: #173a31; --warn: #e0a33a; --bad: #ff7a6e; --bad-bg: #3a1f1c;
+            color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); display: grid; grid-template-rows: auto 1fr; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  kbd { font: 600 11.5px var(--sans); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--panel); color: var(--fg); }
+
+  /* ---------- top bar */
+  header { background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 16px; padding: 10px 16px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+  .spacer { flex: 1; }
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--hover); }
+  .btn:disabled { opacity: .45; cursor: default; background: var(--panel); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn.small { padding: 3px 9px; font-size: 13px; border-radius: 7px; }
+  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; user-select: none; }
+  #progress, #dlprogress { display: none; align-items: center; gap: 10px; min-width: 0; flex: 1 1 360px; }
+  #progress.on, #dlprogress.on { display: flex; }
+  #progress .bar, #dlprogress .bar { flex: 0 0 140px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  #progress .bar i, #dlprogress .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  #progress .why { flex: none; }
+  .probs { max-height: 50vh; overflow: auto; margin: 6px 0; padding-left: 18px; font-size: 13px; }
+  .probs li { margin: 6px 0; overflow-wrap: anywhere; }
+  .probs small { display: block; color: var(--muted); }
+  #progress .txt, #dlprogress .txt { color: var(--muted); font-size: 13px; min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* ---------- layout */
+  /* The sidebar (views and people) is a fly-out on the left: closed, the faces get the whole width.
+     On narrow windows it slides over the faces instead, below the top bar. */
+  .shell { display: grid; grid-template-columns: var(--nav, 248px) minmax(0, 1fr); min-height: 0; transition: grid-template-columns .2s ease; }
+  .shell.closed { --nav: 0px; }
+  nav { border-right: 1px solid var(--line); overflow-y: auto; overflow-x: hidden; padding: 12px 8px 24px; background: var(--panel); min-width: 0; }
+  .shell.closed nav { visibility: hidden; border: 0; transition: visibility 0s .2s; }
+  @media (max-width: 760px) {
+    .shell, .shell.closed { grid-template-columns: minmax(0, 1fr); }   /* the sidebar floats, so the faces take the only column */
+    main { grid-column: 1; }
+    nav { position: fixed; left: 0; top: var(--hdr, 54px); bottom: 0; width: min(300px, 86vw); z-index: 40; box-shadow: 12px 0 32px rgb(0 0 0 / .3);
+          transform: translateX(0); transition: transform .2s ease; }
+    .shell.closed nav { transform: translateX(-105%); box-shadow: none; visibility: hidden; transition: transform .2s ease, visibility 0s .2s; }
+  }
+  #navbtn { display: inline-grid; place-items: center; width: 34px; height: 32px; padding: 0; }
+  #navbtn i { width: 15px; height: 11px; border-top: 2px solid currentColor; border-bottom: 2px solid currentColor; position: relative; }
+  #navbtn i::after { content: ""; position: absolute; left: 0; right: 0; top: 2.5px; border-top: 2px solid currentColor; }
+  #pfind { width: calc(100% - 20px); margin: 0 10px 6px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; background: var(--bg); font-size: 13px; }
+  .size { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .size input { width: 96px; accent-color: var(--accent); }
+  nav h2 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 16px 10px 6px; }
+  nav h2:first-child { margin-top: 2px; }
+  .nav { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; padding: 6px 10px; border-radius: 8px; cursor: pointer; text-align: left; }
+  .nav:hover { background: var(--hover); }
+  .nav[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
+  .nav .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 400; }
+  .nav .n.hot { color: var(--accent); font-weight: 650; }
+  .nav img, .nav .ph { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; background: var(--line); }
+  .nav .warn { color: var(--warn); font-size: 12px; }
+  main { overflow-y: auto; padding: 18px 22px 120px; position: relative; }
+  .head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .head h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
+  .lede { color: var(--muted); margin: 0 0 16px; max-width: 72ch; }
+  .empty { color: var(--muted); padding: 60px 0; text-align: center; }
+  .empty b { display: block; color: var(--fg); font-size: 16px; margin-bottom: 4px; }
+
+  /* ---------- sections and groups */
+  section.sec { margin: 0 0 26px; }
+  .sechead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; position: sticky; top: -18px; background: var(--bg); padding: 8px 0; z-index: 2; }
+  .sechead img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
+  .sechead h3 { margin: 0; font-size: 15px; font-weight: 650; }
+  .sechead .cnt { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sechead .acts { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .card .sechead { position: static; background: transparent; padding: 0 0 8px; }
+  .hint { border: 1px dashed var(--accent); color: var(--accent); background: transparent; border-radius: 999px; padding: 3px 10px; cursor: pointer; font-size: 13px; }
+  .hint:hover { background: var(--accent-soft); }
+
+  /* ---------- face tiles */
+  .grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .face { position: relative; width: var(--tile); height: var(--tile); padding: 0; border: 0; border-radius: 9px; overflow: hidden;
+          cursor: pointer; background: var(--line); outline-offset: 2px; flex: none; }
+  .face img { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; }
+  .face .sc { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--accent); }
+  .face .sc.mid { background: var(--warn); }
+  .face .tags { position: absolute; left: 4px; top: 4px; right: 30px; display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none; }
+  .face .tag { font: 650 10px var(--sans); padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .62); color: #fff; }
+  .face .tag.low { color: #fbbf24; }
+  .face .tag.cam { color: #7dd3fc; }
+  .face .tag.vid { color: #fcd34d; }
+  #psort { width: calc(100% - 20px); margin: 0 10px 8px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--bg); font-size: 13px; color: var(--fg); }
+  #pfew { font-weight: 400; color: var(--warn); margin-left: 4px; }
+  .keys-list { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; font-size: 13.5px; margin: 0; }
+  .keys-list .k { white-space: nowrap; text-align: right; }
+  .keys-list .d { margin: 0; color: var(--muted); }
+  .keys-list h4 { grid-column: 1 / -1; margin: 8px 0 0; font-size: 12px; font-weight: 650; color: var(--fg); text-transform: uppercase; letter-spacing: .04em; }
+  .face .zoom { position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; border-radius: 6px; border: 0; background: rgb(0 0 0 / .55); color: #fff;
+                display: none; place-items: center; cursor: zoom-in; padding: 0; }
+  .face:hover .zoom, .face:focus-visible .zoom { display: grid; }
+  .face.sel { box-shadow: 0 0 0 3px var(--accent); }
+  .face.sel::after { content: "✓"; position: absolute; right: 4px; bottom: 7px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+                     background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 700; }
+  .face.gone { opacity: .2; pointer-events: none; transition: opacity .2s; }
+  .more { width: var(--tile); height: var(--tile); border: 1px dashed var(--line); border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; }
+  #band { position: fixed; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); pointer-events: none; display: none; z-index: 20; }
+
+  /* ---------- checks */
+  .row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .row .why { flex: 1 1 220px; min-width: 0; }
+  .row .why small { display: block; color: var(--muted); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 11px; cursor: pointer; }
+  .chip:hover { background: var(--hover); }
+  details summary { cursor: pointer; color: var(--muted); }
+  details li { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+
+  /* ---------- selection bar */
+  #selbar { position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, calc(100% + 40px)); visibility: hidden; background: var(--fg); color: var(--bg); border-radius: 14px;
+            padding: 8px 8px 8px 16px; display: flex; gap: 8px; align-items: center; box-shadow: 0 10px 30px rgb(0 0 0 / .25); z-index: 30; max-width: calc(100vw - 32px); flex-wrap: wrap; }
+  #selbar.on { transform: translate(-50%, 0); visibility: visible; }
+  @media (prefers-reduced-motion: no-preference) { #selbar { transition: transform .18s ease-out, visibility .18s; } }
+  #selbar .count { font-weight: 650; margin-right: 6px; font-variant-numeric: tabular-nums; }
+  #selbar button { border: 0; border-radius: 9px; padding: 6px 11px; cursor: pointer; background: color-mix(in srgb, var(--bg) 14%, transparent); color: var(--bg); }
+  #selbar button:hover { background: color-mix(in srgb, var(--bg) 26%, transparent); }
+  #selbar button.go { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  #selbar kbd { background: transparent; color: inherit; border-color: color-mix(in srgb, var(--bg) 40%, transparent); margin-left: 4px; }
+
+  /* ---------- toast */
+  #toast { position: fixed; left: 18px; bottom: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 9px 14px;
+           display: none; gap: 12px; align-items: center; box-shadow: 0 6px 20px rgb(0 0 0 / .14); z-index: 61; max-width: min(460px, calc(100vw - 36px)); }
+  #toast.on { display: flex; }
+  #toast.err { border-color: var(--bad); color: var(--bad); }
+  #toast button { border: 0; background: transparent; color: var(--accent); font-weight: 650; cursor: pointer; padding: 2px 4px; }
+
+  /* ---------- name picker */
+  .modal { position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: none; place-items: start center; padding-top: 14vh; z-index: 60; }
+  #namer { z-index: 70; }       /* naming from the web-search results opens over that dialog */
+  .modal.on { display: grid; }
+  .picker { width: min(420px, calc(100vw - 32px)); background: var(--panel); border-radius: 14px; box-shadow: 0 18px 50px rgb(0 0 0 / .3); overflow: hidden;
+            max-height: calc(86vh - 16px); overflow-y: auto; }        /* tall dialogs scroll inside short windows */
+  .picker .ttl { padding: 12px 16px 0; color: var(--muted); font-size: 13px; }
+  .picker input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 10px 16px 12px; font-size: 18px; outline: none; }
+  .picker ul { list-style: none; margin: 0; padding: 6px; max-height: 320px; overflow-y: auto; }
+  .picker li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+  .picker li img, .picker li .ph { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: var(--line); flex: none; }
+  .picker li .ph { display: grid; place-items: center; font-weight: 700; color: var(--accent); background: var(--accent-soft); }
+  .picker li small { margin-left: auto; color: var(--muted); }
+  .picker li[aria-selected="true"] { background: var(--accent-soft); }
+  .form { padding: 16px; display: grid; gap: 10px; }
+  .form input[type=text] { font-size: 15px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .form p { margin: 0; color: var(--muted); font-size: 13px; }
+  .form .acts { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ---------- photo viewer */
+  #viewer { position: fixed; inset: 0; background: var(--shade); display: none; z-index: 50; grid-template-columns: minmax(0, 1fr) 300px; }
+  #viewer.on { display: grid; }
+  @media (max-width: 760px) { #viewer { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr auto; } }
+  .stage { position: relative; display: grid; place-items: center; padding: 24px; min-height: 0; }
+  .stage .wrap { position: relative; max-width: 100%; max-height: 100%; }
+  .stage img { display: block; max-width: calc(100vw - 360px); max-height: calc(100vh - 48px); border-radius: 4px; }
+  @media (max-width: 760px) { .stage img { max-width: calc(100vw - 48px); max-height: 60vh; } }
+  .box { position: absolute; border: 2px solid rgb(255 255 255 / .75); border-radius: 4px; cursor: pointer; }
+  .box.me { border-color: var(--accent); border-width: 3px; box-shadow: 0 0 0 2000px rgb(0 0 0 / .18); }
+  .box span { position: absolute; left: -2px; bottom: 100%; margin-bottom: 3px; white-space: nowrap; font-size: 12px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: rgb(0 0 0 / .7); color: #fff; }
+  .box.me span { background: var(--accent); color: var(--accent-ink); }
+  .face .stackn { position: absolute; right: 4px; top: 4px; font: 700 11px var(--sans); padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .72); color: #fff; }
+  .box.maybe { border: 2px dashed rgb(250 204 21 / .85); }
+  .box.maybe:hover { border-style: solid; }
+  .box.maybe span { background: rgb(250 204 21 / .9); color: #111; }
+  #vwrap.drawing, #vwrap.drawing .box { cursor: crosshair; }
+  #vwrap.drawing .box { pointer-events: none; }
+  .box.drawn { border: 2px solid #38bdf8; pointer-events: none; }
+  #desctext { white-space: pre-wrap; color: var(--fg); font-size: 13px; line-height: 1.45; }
+  #desctext small { color: var(--muted); }
+  .vtoggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  .stage .nofile { color: #d8ddda; text-align: center; }
+  .side { background: var(--panel); padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .side .who { font-size: 20px; font-weight: 650; }
+  .side .meta { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .side .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sechead .newp { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+  .side .clue { display: flex; flex-direction: column; gap: 6px; }
+  .side .clue h4 { margin: 0; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .side .clue .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg); }
+  .side .clue .chip img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; margin-left: -6px; }
+  .side .clue .chip small { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .side .clue .see { border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 13px; }
+  .side .clue .see:hover { color: var(--fg); }
+  .wssug { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .wssug .acts { align-items: center; }
+  .lvl { font-size: 12px; font-weight: 650; border-radius: 999px; padding: 1px 8px; margin-left: 6px; white-space: nowrap; }
+  .lvl-very-high, .lvl-high { background: var(--accent); color: var(--accent-ink); }
+  .lvl-medium { border: 1px solid var(--accent); color: var(--accent); }
+  .lvl-low { border: 1px solid var(--line); color: var(--muted); }
+  #wserr { color: var(--bad); margin: 0; }
+  #pderr { color: var(--bad); }
+  .btn.danger { color: var(--bad); border-color: var(--bad); font-weight: 600; }
+  #wsres { display: flex; flex-direction: column; gap: 8px; }
+  #wsres:empty { display: none; }
+  #wsres ul { margin: 0; padding-left: 18px; font-size: 13px; max-height: 140px; overflow-y: auto; }
+  #wsres a { color: var(--accent); overflow-wrap: anywhere; }
+  #wsres small { color: var(--muted); }
+  .side .keys { color: var(--muted); font-size: 12.5px; line-height: 1.9; margin-top: auto; }
+  .navbtn { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 64px; border: 0; border-radius: 10px; background: rgb(255 255 255 / .12); color: #fff; font-size: 22px; cursor: pointer; }
+  .navbtn:hover { background: rgb(255 255 255 / .22); }
+  .navbtn.prev { left: 10px; } .navbtn.next { right: 10px; }
+#vwrap .from { color: var(--muted, #8a9a94); font-size: 12px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <button class="btn" id="navbtn" aria-controls="sidebar" aria-expanded="true" title="Show or hide the sidebar (Ctrl+.)"><i></i></button>
+  <h1>Face Labels</h1>
+  <div id="progress" aria-live="polite"><div class="bar"><i></i></div><span class="txt"></span><button class="btn small why" id="impwhy" style="display:none" title="Which files couldn't be read, and why">Why?</button><button class="btn small" id="stopimp">Stop</button></div>
+  <div id="dlprogress" aria-live="polite" title="Downloads: models for LM Studio, CUDA support"><div class="bar"><i></i></div><span class="txt"></span></div>
+  <div class="spacer"></div>
+  <label class="size" title="Size of the face pictures (remembered)">Size <input type="range" id="tilesz" min="64" max="176" step="8" value="88" aria-label="Face picture size"></label>
+  <label class="toggle" title="Faces too blurry or small to learn from are hidden from the review lists"><input type="checkbox" id="low"> Show blurry faces</label>
+  <button class="btn" id="undo" disabled title="Undo (Z)">Undo</button>
+  <button class="btn" id="keysbtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
+  <button class="btn primary" id="add">Add photos</button>
+</header>
+<div class="shell" id="shell">
+  <nav aria-label="Views" id="sidebar">
+    <h2>To review</h2>
+    <button class="nav" data-v="suggested">Suggestions <span class="n" id="n-suggested"></span></button>
+    <button class="nav" data-v="unknown">New faces <span class="n" id="n-unknown"></span></button>
+    <button class="nav" data-v="possible" title="Blurry, turned, small or partly hidden faces, kept with a lower detector cut-off">Possible faces <span class="n" id="n-possible"></span></button>
+    <button class="nav" data-v="tagged">From photo tags <span class="n" id="n-tagged"></span></button>
+    <button class="nav" data-v="auto">Named automatically <span class="n" id="n-auto"></span></button>
+    <button class="nav" data-v="checks">Checks <span class="n" id="n-checks"></span></button>
+    <h2>People<span id="pfew"></span></h2>
+    <input type="search" id="pfind" placeholder="Find a person" aria-label="Find a person" autocomplete="off">
+    <select id="psort" aria-label="Order of the people list">
+      <option value="name">A–Z</option>
+      <option value="faces">Most faces first</option>
+      <option value="few">Needs more faces first</option>
+    </select>
+    <div id="people"></div>
+  </nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+<div id="band"></div>
+
+<div id="selbar" role="toolbar" aria-label="Selected faces"></div>
+<div id="toast" role="status"><span class="msg"></span><button class="undo">Undo</button></div>
+
+<div class="modal" id="namer"><div class="picker" role="dialog" aria-label="Choose a name">
+  <div class="ttl"></div>
+  <input id="nameinput" autocomplete="off" placeholder="Type a name" aria-label="Name">
+  <ul id="namelist" role="listbox"></ul>
+</div></div>
+
+<div class="modal" id="importer"><div class="picker" role="dialog" aria-label="Add photos">
+  <form class="form" id="impform">
+    <b>Add photos</b>
+    <p>Type or paste the folder that holds the new photos and videos (subfolders are included). Photos and videos already added, and copies of them, are skipped, and so are Live Photo clips. In a video, about one frame a second is looked at and each person's few clearest faces are kept. Faces the model is sure about are named for you.</p>
+    <input type="text" id="impfolder" list="folders" placeholder="D:\Photos\Family" aria-label="Photo folder">
+    <datalist id="folders"></datalist>
+    <p id="imperr" style="color:var(--bad)"></p>
+    <div class="acts"><button type="button" class="btn" id="impcancel">Cancel</button><button class="btn primary">Start adding</button></div>
+  </form>
+</div></div>
+
+<div class="modal" id="renamer"><div class="picker" role="dialog" aria-label="Rename person">
+  <form class="form" id="renform">
+    <b id="rentitle">Rename</b>
+    <p>Using a name that already exists merges the two people.</p>
+    <input type="text" id="renname" list="peoplelist" aria-label="New name">
+    <datalist id="peoplelist"></datalist>
+    <div class="acts"><button type="button" class="btn" id="rencancel">Cancel</button><button class="btn primary">Rename</button></div>
+  </form>
+</div></div>
+
+<div class="modal" id="persondlg"><div class="picker" role="dialog" aria-label="A person's data" style="width:min(520px, calc(100vw - 32px))">
+  <div class="form">
+    <b id="pdtitle">Their data</b>
+    <p>What this tool holds about them, all on this computer: their faces' prints and pictures, their labels and the
+      labeling history, saved Web search answers, photo tags and descriptions that name them, Collect faces pictures,
+      presence log visits, Expression test frames and feeling reports.</p>
+    <b>Export</b>
+    <p>Writes all of it into a new folder inside the one you give: <code>data.json</code>, their face pictures and Collect faces pictures.</p>
+    <div class="acts"><input type="text" id="pdfolder" autocomplete="off" placeholder="E:\Documents\Export" aria-label="Folder to export into" style="flex:1">
+      <button type="button" class="btn" id="pdexport">Export</button></div>
+    <b>Forget</b>
+    <p>Deletes all of it and removes their name everywhere. Their faces stay as Ignored faces without print or picture,
+      so their photos aren't read again. Undo is cleared, and this can't be undone. In the app window the Face tracking
+      tab also forgets their usual look and normal signals; with the tracker open in a browser, use
+      <b>Forget what's learned</b> there.</p>
+    <div class="acts"><input type="text" id="pdconfirm" autocomplete="off" placeholder="Type their name to confirm" aria-label="Type their name to confirm" style="flex:1">
+      <button type="button" class="btn danger" id="pdforget">Forget</button></div>
+    <p id="pderr" role="alert"></p>
+    <div class="acts"><button type="button" class="btn" id="pdclose">Close</button></div>
+  </div>
+</div></div>
+
+<div class="modal" id="keys"><div class="picker" role="dialog" aria-label="Keyboard shortcuts" style="width:min(520px, calc(100vw - 32px))">
+  <div class="form">
+    <b>Keyboard shortcuts</b>
+    <div class="keys-list">
+      <h4>Selecting faces</h4>
+      <span class="k">Click</span><span class="d">select a face, or unselect it</span>
+      <span class="k"><kbd>Shift</kbd>+click</span><span class="d">select every face between the last one clicked and this one</span>
+      <span class="k">Drag</span><span class="d">draw a box across faces to select them</span>
+      <span class="k"><kbd>Esc</kbd></span><span class="d">clear the selection</span>
+      <h4>Selected faces</h4>
+      <span class="k"><kbd>N</kbd></span><span class="d">name them (type a name, <kbd>↑</kbd> <kbd>↓</kbd> to pick, <kbd>Enter</kbd>)</span>
+      <span class="k"><kbd>A</kbd></span><span class="d">accept the suggested name (Suggestions, From photo tags)</span>
+      <span class="k"><kbd>R</kbd></span><span class="d">not this person</span>
+      <span class="k"><kbd>X</kbd></span><span class="d">ignore (strangers, artwork, tattoos)</span>
+      <span class="k"><kbd>Space</kbd></span><span class="d">open the whole photo (the selected face, or the one under the mouse)</span>
+      <h4>Photo view</h4>
+      <span class="k"><kbd>←</kbd> <kbd>→</kbd></span><span class="d">previous / next face</span>
+      <span class="k"><kbd>N</kbd> <kbd>R</kbd> <kbd>X</kbd></span><span class="d">name, not this person, ignore</span>
+      <span class="k"><kbd>Esc</kbd></span><span class="d">close</span>
+      <h4>Anywhere</h4>
+      <span class="k"><kbd>Z</kbd></span><span class="d">undo the last change</span>
+      <span class="k"><kbd>Ctrl</kbd>+<kbd>.</kbd></span><span class="d">show or hide the sidebar</span>
+      <span class="k"><kbd>?</kbd></span><span class="d">this list</span>
+    </div>
+    <div class="acts"><button type="button" class="btn primary" id="keysclose">Close</button></div>
+  </div>
+</div></div>
+
+<div class="modal" id="photosdlg"><div class="picker" role="dialog" aria-label="Photos of a person">
+  <form class="form" id="phform">
+    <b id="phtitle">Photos</b>
+    <input type="text" id="phalso" list="peoplelist" autocomplete="off" placeholder="Together with… (more names, separated by commas)" aria-label="Together with">
+    <p id="phcount"></p>
+    <div id="phgrid" style="display:flex;flex-wrap:wrap;gap:4px;max-height:236px;overflow:auto"></div>
+    <input type="text" id="phfolder" autocomplete="off" placeholder="Copy them to this folder, e.g. E:\Pictures\Export" aria-label="Folder to copy the photos to">
+    <p id="pherr" style="color:var(--bad)"></p>
+    <div class="acts"><button type="button" class="btn" id="phclose">Close</button><button class="btn primary">Copy photos</button></div>
+  </form>
+</div></div>
+
+<div class="modal" id="websearch"><div class="picker" role="dialog" aria-label="Web search">
+  <div class="form">
+    <b>Web search</b>
+    <div id="wsres" aria-live="polite"></div>
+    <p id="wserr" role="alert"></p>
+    <details id="wsmore"><summary>Settings and other ways to search</summary>
+      <p class="meta">Web search sends this face to Amazon (celebrity recognition) and this photo to Google (pages with the same picture), both US companies, and keeps English results from US sites only.
+        The pictures leave this computer and may be kept by them. Each service stops itself before $10 a month.</p>
+      <div class="acts"><button type="button" class="btn small" id="wslens" title="Copies the face and opens Google Images: click the camera icon there and press Ctrl+V">Copy face, open Google Lens</button>
+        <button type="button" class="btn small" id="wssave">Save face picture</button></div>
+      <p class="meta" id="wskeys"></p>
+      <div class="acts"><input type="password" id="wskeyin" autocomplete="off" placeholder="Google Cloud Vision API key" aria-label="Google Cloud Vision API key" style="flex:1">
+        <button type="button" class="btn small" id="wskeysave">Save key</button></div>
+      <div class="acts"><input type="text" id="wsawsid" autocomplete="off" placeholder="Amazon access key ID" aria-label="Amazon access key ID" style="flex:1">
+        <input type="password" id="wsawssecret" autocomplete="off" placeholder="Secret access key" aria-label="Amazon secret access key" style="flex:1">
+        <input type="text" id="wsawsregion" autocomplete="off" placeholder="us-east-1" aria-label="Amazon region" style="width:90px">
+        <button type="button" class="btn small" id="wsawssave">Save</button></div>
+      <p class="meta">The keys are your own (how to make them: the Web search section of the README) and stay in %APPDATA%\FaceLabels on this computer. Save an empty key to remove it.</p></details>
+    <div class="acts"><button type="button" class="btn" id="wscancel">Close</button><button type="button" class="btn primary" id="wsgo">Search again</button></div>
+  </div>
+</div></div>
+
+<div class="modal" id="probs"><div class="picker" role="dialog" aria-label="Files that couldn't be read">
+  <div class="form">
+    <b>Files that couldn't be read</b>
+    <p class="meta" id="probsnote"></p>
+    <ul class="probs" id="probslist"></ul>
+    <div class="acts"><button type="button" class="btn" id="probsclose">Close</button></div>
+  </div>
+</div></div>
+
+<div id="viewer" role="dialog" aria-label="Photo">
+  <div class="stage"><div class="wrap" id="vwrap"></div><button class="navbtn prev" id="vprev" aria-label="Previous face">‹</button><button class="navbtn next" id="vnext" aria-label="Next face">›</button></div>
+  <div class="side" id="vside"></div>
+</div>
+
+<script src="/settings_bridge.js"></script>
+<script src="/page_store.js"></script>
+<script src="/ask.js"></script>
+<script src="/label_ui.js"></script>
+</body>
+</html>

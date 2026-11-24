@@ -1,0 +1,20 @@
+[package]
+name = "face-app"
+description = "The app's own program, as a library a phone's or a desktop's shell starts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+# (with the measuring of sound: a phone's page hears with its microphone and its own server measures that)
+face-server = { version = "2.0.0", path = "../face-server", default-features = false, features = ["sound"] }
+
+# Android's shell is Java: it reaches the library through JNI, and what the programs print goes to a file
+# there (an Android app has no console).
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.21", default-features = false }
+libc = "0.2"

@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Face Recognizer</title><style>
+[hidden] { display: none !important; }
+:root { color-scheme: dark; }
+html, body { margin: 0; height: 100%; background: #0d1512; color: #dfe8e4; font: 14px "Segoe UI", system-ui, sans-serif; }
+body { display: flex; align-items: center; justify-content: center; }
+main { width: min(580px, calc(100vw - 48px)); background: #111c18; border: 1px solid #24342e; border-radius: 12px; padding: 26px 28px 22px; }
+h1 { font-size: 19px; font-weight: 600; margin: 0 0 12px; }
+p { line-height: 1.5; margin: 8px 0; }
+ul { margin: 8px 0 14px; padding-left: 20px; line-height: 1.6; }
+.note { color: #9fb2ab; font-size: 13px; overflow-wrap: anywhere; }
+progress { width: 100%; height: 10px; margin-top: 14px; accent-color: #34d399; }
+.error { color: #ffd7c7; border: 1px solid #fb923c; background: #3a2116; border-radius: 8px; padding: 9px 12px; margin-top: 14px;
+  white-space: pre-wrap; overflow-wrap: anywhere; }
+.row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+button { font: inherit; padding: 7px 18px; border-radius: 8px; cursor: pointer; background: transparent; color: #dfe8e4; border: 1px solid #2c3f38; }
+button.yes { border-color: #34d399; color: #a7f3d0; font-weight: 600; }
+button:disabled { opacity: .5; cursor: default; }
+</style></head><body><main>
+<h1>Before Face Recognizer starts</h1>
+<p id="what">Looking at what is on this computer …</p>
+<ul id="lines"></ul>
+<p class="note" id="where"></p>
+<p class="note" id="without" hidden></p>
+<progress id="bar" max="1" value="0" hidden></progress>
+<p class="note" id="step" hidden></p>
+<p class="error" id="error" role="alert" hidden></p>
+<div class="row"><button id="skip" type="button" disabled>Start without them</button><button id="get" class="yes" type="button" disabled>Download</button></div>
+</main><script src="/first_run.js"></script></body></html>

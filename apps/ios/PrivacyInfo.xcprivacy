@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The app's privacy manifest (Apple reads it at upload). Nothing is collected and nothing is tracked: the
+	     app sends its developer nothing (PRIVACY.md). -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<!-- The system calls Apple wants a reason for. The program asks for files' sizes and times (stat, fstat,
+	     lstat) of the files in its own folders: its models, its page files and what it keeps (C617.1: files
+	     inside the app's own container). It uses none of the others on Apple's list (looked for in the built
+	     program with nm: no boot time, no disk space, no user defaults); look again when a library is added. -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

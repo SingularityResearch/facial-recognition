@@ -1,0 +1,31 @@
+[package]
+name = "face-sync"
+description = "Keeps a device's library and the shared database the same, both ways"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+face-files = { version = "2.0.0", path = "../face-files" }
+face-home = { version = "2.0.0", path = "../face-home" }
+face-library = { version = "2.0.0", path = "../face-library" }
+# many statements on their way at once (the database's own library uses it already)
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+# rows by their keys in the library's own order: what is sent goes in that order, as it always has
+indexmap = { version = "2", features = ["serde"] }
+# SHA-1, the rows' digests (the library's crate uses it already)
+ring = "0.17"
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+scrypt = { version = "0.12.0", default-features = false }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+tokio-postgres = "0.7"
+x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
+
+[dev-dependencies]
+# a test's story caught where it fails, so that what it made on the server is still removed
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+face-db = { version = "2.0.0", path = "../face-db" }
+face-core = { version = "2.0.0", path = "../face-core" }
+tokio = { version = "1.54.1", features = ["rt", "net", "time"] }

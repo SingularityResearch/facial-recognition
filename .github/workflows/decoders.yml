@@ -1,0 +1,96 @@
+# The decoders the app ships beside itself, built for each kind of computer (the owner's decision,
+# 2026-11-20: our own small FFmpeg for all four systems, kept in a project release; and nothing may be assumed
+# to be installed on a user's computer, so what is built from source reaches users already built):
+#
+# - FFmpeg 7.1.5 as two small programs (packaging/decoders/build_ffmpeg.sh: its pinned source, only what a
+#   photo library's videos need, LGPL, a few MB instead of 109 MB a program);
+# - libheif 1.23.6 with libde265 1.1.3 (built by the project's own tool, from their pinned source).
+#
+# What a build makes is an artifact here. It becomes what the installers carry only after it was tried: the
+# video and photo checks run with it, then the files go into a
+# release of the project and their sizes and SHA-256 into crates/face-tools (parts.rs). Not run yet when this
+# was written: the recipe was tried on Linux by hand (28 s, 5.5 MB a program, the same decoded bytes as the
+# ready-made Windows build for every test clip).
+name: decoders
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - packaging/decoders/**
+      - .github/workflows/decoders.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest      # Apple Silicon
+            name: macos-arm64
+          - os: ubuntu-22.04      # the oldest Linux the app supports: what is built here runs on newer ones
+            name: linux-x64
+          - os: ubuntu-24.04-arm  # 64-bit ARM Linux: the Raspberry Pi
+            name: linux-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+
+      # FFmpeg's processor-specific code for x64 is written for this assembler; ARM's needs none
+      - name: An assembler (Linux on x64)
+        if: matrix.name == 'linux-x64'
+        run: sudo apt-get update && sudo apt-get install -y nasm
+
+      # The MSYS2 that GitHub's Windows machines have already (C:\msys64), with its own package tool. The action
+      # that sets one up asked GitHub's cache service at every run and was refused ("Cache service responded
+      # with 400"), which failed the job before anything was built.
+      - name: A compiler FFmpeg can be built with (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYSTEM: UCRT64
+        run: C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-nasm make diffutils tar xz curl"
+
+      # (-static: the programs then need nothing but Windows' own libraries)
+      - name: FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        shell: C:\msys64\usr\bin\bash.exe -leo pipefail {0}
+        env:
+          MSYSTEM: UCRT64
+          CHERE_INVOKING: 1       # (stay in the checkout's folder)
+        run: sh packaging/decoders/build_ffmpeg.sh out/runtime --extra-ldflags=-static
+
+      - name: FFmpeg
+        if: runner.os != 'Windows'
+        run: sh packaging/decoders/build_ffmpeg.sh out/runtime
+
+      - name: libheif and libde265
+        run: cargo run --release -p face-tools -- get --root out heif
+
+      # Said in the log for whoever tries the build: every library named must be the system's own or in the folder
+      - name: What they need from outside themselves
+        shell: bash
+        run: |
+          ls -l out/runtime
+          case "$RUNNER_OS" in
+            Windows) cargo run --release -p face-tools -- have --root out | tail -8 ;;
+            macOS) for f in out/runtime/*; do otool -L "$f"; done ;;
+            *) for f in out/runtime/*; do echo "$f"; ldd "$f" || true; done ;;
+          esac
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: decoders-${{ matrix.name }}
+          path: out/runtime
+          if-no-files-found: error
+          retention-days: 30
