@@ -1964,7 +1964,7 @@ function recall(k) { try { return localStorage.getItem("ft-" + k); } catch { ret
 const KEEP = ["optPoints", "optTrail", "optUnknown", "optBlur", "optExpr", "optCalib", "optEvidence", "optExprLog", "optVoice", "optPulse",
               "optTalkGate", "optState", "optPose", "optHandGate", "optSoundChart", "optSkeleton", "optFingers", "optSmooth", "optStrict", "optMeshStrength",
               "optAlertArrive", "optAlertLeave", "optAlertMove", "optStream", "optKeepCam", "optAlertUnusual", "optArriveGap", "optLeaveGap", "optUnknownStay",
-              "optUnusualZ", "optUnusualFor", "optUnusualRepeat", "optDetailsAfter", "optBannerFor"];
+              "optUnusualZ", "optUnusualFor", "optUnusualRepeat", "optDetailsAfter", "optBannerFor", "optLocation", "optPlace"];
 for (const id of KEEP) {
   const el = $(id), v = recall("o-" + id);
   if (v !== null) {
@@ -1973,12 +1973,40 @@ for (const id of KEEP) {
   el.addEventListener("change", () => remember("o-" + id, el.type === "checkbox" ? (el.checked ? "1" : "0") : el.value));
 }
 micSync();
+// This device's location (place.js), while its owner has switched that on (off for a new copy). The page asks its
+// own server every few seconds: the server asks the system's location service, or reads the place typed here, and
+// answers with where the device is or why it can't say. Shown as one line of text. The server publishes the
+// location to the owner's other devices and writes the history's rows; this page only shows it.
+const PLACE_EVERY = 5000;
+let placeNow = null, placeWhy = "";
+function placeText() { return placeNow ? Place.words(placeNow) : placeWhy; }
+function placeShow() {
+  const on = $("optLocation").checked, text = on ? placeText() : "", line = $("placeLine");
+  line.hidden = !text;
+  if (line.textContent !== text) line.textContent = text;
+  line.classList.toggle("why", !!text && !placeNow);
+  SettingsBridge.changed();                                    // the Settings tab's "This device is"
+}
+// (while the switch is off the server is not asked every few seconds: only when the switch or the typed place
+// changes, so that it hears of the change at once)
+async function placeStep(changed) {
+  if (changed !== true && !$("optLocation").checked) { placeNow = null; placeWhy = ""; placeShow(); return; }
+  let j = null;
+  try { j = await (await fetch("/api/location", { headers: { "X-Face-Tool": "1" } })).json(); } catch {}
+  placeNow = j && j.on ? Place.clean(j.place) : null;
+  placeWhy = j && j.on && !placeNow && typeof j.why === "string" ? j.why.slice(0, 400) : "";
+  placeShow();
+}
+setInterval(() => placeStep(), PLACE_EVERY);
+// (a change reaches the server with the page's other settings, a moment later: asked then)
+for (const id of ["optLocation", "optPlace"]) $(id).addEventListener("change", () => { placeShow(); setTimeout(() => placeStep(true), 800); });
+placeStep();
 for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change", () => SettingsBridge.changed());   // the Settings tab's list
 // The app window's Settings tab (settings_bridge.js): every option of this page, in sections
 {
   const c = SettingsBridge.control, C = "Face tracking: camera", D = "Face tracking: display",
         E = "Face tracking: expression", S = "Face tracking: voice, pulse and posture", R = "Face tracking: recognition",
-        A = "Face tracking: alerts", P = "Face tracking: presence log";
+        A = "Face tracking: alerts", P = "Face tracking: presence log", L = "Face tracking: location";
   SettingsBridge.init("track", [
     c("camSelect", C, { noReset: true }),
     c("optMirror", C, { hint: "Turned on for the webcam and off for video files when the source starts." }),
@@ -2000,6 +2028,12 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
     c("optCollect", R, { hint: $("collectHint").textContent }),
     c("optKeepCam", R, { label: "Keep this camera running", hint: "Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. Stop camera turns this off." }),
     c("optStream", R, { label: "Stream this camera to my other devices", hint: "Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on here), with its live readout. Sent all the time at full rate (about 20 frames a second), over your local network, encrypted, only to your own devices; never stored. Needs a shared database and Share my photos with my other devices." }),
+    c("optLocation", L, { hint: $("placeHint").textContent }),
+    // (secret: a typed place is never among the settings this node publishes. Where the device is goes out only
+    // as its location, and only while the switch is on.)
+    c("optPlace", L, { label: "This device's place, typed", secret: true, hint: "Leave it empty and the device's own location service is asked. Type a place and nothing is asked of anyone: a town (Springfield, or Springfield, Illinois, or Paris, France), or latitude and longitude (39.8017, -89.6437). Best for a computer that stays where it is, which its system often places only to within a few kilometres." }),
+    { section: L, id: "placeNow", label: "This device is", type: "info",
+      get: () => $("optLocation").checked ? placeText() || "Not known yet." : "Not shown: the switch above is off." },
     { section: A, id: "alertList", label: "Alert me about these people", type: "multi",
       hint: "Pick the people to be told about (their arrive, leave and unusual-signal events, as switched on below). Unknown: a face the recognizer can't name stays the set time.",
       options: () => {

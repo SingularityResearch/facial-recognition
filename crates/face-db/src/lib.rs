@@ -8,6 +8,7 @@
 
 pub mod join;
 pub mod kept;
+pub mod location;
 pub mod members;
 pub mod peer;
 
@@ -367,6 +368,7 @@ pub const MIGRATIONS: &[(i32, &str)] = &[
     (12, include_str!("../../../migrations/012_music_log.sql")),
     (13, include_str!("../../../migrations/013_own_recognizer.sql")),
     (14, include_str!("../../../migrations/014_device_alias.sql")),
+    (15, include_str!("../../../migrations/015_location_log.sql")),
 ];
 
 /// What a device is called, as every statement reads it that shows a device's name: the name the owner gave

@@ -84,8 +84,12 @@ names, nobody's likeness.
 | Financial features | None | |
 | Health | The app has health features: Activity and Fitness (body vitals: a pulse estimate and a breathing rate from the camera). Not a regulated medical device. | See below. |
 
-Permissions the package asks for: `CAMERA`, `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `INTERNET`. None of them is
-one of Play's restricted permissions, so there is no permission declaration form to fill in.
+Permissions the package asks for: `CAMERA`, `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, `INTERNET`,
+`ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`. None of them is one of Play's restricted permissions (the
+location is used only while the app is open: there is no background location), so there is no permission
+declaration form to fill in. The location is asked for only when the owner switches **Show and keep this device's
+location** on. In the Data safety form it is not "collected" or "shared": it goes to the owner's own devices and
+database, never to the developer or a third party.
 
 ### The body readings and Play's Health rules
 
@@ -110,5 +114,5 @@ is the one that names heart rate today.
    apply for production access.
 3. Production.
 
-The version code is the workspace's version (2.5.2 is 20502): Play takes each code once, so every upload needs a
+The version code is the workspace's version (2.6.0 is 20600): Play takes each code once, so every upload needs a
 new version in `Cargo.toml`.

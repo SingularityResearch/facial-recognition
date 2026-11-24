@@ -77,6 +77,10 @@ project's own. To our knowledge no other system puts these together, and we rega
   photo tags, same occasion) and Undo. A person's data can be exported or forgotten everywhere.
 - **Cameras**: every device's live camera in one grid, with what each sees and its Signals chart; any one of
   them alone, laid out like its own Face tracking tab.
+- **Where each device is** (off until you switch it on, device by device): the nearest town with its state and
+  country and the coordinates, on the device's own Face tracking tab and over its picture in the Cameras tab,
+  from the device's own location service or a place you type; with a shared database, a history of its moves
+  for 90 days. The towns' names come from a list inside the app, so nothing is looked up on the internet.
 - **Describe photo**: a vision model on your own computer (LM Studio, or the built-in one) describes a photo and
   reads its text.
 - **Shared database** (optional): PostgreSQL with pgvector on a server of your own, over TLS; keys are encrypted

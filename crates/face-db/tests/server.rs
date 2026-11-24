@@ -212,3 +212,97 @@ fn a_device_that_read_the_code_sets_itself_up() {
     });
     let _ = std::fs::remove_dir_all(home);
 }
+
+/// The location history against the real server: rows go in once, what is no location is left out, each
+/// device's newest row and a device's history are read back, a device's history is deleted at its owner's
+/// word, and rows older than they are kept go.
+#[test]
+fn the_location_history_takes_rows_once_and_lets_old_ones_go() {
+    use face_db::location::{self, Row};
+    use serde_json::json;
+    let Some(s) = settings() else {
+        eprintln!("skipped: no test database (FACE_TEST_DB_HOME)");
+        return;
+    };
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    rt.block_on(async {
+        let schema = made_up_schema();
+        let home = std::env::temp_dir().join(format!("face-db-location-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let device = Device::load(&home, "a test device").unwrap();
+        let other = Device::load(&home.join("other"), "another").unwrap();
+        let mut client = face_db::connect(&s, &schema, &device).await.expect("the server");
+        client.batch_execute(&format!("CREATE SCHEMA {schema}")).await.unwrap();
+        let outcome = AssertUnwindSafe(async {
+            face_db::migrate(&mut client).await?;
+            let now: i64 = client
+                .query_one("SELECT (extract(epoch FROM now()) * 1000)::bigint", &[])
+                .await
+                .map_err(|e| e.to_string())?
+                .get(0);
+            let (first, second) = (now - 7_200_000, now - 60_000);
+            let rows = vec![
+                json!({"lat": 39.8017, "lon": -89.6437, "acc": 61.5, "at": first, "source": "system",
+                       "place": "Springfield, Illinois,\n United States"}),
+                json!({"lat": 500, "lon": 0, "acc": 5, "at": first + 1, "source": "system", "place": "nowhere"}),
+                json!({"lat": 48.8534, "lon": 2.3488, "acc": null, "at": second, "source": "hand", "place": "Paris"}),
+            ];
+            // every row is dealt with: the two locations are in, the third never will be
+            let mut done = location::send(&client, &device.id, &rows).await?;
+            done.sort_unstable();
+            assert_eq!(done, [first, first + 1, second]);
+            assert_eq!(location::count(&client, &device.id).await?, 2);
+            // sent again (a device that didn't hear the answer): nothing is there twice
+            location::send(&client, &device.id, &rows).await?;
+            assert_eq!(location::count(&client, &device.id).await?, 2);
+            let history = location::history(&client, &device.id, 50).await?;
+            assert_eq!(history.len(), 2);
+            assert_eq!(
+                history[0],
+                Row { lat: 48.8534, lon: 2.3488, accuracy: None, at: second, source: "hand".into(), place: "Paris".into() }
+            );
+            assert_eq!((history[1].accuracy, history[1].at), (Some(61.5), first));
+            assert_eq!(history[1].place, "Springfield, Illinois, United States", "a place is one line of text");
+            assert_eq!(location::history(&client, &device.id, 1).await?.len(), 1);
+            // each device's newest row
+            location::send(&client, &other.id, &rows[..1]).await?;
+            let mut latest = location::latest(&client).await?;
+            latest.sort_by_key(|(_, row)| row.at);
+            assert_eq!(latest.len(), 2);
+            assert_eq!((latest[0].0.as_str(), latest[0].1.at), (other.id.as_str(), first));
+            assert_eq!((latest[1].0.as_str(), latest[1].1.at), (device.id.as_str(), second));
+            // a row somebody wrote by hand that is no location is not read as one
+            let forced = client
+                .execute(
+                    "INSERT INTO location_log (device, at, lat, lon, source) VALUES ($1::text::uuid, now(), 1, 1, 'guess')",
+                    &[&other.id],
+                )
+                .await;
+            assert!(forced.is_err(), "the table took a row whose source is no source");
+            // what is no device's id is refused before anything is asked
+            assert!(location::send(&client, "not an id", &rows).await.is_err());
+            assert!(location::history(&client, "x' OR '1'='1", 5).await.is_err());
+            // a row older than it is kept goes; the others stay
+            let old = now - (i64::from(location::KEEP_DAYS) + 1) * 86_400_000;
+            location::send(&client, &device.id, &[json!({"lat": 1.5, "lon": 2.5, "acc": 9, "at": old, "source": "system"})])
+                .await?;
+            assert_eq!(location::count(&client, &device.id).await?, 3);
+            assert_eq!(location::prune(&client).await?, 1);
+            assert_eq!(location::count(&client, &device.id).await?, 2);
+            // a device's whole history, at its owner's word: the other device's stays
+            assert_eq!(location::forget(&client, &device.id).await?, 2);
+            assert_eq!(location::count(&client, &device.id).await?, 0);
+            assert_eq!(location::count(&client, &other.id).await?, 1);
+            Ok::<(), String>(())
+        })
+        .catch_unwind()
+        .await;
+        let dropped = client.batch_execute(&format!("DROP SCHEMA {schema} CASCADE")).await;
+        let _ = std::fs::remove_dir_all(&home);
+        dropped.unwrap();
+        match outcome {
+            Ok(told) => told.unwrap(),
+            Err(failed) => std::panic::resume_unwind(failed),
+        }
+    });
+}

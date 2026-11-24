@@ -66,6 +66,11 @@
   .vid .st { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
   .vid .bar .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .vid .bar .right { display: flex; align-items: center; gap: 10px; flex: none; }
+  /* where the camera's device is (place.js), for a device whose owner switched that on: one line of text */
+  .vid .place { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 10px 6px; background: linear-gradient(#0000, #000a);
+                color: #fff; font: 12px var(--sans); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .vid .place[hidden] { display: none; }
+  .tile.solo .vid .place { -webkit-line-clamp: 4; }
   .fbtn { font: 600 11px var(--sans); color: #fff; background: #0008; border: 1px solid #fff6; border-radius: 5px; padding: 2px 9px; cursor: pointer; }
   .fbtn:hover, .fbtn[aria-pressed="true"] { border-color: #34d399; color: #34d399; }
   .side { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -151,6 +156,7 @@
   <aside id="events" aria-label="Events from every camera"><div class="evhead"><span class="label">Events, every camera</span><button id="evClose" class="evx" type="button" aria-label="Hide events">×</button></div><ol id="evlist"></ol></aside>
 </main>
 <script src="/settings_bridge.js"></script>
+<script src="/place.js"></script>
 <script src="/signals_chart.js"></script>
 <script src="/cameras_ui.js"></script>
 </body></html>

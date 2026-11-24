@@ -22,10 +22,11 @@ use crate::{
 };
 
 /// The POSTs answered here (for the size a body may have).
-pub const POSTS: [&str; 11] = [
+pub const POSTS: [&str; 12] = [
     "/api/db/setup",
     "/api/db/device",
     "/api/db/alias",
+    "/api/db/locations/forget",
     "/api/db/passphrase",
     "/api/db/passphrase/restore",
     "/api/db/passphrase/ask",
@@ -227,6 +228,18 @@ impl Labeler {
         let fail = |e: String| Response::error(500, e);
         Some(match req.path.as_str() {
             "/api/db" => self.db_state().map(Response::json).map_err(fail),
+            // a device's location history, the newest row first: read on the connection kept for short
+            // questions, each row checked as it is read
+            "/api/db/locations" => {
+                let device = req.param("device").unwrap_or_default();
+                let read = self.kept.ask(async |client, _| {
+                    let rows = face_db::location::history(client, &device, 200).await?;
+                    let count = face_db::location::count(client, &device).await?;
+                    let rows: Vec<Value> = rows.iter().map(face_db::location::Row::json).collect();
+                    Ok(json!({"device": device, "count": count, "rows": rows}))
+                });
+                read.map(Response::json).map_err(asked)
+            }
             "/api/websearch/key" => {
                 Ok(Response::json(json!({"set": !self.google_key().is_empty(), "services": self.services()})))
             }
@@ -363,6 +376,13 @@ impl Labeler {
                     self.device().and_then(|me| face_db::name_device(&self.home, &me, text("device"), text("alias")));
                 named.map(|name| Response::json(json!({"ok": true, "name": name}))).map_err(asked)
             }
+            // a device's whole location history deleted, at the owner's word here (any device may: it is the
+            // owner's own data, and a device that is lost can't delete its own)
+            "/api/db/locations/forget" => self
+                .device()
+                .and_then(|me| face_db::location::forget_device(&self.home, &me, text("device")))
+                .map(|deleted| Response::json(json!({"ok": true, "deleted": deleted})))
+                .map_err(asked),
             // a device removed on this device alone, or added back: this device's own list, which changes
             // nothing in the shared database and no password or key
             "/api/db/device" => {

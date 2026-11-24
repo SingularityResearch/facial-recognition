@@ -23,6 +23,7 @@ macOS, Linux, the Raspberry Pi, Android and iPhone.
 | **Microphone and audio outputs**, only while you switch the option on | Measures the voice (pitch, loudness, pace) and the room's sound, and says in one word what it hears (speech, music, quiet). | The sound is measured in memory and never recorded or stored. Only numbers and that one word are the result. |
 | **What a face looks like over time** (expression readings, each person's usual look) | Shows when a reading is unusual for that person. These are readings of how a face looks, not of what a person feels. | Each person's usual values on the device. Readings over time only if you set up a shared database and leave **Keep expression readings** on. If you switch on the feeling check, your answers to it (numbers) are kept on the device. |
 | **Who was in view, and when** | A log of names and times, and alerts you ask for (someone arrives, leaves, an unknown face stays). | The presence log is off until you switch it on. Alerts are kept on the device. |
+| **Where a device is** (its location), only while you switch it on for that device | Shows the device's place (the nearest town with its state and country, and its coordinates) on that device and to your other devices, and keeps a history of its moves. The place comes from the device's own location service, or from a place you type. The town's name comes from a list inside the app. | The place itself in memory. The history (a row when you switch it on, then one for each move of more than about 100 m) only if you set up a shared database, and there for 90 days. A place you type is kept as one of the device's settings. |
 | **Music that plays** (computers), only while you switch the log on | Notes the song's name and numbers that describe the sound. | On the device. |
 | **Photo descriptions** | A vision model on your own computer describes a photo and reads its text. | On the device. |
 | **Keys and passwords you enter** (for the services below, for your database) | Used to reach that service. | Protected on the device for your user account. |
@@ -36,6 +37,8 @@ database, and are held on the phone in memory only.
 
 - **Camera**: to find and name the faces in its picture.
 - **Microphone**: for the voice readings and the sound chart, only while you switch those options on.
+- **Location**: to show where the phone is and keep its moves. The phone asks you for it only when you switch
+  **Show and keep this device's location** on, and it is used only while the app is open.
 - **Network**: for the app's own page on the phone itself, for your shared database, and for your other devices
   on your local network.
 
@@ -64,7 +67,8 @@ runs and secures it.
 their original photos and their live cameras with the readings that belong to them, the device's own among them
 (how hard it works, how warm it is, its battery, and what kind of device it is). A device also tells your other
 devices what it has and how it is set: which sensors it has, which are switched on, and the settings of its
-Face tracking tab (never a key or a password). Who is in view of a camera, and the readings taken there, go to
+Face tracking tab (never a key or a password). A device whose location you switched on also tells them where it
+is. Who is in view of a camera, and the readings taken there, go to
 your other devices only while that camera is streamed to them. This goes directly from device to device, is checked on arrival,
 and is kept in memory only. This goes from device to
 device over your local network, encrypted, and only between devices of your database. Live pictures are kept in
@@ -84,6 +88,7 @@ with that is under its own privacy policy.
 | You point **Describe photo** at a server on another computer | Each photo that is described. | That server, which you chose |
 | You connect **Spotify** | A question for your liked songs. | Spotify, under your own account |
 | You click a download in Settings (a describe model) | A download. No data of yours. | Hugging Face, LM Studio's sources |
+| You switch on **Show and keep this device's location** and type no place | Nothing by the app itself. The device's own location service then works out where the device is. For a computer without GPS it does that from the networks around it, which the system sends to its maker; what the maker does with them is under its own privacy policy. A place you type asks nobody. | The maker of the device's system, by the system itself: Microsoft (Windows), Apple (Mac, iPhone) or Google (Android) |
 | You set up a **shared database** | The records described above. | Your own server |
 
 [docs/SETTINGS.md](docs/SETTINGS.md#what-reaches-the-network) lists every setting that reaches the network in
@@ -110,9 +115,13 @@ The app helps with this:
 ## How long data is kept, and deleting it
 
 Data stays until you delete it: nothing expires by itself, except that camera pictures and sound are never kept
-at all, and that the Signals chart's readings are held in memory for 15 minutes and then dropped.
+at all, that the Signals chart's readings are held in memory for 15 minutes and then dropped, and that a row of
+a device's location history is deleted 90 days after it was written.
 
 - **One person**: Forget (above).
+- **A device's location history**: Settings, Shared database, **Delete a device's location history**. Switching
+  the location off on a device stops new rows; while it is off the app asks no location service, shows no
+  location and tells your other devices none.
 - **Everything on a computer**: delete the app's data folder and its private folder. Uninstalling the app does
   **not** delete them, on purpose, so an update or a reinstall never loses your library: the Settings tab opens
   both folders.

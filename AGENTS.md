@@ -295,6 +295,48 @@ device's library at the same time: each would send what the other took.
   Shared database, `/api/db/alias`): a phone has no Settings tab. A name is written on a connection made
   for it; the one a program keeps for a page's short questions only reads. A new statement that shows a
   device's name reads `DEVICE_NAME` too.
+- **A device's location** (`crates/face-server` `location.rs`, `towns.rs`; `face_home::location`;
+  `face_db::location`, migration 15). The owner's words (2026-11-24): "add geolocation for the devices and show
+  the location of each device on the" Face tracking "and cameras tab, and keeps its location history in the
+  database", "an opt-in setting in the Settings tab", "Also show state, and country if possible", and of the
+  history: "only keep the On a move for last 90 days". Their choices the same day: the system's own location
+  service with a place typed by hand where there is none, the town's name with the coordinates as text (no
+  map), as exact as the system gives. So:
+  - It is off for a new copy, switched on device by device (the tracker page's `optLocation`; `face_home::location::OPTION`),
+    and while it is off nothing is asked, shown, published or written (`Location::step`: a test says so).
+    Never ask a location service, or keep a location, from anything but that switch. The switch and the typed
+    place never come from another device: both are in the sync's `STAY_HERE`.
+  - Where it comes from: a place typed on the device (`PLACE`: coordinates, or a town of the carried list),
+    which asks nobody; else the system's own service, where the system has one the app can count on: Windows
+    (`Windows.Devices.Geolocation`), a Mac (Core Location, `location/mac.rs`: its manager, delegate and run
+    loop on one thread of their own; the signed app has the location entitlement and the usage words), a
+    phone's shell (`face_app_location_wanted`, `face_app_location`, `face_app_location_refused`: the shell asks
+    its system, and the system its owner, only while the answer to the first is yes; while the app is in use,
+    never in the background). Linux and the Raspberry Pi have none: there a place is typed. Never an address
+    lookup at an outside service, and never a map from the internet (the pages load nothing from there).
+    What the system's own service does with the networks it sees is said in `PRIVACY.md` and in
+    `docs/SETTINGS.md`'s "What reaches the network": keep both true.
+  - The towns (`towns.rs`, `crates/face-server/data/towns.tsv`, made by `examples/towns.rs` from GeoNames'
+    files: CC BY 4.0, named in `NOTICE`): a point is named from this device's own list, also another
+    device's point (`location::town_at`), so no words about a place come from another device. A new list is
+    made with the example and goes in with its test.
+  - What is made of it: the page's line (`/api/location`, `web/place.js`: checked there, put in as text
+    only); the node's `place` on the bus (numbers and one word, the server's own branch, not a page's; the
+    typed place is marked secret in the page's settings list, so it is never among the published settings);
+    the Cameras list's `place` for each device (`tracker.rs` `places`: this device's own, another's as its
+    node says it while a page follows it, else the newest row of its history); and the history.
+  - The history is only ever sent: a row when the switch is turned on, then when the device has moved
+    (`face_home::location::moved`: `MOVED` and both readings' uncertainty) and the last row is a minute old
+    (`APART_MS`). Both are choices, not measured values. Rows wait in `HOME/location.json` (at most
+    `MOST_WAITING`) and go on the tracker's own connection to the database, with its "this device is here"
+    (`location::send`, in `watch_device` and `start_heartbeat`): a phone has no sync, so the sync is not
+    their way. A database that can't take them never ends that connection's other work. Rows older than
+    `face_db::location::KEEP_DAYS` are deleted once a day, every device's. Nothing waits on a device without a
+    shared database. The rows are about a device, not a named person: they are in no person's export, and
+    Settings deletes a device's history (`/api/db/locations/forget`).
+  - Its tests ask no location service: a test says what a system would (`location::told`), and the one
+    example that does ask (`examples/where.rs`) is for trying a kind of system by hand and prints no place
+    unless told to. Never print a device's coordinates in a log line or a check's output.
 - **Removing a device** (`face_home::blocked`, `HOME/blocked-devices.json`; Settings → Shared database, the route
   `/api/db/device`). The owner's words (2026-11-22): "the settings let you remove devices that you dont want to
   see the data ONLY on your device. You should also be able to add devices back as well - per device", and "I
@@ -633,9 +675,10 @@ servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker,
   in their words: "a separate element in the solution, an option that you can enable for trend analysis - but
   it's still a subscriber - the apps should also get their data through this peer subscriber method".
   What is built (the first part): each node publishes ONE JSON tree: `node` (what it is: the server says it),
+  `place` (where it is, while its owner has switched its location on: the server says that too),
   `catalog` (every section and signal of the Signals chart as data, `SignalsChart.catalog`), `state` (what is
   on, what is off and why), `settings` (every setting of the tracker page with its value), `inview` and
-  `readings` (every reading of the last seconds, each with its own time). The first four are kept in the tree
+  `readings` (every reading of the last seconds, each with its own time). The first four and `place` are kept in the tree
   (`Bus::set`); who is in view and the readings are only said (`Bus::say`: heard by who is subscribed at that
   moment, never part of the tree a later subscriber is given), and only while **Stream this camera** is on:
   they say who is in view and how they look, as the readout does, so they go out when the readout does. A topic is a path in that tree; a

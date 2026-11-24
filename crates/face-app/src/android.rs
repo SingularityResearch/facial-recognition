@@ -80,6 +80,38 @@ pub extern "system" fn Java_io_github_singularityresearch_facerecognizer_Native_
     }
 }
 
+/// `Native.locationWanted()`: whether the phone's location service is to be asked now (as
+/// `face_app_location_wanted`).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_singularityresearch_facerecognizer_Native_locationWanted<'l>(
+    _env: JNIEnv<'l>,
+    _class: JClass<'l>,
+) -> jni::sys::jboolean {
+    u8::from(crate::face_app_location_wanted() != 0)
+}
+
+/// `Native.location(lat, lon, accuracy)`: where the system says the phone is (as `face_app_location`).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_singularityresearch_facerecognizer_Native_location<'l>(
+    _env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    lat: jni::sys::jdouble,
+    lon: jni::sys::jdouble,
+    accuracy: jni::sys::jfloat,
+) {
+    crate::face_app_location(lat, lon, f64::from(accuracy));
+}
+
+/// `Native.locationRefused(why)`: the system gives no location, and why (as `face_app_location_refused`).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_github_singularityresearch_facerecognizer_Native_locationRefused<'l>(
+    _env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    why: jint,
+) {
+    crate::face_app_location_refused(why);
+}
+
 /// `Native.error()`: why `start` returned -1, or null.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_singularityresearch_facerecognizer_Native_error<'l>(

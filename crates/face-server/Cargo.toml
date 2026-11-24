@@ -71,6 +71,12 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
+# this computer's own location service, asked only while its owner has switched the location on
+# (location.rs): the bindings the window's library already brings, with the two parts this asks for
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62.2"
+features = ["Devices_Geolocation", "Foundation"]
+
 # this computer's network adapters (hardware.rs)
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -86,6 +92,9 @@ objc2-core-audio = { version = "0.3", default-features = false, features = [
     "objc2-foundation",
 ], optional = true }
 objc2-core-foundation = { version = "0.3.1", optional = true }
+# a Mac's own location service, asked only while its owner has switched the location on (location/mac.rs):
+# the bindings the window's library already brings; Core Location itself is the system's
+objc2 = "0.6.5"
 
 # on Linux the sound server is asked (PulseAudio's protocol, which PipeWire speaks too): an output's sound is
 # its monitor's there. Spoken by the program itself: no library of the sound server's is needed.

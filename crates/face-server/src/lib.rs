@@ -41,6 +41,7 @@ pub mod listen;
 mod lmsnet;
 #[cfg(feature = "import")]
 mod lmstudio;
+pub mod location;
 #[cfg(feature = "import")]
 mod music;
 #[cfg(feature = "import")]
@@ -63,6 +64,7 @@ pub mod soundlive;
 mod spotify;
 #[cfg(feature = "sync")]
 pub mod syncer;
+pub mod towns;
 pub mod tracker;
 pub mod trackerlink;
 #[cfg(feature = "import")]

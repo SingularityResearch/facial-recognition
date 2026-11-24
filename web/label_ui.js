@@ -1181,6 +1181,19 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     SettingsBridge.changed();
   };
   const saved = act => async a => { const r = await act(a); await loadSecrets(); return r; };
+  // a device's location history, as Settings shows it: which device was chosen, and its rows as they were read
+  let placesOf = "", places = null;
+  // One row as a line of text: when (this computer's time), the town, the numbers, how sure. Nothing for a row
+  // that is no location.
+  const placeRow = r => {
+    const ok = r && [r.lat, r.lon, r.at].every(v => typeof v === "number" && Number.isFinite(v)) && Math.abs(r.lat) <= 90 && Math.abs(r.lon) <= 180;
+    if (!ok) return "";
+    const when = new Date(r.at).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    const sure = r.source === "hand" ? "typed on the device" : typeof r.acc === "number" && r.acc >= 0
+      ? (r.acc < 1000 ? `within ${Math.max(1, Math.round(r.acc))} m` : `within ${(r.acc / 1000).toFixed(1)} km`) : "";
+    const town = typeof r.place === "string" ? r.place.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+    return [when, town, `${r.lat.toFixed(5)}, ${r.lon.toFixed(5)}`, sure].filter(Boolean).join(" · ");
+  };
   loadSecrets();
   SettingsBridge.init("label", [
     c("tilesz", L, { label: "Face picture size" }),
@@ -1440,6 +1453,24 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       fields: () => [{ name: "device", label: "Device", options: [["", "Choose a device"],
                        ...(sdb.named || []).map(d => [d.id, d.name + (d.alias ? " (calls itself " + d.own + ")" : "") + (d.os ? ", " + d.os : "") + (d.me ? ", this device" : "")])] },
                      { name: "alias", label: "Its name", placeholder: "for example Kitchen iPhone", value: "" }] },
+    { section: D, id: "dbplaces", label: "Location history of", type: "select", def: "",
+      hidden: () => !sdb.available || !sdb.config || !(sdb.named || []).length,
+      hint: "Where a device was, for the devices whose location you switched on (each device's own switch: Settings, Face tracking: location, or the Location card of its Face tracking tab). A row is written when the switch is turned on and then only when the device has moved more than about 100 m. Rows older than 90 days are deleted by themselves.",
+      options: () => [["", "Choose a device"], ...(sdb.named || []).map(d => [d.id, d.name + (d.me ? ", this device" : "")])],
+      get: () => placesOf,
+      set: async v => { placesOf = v || ""; places = null; if (placesOf) places = await get("/api/db/locations?device=" + encodeURIComponent(placesOf)); } },
+    { section: D, id: "dbplacesRows", label: "Where it was", type: "info", hidden: () => !placesOf,
+      get: () => {
+        if (!places || places.device !== placesOf) return "Reading…";
+        const rows = (places.rows || []).map(placeRow).filter(Boolean);
+        if (!rows.length) return "No rows: this device's location is not switched on, or it has not sent a row yet.";
+        return rows.join("\n") + (places.count > rows.length ? `\n(the newest ${rows.length} of ${places.count} rows)` : "");
+      } },
+    { section: D, id: "dbplacesForget", label: "Delete a device's location history", type: "form", button: "Delete its history",
+      hidden: () => !sdb.available || !sdb.config || !(sdb.named || []).length,
+      hint: "Deletes every row of the chosen device's location history in the shared database. This can't be undone. The device goes on writing rows while its own switch is on: switch that off on the device to stop it.",
+      fields: () => [{ name: "device", label: "Device", options: [["", "Choose a device"],
+                       ...(sdb.named || []).map(d => [d.id, d.name + (d.me ? ", this device" : "")])] }] },
     { section: D, id: "dbremove", label: "Remove a device, on this device only", type: "select", def: "",
       hidden: () => !sdb.available || !sdb.config || !(sdb.devices || []).some(d => !d.removed),
       hint: "This device then shows nothing of that device (its camera, its photos), asks it for nothing, and answers none of its requests for this device's camera and photos. Nothing changes in the shared database and no password or key is changed: that device stays in the database, your other devices go on as before, and what every device shares through the database (names, labels, descriptions) it still reads. Add it back below at any time.",
@@ -1505,6 +1536,12 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       const r = await post("/api/db/alias", { device: a.device, alias: a.alias || "" });
       if (r.error) throw new Error(r.error);
       return { ...r, message: (a.alias || "").trim() ? "It is called " + r.name + " now" : "It goes by its own name again: " + r.name };
+    }),
+    dbplacesForget: saved(async a => {
+      if (!a.device) throw new Error("Choose a device first");
+      const r = await post("/api/db/locations/forget", { device: a.device });
+      if (placesOf === a.device) places = { device: placesOf, count: 0, rows: [] };
+      return { ...r, message: r.deleted ? `${r.deleted} row${r.deleted === 1 ? "" : "s"} deleted` : "It had no rows" };
     }),
     dbask: saved(async () => { await post("/api/db/passphrase/ask", {}); return { message: "Code shown below" }; }),
     dbapprove: saved(async a => { const r = await post("/api/db/passphrase/approve", { code: a.code || "" });

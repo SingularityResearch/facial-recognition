@@ -47,6 +47,28 @@ pub extern "C" fn face_app_health(heat: i32, battery: f32, on_power: i32) {
     face_server::devicelive::told(heat, battery, on_power);
 }
 
+/// Whether the phone's own location service is to be asked now (1) or not (0). The shell asks this every
+/// few seconds: the owner switches the location on in the page, and only then does the shell ask the system
+/// for the location, and the system its owner for the permission.
+#[unsafe(no_mangle)]
+pub extern "C" fn face_app_location_wanted() -> i32 {
+    i32::from(face_server::location::wanted())
+}
+
+/// Where the system says the phone is: degrees north and east, and the metres around that point it may be.
+/// Taken only while the location is wanted, and only when it is a location.
+#[unsafe(no_mangle)]
+pub extern "C" fn face_app_location(lat: f64, lon: f64, accuracy: f64) {
+    face_server::location::told(lat, lon, accuracy);
+}
+
+/// The system gives no location: 1 it is being asked, 2 the owner or a rule of the phone said no, 3 the
+/// phone's location service is switched off, 4 it couldn't tell. The page then says why.
+#[unsafe(no_mangle)]
+pub extern "C" fn face_app_location_refused(why: i32) {
+    face_server::location::refused(why);
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn face_app_device(name: *const c_char, os: *const c_char) {
     if let (Some(name), Some(os)) = (text(name), text(os)) {

@@ -3,7 +3,7 @@
 # The sources are expected in ~/fr-test/rust-src (this repository's rust/ folder), the model runtime's
 # xcframework in ~/fr-test/ort-ios/x, and the first line of ~/fr-test/team.txt is the developer team's id.
 # The app's id is its permanent one, the same as the Android app's and the Mac app's (FACE_IOS_BUNDLE names
-# another, for a copy beside it); its version is the workspace's (Cargo.toml: 2.5.2 is build 20502, as on
+# another, for a copy beside it); its version is the workspace's (Cargo.toml: 2.6.0 is build 20600, as on
 # Android). It is an iPhone app (an iPad runs it as one): for the iPad's own layout the App Store wants every
 # way up, and its own screenshots.
 # The Rust library is linked by its full path: asked for by name, the linker took the dynamic one cargo builds
@@ -53,6 +53,7 @@ cat > "$P/FaceApp.xcodeproj/project.pbxproj" <<EOF
 			INFOPLIST_KEY_NSCameraUsageDescription = "The camera's picture is read on this device to find and name the faces in it.";
 			INFOPLIST_KEY_NSMicrophoneUsageDescription = "The microphone is listened to on this device for voice signals and for the Signals chart's sound, when you switch those on. Nothing is recorded.";
 			INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Your shared database is on your own network: the names come from there.";
+			INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Shows where this device is, to you and your other devices, and keeps its moves in your shared database, while you have switched that on.";
 			INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 			INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;

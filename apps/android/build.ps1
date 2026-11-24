@@ -62,7 +62,7 @@ $aar = [IO.Compression.ZipFile]::OpenRead($ortAar)
 [IO.Compression.ZipFileExtensions]::ExtractToFile(($aar.Entries | Where-Object FullName -eq 'jni/arm64-v8a/libonnxruntime.so'), "$out\lib\arm64-v8a\libonnxruntime.so", $true); $aar.Dispose()
 
 # what the app carries: the page files and the models
-$pages = 'tracker_ui.html', 'tracker_ui.js', 'expression.js', 'signals.js', 'signals_chart.js', 'signals_chart.css', 'settings_bridge.js', 'page_store.js', 'ask.js', 'jpeg_worker.js', 'cameras_ui.html', 'cameras_ui.js'
+$pages = 'tracker_ui.html', 'tracker_ui.js', 'expression.js', 'signals.js', 'signals_chart.js', 'signals_chart.css', 'settings_bridge.js', 'page_store.js', 'ask.js', 'place.js', 'jpeg_worker.js', 'cameras_ui.html', 'cameras_ui.js'
 foreach ($f in $pages) { Copy-Item "$repo\web\$f" "$out\assets\pages\" }
 Copy-Item "$repo\assets\icons\icon.ico" "$out\assets\pages\icons\"
 $models = 'opsis_1.onnx', 'melos_1.onnx', 'ediffiqa_tiny_jun2024.onnx', 'face_detection_yunet_2023mar.onnx', 'face_detection_yunet_2023mar_dynamic.onnx', 'facial_expression_recognition_mobilefacenet_2022july.onnx'
@@ -81,7 +81,7 @@ if (Test-Path "$repo\target\root\models\mediapipe-web") {
 
 # resources and the manifest, the Java shell, its dex
 & "$bt\aapt2.exe" compile --dir "$here\res" -o "$out\res.zip"
-# the app's version is the workspace's (Cargo.toml): 2.5.2 is version name 2.5.2 and version code 20502
+# the app's version is the workspace's (Cargo.toml): 2.6.0 is version name 2.6.0 and version code 20600
 $version = (Select-String -Path "$repo\Cargo.toml" -Pattern '^version = "(\d+)\.(\d+)\.(\d+)"' | Select-Object -First 1).Matches[0].Groups
 $code = [int]$version[1].Value * 10000 + [int]$version[2].Value * 100 + [int]$version[3].Value
 $versions = @('--min-sdk-version', '26', '--target-sdk-version', '36', '--replace-version', '--version-code', "$code",

@@ -188,6 +188,9 @@
   .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   input[type=range] { width: 100%; accent-color: var(--accent); }
   .hint { font-size: 12px; color: var(--muted); margin: -6px 0 0; }
+  /* where this device is (place.js): one line of text, or why there is none */
+  .place { font-size: 13px; margin: 0; overflow-wrap: anywhere; }
+  .place.why { font-size: 12px; color: var(--muted); }
   /* the way into (or for another device into) a shared database: a button to look at, a link to the join page */
   #joinLink { display: flex; align-items: center; justify-content: center; min-height: 40px; margin: 8px 0 2px; padding: 8px 14px;
               border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); font: 600 13px var(--sans); text-decoration: none; }
@@ -299,6 +302,15 @@
         <button class="small" id="camFlatTry" type="button" hidden></button></div>
       <a id="joinLink" hidden title="Let a new phone or computer into your shared database, or join this device to one: one device shows a code, the other scans it">Join a shared database…</a>
       <a id="privacyLink" href="/privacy" title="What the app handles, where it is kept and what leaves this device: readable here, without the internet">Privacy policy</a>
+    </div>
+
+    <div class="card" id="placeCard">
+      <div class="label">Location</div>
+      <label class="toggle" for="optLocation" title="Off unless you switch it on: this device then shows where it is, here and in your other devices' Cameras tab, and its moves are kept in your shared database for 90 days">Show and keep this device's location <input type="checkbox" id="optLocation"></label>
+      <p class="place" id="placeLine" aria-live="polite" hidden></p>
+      <label for="optPlace" class="label">This device's place, typed (optional)</label>
+      <input type="text" id="optPlace" maxlength="120" placeholder="A town, or latitude, longitude" autocomplete="off">
+      <p class="hint" id="placeHint">Off unless you switch it on. While it is on, this device shows where it is here and in your other devices' Cameras tab, and each move of more than about 100 m is kept in your shared database for 90 days. The place comes from this device's own location service (the system asks you once; a computer without GPS is placed by its system's service from the networks around it), or from a place you type here: a town, as in Springfield, Illinois, or latitude and longitude. Linux and a Raspberry Pi have no location service, so there a place is typed. The town's name comes from a list inside the app: nothing is looked up on the internet.</p>
     </div>
 
     <div class="card">
@@ -439,6 +451,7 @@
 <script src="/settings_bridge.js"></script>
 <script src="/page_store.js"></script>
 <script src="/ask.js"></script>
+<script src="/place.js"></script>
 <script src="/signals_chart.js"></script>
 <script src="/tracker_ui.js"></script>
 </body>

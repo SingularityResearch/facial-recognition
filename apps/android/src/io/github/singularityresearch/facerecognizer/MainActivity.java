@@ -133,7 +133,110 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
-        start();        // without the camera or the microphone the page says so itself
+        if (code == 1) {
+            start();    // without the camera or the microphone the page says so itself
+        }
+        // (the location's answer, code 2: its step sees it the next time it looks)
+    }
+
+    /**
+     * The phone's own location service, asked only while the owner has switched the location on in the page (the
+     * Rust side says so). Android asks the owner then, never at the app's start. Each location is handed to the
+     * Rust side as numbers, and why there is none as a number too. Nothing is kept here.
+     */
+    private boolean locating;
+    private boolean locationAsked;
+    private final android.location.LocationListener whereabouts = new android.location.LocationListener() {
+        @Override
+        public void onLocationChanged(android.location.Location at) {
+            if (at == null || !at.hasAccuracy()) {
+                return;
+            }
+            try {
+                Native.location(at.getLatitude(), at.getLongitude(), at.getAccuracy());
+            } catch (UnsatisfiedLinkError e) {
+                // (an app without its library takes nothing)
+            }
+        }
+
+        @Override
+        public void onProviderEnabled(String provider) {
+        }
+
+        @Override
+        public void onProviderDisabled(String provider) {
+        }
+
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {
+        }
+    };
+    private final Runnable locationStep = new Runnable() {
+        @Override
+        public void run() {
+            boolean wanted;
+            try {
+                wanted = Native.locationWanted();
+            } catch (UnsatisfiedLinkError e) {
+                return;
+            }
+            android.location.LocationManager places = (android.location.LocationManager) getSystemService(LOCATION_SERVICE);
+            if (wanted && !locating && places != null) {
+                boolean fine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+                boolean coarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+                if (!fine && !coarse) {
+                    if (!locationAsked) {
+                        locationAsked = true;                // asked once for each time the switch is turned on
+                        Native.locationRefused(1);
+                        requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 2);
+                    } else {
+                        Native.locationRefused(2);
+                    }
+                } else if (android.os.Build.VERSION.SDK_INT >= 28 && !places.isLocationEnabled()) {
+                    Native.locationRefused(3);
+                } else {
+                    locating = listen(places, fine);
+                    Native.locationRefused(locating ? 1 : 4);
+                }
+            } else if (!wanted) {
+                if (locating && places != null) {
+                    places.removeUpdates(whereabouts);
+                }
+                locating = false;
+                locationAsked = false;
+            }
+            healthTimer.postDelayed(this, 3000);
+        }
+    };
+
+    /**
+     * Ask the system to say where the phone is, and again when it has moved: its own combined provider where the
+     * system has one (Android 12 and later), else the satellites (only with the fine permission) and the networks.
+     * Whether any provider was asked.
+     */
+    private boolean listen(android.location.LocationManager places, boolean fine) {
+        java.util.List<String> there = places.getAllProviders();
+        String[] ask = android.os.Build.VERSION.SDK_INT >= 31 && there.contains(android.location.LocationManager.FUSED_PROVIDER)
+                ? new String[] {android.location.LocationManager.FUSED_PROVIDER}
+                : new String[] {android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER};
+        boolean any = false;
+        for (String provider : ask) {
+            if (!there.contains(provider) || (android.location.LocationManager.GPS_PROVIDER.equals(provider) && !fine)) {
+                continue;
+            }
+            try {
+                places.requestLocationUpdates(provider, 10000, 20, whereabouts, android.os.Looper.getMainLooper());
+                // what the system knew a moment ago, so the page has something at once (an older one is not "now")
+                android.location.Location last = places.getLastKnownLocation(provider);
+                if (last != null && System.currentTimeMillis() - last.getTime() < 120000) {
+                    whereabouts.onLocationChanged(last);
+                }
+                any = true;
+            } catch (SecurityException | IllegalArgumentException e) {
+                // (this provider is not for the app: the next one)
+            }
+        }
+        return any;
     }
 
     /**
@@ -192,6 +295,7 @@ public final class MainActivity extends Activity {
                 }
                 Native.device(name, "Android " + android.os.Build.VERSION.RELEASE);
                 healthTimer.post(sayHealth);
+                healthTimer.postDelayed(locationStep, 3000);
                 port = Native.start(root.getPath(), new File(getFilesDir(), "home").getPath(),
                         new File(root, "pages").getPath(), getApplicationInfo().nativeLibraryDir + "/libonnxruntime.so");
                 if (port <= 0) {
@@ -302,6 +406,13 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         healthTimer.removeCallbacks(sayHealth);
+        healthTimer.removeCallbacks(locationStep);
+        if (locating) {
+            android.location.LocationManager places = (android.location.LocationManager) getSystemService(LOCATION_SERVICE);
+            if (places != null) {
+                places.removeUpdates(whereabouts);
+            }
+        }
         web.destroy();
         super.onDestroy();
     }

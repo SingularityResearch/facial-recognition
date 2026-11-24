@@ -9,7 +9,7 @@ const vm = require("node:vm");
 const dir = path.join(__dirname, "..");
 const read = f => fs.readFileSync(path.join(dir, f), "utf8");
 
-const SCRIPTS = ["tracker_ui.js", "label_ui.js", "app_ui.js", "expression.js", "signals.js", "signals_chart.js", "settings_bridge.js", "page_store.js", "cameras_ui.js", "ask.js", "jpeg_worker.js"];
+const SCRIPTS = ["tracker_ui.js", "label_ui.js", "app_ui.js", "expression.js", "signals.js", "signals_chart.js", "settings_bridge.js", "page_store.js", "cameras_ui.js", "ask.js", "jpeg_worker.js", "place.js"];
 for (const file of SCRIPTS) {
   test(`${file} parses`, () => assert.doesNotThrow(() => new vm.Script(read(file), { filename: file })));
 }
@@ -20,15 +20,15 @@ test("no page keeps code inline (so the checks above see all of it)", () => {
 
 test("each page loads its scripts, in order, and each is served and packed into the .exe", () => {
   const order = (html, names) => names.map(n => html.indexOf(`<script src="/${n}"></script>`));
-  const t = order(read("tracker_ui.html"), ["expression.js", "signals.js", "settings_bridge.js", "page_store.js", "ask.js", "signals_chart.js", "tracker_ui.js"]);
+  const t = order(read("tracker_ui.html"), ["expression.js", "signals.js", "settings_bridge.js", "page_store.js", "ask.js", "place.js", "signals_chart.js", "tracker_ui.js"]);
   const l = order(read("label_ui.html"), ["settings_bridge.js", "page_store.js", "ask.js", "label_ui.js"]);
   const a = order(read("app_ui.html"), ["ask.js", "app_ui.js"]);
-  const c = order(read("cameras_ui.html"), ["settings_bridge.js", "signals_chart.js", "cameras_ui.js"]);   // the bridge: Ctrl+1 to Ctrl+4 from this tab
+  const c = order(read("cameras_ui.html"), ["settings_bridge.js", "place.js", "signals_chart.js", "cameras_ui.js"]);   // the bridge: Ctrl+1 to Ctrl+4 from this tab
   for (const pos of [t, l, a, c]) assert.deepStrictEqual(pos.filter(p => p < 0), [], "a script tag is missing");
   for (const pos of [t, l, a, c]) assert.deepStrictEqual(pos, [...pos].sort((a, b) => a - b), "scripts out of order");
   // each server names the files it sends (crates/face-server), and the programs carry every one of them (pagefiles.rs)
   const server = f => read(`../crates/face-server/src/${f}`);
-  for (const n of ["expression.js", "signals.js", "signals_chart.js", "signals_chart.css", "settings_bridge.js", "page_store.js", "tracker_ui.js", "cameras_ui.js", "ask.js", "jpeg_worker.js"]) assert.match(server("tracker.rs"), new RegExp(`"/${n.replace(".", "\\.")}"`));
+  for (const n of ["expression.js", "signals.js", "signals_chart.js", "signals_chart.css", "settings_bridge.js", "page_store.js", "tracker_ui.js", "cameras_ui.js", "ask.js", "jpeg_worker.js", "place.js"]) assert.match(server("tracker.rs"), new RegExp(`"/${n.replace(".", "\\.")}"`));
   assert.match(read("tracker_ui.js"), /new Worker\("\/jpeg_worker\.js"\)/);          // the worker is the file the server sends
   for (const n of ["label_ui.js", "settings_bridge.js", "page_store.js", "ask.js"]) assert.match(server("label.rs"), new RegExp(`"/${n.replace(".", "\\.")}"`));
   for (const n of ["app_ui.js", "ask.js"]) assert.match(server("app.rs"), new RegExp(`"/${n.replace(".", "\\.")}"`));
@@ -497,4 +497,30 @@ test("the worker sends a frame to the page's own server only, in the order the f
   await W.stream(4, bmp(), 0.72, "", r => told.push(r), answer(200, {}));
   assert.deepStrictEqual(told, [{ stream: 1, ok: true }, { stream: 2, off: true }, { stream: 3, error: "TimeoutError: signal timed out" }, { stream: 4, ok: true }]);
   delete global.OffscreenCanvas;
+});
+
+test("a device's location: off as the page comes, asked of the page's own server only, shown as text, and a typed place never published", () => {
+  const html = read("tracker_ui.html"), js = read("tracker_ui.js");
+  // off for a new copy: the switch has no "checked", and the server takes anything but "1" for off
+  assert.match(html, /<input type="checkbox" id="optLocation">/);
+  assert.match(read("../crates/face-server/src/location.rs"), /store\.setting\("track", OPTION\)\.as_deref\(\) == Some\("1"\)/);
+  // remembered like the page's other options, so the server reads them
+  const keep = js.match(/const KEEP = \[([^\]]*)\]/)[1];
+  for (const id of ["optLocation", "optPlace"]) assert.ok(keep.includes(`"${id}"`), id);
+  // the page asks nobody but its own server, and never a location service itself
+  assert.match(js, /fetch\("\/api\/location", \{ headers: \{ "X-Face-Tool": "1" \} \}\)/);
+  for (const f of ["tracker_ui.js", "cameras_ui.js", "place.js"]) assert.doesNotMatch(read(f), /navigator\.geolocation/, f);
+  // what the server says is checked and put into the page as text
+  assert.match(js, /placeNow = j && j\.on \? Place\.clean\(j\.place\) : null;/);
+  assert.match(js, /if \(line\.textContent !== text\) line\.textContent = text;/);
+  // the typed place is marked secret: it is not among the settings this node publishes (busSettings leaves those out)
+  assert.match(js, /c\("optPlace", L, \{ label: "This device's place, typed", secret: true,/);
+  assert.match(js, /\|\| s\.secret\) continue;/);
+  // the Cameras tab shows each device's place from its own server's list, as text
+  const cams = read("cameras_ui.js");
+  assert.match(cams, /const text = Place\.words\(d\.place\);/);
+  assert.match(cams, /t\.place\.textContent = text;/);
+  // the phones ask for the location only while the app is open: no background location anywhere
+  assert.doesNotMatch(read("../apps/android/AndroidManifest.xml"), /ACCESS_BACKGROUND_LOCATION/);
+  assert.doesNotMatch(read("../apps/ios/project.sh"), /NSLocationAlways/);
 });

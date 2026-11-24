@@ -61,7 +61,7 @@ const POSE_POINTS: [&str; 13] = [
 ];
 
 /// (path, file, content type) of the page files, in the folder the tracker is given.
-pub(crate) const PAGES: [(&str, &str, &str); 14] = [
+pub(crate) const PAGES: [(&str, &str, &str); 15] = [
     ("/", "tracker_ui.html", "text/html; charset=utf-8"),
     ("/index.html", "tracker_ui.html", "text/html; charset=utf-8"),
     ("/cameras", "cameras_ui.html", "text/html; charset=utf-8"),
@@ -74,6 +74,7 @@ pub(crate) const PAGES: [(&str, &str, &str); 14] = [
     ("/tracker_ui.js", "tracker_ui.js", "text/javascript; charset=utf-8"),
     ("/cameras_ui.js", "cameras_ui.js", "text/javascript; charset=utf-8"),
     ("/ask.js", "ask.js", "text/javascript; charset=utf-8"),
+    ("/place.js", "place.js", "text/javascript; charset=utf-8"),
     ("/jpeg_worker.js", "jpeg_worker.js", "text/javascript; charset=utf-8"),
     ("/favicon.ico", "icons/icon.ico", "image/x-icon"),
 ];
@@ -155,6 +156,8 @@ pub struct Tracker {
     bus: Arc<Bus>,
     /// copies of the other nodes' trees, for this device's pages (busrelay.rs)
     followed: Arc<Followed>,
+    /// where this device is, while its owner has switched that on (location.rs)
+    location: Arc<crate::location::Location>,
     /// this device's sound for the page's Signals chart, listened to only while the page asks
     #[cfg(feature = "import")]
     sound_live: Arc<crate::soundlive::Live>,
@@ -205,6 +208,7 @@ impl Tracker {
             relays,
             bus,
             followed,
+            location: crate::location::Location::new(home),
             #[cfg(feature = "import")]
             sound_live: crate::soundlive::Live::of(root),
             #[cfg(feature = "sound")]
@@ -214,6 +218,7 @@ impl Tracker {
         println!("Known people: {}", if named == 0 { "none yet".to_string() } else { format!("{named} named") });
         t.say_node();
         t.start_shared();
+        t.location.watch(t.bus.clone());
         t
     }
 
@@ -531,13 +536,16 @@ impl Tracker {
                 .collect::<Vec<Value>>())
         });
         match listed {
-            Ok(devices) => json!({"devices": devices, "why": ""}),
+            Ok(mut devices) => {
+                self.places(&mut devices, true);
+                json!({"devices": devices, "why": ""})
+            }
             Err(e) => {
                 // The shared database can't be asked: the devices are the members this device keeps a list of
                 // itself. Whether a camera streams right now only its own device says (asked when its tile
                 // asks for its frames), so every member that shares is listed as one that may.
                 let (me, removed) = (self.relays.me().unwrap_or_default(), face_home::blocked::ids(&self.home));
-                let devices: Vec<Value> = face_db::members::kept(&self.home)
+                let mut devices: Vec<Value> = face_db::members::kept(&self.home)
                     .into_iter()
                     .filter(|m| m.id == me || !removed.contains(&m.id))
                     .map(|m| {
@@ -545,12 +553,55 @@ impl Tracker {
                                "streamingAt": Value::Null})
                     })
                     .collect();
+                self.places(&mut devices, false);
                 if devices.is_empty() {
                     let e: String = e.chars().take(120).collect();
                     json!({"devices": [], "why": format!("No shared database to find the other devices ({e})")})
                 } else {
                     json!({"devices": devices, "why": "", "from": "members"})
                 }
+            }
+        }
+    }
+
+    /// Where each listed device is, put beside it as `place`, for the devices whose owner switched their
+    /// location on: this device's own; another's as its node publishes it, while a page of this device
+    /// follows that node; else the newest row of its history, where the shared database can be asked. A
+    /// place is numbers and one word, checked here whoever said them, and the town is named from this
+    /// device's own list. `live` says the device itself said it (its `at` is when); a row's `at` is when
+    /// the device came to be there.
+    fn places(&self, devices: &mut [Value], ask_database: bool) {
+        use face_home::location::{Fix, Source};
+        let shown = |fix: Fix, live: bool| {
+            let mut place = fix.json();
+            place["town"] = json!(crate::location::town_at(fix.lat, fix.lon));
+            place["live"] = json!(live);
+            place
+        };
+        let mut kept: Option<Vec<(String, face_db::location::Row)>> = None;
+        for d in devices.iter_mut() {
+            let Some(id) = d.get("id").and_then(Value::as_str).map(str::to_string) else { continue };
+            let place = if d["me"] == true {
+                self.location.answer().get("place").cloned().filter(|p| !p.is_null()).map(|mut p| {
+                    p["live"] = json!(true);
+                    p
+                })
+            } else if let Some(fix) = self.followed.value(&id, "place").as_ref().and_then(Fix::from_json) {
+                Some(shown(fix, true))
+            } else if ask_database {
+                // (asked once for all of them; a database that has no history yet has none)
+                let rows = kept.get_or_insert_with(|| {
+                    self.kept.ask(async |client, _| face_db::location::latest(client).await).unwrap_or_default()
+                });
+                rows.iter().find(|(device, _)| *device == id).and_then(|(_, r)| {
+                    let fix = Fix::of(r.lat, r.lon, r.accuracy, r.at, Source::of(&r.source)?)?;
+                    Some(shown(fix, false))
+                })
+            } else {
+                None
+            };
+            if let Some(place) = place {
+                d["place"] = place;
             }
         }
     }
@@ -861,6 +912,7 @@ fn watch_device(
                     face_db::peer::unshare(&client, &device).await?;
                 }
                 let mut told: Option<Instant> = None;
+                let mut history = crate::location::Sending::default();
                 loop {
                     if let Some(s) =
                         service.as_ref().filter(|_| told.is_none_or(|t| t.elapsed().as_secs() >= WHERE_EVERY))
@@ -879,6 +931,8 @@ fn watch_device(
                         told = Some(Instant::now());
                     }
                     face_db::heartbeat(&client, &device, peer_on.load(Ordering::SeqCst) && stream.streaming()).await?;
+                    // (the location history's waiting rows go with it: a phone has no other way to the database)
+                    crate::location::send(&client, &device.id, &home, &mut history).await;
                     tokio::time::sleep(std::time::Duration::from_secs(BEAT_EVERY)).await;
                 }
             });
@@ -1076,9 +1130,11 @@ impl Tracker {
                     let Some(settings) = face_db::Settings::load(&home)? else { return Ok(()) };
                     let device = face_db::Device::load(&home, &crate::device().0)?;
                     let client = face_db::connect(&settings, &settings.schema, &device).await?;
+                    let mut history = crate::location::Sending::default();
                     loop {
                         let streams = peer_on.load(Ordering::SeqCst) && stream.streaming();
                         face_db::heartbeat(&client, &device, streams).await?;
+                        crate::location::send(&client, &device.id, &home, &mut history).await;
                         tokio::time::sleep(std::time::Duration::from_secs(BEAT_EVERY)).await;
                     }
                 });
@@ -1210,6 +1266,13 @@ impl Service for Tracker {
             // system when the page asks; nothing of it is kept)
             "/api/device/live" => Response::json(json!({"reading": crate::devicelive::reading(),
                                                         "facts": crate::devicelive::facts(&crate::device().1)})),
+            // where this device is, while its owner has switched that on: asked by the page every few
+            // seconds and when the switch or the typed place changes (a step is taken first, so the
+            // answer is the settings' as they are now)
+            "/api/location" => {
+                let _ = self.bus.set("place", self.location.look());
+                Response::json(self.location.answer())
+            }
             // is the screen locked? (Windows stops running cameras then)
             "/api/screen" => Response::json(json!({"locked": crate::desktop::screen_locked()})),
             "/api/alerts" => state(self.alerts.listing()),

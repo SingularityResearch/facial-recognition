@@ -1,6 +1,7 @@
 // The iPhone and iPad shell: one window that is the system's web view, showing the tracker page that the
 // Rust side serves inside this app on 127.0.0.1. Everything the app does is in the pages and in Rust; this
 // file only starts them and answers the web view's question about the camera.
+import CoreLocation
 import UIKit
 import WebKit
 
@@ -44,8 +45,60 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 }
 
+/// The phone's own location service, asked only while the owner has switched the location on in the page (the
+/// Rust side says so: face_app_location_wanted). iOS asks the owner once, for the app while it is in use; each
+/// location is handed to the Rust side as numbers, and why there is none as a number too. Nothing is kept here.
+final class Whereabouts: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private var asking = false
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = 20                 // metres: said again only when the phone has moved
+    }
+
+    /// Every few seconds: begin or stop asking, as the page's switch says.
+    func step() {
+        let wanted = face_app_location_wanted() != 0
+        if wanted && !asking {
+            asking = true
+            face_app_location_refused(1)            // being asked
+            answer(manager.authorizationStatus)
+        } else if !wanted && asking {
+            asking = false
+            manager.stopUpdatingLocation()
+        }
+    }
+
+    private func answer(_ status: CLAuthorizationStatus) {
+        guard asking else { return }
+        switch status {
+        case .notDetermined: manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways: manager.startUpdatingLocation()
+        default: face_app_location_refused(2)       // the owner, or a rule of the phone, said no
+        }
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        answer(manager.authorizationStatus)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard asking, let at = locations.last, at.horizontalAccuracy >= 0 else { return }
+        face_app_location(at.coordinate.latitude, at.coordinate.longitude, at.horizontalAccuracy)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        face_app_location_refused((error as? CLError)?.code == .denied ? 2 : 4)
+    }
+}
+
 final class WebController: UIViewController, WKUIDelegate, WKNavigationDelegate {
     private var web: WKWebView!
+    /// The phone's location, while its owner has switched that on in the page.
+    private let whereabouts = Whereabouts()
     /// The app's own server, once it runs.
     private var origin: String?
     /// A join code the app was opened with, until the join page has it.
@@ -112,6 +165,8 @@ final class WebController: UIViewController, WKUIDelegate, WKNavigationDelegate 
         UIDevice.current.isBatteryMonitoringEnabled = true
         WebController.sayHealth()
         Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in WebController.sayHealth() }
+        // the phone's location: asked of the system only while the page's switch is on (looked at every few seconds)
+        Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.whereabouts.step() }
         // The models are loaded and tried off the main thread: that takes seconds (the first start after an
         // install longer, while the system prepares the models for its graphics processor), and iOS ends an
         // app whose main thread doesn't answer for too long at its start. It did, once the phone ran warm:

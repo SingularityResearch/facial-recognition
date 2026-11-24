@@ -23,6 +23,12 @@ from this project's release "models-v2", and each has its own licence:
 - YAMNet sound classification (Google): Apache 2.0.
 - Florence-2 (Microsoft), the optional built-in photo describer: MIT.
 
+What the program itself carries:
+
+- A list of the world's towns of 5,000 people and more, with their states and countries, from GeoNames
+  (geonames.org), under the Creative Commons Attribution 4.0 licence (creativecommons.org/licenses/by/4.0). The
+  list is GeoNames' data put into another form: the names, places, states and countries only.
+
 What the installers carry beside the program:
 
 - ONNX Runtime (Microsoft): MIT.

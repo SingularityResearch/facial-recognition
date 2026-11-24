@@ -2,7 +2,7 @@
 
 What goes into App Store Connect for the iPhone app, so that every release says the same. The app's bundle id is
 `io.github.singularityresearch.facerecognizer` (the Android app's and the Mac app's id too); its version and
-build number are the workspace's (`apps/ios/project.sh`: 2.5.2 is build 20502). It is an iPhone app; an iPad runs
+build number are the workspace's (`apps/ios/project.sh`: 2.6.0 is build 20600). It is an iPhone app; an iPad runs
 it as one.
 
 ## Building and sending it (on the Mac, in the desktop session)
@@ -23,7 +23,10 @@ What the package holds that Apple checks at upload:
 - **The privacy manifest** (`apps/ios/PrivacyInfo.xcprivacy`): nothing collected, nothing tracked; one reason
   API, file sizes and times of the app's own files (`stat`, `fstat`, `lstat`: C617.1). It was read off the built
   program (`nm -u`): look again when a library is added.
-- **Why it wants the camera, the microphone and the local network**: the three sentences in `project.sh`.
+- **Why it wants the camera, the microphone, the local network and the location**: the four sentences in
+  `project.sh`. The location is asked for only when the owner switches **Show and keep this device's location**
+  on, and only while the app is in use (never in the background). In the App Privacy answers it is not
+  "collected": it goes to the owner's own devices and database, never to the developer or a third party.
 - **Built with the current Xcode and iOS SDK** (Apple names a minimum each year).
 
 ## The app's record (App Store Connect → Apps → +)

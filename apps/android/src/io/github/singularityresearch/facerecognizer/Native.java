@@ -18,6 +18,21 @@ final class Native {
      */
     static native void health(int heat, float battery, int onPower);
 
+    /**
+     * Whether the phone's location service is to be asked now: asked every few seconds. The owner switches the
+     * location on in the page; only then is the system asked, and its owner for the permission.
+     */
+    static native boolean locationWanted();
+
+    /** Where the system says the phone is: degrees north and east, and the metres around that point it may be. */
+    static native void location(double lat, double lon, float accuracy);
+
+    /**
+     * The system gives no location: 1 it is being asked, 2 the owner or a rule of the phone said no, 3 the phone's
+     * location service is switched off, 4 it couldn't tell.
+     */
+    static native void locationRefused(int why);
+
     /** What the phone is called and its system ("Android 16"), before start(). */
     static native void device(String name, String os);
 

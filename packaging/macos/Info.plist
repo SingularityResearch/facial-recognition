@@ -32,6 +32,10 @@
   <string>The live tracker recognizes the people you have named, from the camera. Pictures stay on this Mac: only numbers are kept, unless you turn on Collect faces.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>The live tracker can measure voice signals (loudness, pitch, speaking rate) from the microphone. Nothing is recorded.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>Face Recognizer shows where this Mac is, to you and your other devices, and keeps its moves in your shared database, while you have switched that on.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Face Recognizer shows where this Mac is, to you and your other devices, and keeps its moves in your shared database, while you have switched that on.</string>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Face Recognizer reaches the shared database you set up and your other devices (their photos and live cameras), and finds LM Studio on your network for Describe photo.</string>
   <key>NSBonjourServices</key>

@@ -320,6 +320,13 @@ impl Followed {
         }
     }
 
+    /// What the copy of a node's tree holds at a path, while this device follows that node (nothing is
+    /// started for the asking: a node nobody's page follows has no copy here).
+    pub fn value(&self, device: &str, path: &str) -> Option<Value> {
+        let followers = self.followers.lock().unwrap_or_else(|e| e.into_inner());
+        followers.get(device).filter(|f| !f.seen().stopped).and_then(|f| f.copy.get(path))
+    }
+
     /// The follower of a node, started when it is first asked for; None when `MAX_FOLLOWED` run already.
     fn get(self: &Arc<Self>, device: &str) -> Option<Arc<Follower>> {
         let mut followers = self.followers.lock().unwrap_or_else(|e| e.into_inner());

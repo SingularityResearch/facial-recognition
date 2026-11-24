@@ -1,3 +1,5 @@
 # Shell scripts are run on a Mac, a Linux computer, a Raspberry Pi and a phone: never with Windows line ends
 *.sh text eol=lf
 *.command text eol=lf
+# The list of towns the program carries is read a line at a time: the same bytes on every computer
+crates/face-server/data/towns.tsv text eol=lf

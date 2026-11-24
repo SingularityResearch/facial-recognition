@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.6.0 (2026-11-24)
+
+- **New: where each device is.** A device can show its location: the nearest town with its state and country,
+  the coordinates, how sure the reading is and how old. It is shown in a new **Location** card on the device's
+  Face tracking tab and, on your other devices, over that device's picture in the Cameras tab. It is off until
+  you switch it on, on each device by itself (**Show and keep this device's location**: Settings, Face
+  tracking: location; on a phone, in its Controls). While it is off the app asks no location service, shows no
+  location and tells your other devices none.
+- **Where the location comes from.** The device's own location service: Windows, a Mac, an iPhone and an
+  Android phone each ask you once, when you switch it on. Or a place you type, which asks nobody: a town
+  (`Springfield, Illinois`, `Paris, France`) or latitude and longitude. A computer without GPS is placed by
+  its system from the networks around it, often only to within a few kilometres, so a computer that stays
+  where it is does better with a typed place. Linux and a Raspberry Pi have no location service, so there a
+  place is typed. The town's name comes from a list of 70,000 towns inside the app (from GeoNames): nothing is
+  looked up on the internet.
+- **A location history, in your shared database.** A row is written when you switch the location on, and then
+  each time the device has moved more than about 100 m, at most one a minute; a device that stays where it is
+  adds nothing. Rows are deleted after 90 days. Settings, Shared database shows a device's history (**Location
+  history of**) and deletes it (**Delete a device's location history**). Without a shared database nothing is
+  written. A phone sends its rows itself, and keeps those it could not send until it is back on your network.
+- The phones' apps ask for the location permission, only when you switch the location on. The Mac's app asks
+  macOS for it the same way. The privacy policy says what the system's location service does.
+- **Copy settings from** never copies a device's location switch or its typed place to another device.
+
 ## 2.5.2 (2026-11-24)
 
 - **The licence is now Version 1.1** (24 November 2026): one section was removed and the others renumbered.

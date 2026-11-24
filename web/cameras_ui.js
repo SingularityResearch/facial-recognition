@@ -4,6 +4,7 @@
 // which fetches them from the other devices over the peer service (TLS, signed requests). Readouts are
 // data, drawn here with text only (no markup from another device). Under each camera, its Signals chart
 // (signals_chart.js): every reading of that device as it sends them with its readout, each value checked there.
+// Over each picture's lower edge, where that device is (place.js), for a device whose owner switched its location on.
 // One camera can be looked at alone (its Focus button, or a double-click on its picture): the page is then laid out
 // as that device's own Face tracking tab is, its picture large, its live readout beside it and its Signals chart
 // in a drawer under the picture; All cameras (or Esc) brings the grid back. The other cameras' frames and readings
@@ -36,7 +37,8 @@ function drawPicker() {
   $("pick").replaceChildren(...devices.map(d => {
     const c = el("input", { type: "checkbox", checked: !hidden.has(d.id) });
     c.onchange = () => { if (c.checked) hidden.delete(d.id); else hidden.add(d.id); saveHidden(); layout(); };
-    return el("label", { className: d.streaming ? "" : "off", title: d.streaming ? "Streaming" : "Not streaming now" }, c,
+    const where = Place.words(d.place);
+    return el("label", { className: d.streaming ? "" : "off", title: (d.streaming ? "Streaming" : "Not streaming now") + (where ? "\n" + where : "") }, c,
               `${d.name}${d.me ? " (this device)" : ""}`);
   }));
 }
@@ -52,7 +54,7 @@ function layout() {
   }
   $("grid").querySelector(".empty")?.remove();
   for (const d of show) if (!tiles[d.id]) startTile(d);
-  for (const d of show) offline(tiles[d.id], d);
+  for (const d of show) { offline(tiles[d.id], d); showPlace(tiles[d.id], d); }
   if (solo && !tiles[solo]) solo = null;                       // the camera looked at alone is no longer shown
   const n = solo ? 1 : show.length;
   $("grid").style.gridTemplateColumns = n <= 1 ? "1fr" : n <= 4 ? "repeat(2, minmax(0, 1fr))" : "repeat(3, minmax(0, 1fr))";
@@ -88,6 +90,16 @@ function offline(t, d) {
   t.msg.textContent = `${d.name}'s camera is offline${ago}: its app or camera isn't running, or it can't be reached. It comes back here by itself.`;
 }
 
+// Where the camera's device is, as this page's server says it with the list of devices (the device's own word while
+// this page follows it, else the newest row of its history): one line of text over the picture's lower edge, and
+// nothing for a device whose owner has not switched its location on.
+function showPlace(t, d) {
+  if (!t) return;
+  const text = Place.words(d.place);
+  t.place.hidden = !text;
+  if (t.place.textContent !== text) { t.place.textContent = text; t.place.title = text; }
+}
+
 // A camera whose picture hasn't come yet shows that it is being connected to (a turning ring and a line of words),
 // never an empty black box: from the moment it is put on the page, and again whenever its picture stops coming
 // without a reason that is said in its place.
@@ -100,12 +112,12 @@ function waiting(t) {
 
 function startTile(d) {
   const img = el("img", { alt: `${d.name}'s camera` }), st = el("span", { className: "st", textContent: "connecting" });
-  const msg = el("div", { className: "msg", hidden: true });
+  const msg = el("div", { className: "msg", hidden: true }), place = el("div", { className: "place", hidden: true });
   const faces = el("ul", { className: "faces", ariaLabel: `Faces on ${d.name}'s camera` }, el("li", { className: "none", textContent: "No faces in view" }));
   const focus = el("button", { className: "fbtn", type: "button", textContent: "Focus", title: "This camera alone, laid out as its own Face tracking tab: large picture, live readout, Signals under it" });
   focus.setAttribute("aria-pressed", "false");
   const vid = el("div", { className: "vid", title: "Double-click: this camera alone (again: all cameras)" }, img,
-                 el("div", { className: "bar" }, el("span", { className: "nm", textContent: `${d.name}${d.me ? " (this device)" : ""}` }), el("span", { className: "right" }, st, focus)), msg);
+                 el("div", { className: "bar" }, el("span", { className: "nm", textContent: `${d.name}${d.me ? " (this device)" : ""}` }), el("span", { className: "right" }, st, focus)), msg, place);
   // beside the picture: its live readout; with the camera alone also the three counts its own tab shows
   const stat = word => { const b = el("b", { textContent: "–" }); return [b, el("div", { className: "stat" }, b, el("span", { textContent: word }))]; };
   const [nFaces, sFaces] = stat("faces"), [nKnown, sKnown] = stat("recognized"), [nChecks, sChecks] = stat("checks / sec");
@@ -125,7 +137,7 @@ function startTile(d) {
     tile.classList.toggle("charted", sigs.open);              // the whole row while its chart is open
     panel.draw();
   };
-  const t = tiles[d.id] = { tile, img, st, msg, faces, panel, focus, counts: [nFaces, nKnown, nChecks], seq: 0, url: null, lastFrame: 0, frames: 0, d };
+  const t = tiles[d.id] = { tile, img, st, msg, place, faces, panel, focus, counts: [nFaces, nKnown, nChecks], seq: 0, url: null, lastFrame: 0, frames: 0, d };
   vid.ondblclick = () => focusOn(solo === d.id ? null : d.id);
   focus.onclick = () => focusOn(solo === d.id ? null : d.id);
   focus.ondblclick = e => e.stopPropagation();                  // (a quick second click on the button is not the picture's double-click)

@@ -76,10 +76,18 @@ const SHARED_DOCS: [&str; 2] = ["expr_calibration", "va_fit"];
 const DEVICE_DOCS: [&str; 3] = ["model_eval", "hw_bench", "webcam_eval"];
 /// ms, the year 2100: a visit's times from the database are below this
 const PRESENCE_MAX: i64 = 4_102_444_800_000;
-/// Settings that say where this device sends photos or fetches files, as (app, key). They are set on the
-/// device and never come from the database: not with Copy settings either.
-pub const STAY_HERE: [(&str, &str); 4] =
-    [("describe", "url"), ("describe", "spread"), ("lmstudio", "share"), ("lmstudio", "distributed")];
+/// Settings that say where this device sends photos or fetches files, and the two that say whether and
+/// where the device itself is (its location's switch and its typed place), as (app, key). They are set on
+/// the device and never come from the database: not with Copy settings either. A location is switched on
+/// by its owner on each device, and one device's place is not another's.
+pub const STAY_HERE: [(&str, &str); 6] = [
+    ("describe", "url"),
+    ("describe", "spread"),
+    ("lmstudio", "share"),
+    ("lmstudio", "distributed"),
+    ("track", face_home::location::OPTION),
+    ("track", face_home::location::PLACE),
+];
 /// the digest of a settings row this device never wrote: deleted at the next sending
 const NOT_OURS: &str = "not this device's";
 /// seconds: seen on another camera this recently counts as moving between cameras
