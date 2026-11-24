@@ -334,6 +334,12 @@ device's library at the same time: each would send what the other took.
     `face_db::location::KEEP_DAYS` are deleted once a day, every device's. Nothing waits on a device without a
     shared database. The rows are about a device, not a named person: they are in no person's export, and
     Settings deletes a device's history (`/api/db/locations/forget`).
+  - A computer's location service is first asked a minute after the program started (`FIRST_ASK_AFTER`),
+    never while the page is opening the camera: asked at the start, Windows held both up, and the camera's
+    start did not finish in 30 s, twice of two starts, where it takes seconds without the asking (measured
+    on a Windows computer, 2026-11-24; asked alone, the service answers in 0.2 s). Change it only with that
+    measurement: the app restarted with the location on, the camera's start watched. A slow answer is said
+    in the log with its seconds, never with a place.
   - A test device's location is switched on by its app's environment (`FACE_LOCATION=on`: the server says so
     in `/api/people`, and the page clicks its own switch once after it loaded), for a device whose page can't
     be reached from outside. It is no part of `FACE_SIGNALS`: a location has a switch of its own.

@@ -53,6 +53,10 @@ pub const SYSTEM_HAS: bool = cfg!(any(windows, target_os = "macos", target_os = 
 
 /// seconds between two askings of a computer's location service (a computer moves slowly, if at all)
 const ASK_EVERY: u64 = 60;
+/// seconds after the program's start before a computer's location service is first asked. Asked while the
+/// page was opening the camera, Windows held both up: the camera's start did not finish in 30 s, twice of
+/// two starts, where it starts within seconds without the asking (a Windows computer, 2026-11-24).
+const FIRST_ASK_AFTER: u64 = 60;
 /// seconds between two steps of the tracker's own watch
 const STEP_EVERY: u64 = 5;
 /// seconds between two tries to send the rows that wait
@@ -278,10 +282,11 @@ impl Location {
         }
         let me = self.clone();
         let started = std::thread::Builder::new().name("this device's location".into()).spawn(move || {
-            let mut asked: Option<Instant> = None;
+            let (began, mut asked) = (Instant::now(), None::<Instant>);
             loop {
                 let _ = bus.set("place", me.look());
-                if wanted() && asked.is_none_or(|at| at.elapsed().as_secs() >= ASK_EVERY) {
+                let settled = began.elapsed().as_secs() >= FIRST_ASK_AFTER;
+                if wanted() && settled && asked.is_none_or(|at| at.elapsed().as_secs() >= ASK_EVERY) {
                     asked = Some(Instant::now());
                     ask_system();
                     let _ = bus.set("place", me.look());
@@ -402,10 +407,14 @@ pub fn try_system(show: bool) -> String {
 #[cfg(windows)]
 fn ask_system() {
     use windows::Devices::Geolocation::{GeolocationAccessStatus, Geolocator, PositionAccuracy};
-    let asked = || -> windows::core::Result<Option<(f64, f64, f64)>> {
+    let began = Instant::now();
+    let mut allowed_after = Duration::ZERO;
+    let mut asked = || -> windows::core::Result<Option<(f64, f64, f64)>> {
         // (Windows' own answer for this app: its location switches, and its question to the owner where
         // it asks one)
-        if Geolocator::RequestAccessAsync()?.join()? != GeolocationAccessStatus::Allowed {
+        let access = Geolocator::RequestAccessAsync()?.join()?;
+        allowed_after = began.elapsed();
+        if access != GeolocationAccessStatus::Allowed {
             return Ok(None);
         }
         let locator = Geolocator::new()?;
@@ -414,7 +423,16 @@ fn ask_system() {
         let point = at.Point()?.Position()?;
         Ok(Some((point.Latitude, point.Longitude, at.Accuracy()?)))
     };
-    match asked() {
+    let answer = asked();
+    // (how long Windows took, when it took long: never where the device is)
+    if began.elapsed() > Duration::from_secs(3) || std::env::var_os("FACE_LOCATION_TIMES").is_some() {
+        println!(
+            "Location: Windows' location service took {:.1} s to answer ({:.1} s of it to say whether the app may ask).",
+            began.elapsed().as_secs_f64(),
+            allowed_after.as_secs_f64()
+        );
+    }
+    match answer {
         Ok(Some((lat, lon, accuracy))) => told(lat, lon, accuracy),
         Ok(None) => refused(i32::from(NOT_ALLOWED)),
         Err(_) => refused(i32::from(NOT_FOUND)),
