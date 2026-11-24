@@ -334,6 +334,9 @@ device's library at the same time: each would send what the other took.
     `face_db::location::KEEP_DAYS` are deleted once a day, every device's. Nothing waits on a device without a
     shared database. The rows are about a device, not a named person: they are in no person's export, and
     Settings deletes a device's history (`/api/db/locations/forget`).
+  - A test device's location is switched on by its app's environment (`FACE_LOCATION=on`: the server says so
+    in `/api/people`, and the page clicks its own switch once after it loaded), for a device whose page can't
+    be reached from outside. It is no part of `FACE_SIGNALS`: a location has a switch of its own.
   - Its tests ask no location service: a test says what a system would (`location::told`), and the one
     example that does ask (`examples/where.rs`) is for trying a kind of system by hand and prints no place
     unless told to. Never print a device's coordinates in a log line or a check's output.

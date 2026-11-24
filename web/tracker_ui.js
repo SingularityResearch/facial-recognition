@@ -64,6 +64,7 @@ async function loadPeople() {
     modelsRun = [...runOn].map(([at, jobs]) => `${jobs.join(", ")} on the ${at}`).join("; ").slice(0, 240);
     calibration = r.calibration || null; vaFit = r.vaFit || null; voiceModel = !!r.voice;
     allSignals = r.signals === "all";
+    if (r.location === "on" && !locationAsked) locationOn = locationAsked = true;
     streamAsked = ["transfer", "page"].includes(r.stream) ? r.stream : "";
     forgetForgotten(r.forgotten);
     // a server with a page of its own for joining a shared database says where it is (a phone's app has no Settings tab)
@@ -1558,7 +1559,12 @@ const CHART_OPTIONS = { expression: "optExpr", voice: "optVoice", body: "optPose
 // model isn't on the device is left alone. Not for a device in everyday use: the microphone is listened to.
 const ALL_SIGNALS = ["optExpr", "optCalib", "optEvidence", "optStream", "optVoice", "optPulse", "optPose", "optSoundChart"];
 let allSignals = false;
+// A test device whose location is to be shown and kept (its app started with FACE_LOCATION=on: the server says
+// so): the location's switch is switched on once after the page loaded, as if by hand, so it is remembered too.
+// The system still asks whoever is at the device for its own permission.
+let locationOn = false, locationAsked = false;
 setInterval(() => {
+  if (locationOn) { locationOn = false; const box = $("optLocation"); if (box && !box.checked) box.click(); }
   if (!allSignals) return;
   for (const id of ALL_SIGNALS) { const box = $(id); if (box && !box.disabled && !box.checked) box.click(); }
 }, 5000);

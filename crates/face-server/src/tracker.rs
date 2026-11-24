@@ -454,6 +454,9 @@ impl Tracker {
             // a test device that is to send every signal it has (FACE_SIGNALS=all in the app's environment):
             // its page then keeps every option that makes readings switched on
             "signals": std::env::var("FACE_SIGNALS").ok().filter(|all| all == "all"),
+            // a test device whose location is to be shown and kept (FACE_LOCATION=on in the app's
+            // environment): its page then switches the location on when it starts, as if by hand
+            "location": std::env::var("FACE_LOCATION").ok().filter(|on| on == "on"),
             // the way this camera's frames leave the page, named to compare the ways on one device
             // (FACE_STREAM: transfer, bitmap or page); without it the page takes its engine's own
             "stream": stream_way(),

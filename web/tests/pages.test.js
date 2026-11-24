@@ -499,6 +499,16 @@ test("the worker sends a frame to the page's own server only, in the order the f
   delete global.OffscreenCanvas;
 });
 
+test("a device's location is switched on by itself only where the device's own server says it is a test device for that", () => {
+  const code = read("tracker_ui.js");
+  assert.match(code, /if \(r\.location === "on" && !locationAsked\) locationOn = locationAsked = true;/);
+  assert.match(code, /if \(locationOn\) \{ locationOn = false; const box = \$\("optLocation"\); if \(box && !box\.checked\) box\.click\(\); \}/);
+  assert.match(read("../crates/face-server/src/tracker.rs"), /"location": std::env::var\("FACE_LOCATION"\)\.ok\(\)\.filter\(\|on\| on == "on"\)/);
+  assert.match(read("../docs/SETTINGS.md"), /`FACE_LOCATION` \| `on`/);
+  // the options a test device for signals keeps on have no location among them: that is a switch of its own
+  assert.doesNotMatch(code.match(/const ALL_SIGNALS = \[([^\]]*)\]/)[1], /optLocation|optPlace/);
+});
+
 test("a device's location: off as the page comes, asked of the page's own server only, shown as text, and a typed place never published", () => {
   const html = read("tracker_ui.html"), js = read("tracker_ui.js");
   // off for a new copy: the switch has no "checked", and the server takes anything but "1" for off
