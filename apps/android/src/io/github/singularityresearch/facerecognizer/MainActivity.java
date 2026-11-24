@@ -146,12 +146,17 @@ public final class MainActivity extends Activity {
      */
     private boolean locating;
     private boolean locationAsked;
+    /** What the system last said, and the steps since: said again every minute while the phone stays put. */
+    private android.location.Location lastPlace;
+    private int quietSteps;
     private final android.location.LocationListener whereabouts = new android.location.LocationListener() {
         @Override
         public void onLocationChanged(android.location.Location at) {
             if (at == null || !at.hasAccuracy()) {
                 return;
             }
+            lastPlace = at;
+            quietSteps = 0;
             try {
                 Native.location(at.getLatitude(), at.getLongitude(), at.getAccuracy());
             } catch (UnsatisfiedLinkError e) {
@@ -165,6 +170,7 @@ public final class MainActivity extends Activity {
 
         @Override
         public void onProviderDisabled(String provider) {
+            lastPlace = null;                               // (no longer said again: the system stopped telling)
         }
 
         @Override
@@ -204,6 +210,13 @@ public final class MainActivity extends Activity {
                 }
                 locating = false;
                 locationAsked = false;
+                lastPlace = null;
+            } else if (locating && lastPlace != null && ++quietSteps >= 20) {
+                // A phone that stays where it is gets no new location from the system (it reports a move of
+                // 20 m and more): what it last said is said again every minute, so that the place's time says
+                // the phone is still there.
+                quietSteps = 0;
+                Native.location(lastPlace.getLatitude(), lastPlace.getLongitude(), lastPlace.getAccuracy());
             }
             healthTimer.postDelayed(this, 3000);
         }

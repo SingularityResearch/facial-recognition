@@ -61,6 +61,10 @@ const FIRST_ASK_AFTER: u64 = 60;
 const STEP_EVERY: u64 = 5;
 /// seconds between two tries to send the rows that wait
 const SEND_EVERY: u64 = 30;
+/// seconds: a place said again, the same as before, is taken anew this often (`told`)
+const SAME_EVERY: i64 = 30;
+/// metres: nearer than this to what was said before is the same place (a better reading is always taken)
+const SAME_WITHIN: f64 = 5.0;
 /// metres: the town's name is worked out again when the device is this far from where it last was
 const NAME_AGAIN: f64 = 200.0;
 
@@ -74,13 +78,23 @@ fn system() -> MutexGuard<'static, Option<Fix>> {
 
 /// The system's location service says where the device is: degrees north and east, and the metres around
 /// that point the device may be. A phone's shell says it; a computer's service is asked here. Taken only
-/// while the location is wanted, and only when it is a location (`Fix::of`).
+/// while the location is wanted, and only when it is a location (`Fix::of`). A system that says the same
+/// place again and again (a Mac does, every second) is taken at its word every `SAME_EVERY` seconds: the
+/// place's time then says the device was still there, without a change of the node's tree for each saying.
 pub fn told(lat: f64, lon: f64, accuracy: f64) {
     if !wanted() {
         return;
     }
     if let Some(fix) = Fix::of(lat, lon, Some(accuracy), now_ms(), Source::System) {
-        *system() = Some(fix);
+        let mut now = system();
+        let same = now.as_ref().is_some_and(|was| {
+            fix.at - was.at < SAME_EVERY * 1000
+                && distance_m((was.lat, was.lon), (fix.lat, fix.lon)) < SAME_WITHIN
+                && fix.accuracy >= was.accuracy
+        });
+        if !same {
+            *now = Some(fix);
+        }
         WHY.store(0, Ordering::SeqCst);
     }
 }
@@ -123,6 +137,9 @@ fn why_words(why: u8) -> &'static str {
         NOT_ALLOWED => ALLOW,
         SWITCHED_OFF => {
             "This device's location service is switched off. Turn it on in the system's settings (Location, or Location Services), or type this device's place."
+        }
+        NOT_FOUND if cfg!(target_os = "macos") => {
+            "This Mac's location service couldn't tell where it is. A Mac finds its place by Wi-Fi: with Wi-Fi switched off it can't. It is asked again; or type this device's place."
         }
         NOT_FOUND => {
             "The system's location service couldn't tell where this device is. It is asked again; or type this device's place."
@@ -554,6 +571,15 @@ mod tests {
             refused(i32::from(NOT_ALLOWED));
             assert_eq!(here.step(true, "", true), Value::Null);
             assert!(here.answer()["why"].as_str().unwrap().contains("Allow it"));
+            // the same place said again at once changes nothing; a better reading of it is taken
+            told(47.6062, -122.3321, 35.0);
+            let first = system().unwrap();
+            told(47.60621, -122.3321, 60.0);
+            assert_eq!(*system(), Some(first), "the same place, less sure: what was said stands");
+            told(47.60621, -122.3321, 12.0);
+            assert_eq!(system().unwrap().accuracy, Some(12.0), "a better reading is taken");
+            told(47.6162, -122.3321, 80.0);
+            assert_eq!(system().unwrap().lat, 47.6162, "another place is taken at once");
             // a typed place takes over, and the system is no longer asked
             told(47.6062, -122.3321, 35.0);
             assert_eq!(here.step(true, "Springfield, IL", true)["source"], "hand");

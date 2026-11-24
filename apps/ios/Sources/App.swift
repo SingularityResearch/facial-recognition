@@ -51,6 +51,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 final class Whereabouts: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var asking = false
+    /// Steps since the phone's place was last said (it is said again every minute while the phone stays put).
+    private var quiet = 0
 
     override init() {
         super.init()
@@ -69,6 +71,14 @@ final class Whereabouts: NSObject, CLLocationManagerDelegate {
         } else if !wanted && asking {
             asking = false
             manager.stopUpdatingLocation()
+        } else if asking {
+            // A phone that stays where it is gets no new location from iOS (it reports a move of 20 m and more):
+            // what iOS last said is said again every minute, so that the place's time says the phone is still there.
+            quiet += 1
+            if quiet >= 20, let at = manager.location, at.horizontalAccuracy >= 0 {
+                quiet = 0
+                face_app_location(at.coordinate.latitude, at.coordinate.longitude, at.horizontalAccuracy)
+            }
         }
     }
 
@@ -87,6 +97,7 @@ final class Whereabouts: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard asking, let at = locations.last, at.horizontalAccuracy >= 0 else { return }
+        quiet = 0
         face_app_location(at.coordinate.latitude, at.coordinate.longitude, at.horizontalAccuracy)
     }
 

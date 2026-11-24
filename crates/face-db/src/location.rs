@@ -117,7 +117,8 @@ fn row_of(r: &tokio_postgres::Row, from: usize) -> Option<Row> {
     let row = Row {
         lat: r.try_get(from).ok()?,
         lon: r.try_get(from + 1).ok()?,
-        accuracy: r.try_get(from + 2).ok()?,
+        // (the column keeps it as a short number: said to a tenth of a metre, as it was written)
+        accuracy: r.try_get::<_, Option<f64>>(from + 2).ok()?.map(|m| (m * 10.0).round() / 10.0),
         at: r.try_get(from + 3).ok()?,
         source: r.try_get(from + 4).ok()?,
         place: a_line(&r.try_get::<_, String>(from + 5).ok()?),
