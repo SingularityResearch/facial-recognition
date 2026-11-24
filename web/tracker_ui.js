@@ -482,6 +482,15 @@ async function listCameras(activeId) {
 // laptop with a touch screen has a mouse as its first pointer and keeps the camera list alone.
 const phoneLike = () => navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches;
 let camCount = 0, wantFacing = "", switching = false;
+// The camera this device is set to (chosenCam): the one its owner picked in the list, or at the very first start
+// the one the system gave. It stays the device's camera until the owner picks another. A start at which it isn't
+// there (unplugged, or the system not ready with it yet) uses the default camera meanwhile (camFellBack) and does
+// NOT take that one for the choice: on a computer with a second camera that shows nothing (a phone offered as a
+// webcam while the phone is away gives a black picture) the page once opened that one at a start, remembered it,
+// and showed a blank picture from then on, at every start, until the camera was picked by hand again
+// (2026-11-24). The chosen camera is gone back to as soon as it is there again (backToChosen).
+// camAsIs: the phone's switch button asks for the other side or the next camera, not for the remembered one.
+let chosenCam = "", camFellBack = false, camAsIs = false, backTries = 0;
 function showCamSwitch() {
   $("camSwitch").hidden = !(phoneLike() && camCount > 1 && (stream || switching));
   $("camSwitch").disabled = switching;
@@ -495,6 +504,7 @@ async function switchCamera() {
   switching = true;
   try {
     stopCamera();                                // a phone opens one camera at a time: this one first
+    camAsIs = true;
     if (other) { wantFacing = other; sel.value = ""; } else if (next) sel.value = next.value;
     await startCamera();
     wantFacing = "";
@@ -502,7 +512,7 @@ async function switchCamera() {
     if (other && stream && after.deviceId === before.deviceId && next && next.value !== before.deviceId) {
       stopCamera(); sel.value = next.value; await startCamera();
     }
-  } finally { wantFacing = ""; switching = false; showCamSwitch(); }
+  } finally { wantFacing = ""; camAsIs = false; switching = false; showCamSwitch(); }
 }
 
 // Starts can overlap (the page's own start, the Start button, a change of camera, Keep this camera running): the
@@ -512,9 +522,11 @@ let camGen = 0, camError = "";             // camError: why the last start faile
 async function startCamera() {
   if (stream) { stopCamera(); return; }
   const mine = ++camGen;
-  let got = null;
+  let got = null, fellBack = false;
   try {
-    const id = $("camSelect").value;
+    // the camera picked in the list; with none picked there, the one this device is set to (the list doesn't
+    // always have it yet when the page starts). A phone keeps to its list: its cameras' IDs change.
+    const id = $("camSelect").value || (camAsIs || phoneLike() ? "" : chosenCam);
     // no camera chosen: on a phone the side that was asked for, and the front one when none was
     const facing = wantFacing || (phoneLike() ? "user" : "");
     const ask = id => navigator.mediaDevices.getUserMedia({ video: {
@@ -523,9 +535,9 @@ async function startCamera() {
     try { got = await ask(id); }
     catch (e) {
       // A remembered camera ID only fits the browser that saved it (the app window and each browser
-      // get their own IDs), and cameras get unplugged: fall back to the default camera.
+      // get their own IDs), and cameras get unplugged: the default camera for the time being.
       if (!id || !["OverconstrainedError", "NotFoundError"].includes(e.name)) throw e;
-      $("camSelect").value = ""; got = await ask("");
+      $("camSelect").value = ""; got = await ask(""); fellBack = true;
     }
     if (mine !== camGen) { got.getTracks().forEach(t => t.stop()); return; }
     stream = got;
@@ -535,7 +547,12 @@ async function startCamera() {
     await video.play();
     const activeId = stream.getVideoTracks()[0]?.getSettings().deviceId;
     listCameras(activeId);
-    remember("camera", activeId || ""); remember("autostart", "1");
+    // The camera that was asked for is the one this device is set to from now on. One that was only fallen back
+    // to is not: the choice stays as it was.
+    camFellBack = fellBack && !!chosenCam && !phoneLike() && activeId !== chosenCam;
+    if (!camFellBack) { chosenCam = activeId || ""; remember("camera", chosenCam); }
+    else pageNote("The camera this device is set to isn't there now: the default camera is used until it is back.");
+    remember("autostart", "1");
     // unplugged, or taken by another program: stopped, so "Keep this camera running" starts it again
     stream.getVideoTracks()[0]?.addEventListener("ended", () => { if (stream) stopCamera(); });
     $("camBtn").textContent = "Stop camera";
@@ -1897,7 +1914,28 @@ $("camBtn").onclick = () => {
 };
 $("fileBtn").onclick = () => $("fileInput").click();
 $("fileInput").onchange = e => openFile(e.target.files[0]);
-$("camSelect").onchange = async () => { if (stream) { stopCamera(); await startCamera(); } };
+// A camera picked in the list is the owner's choice: what this device is set to from now on ("Default camera":
+// none in particular, so whichever the system gives at the next start).
+$("camSelect").onchange = async () => {
+  chosenCam = $("camSelect").value; camFellBack = false; backTries = 0;
+  remember("camera", chosenCam);
+  if (stream) { stopCamera(); await startCamera(); }
+};
+// The camera this device is set to wasn't there when the camera was started, so the default one runs: as soon as
+// the chosen one is listed again, it is gone back to. Looked for when the system says its cameras changed and
+// every 10 s meanwhile; tried three times at the most for one page (a camera that is listed and still can't be
+// opened must not have the running one started over and over).
+async function backToChosen() {
+  if (!camFellBack || !chosenCam || !stream || switching || backTries >= 3) return;
+  let there = false;
+  try { there = (await navigator.mediaDevices.enumerateDevices()).some(d => d.kind === "videoinput" && d.deviceId === chosenCam); } catch {}
+  if (!there || !camFellBack || !stream) return;
+  backTries++;
+  pageNote("The camera this device is set to is there again: going back to it.");
+  await listCameras(chosenCam);
+  stopCamera(); await startCamera();
+}
+setInterval(backToChosen, 10000);
 $("camSwitch").onclick = switchCamera;
 $("optMirror").onchange = applyMirror;
 // Controls panel: a fly-out on the right; closed, the video takes the whole window. Remembered;
@@ -1962,7 +2000,7 @@ $("testDelete").onclick = async () => {
 };
 $("optSmooth").oninput = e => $("smoothVal").textContent = (+e.target.value).toFixed(2);
 $("optStrict").oninput = e => { threshTouched = true; $("threshVal").textContent = (+e.target.value).toFixed(2); };
-navigator.mediaDevices?.addEventListener?.("devicechange", () => listCameras());
+navigator.mediaDevices?.addEventListener?.("devicechange", () => { listCameras(); backToChosen(); });
 // Remember the camera and start it automatically next time (unless you pressed Stop camera)
 function remember(k, v) { if (window.PageStore) PageStore.set("ft-" + k, String(v)); else try { localStorage.setItem("ft-" + k, v); } catch {} }
 function recall(k) { try { return localStorage.getItem("ft-" + k); } catch { return null; } }
@@ -2084,7 +2122,8 @@ function forgetPerson({ name } = {}) {
   return { message: `Forgot what this page learned about ${name}` };
 }
 (async () => {
-  await listCameras(recall("camera"));
+  chosenCam = recall("camera") || "";
+  await listCameras(chosenCam);
   if (recall("autostart") !== "0" || $("optKeepCam").checked) startCamera();
 })();
 // People forgotten on any device (shared database): forget what this page learned about them, once each

@@ -55,7 +55,7 @@ switches between the front and the back camera. A camera you chose stays chosen,
 
 | Setting | Default | What it is for |
 |---|---|---|
-| **Camera** | the system's default | Which camera the tracker uses: every camera the computer sees, by name (a phone used as a webcam included). The same camera starts by itself next time unless you last stopped it (with **Keep this camera running** on, it always starts). |
+| **Camera** | the system's default | Which camera the tracker uses: every camera the computer sees, by name (a phone used as a webcam included). The same camera starts by itself next time unless you last stopped it (with **Keep this camera running** on, it always starts). The camera you picked stays this device's camera: at a start where it isn't there (unplugged, or not ready yet) the default camera is used meanwhile, and the picked one is gone back to as soon as it is there again. |
 | **Mirror view** | on | Shows the picture mirrored, as a mirror would. Switched on for a webcam and off for a video file when the source starts. |
 
 ## Face tracking: display

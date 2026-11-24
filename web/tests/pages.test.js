@@ -499,6 +499,29 @@ test("the worker sends a frame to the page's own server only, in the order the f
   delete global.OffscreenCanvas;
 });
 
+test("the camera a device is set to stays its camera: a start without it neither forgets it nor stays on another", () => {
+  const code = read("tracker_ui.js");
+  // the chosen camera is asked for by its ID even when the list doesn't have it yet; a phone keeps to its list
+  assert.match(code, /const id = \$\("camSelect"\)\.value \|\| \(camAsIs \|\| phoneLike\(\) \? "" : chosenCam\);/);
+  // falling back to the default camera never becomes the choice
+  assert.match(code, /\$\("camSelect"\)\.value = ""; got = await ask\(""\); fellBack = true;/);
+  assert.match(code, /camFellBack = fellBack && !!chosenCam && !phoneLike\(\) && activeId !== chosenCam;\r?\n    if \(!camFellBack\) \{ chosenCam = activeId \|\| ""; remember\("camera", chosenCam\); \}/);
+  assert.doesNotMatch(code, /remember\("camera", activeId/);
+  // the owner's pick in the list is the choice
+  assert.match(code, /chosenCam = \$\("camSelect"\)\.value; camFellBack = false; backTries = 0;\r?\n  remember\("camera", chosenCam\);/);
+  // gone back to when it is listed again, and not over and over
+  const back = code.slice(code.indexOf("async function backToChosen()"), code.indexOf("setInterval(backToChosen, 10000);"));
+  assert.match(back, /if \(!camFellBack \|\| !chosenCam \|\| !stream \|\| switching \|\| backTries >= 3\) return;/);
+  assert.match(back, /d\.kind === "videoinput" && d\.deviceId === chosenCam/);
+  assert.ok(back.indexOf("backTries++;") < back.indexOf("stopCamera(); await startCamera();"));
+  assert.match(code, /addEventListener\?\.\("devicechange", \(\) => \{ listCameras\(\); backToChosen\(\); \}\);/);
+  // the page starts with what was remembered, and the phone's switch button asks for the other camera as before
+  assert.match(code, /chosenCam = recall\("camera"\) \|\| "";\r?\n  await listCameras\(chosenCam\);/);
+  const sw = code.slice(code.indexOf("async function switchCamera()"), code.indexOf("// Starts can overlap"));
+  assert.ok(sw.indexOf("camAsIs = true;") > 0 && sw.indexOf("camAsIs = true;") < sw.indexOf("await startCamera();"));
+  assert.match(sw, /finally \{ wantFacing = ""; camAsIs = false; switching = false; showCamSwitch\(\); \}/);
+});
+
 test("a device's location is switched on by itself only where the device's own server says it is a test device for that", () => {
   const code = read("tracker_ui.js");
   assert.match(code, /if \(r\.location === "on" && !locationAsked\) locationOn = locationAsked = true;/);

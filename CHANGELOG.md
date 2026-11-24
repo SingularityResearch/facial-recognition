@@ -24,6 +24,12 @@
 - The phones' apps ask for the location permission, only when you switch the location on. The Mac's app asks
   macOS for it the same way. The privacy policy says what the system's location service does.
 - **Copy settings from** never copies a device's location switch or its typed place to another device.
+- **Fixed: a computer could switch to another camera for good.** When the camera you picked wasn't there at
+  a start, the page opened the default camera and remembered that one in its place. On a computer with a
+  second camera that shows nothing (a phone offered as a webcam while the phone is away gives a black
+  picture), every later start showed a blank picture until the camera was picked by hand again. The camera you
+  picked now stays the device's camera: the default one is used only meanwhile, and the picked one is gone
+  back to as soon as it is there again.
 
 ## 2.5.2 (2026-11-24)
 
