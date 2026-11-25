@@ -103,6 +103,10 @@ body vitals in Play's sense. What that asks of the app, and where each is:
 - A privacy policy inside the app: the tracker page's **Privacy policy** link shows `PRIVACY.md` as the app's own
   page (`/privacy`), without the internet.
 - Which devices the sensor-based readings work on: in the description (above).
+- Where the readings are kept: nowhere, unless the owner switches **Keep a history of every signal** on (off
+  for a new copy). Then they are kept, as numbers, in the owner's own shared database for the days they set, and
+  nowhere else. In the Data safety form that is not "collected" or "shared" either: nothing goes to the developer
+  or a third party.
 
 Pick the category with the form in front of you: its list has changed more than once, and "Activity and Fitness"
 is the one that names heart rate today.
@@ -114,5 +118,5 @@ is the one that names heart rate today.
    apply for production access.
 3. Production.
 
-The version code is the workspace's version (2.6.0 is 20600): Play takes each code once, so every upload needs a
+The version code is the workspace's version (2.7.0 is 20700): Play takes each code once, so every upload needs a
 new version in `Cargo.toml`.

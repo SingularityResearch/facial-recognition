@@ -2,7 +2,7 @@
 
 What goes into App Store Connect for the iPhone app, so that every release says the same. The app's bundle id is
 `io.github.singularityresearch.facerecognizer` (the Android app's and the Mac app's id too); its version and
-build number are the workspace's (`apps/ios/project.sh`: 2.6.0 is build 20600). It is an iPhone app; an iPad runs
+build number are the workspace's (`apps/ios/project.sh`: 2.7.0 is build 20700). It is an iPhone app; an iPad runs
 it as one.
 
 ## Building and sending it (on the Mac, in the desktop session)
@@ -68,7 +68,7 @@ app's icon (`apps/ios/Assets.xcassets`).
 
 | Form | Answer | Why |
 |---|---|---|
-| App Privacy | Data Not Collected | The app sends its developer nothing. What goes to the owner's own database and devices is not collected by the developer. |
+| App Privacy | Data Not Collected | The app sends its developer nothing. What goes to the owner's own database and devices is not collected by the developer: that holds for the signal history too (**Keep a history of every signal**, off for a new copy), which keeps readings, the pulse estimate and breathing rate among them, in the owner's own database only. |
 | Age rating | No to every content question; "Medical/Treatment Information": none | A utility. |
 | Health | The pulse and breathing readings are estimates, the app says it is not a medical device (on its page, in the policy and in the description) | Guideline 1.4.1 looks hard at apps that measure the body with the phone's own sensors. |
 | Export compliance | **The owner's answer** | The app brings its own encryption beside the system's: TLS for the database and between devices, and AES-256-GCM with scrypt for keys. All of it is standard, published algorithms, and the source is public. Apple asks at each upload unless `ITSAppUsesNonExemptEncryption` is in the Info.plist; put it there once the answer is settled. |

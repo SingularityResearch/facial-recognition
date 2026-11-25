@@ -429,8 +429,9 @@ fn run(job: &Importer, home: &Path, todo: Vec<Item>, name: &str, servers: &[Serv
 }
 
 /// The routes of Describe photo that are sent something.
-pub(crate) const POSTS: [&str; 6] = [
+pub(crate) const POSTS: [&str; 7] = [
     "/api/describe",
+    "/api/describe/load",
     "/api/describe/all",
     "/api/describe/again",
     "/api/describe/config",
@@ -451,11 +452,12 @@ pub(crate) fn falsy(v: Option<&Value>) -> bool {
 }
 
 impl Labeler {
-    /// The addresses of the owner's other devices, as each gave them in the shared database (none without one).
-    fn device_addresses(&self) -> Vec<String> {
+    /// The addresses of the owner's other devices, as each gave them in the shared database, each device's
+    /// together (none without one).
+    pub(crate) fn device_addresses(&self) -> Vec<Vec<String>> {
         #[cfg(feature = "sync")]
         {
-            self.other_devices_addresses()
+            self.other_devices()
         }
         #[cfg(not(feature = "sync"))]
         {
@@ -532,13 +534,23 @@ impl Labeler {
                 let described = describe::ask(&self.home, &jpeg, &name, None).map_err(|e| asked(e.why))?;
                 Ok(Response::json(descriptions::save(&self.home, &key, &described, true).map_err(failed)?))
             })(),
-            // Settings: which describer, server, model, API key
+            // Settings: which describer, server, model, API key. Choosing the kind of server or the model loads
+            // the model that suits this computer with its settings (the owner: "decided when the settings are
+            // interacted with"), on a thread of its own
             "/api/describe/config" => {
-                let changes: Map<String, Value> = (["use", "url", "model", "key", "spread"].iter())
+                let changes: Map<String, Value> = (["use", "platform", "url", "model", "key", "spread"].iter())
                     .filter_map(|k| Some((k.to_string(), body.get(*k)?.clone())))
                     .collect();
-                set_config(&self.home, &changes).map_err(asked).and_then(|_| ok())
+                let chose = changes.contains_key("platform") || changes.contains_key("model");
+                set_config(&self.home, &changes).map_err(asked).and_then(|_| {
+                    if chose {
+                        let _ = describe::load_suggested(&self.home);
+                    }
+                    ok()
+                })
             }
+            // Settings' Load button: the suggested model with its settings
+            "/api/describe/load" => describe::load_suggested(&self.home).map_err(asked).and_then(|()| ok()),
             // Settings' Test button
             "/api/describe/test" => {
                 let text = |k: &str| body.get(k).and_then(Value::as_str).unwrap_or("");

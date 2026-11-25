@@ -17,6 +17,10 @@
 //! - `home/expression/*.jsonl`, `home/music/*.jsonl`: their expression readings and the songs that played
 //!   for them, waiting to be sent to the shared database, and there the `expression_log` and `music_log`
 //!   tables; their name as this device's music setting
+//! - `home/signals/*.jsonl`: rows of their signal history that the shared database couldn't take yet, and
+//!   there the `signal_log` table (every signal read of them, a row a stretch of time, kept only where a
+//!   device's owner switched the history on; and what the library's pictures say of them, a row a picture,
+//!   where its owner had that worked out: `libhistory.rs`)
 //! - `home/webcam/`: Collect faces pictures of them, and the tracker's verdicts naming them
 //! - `home/descriptions.json`: photo descriptions whose text names them; `home/app.log`
 //! - `home/person_signals.json`: their usual look and their normal for each signal; `home/settings.json`:
@@ -44,7 +48,7 @@ use face_home::{
     alerts::Inbox,
     descriptions,
     store::Store,
-    waiting::{EXPRESSION, MUSIC, WaitLog},
+    waiting::{EXPRESSION, MUSIC, SIGNALS, WaitLog},
 };
 use face_library::{
     labels::{Fault, LabelDb},
@@ -90,6 +94,7 @@ fn kept_elsewhere(home: &Path, name: &str) -> bool {
         || Inbox::new(home).about(name).is_ok_and(|a| !a.is_empty())
         || !EXPRESSION.waiting(home, Some(name)).is_empty()
         || !MUSIC.waiting(home, Some(name)).is_empty()
+        || !SIGNALS.waiting(home, Some(name)).is_empty()
         || music_who(&store) == name
         || alert_list(&store).iter().any(|n| n == name)
         || files(&home.join("presence"), ".jsonl", false)
@@ -221,7 +226,13 @@ fn export_log(
         if !seen.contains(&(me.clone(), row.get("t").and_then(Value::as_i64).unwrap_or(i64::MIN))) {
             let mut line = Map::new();
             for k in std::iter::once("t").chain(names) {
-                line.insert(k.to_string(), row.get(k).cloned().unwrap_or(Value::Null));
+                // (a waiting row of the signal history spells two of its columns shortly)
+                let waiting = match k {
+                    "seconds" if row.get("seconds").is_none() => "s",
+                    "readings" => "n",
+                    other => other,
+                };
+                line.insert(k.to_string(), row.get(waiting).cloned().unwrap_or(Value::Null));
             }
             line.insert("device".to_string(), json!(me));
             line.insert("waitingToBeSent".to_string(), json!(true));
@@ -356,6 +367,14 @@ pub(crate) fn export(inner: &Inner, data: &Path, home: &Path, name: &str, folder
             "music_log",
             [Col::Text("artist"), Col::Text("song"), Col::Real("seconds"), Col::Json("data")],
         ),
+        (
+            "signalLog",
+            "signal_log.jsonl",
+            "rows",
+            &SIGNALS,
+            "signal_log",
+            [Col::Text("source"), Col::Real("seconds"), Col::Real("readings"), Col::Json("data")],
+        ),
     ];
     for (key, file, counted, log, table, cols) in logs {
         let (n, note) = export_log(home, log, table, cols, &folder.join(file), name).map_err(failed)?;
@@ -450,6 +469,7 @@ pub(crate) fn forget(inner: &Inner, data: &Path, home: &Path, name: &str, known:
     put("alerts", Inbox::new(home).forget(name).map_err(failed)?);
     put("expressionLog", EXPRESSION.forget(home, name).map_err(failed)?);
     put("musicLog", MUSIC.forget(home, name).map_err(failed)?);
+    put("signalLog", SIGNALS.forget(home, name).map_err(failed)?);
     let store = Store::new(home);
     if music_who(&store) == name {
         // this device's music was theirs: it is nobody's now (nothing logged)

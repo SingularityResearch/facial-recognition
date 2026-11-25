@@ -1,12 +1,16 @@
 //! Describe photo: a short summary of a photo from a vision-language model, to help work out the occasion
 //! and who might be there (the part that asks a server).
 //!
-//! The model runs in LM Studio (http://127.0.0.1:1234, OpenAI-style API), by default on this computer.
-//! Settings can point it at another address, also on another device or the internet (then each photo
-//! described is sent there, and the Settings tab says so: `where`), and at any server with the same API.
-//! Automatic: with LM Studio a loaded vision model is preferred, else the first one it lists; other servers
-//! don't say which of their models read pictures, so their first model is used unless one is picked.
-//! Reasoning is switched off (it spent most of the answer's tokens thinking, twice as long a photo).
+//! The model runs in a server of one of four kinds (`face_home::describe::PLATFORMS`): LM Studio (by default,
+//! on this computer, http://127.0.0.1:1234), Ollama, llama.cpp's server or vLLM. All four answer the same chat
+//! request (`/v1/chat/completions`, OpenAI's form); each lists its models in its own way (`models_of`):
+//! LM Studio and Ollama say which of them read pictures, llama.cpp says whether the one model it serves does,
+//! vLLM says nothing of it. Settings can point it at another address, also on another device or the internet
+//! (then each photo described is sent there, and the Settings tab says so: `where`).
+//! Automatic: a loaded vision model is preferred, else the first vision model; a server that doesn't say
+//! which of its models read pictures has its first model used unless one is picked.
+//! Reasoning is switched off (it spent most of the answer's tokens thinking, twice as long a photo), in the
+//! way each kind of server takes it.
 //!
 //! The model is told not to guess who anyone is: names come from the face recognizer and from the owner.
 //! A server's answer is taken as it is: a redirect isn't followed (it would carry the API key and the photo
@@ -22,7 +26,7 @@ use std::{
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use face_files::filejson;
-use face_home::describe::{Config, clean_url, config, default_url, where_is};
+use face_home::describe::{Config, clean_url, config, where_is};
 use serde_json::{Value, json};
 
 use crate::florence;
@@ -111,19 +115,154 @@ fn get(url: &str, path: &str, key: &str, timeout: Duration) -> Said {
 /// A server's models as the program uses them: (id, whether it reads pictures: yes, no, or not said).
 type Models = Vec<(String, Option<bool>)>;
 
-/// The models a server offers, and those that are loaded. LM Studio says which are vision models and
-/// which are loaded; other OpenAI-style servers only list ids. `at`: (address, key) of another server than
-/// the saved one (the Test button).
+/// A kind of server's name, for what is said about it.
+fn named(platform: &str) -> &'static str {
+    face_home::describe::PLATFORMS.iter().find(|(p, _, _)| *p == platform).map_or("LM Studio", |(_, name, _)| name)
+}
+
+/// What to do when nothing answers at an address of this kind.
+fn start_hint(platform: &str) -> &'static str {
+    match platform {
+        "ollama" => "start Ollama; on another device, set OLLAMA_HOST=0.0.0.0 there",
+        "llamacpp" => {
+            "start llama-server, with the model's --mmproj file for pictures; on another device, with --host 0.0.0.0"
+        }
+        "vllm" => "start vllm serve; on another device, with --host 0.0.0.0",
+        _ => "LM Studio: start it and turn on its local server; on another device, also 'Serve on local network'",
+    }
+}
+
+fn post(url: &str, path: &str, key: &str, body: &Value, timeout: Duration) -> Said {
+    let mut ask = agent(timeout).post(format!("{url}{path}")).header("Content-Type", "application/json");
+    if !key.is_empty() {
+        ask = ask.header("Authorization", format!("Bearer {key}"));
+    }
+    read(ask.send(filejson::dumps(body).as_bytes()))
+}
+
+/// A request that loads a model (Ollama's `/api/generate` without a prompt), given ten minutes: Ok when the
+/// server took it.
+pub(crate) fn post_for_load(url: &str, path: &str, key: &str, body: &Value) -> Result<(), String> {
+    match post(url, path, key, body, Duration::from_secs(600)) {
+        Said::Json(_) => Ok(()),
+        Said::Status(code, why) => {
+            Err(format!("The server refused to load it ({code}: {})", why.chars().take(160).collect::<String>()))
+        }
+        Said::Nothing(why) => Err(format!("The server didn't answer: {why}")),
+        Said::Unreadable | Said::TooLarge => Err("The server's answer wasn't understood".to_string()),
+    }
+}
+
+/// LM Studio's loaded models with the context each was loaded with (where it says it).
+pub(crate) fn lmstudio_loaded(url: &str, key: &str) -> Vec<(String, Option<u64>)> {
+    match get(url, "/api/v0/models", key, Duration::from_secs(3)) {
+        Said::Json(v) => (v.get("data").and_then(Value::as_array).into_iter().flatten())
+            .filter(|m| m.get("state").and_then(Value::as_str) == Some("loaded"))
+            .filter_map(|m| {
+                Some((m.get("id")?.as_str()?.to_string(), m.get("loaded_context_length").and_then(Value::as_u64)))
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The models of the standard list (`/v1/models`), which every kind of server gives: their ids.
+fn standard_models(platform: &str, url: &str, key: &str) -> Result<Vec<String>, Unavailable> {
+    let listed = |v: &Value| v.get("data").and_then(Value::as_array).cloned();
+    match get(url, "/v1/models", key, Duration::from_secs(3)) {
+        Said::Json(v) if v.is_object() => Ok((listed(&v).unwrap_or_default().iter())
+            .filter_map(|m| Some(m.get("id")?.as_str().filter(|id| !id.is_empty())?.chars().take(200).collect()))
+            .collect()),
+        Said::Status(code, _) => {
+            let hint = if code == 401 || code == 403 { ": check the API key" } else { "" };
+            Err(Unavailable { why: format!("The describe server at {url} refused ({code}{hint})"), code: Some(code) })
+        }
+        _ => Err(unavailable(format!("No {} server answers at {url} ({})", named(platform), start_hint(platform)))),
+    }
+}
+
+/// Ollama's models (`/api/tags`), which of them read pictures (`/api/show`: its capabilities) and which are
+/// loaded (`/api/ps`). A model that only makes embeddings is left out. Asked of at most `OLLAMA_SHOWN`.
+fn ollama_models(url: &str, key: &str) -> Result<(Models, Vec<String>), Unavailable> {
+    const OLLAMA_SHOWN: usize = 40;
+    let names = |v: &Value| -> Vec<String> {
+        (v.get("models").and_then(Value::as_array).into_iter().flatten())
+            .filter_map(|m| Some(m.get("name")?.as_str().filter(|n| !n.is_empty())?.chars().take(200).collect()))
+            .collect()
+    };
+    let all = match get(url, "/api/tags", key, Duration::from_secs(3)) {
+        Said::Json(v) if v.get("models").is_some_and(Value::is_array) => names(&v),
+        Said::Status(code, _) if code == 401 || code == 403 => {
+            return Err(Unavailable {
+                why: format!("The describe server at {url} refused ({code}: check the API key)"),
+                code: Some(code),
+            });
+        }
+        Said::Nothing(_) => {
+            return Err(unavailable(format!("No Ollama server answers at {url} ({})", start_hint("ollama"))));
+        }
+        // it answers, but not as Ollama: the standard list
+        _ => return Ok((standard_models("ollama", url, key)?.into_iter().map(|m| (m, None)).collect(), Vec::new())),
+    };
+    let mut models = Vec::new();
+    for name in all.into_iter().take(OLLAMA_SHOWN) {
+        let can = match post(url, "/api/show", key, &json!({"model": name}), Duration::from_secs(3)) {
+            Said::Json(v) => v
+                .get("capabilities")
+                .and_then(Value::as_array)
+                .map(|c| c.iter().filter_map(Value::as_str).map(str::to_string).collect::<Vec<_>>()),
+            _ => None,
+        };
+        match can {
+            Some(c) if c.iter().any(|w| w == "embedding") && !c.iter().any(|w| w == "completion") => {}
+            Some(c) => models.push((name, Some(c.iter().any(|w| w == "vision")))),
+            None => models.push((name, None)),
+        }
+    }
+    let loaded = match get(url, "/api/ps", key, Duration::from_secs(3)) {
+        Said::Json(v) => names(&v),
+        _ => Vec::new(),
+    };
+    Ok((models, loaded))
+}
+
+/// llama.cpp's server: the model it serves (`/v1/models`), loaded, and whether it reads pictures (`/props`:
+/// its modalities, where the server says them).
+fn llamacpp_models(url: &str, key: &str) -> Result<(Models, Vec<String>), Unavailable> {
+    let ids = standard_models("llamacpp", url, key)?;
+    let vision = match get(url, "/props", key, Duration::from_secs(3)) {
+        Said::Json(v) => v.get("modalities").and_then(|m| m.get("vision")).and_then(Value::as_bool),
+        _ => None,
+    };
+    Ok((ids.iter().map(|m| (m.clone(), vision)).collect(), ids))
+}
+
+/// The models a server of this kind offers, and those that are loaded.
+pub fn models_of(platform: &str, url: &str, key: &str) -> Result<(Models, Vec<String>), Unavailable> {
+    match platform {
+        "ollama" => ollama_models(url, key),
+        "llamacpp" => llamacpp_models(url, key),
+        // vLLM serves what it was started with: every model listed is loaded; it doesn't say which read pictures
+        "vllm" => {
+            let ids = standard_models("vllm", url, key)?;
+            Ok((ids.iter().map(|m| (m.clone(), None)).collect(), ids))
+        }
+        _ => lmstudio_models(url, key),
+    }
+}
+
+/// The models a server offers, and those that are loaded, asked as its kind is asked. `at`: (address, key)
+/// of another server than the saved one (the Test button).
 pub fn server_models(c: &Config, at: Option<(&str, &str)>) -> Result<(Models, Vec<String>), Unavailable> {
     let (url, key) = at.unwrap_or((&c.url, &c.key));
-    let no_answer = || {
-        unavailable(format!(
-            "No describe server answers at {url} (LM Studio: start it and turn on its local server; on another device, also 'Serve on local network')"
-        ))
-    };
+    models_of(&c.platform, url, key)
+}
+
+/// LM Studio's own list (which says which models are vision models and which are loaded); a server there
+/// that isn't LM Studio is asked the standard way.
+fn lmstudio_models(url: &str, key: &str) -> Result<(Models, Vec<String>), Unavailable> {
     let listed = |v: &Value| v.get("data").and_then(Value::as_array).cloned();
     match get(url, "/api/v0/models", key, Duration::from_secs(3)) {
-        // LM Studio's own list
         Said::Json(v) => {
             let rows = listed(&v)
                 .filter(|rows| rows.iter().all(|m| m.is_object() && m.get("id").is_some_and(Value::is_string)));
@@ -141,26 +280,13 @@ pub fn server_models(c: &Config, at: Option<(&str, &str)>) -> Result<(Models, Ve
             }
         }
         // nothing there: don't wait twice
-        Said::Nothing(_) => return Err(no_answer()),
+        Said::Nothing(_) => {
+            return Err(unavailable(format!("No describe server answers at {url} ({})", start_hint("lmstudio"))));
+        }
         // it answered, but isn't LM Studio: ask the standard way
         Said::Status(..) | Said::Unreadable | Said::TooLarge => {}
     }
-    match get(url, "/v1/models", key, Duration::from_secs(3)) {
-        Said::Json(v) if v.is_object() => {
-            let rows = listed(&v).unwrap_or_default();
-            Ok((
-                rows.iter()
-                    .filter_map(|m| Some((m.get("id")?.as_str().filter(|id| !id.is_empty())?.to_string(), None)))
-                    .collect(),
-                Vec::new(),
-            ))
-        }
-        Said::Status(code, _) => {
-            let hint = if code == 401 || code == 403 { ": check the API key" } else { "" };
-            Err(Unavailable { why: format!("The describe server at {url} refused ({code}{hint})"), code: Some(code) })
-        }
-        _ => Err(no_answer()),
-    }
+    Ok((standard_models("lmstudio", url, key)?.into_iter().map(|m| (m, None)).collect(), Vec::new()))
 }
 
 type Found = Result<(Models, Vec<String>), Unavailable>;
@@ -181,9 +307,13 @@ fn server_model(c: &Config, found: Option<Found>) -> Result<String, Unavailable>
     let says = models.iter().any(|(_, vision)| vision.is_some());
     let vision: Vec<&String> = models.iter().filter(|(_, v)| !says || *v == Some(true)).map(|(m, _)| m).collect();
     let Some(first) = vision.first() else {
-        return Err(unavailable(
-            "The describe server has no vision model: download one (for example Qwen 3.6) and try again",
-        ));
+        return Err(unavailable(match c.platform.as_str() {
+            "ollama" => "Ollama has no model that reads pictures: pull one and try again",
+            "llamacpp" => {
+                "llama.cpp serves a model that doesn't read pictures: start it with the model's --mmproj file"
+            }
+            _ => "The describe server has no vision model: download one (for example Qwen 3.6) and try again",
+        }));
     };
     Ok((*vision.iter().find(|m| loaded.contains(m)).unwrap_or(first)).clone())
 }
@@ -213,11 +343,12 @@ pub fn model(c: &Config, found: Option<Found>) -> Result<String, Unavailable> {
 
 /// {ok, model or why, builtin, config, models, helpers} for the page (never the API key).
 /// `devices`: asked for the addresses of the owner's other devices, when the work may be shared out.
-pub fn status(home: &Path, devices: &dyn Fn() -> Vec<String>) -> Value {
+pub fn status(home: &Path, devices: &dyn Fn() -> Vec<Vec<String>>) -> Value {
     let c = config(home);
     let (place, open) = where_is(&c.url);
     let mut out = json!({"builtin": florence::status(),
-                         "config": {"use": c.choice, "url": c.url, "model": c.model, "key": !c.key.is_empty(), "default_url": default_url(),
+                         "platforms": face_home::describe::PLATFORMS.iter().map(|(id, name, _)| json!({"id": id, "name": name, "url": face_home::describe::default_url_for(id)})).collect::<Vec<_>>(),
+                         "config": {"use": c.choice, "platform": c.platform, "url": c.url, "model": c.model, "key": !c.key.is_empty(), "default_url": face_home::describe::default_url_for(&c.platform),
                                     "where": place, "unencrypted": open},
                          "models": []});
     // ask the server once, for the list and for the model to use
@@ -237,6 +368,14 @@ pub fn status(home: &Path, devices: &dyn Fn() -> Vec<String>) -> Value {
         }
     }
     out["config"]["spread"] = json!(c.spread);
+    // what suits this computer's hardware (the server's models as it listed them)
+    #[cfg(feature = "import")]
+    if c.choice != "builtin" {
+        let have: Vec<String> =
+            out["models"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
+        out["suggested"] = crate::aiserve::suggestion(&c, &have);
+        out["loading"] = loading_state();
+    }
     let helping = match out["model"].as_str().filter(|_| out["ok"] == true) {
         Some(name) => helpers(home, name, devices),
         None => Vec::new(),
@@ -263,19 +402,26 @@ fn connect_secs(url: &str) -> f64 {
     if opened { began.elapsed().as_secs_f64() } else { 9.0 }
 }
 
-/// The other LM Studio servers Describe all may also send photos to: (the computer's name, the address),
+/// The other servers Describe all may also send photos to: (the computer's name or address, the address),
 /// only with "spread" on and a server's model. Each is one of the owner's own devices: a computer in the
-/// shared database, at an address it gave there (`devices`), or this computer; never whatever else on the
-/// network answers like LM Studio with the model's name. Each must list the same model as a vision model,
-/// so every description comes from the same model. The configured server itself isn't one of them. No API
-/// key goes to them.
-pub fn helpers(home: &Path, name: &str, devices: &dyn Fn() -> Vec<String>) -> Vec<(String, String)> {
+/// shared database, at an address it gave there (`devices`, each device's addresses together), or this
+/// computer; never whatever else on the network answers with the model's name. Each is of the same kind as
+/// the configured server and has the same model (a vision model where its kind says so), so every
+/// description comes from the same model. The configured server itself isn't one of them. No API key goes
+/// to them. LM Studio's are found on the network (`lmsnet`); the other kinds at each device's addresses on
+/// the kind's usual port, at one address a device (the one that connects first).
+pub fn helpers(home: &Path, name: &str, devices: &dyn Fn() -> Vec<Vec<String>>) -> Vec<(String, String)> {
     let c = config(home);
     if !c.spread || c.choice == "builtin" || name.is_empty() || name == BUILTIN {
         return Vec::new();
     }
+    if c.platform != "lmstudio" {
+        let port =
+            face_home::describe::PLATFORMS.iter().find(|(p, _, _)| *p == c.platform).map_or(0, |(_, _, port)| *port);
+        return other_helpers(home, &c, name, &devices(), port);
+    }
     let main_here = where_is(&c.url).0 == "this computer";
-    let mut ours = devices();
+    let mut ours: Vec<String> = devices().into_iter().flatten().collect();
     ours.extend(crate::hardware::own_addresses(home, None).iter().map(ToString::to_string));
     let mut out = Vec::new();
     for e in crate::lmsnet::lmstudio_network(home).as_array().into_iter().flatten() {
@@ -306,6 +452,53 @@ pub fn helpers(home: &Path, name: &str, devices: &dyn Fn() -> Vec<String>) -> Ve
     out
 }
 
+/// The other kinds' helpers: each device of the owner's asked at its addresses on `port` (the kind's usual
+/// one), all at the same time (a device that is off costs one wait, not one for each), and kept where it has
+/// the model.
+fn other_helpers(home: &Path, c: &Config, name: &str, devices: &[Vec<String>], port: u16) -> Vec<(String, String)> {
+    let distributed = crate::hardware::distributed(home);
+    let main = face_home::describe::host_of(&c.url);
+    let main = &main;
+    let found: Vec<Option<(String, String)>> = std::thread::scope(|scope| {
+        let asked: Vec<_> = (devices.iter())
+            .map(|addresses| {
+                scope.spawn(move || {
+                    let mut urls: Vec<(f64, String)> = (addresses.iter())
+                        .filter(|host| *host != main)
+                        .map(|host| {
+                            let host = if host.contains(':') && !host.starts_with('[') {
+                                format!("[{host}]")
+                            } else {
+                                host.clone()
+                            };
+                            format!("http://{host}:{port}")
+                        })
+                        // beyond the local network only as a "Fully distributed system"
+                        .filter(|url| distributed || where_is(url).0 != "the internet")
+                        .map(|url| (connect_secs(&url), url))
+                        .filter(|(secs, _)| *secs < 9.0)
+                        .collect();
+                    urls.sort_by(|a, b| a.0.total_cmp(&b.0));
+                    let (_, url) = urls.into_iter().next()?;
+                    let (models, _) = models_of(&c.platform, &url, "").ok()?;
+                    models
+                        .iter()
+                        .any(|(m, vision)| m == name && *vision != Some(false))
+                        .then(|| (face_home::describe::host_of(&url), url))
+                })
+            })
+            .collect();
+        asked.into_iter().map(|h| h.join().ok().flatten()).collect()
+    });
+    let mut out: Vec<(String, String)> = Vec::new();
+    for helper in found.into_iter().flatten() {
+        if !out.iter().any(|(_, url)| *url == helper.1) {
+            out.push(helper);
+        }
+    }
+    out
+}
+
 /// For Settings' Test button: what the server at an address offers, or why it doesn't answer.
 pub fn test(home: &Path, url: &str, key: &str) -> Result<String, Unavailable> {
     let url = clean_url(url).map_err(unavailable)?;
@@ -320,18 +513,21 @@ pub fn test(home: &Path, url: &str, key: &str) -> Result<String, Unavailable> {
     };
     let (models, _) = server_models(&c, Some((&url, key)))?;
     let vision: Vec<&str> = models.iter().filter(|(_, v)| *v == Some(true)).map(|(m, _)| m.as_str()).collect();
+    let name = named(&c.platform);
     if models.iter().any(|(_, v)| v.is_some()) {
-        // LM Studio
-        let which = if vision.is_empty() {
-            ". Download one (for example Qwen 3.6) in LM Studio".to_string()
-        } else {
-            format!(": {}", vision[..vision.len().min(5)].join(", "))
+        let which = match (vision.is_empty(), c.platform.as_str()) {
+            (true, "ollama") => ". Pull one that reads pictures".to_string(),
+            (true, "llamacpp") => ": start it with the model's --mmproj file to read pictures".to_string(),
+            (true, _) => ". Download one (for example Qwen 3.6) in LM Studio".to_string(),
+            (false, _) => format!(": {}", vision[..vision.len().min(5)].join(", ")),
         };
-        return Ok(format!("LM Studio answers: {} vision model(s){which}", vision.len()));
+        return Ok(format!("{name} answers: {} vision model(s){which}", vision.len()));
     }
     let first: Vec<&str> = models.iter().take(5).map(|(m, _)| m.as_str()).collect();
+    let who = if c.platform == "lmstudio" { "The server".to_string() } else { name.to_string() };
+    let pick = if c.platform == "vllm" { " (it doesn't say which read pictures: pick a vision model)" } else { "" };
     Ok(format!(
-        "The server answers: {} model(s){}",
+        "{who} answers: {} model(s){}{pick}",
         models.len(),
         if first.is_empty() { String::new() } else { format!(": {}", first.join(", ")) }
     ))
@@ -347,13 +543,20 @@ pub fn ask(home: &Path, jpeg: &[u8], name: &str, at: Option<&str>) -> Result<Val
     let url = at.unwrap_or(&c.url);
     // a key belongs to its own server only
     let key = if at.is_none_or(|at| at == c.url) { c.key.as_str() } else { "" };
+    if c.platform == "ollama" {
+        return ask_ollama(url, key, jpeg, name);
+    }
     let picture = format!("data:image/jpeg;base64,{}", B64.encode(jpeg));
     let mut body = json!({"model": name, "temperature": 0.2, "max_tokens": 400, "reasoning_effort": "none",
                           "messages": [{"role": "user", "content": [{"type": "text", "text": PROMPT},
                                                                      {"type": "image_url", "image_url": {"url": picture}}]}]});
+    // (llama.cpp and vLLM switch a model's reasoning off in its chat template)
+    if matches!(c.platform.as_str(), "llamacpp" | "vllm") {
+        body["chat_template_kwargs"] = json!({"enable_thinking": false});
+    }
     let began = Instant::now();
     let mut said = Said::Unreadable;
-    for attempt in 0..2 {
+    for attempt in 0..3 {
         let mut ask =
             agent(TIMEOUT).post(format!("{url}/v1/chat/completions")).header("Content-Type", "application/json");
         if !key.is_empty() {
@@ -361,10 +564,14 @@ pub fn ask(home: &Path, jpeg: &[u8], name: &str, at: Option<&str>) -> Result<Val
         }
         said = read(ask.send(filejson::dumps(&body).as_bytes()));
         match &said {
-            // a server that doesn't know the setting: asked once more without it
-            Said::Status(400 | 422, why) if attempt == 0 && why.contains("reasoning") => {
-                if let Some(o) = body.as_object_mut() {
-                    o.shift_remove("reasoning_effort");
+            // a server that doesn't know a setting: asked once more without it
+            Said::Status(400 | 422, why)
+                if attempt < 2 && (why.contains("reasoning") || why.contains("chat_template_kwargs")) =>
+            {
+                let without =
+                    if why.contains("chat_template_kwargs") { "chat_template_kwargs" } else { "reasoning_effort" };
+                if body.as_object_mut().and_then(|o| o.shift_remove(without)).is_none() {
+                    break;
                 }
             }
             _ => break,
@@ -392,6 +599,108 @@ pub fn ask(home: &Path, jpeg: &[u8], name: &str, at: Option<&str>) -> Result<Val
         return Err(unavailable("The model gave an empty answer"));
     }
     Ok(json!({"text": text, "model": name, "secs": filejson::round(began.elapsed().as_secs_f64(), 1)}))
+}
+
+/// Ollama asked with its own request (`/api/chat`): the context the model was loaded with (`num_ctx`, which
+/// Ollama's OpenAI-style request can't carry: one without it would load the model again with Ollama's own),
+/// reasoning off as Ollama takes it (`think`), the same prompt and limits as every other kind.
+fn ask_ollama(url: &str, key: &str, jpeg: &[u8], name: &str) -> Result<Value, Unavailable> {
+    #[cfg(feature = "import")]
+    let context = crate::aiserve::DESCRIBE_CONTEXT;
+    #[cfg(not(feature = "import"))]
+    let context = 8192;
+    let body = json!({"model": name, "stream": false, "think": false, "keep_alive": "30m",
+                      "options": {"temperature": 0.2, "num_predict": 400, "num_ctx": context},
+                      "messages": [{"role": "user", "content": PROMPT, "images": [B64.encode(jpeg)]}]});
+    let began = Instant::now();
+    let answer = match post(url, "/api/chat", key, &body, TIMEOUT) {
+        Said::Json(v) => v,
+        Said::Status(code, why) => {
+            return Err(unavailable(format!("The describe server couldn't describe it ({code}: {why})")));
+        }
+        Said::Nothing(why) => return Err(unavailable(format!("The describe server didn't answer: {why}"))),
+        Said::Unreadable => return Err(unavailable("The describe server's answer wasn't understood")),
+        Said::TooLarge => return Err(unavailable("The describe server's answer was too large")),
+    };
+    let text = answer.get("message").and_then(|m| m.get("content")).and_then(Value::as_str).unwrap_or("");
+    let text: String = text.trim().chars().take(MAX_TEXT).collect();
+    if text.is_empty() {
+        return Err(unavailable("The model gave an empty answer"));
+    }
+    Ok(json!({"text": text, "model": name, "secs": filejson::round(began.elapsed().as_secs_f64(), 1)}))
+}
+
+/// The last loading of a model in Settings: {running, said, ok}.
+static LOADING: std::sync::Mutex<Option<(bool, String, bool)>> = std::sync::Mutex::new(None);
+
+fn loading_state() -> Value {
+    match &*LOADING.lock().unwrap_or_else(|e| e.into_inner()) {
+        Some((running, said, ok)) => json!({"running": running, "said": said, "ok": ok}),
+        None => Value::Null,
+    }
+}
+
+/// Load the suggested model with its settings, on a thread of its own (a request never waits for it). Not
+/// while another loading runs. `what` says why (a choice in Settings, or the Load button).
+#[cfg(feature = "import")]
+pub(crate) fn load_suggested(home: &Path) -> Result<(), String> {
+    // (llama.cpp and vLLM serve what they were started with: Settings shows the command, and nothing is loaded)
+    if matches!(config(home).platform.as_str(), "llamacpp" | "vllm") {
+        *LOADING.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        return Err(
+            "llama.cpp and vLLM serve the model they were started with: start them with the command shown.".to_string()
+        );
+    }
+    {
+        let mut l = LOADING.lock().unwrap_or_else(|e| e.into_inner());
+        if l.as_ref().is_some_and(|(running, _, _)| *running) {
+            return Err("A model is being loaded already.".to_string());
+        }
+        *l = Some((true, "Loading…".to_string(), false));
+    }
+    let home = home.to_path_buf();
+    std::thread::Builder::new()
+        .name("describer load".into())
+        .spawn(move || {
+            let c = config(&home);
+            let done = (|| {
+                if c.choice == "builtin" {
+                    return Err("The built-in model needs no loading.".to_string());
+                }
+                if where_is(&c.url).0 != "this computer" && c.platform == "lmstudio" {
+                    return Err(
+                        "LM Studio on another device loads its model there: in that device's Settings.".to_string()
+                    );
+                }
+                let (models, _) = server_models(&c, None).map_err(|e| e.why)?;
+                let have: Vec<String> =
+                    models.iter().filter(|(_, v)| *v != Some(false)).map(|(m, _)| m.clone()).collect();
+                let room = crate::aiserve::here();
+                let mut plan = crate::aiserve::plan(
+                    &c.platform,
+                    &room,
+                    &have,
+                    crate::aiserve::DESCRIBE_CONTEXT,
+                    &crate::lmstudio::models_dir(),
+                )
+                .ok_or(
+                    "This computer has too little graphics memory for any of the models that describe photos well.",
+                )?;
+                // the model picked in Settings, where one is: loaded with the settings for it
+                if !c.model.is_empty() && plan.model != c.model {
+                    plan.model = c.model.clone();
+                    plan.there = have.contains(&c.model);
+                }
+                crate::aiserve::load(&c, &plan)
+            })();
+            let (said, ok) = match done {
+                Ok(said) => (said, true),
+                Err(why) => (why, false),
+            };
+            *LOADING.lock().unwrap_or_else(|e| e.into_inner()) = Some((false, said, ok));
+        })
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -477,6 +786,7 @@ mod tests {
     fn the_model_is_the_one_picked_else_a_loaded_vision_model_else_the_first() {
         let c = |model: &str| Config {
             choice: "server".into(),
+            platform: "lmstudio".into(),
             url: "http://127.0.0.1:9".into(),
             model: model.into(),
             key: String::new(),
@@ -561,6 +871,180 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
+    fn home_of(name: &str, url: &str, platform: &str) -> std::path::PathBuf {
+        let home = home(name, url);
+        let mut c = Map::new();
+        c.insert("platform".to_string(), json!(platform));
+        c.insert("url".to_string(), json!(url));
+        set_config(&home, &c).unwrap();
+        home
+    }
+
+    #[test]
+    fn ollama_says_which_of_its_models_read_pictures_and_which_are_loaded() {
+        let (url, _) = server(|method, path, _, body| match (method, path) {
+            ("GET", "/api/tags") => (
+                200,
+                vec![],
+                json!({"models": [{"name": "words:7b"}, {"name": "sees:8b"},
+                                                                       {"name": "numbers:v1"}, {"name": "quiet:1b"}]})
+                .to_string(),
+            ),
+            ("POST", "/api/show") => {
+                let can = match body["model"].as_str().unwrap_or("") {
+                    "words:7b" => json!(["completion", "tools"]),
+                    "sees:8b" => json!(["completion", "vision"]),
+                    "numbers:v1" => json!(["embedding"]),
+                    _ => return (500, vec![], "{}".to_string()),
+                };
+                (200, vec![], json!({"capabilities": can}).to_string())
+            }
+            ("GET", "/api/ps") => (200, vec![], json!({"models": [{"name": "words:7b"}]}).to_string()),
+            // Ollama's own request: the context it was loaded with, and no reasoning
+            ("POST", "/api/chat")
+                if body["options"]["num_ctx"] == 4096
+                    && body["think"] == false
+                    && body["messages"][0]["images"][0] == B64.encode(b"a picture") =>
+            {
+                (
+                    200,
+                    vec![],
+                    json!({"message": {"role": "assistant", "content": "A garden.\nText: none"}, "done": true})
+                        .to_string(),
+                )
+            }
+            _ => (404, vec![], "{}".to_string()),
+        });
+        let home = home_of("ollama", &url, "ollama");
+        let c = config(&home);
+        assert_eq!(c.platform, "ollama");
+        assert_eq!(
+            server_models(&c, None).unwrap(),
+            (
+                vec![
+                    ("words:7b".to_string(), Some(false)),
+                    ("sees:8b".to_string(), Some(true)),
+                    ("quiet:1b".to_string(), None)
+                ],
+                vec!["words:7b".to_string()]
+            ),
+            "the embedding model is left out; one whose details weren't given is not said"
+        );
+        assert_eq!(model(&c, None).unwrap(), "sees:8b", "the vision model, though another is loaded");
+        assert_eq!(test(&home, &url, "").unwrap(), "Ollama answers: 1 vision model(s): sees:8b");
+        let st = status(&home, &Vec::new);
+        assert_eq!(
+            (&st["config"]["platform"], &st["config"]["default_url"]),
+            (&json!("ollama"), &json!("http://127.0.0.1:11434"))
+        );
+        assert_eq!(st["platforms"].as_array().unwrap().len(), 4);
+        assert_eq!(ask(&home, b"a picture", "sees:8b", None).unwrap()["text"], "A garden.\nText: none");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn llama_cpp_serves_one_model_and_says_whether_it_reads_pictures() {
+        let vision = Arc::new(Mutex::new(true));
+        let sees = vision.clone();
+        let (url, seen) = server(move |method, path, _, body| match (method, path) {
+            ("GET", "/v1/models") => {
+                (200, vec![], json!({"object": "list", "data": [{"id": "model.gguf", "object": "model"}]}).to_string())
+            }
+            ("GET", "/props") => (200, vec![], json!({"modalities": {"vision": *sees.lock().unwrap()}}).to_string()),
+            // a server that doesn't take the template's setting: asked once more without it
+            ("POST", "/v1/chat/completions") if body.get("chat_template_kwargs").is_some() => {
+                (400, vec![], "unknown field: chat_template_kwargs".to_string())
+            }
+            ("POST", "/v1/chat/completions") => (200, vec![], said("A beach.")),
+            _ => (404, vec![], "{}".to_string()),
+        });
+        let home = home_of("llamacpp", &url, "llamacpp");
+        let c = config(&home);
+        assert_eq!(
+            server_models(&c, None).unwrap(),
+            (vec![("model.gguf".to_string(), Some(true))], vec!["model.gguf".to_string()])
+        );
+        assert_eq!(model(&c, None).unwrap(), "model.gguf");
+        assert_eq!(ask(&home, b"a picture", "model.gguf", None).unwrap()["text"], "A beach.");
+        {
+            let seen = seen.lock().unwrap();
+            let asked: Vec<&Value> =
+                seen.iter().filter(|(p, _, _)| p == "/v1/chat/completions").map(|(_, _, b)| b).collect();
+            assert_eq!(asked.len(), 2);
+            assert_eq!(asked[0]["chat_template_kwargs"], json!({"enable_thinking": false}));
+            assert!(asked[1].get("chat_template_kwargs").is_none() && asked[1]["reasoning_effort"] == "none");
+        }
+        // started without the model's picture part: said so
+        *vision.lock().unwrap() = false;
+        assert!(model(&c, None).unwrap_err().why.contains("--mmproj"));
+        assert!(test(&home, &url, "").unwrap().contains("--mmproj"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn vllm_wants_its_key_and_doesnt_say_which_models_read_pictures() {
+        let (url, _) = server(|method, path, headers, _| match (method, path) {
+            (_, _) if !headers.contains("authorization: bearer vllm-key") => (401, vec![], "{}".to_string()),
+            ("GET", "/v1/models") => {
+                (200, vec![], json!({"object": "list", "data": [{"id": "org/a-vl"}, {"id": "org/b"}]}).to_string())
+            }
+            _ => (404, vec![], "{}".to_string()),
+        });
+        let home = home_of("vllm", &url, "vllm");
+        let e = server_models(&config(&home), None).unwrap_err();
+        assert_eq!(e.code, Some(401));
+        assert!(e.why.contains("check the API key"));
+        let mut key = Map::new();
+        key.insert("key".to_string(), json!("vllm-key"));
+        set_config(&home, &key).unwrap();
+        let c = config(&home);
+        assert_eq!(
+            server_models(&c, None).unwrap(),
+            (
+                vec![("org/a-vl".to_string(), None), ("org/b".to_string(), None)],
+                vec!["org/a-vl".to_string(), "org/b".to_string()]
+            )
+        );
+        assert!(test(&home, &url, "").unwrap().contains("pick a vision model"));
+        // nothing answers at an address: what to start, for this kind
+        let mut away = Map::new();
+        away.insert("url".to_string(), json!("http://127.0.0.1:9"));
+        set_config(&home, &away).unwrap();
+        assert!(server_models(&config(&home), None).unwrap_err().why.contains("vllm serve"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Describe all is shared with another device's server of the same kind that has the same model: here an
+    /// Ollama stand-in on this computer as "another device" (the configured server is called localhost).
+    #[test]
+    fn describe_all_is_shared_with_the_owners_other_servers_of_every_kind() {
+        let (url, _) = server(|method, path, _, body| match (method, path) {
+            ("GET", "/api/tags") => {
+                (200, vec![], json!({"models": [{"name": "sees:8b"}, {"name": "words:7b"}]}).to_string())
+            }
+            ("POST", "/api/show") if body["model"] == "sees:8b" => {
+                (200, vec![], json!({"capabilities": ["completion", "vision"]}).to_string())
+            }
+            ("POST", "/api/show") => (200, vec![], json!({"capabilities": ["completion"]}).to_string()),
+            _ => (404, vec![], "{}".to_string()),
+        });
+        let port: u16 = url.rsplit(':').next().unwrap().parse().unwrap();
+        let home = home_of("helpers", "http://localhost:9", "ollama");
+        let c = config(&home);
+        let device = vec![vec!["127.0.0.1".to_string(), "192.0.2.1".to_string()]];
+        assert_eq!(other_helpers(&home, &c, "sees:8b", &device, port), vec![("127.0.0.1".to_string(), url.clone())]);
+        // the same model, or none: a model that doesn't read pictures is not one
+        assert!(other_helpers(&home, &c, "words:7b", &device, port).is_empty());
+        assert!(other_helpers(&home, &c, "elsewhere:1b", &device, port).is_empty());
+        // the configured server's own address is not a helper of itself
+        let home2 = home_of("helpers-main", &format!("http://127.0.0.1:{port}"), "ollama");
+        assert!(other_helpers(&home2, &config(&home2), "sees:8b", &device, port).is_empty());
+        // and nothing is asked unless the owner switched sharing on
+        assert!(helpers(&home, "sees:8b", &|| device.clone()).is_empty());
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&home2);
+    }
+
     #[test]
     fn a_redirect_is_never_followed_and_odd_answers_are_refused() {
         let (elsewhere, followed) = server(|_, _, _, _| (200, vec![], said("from somewhere else")));
@@ -607,7 +1091,7 @@ mod tests {
     fn nothing_is_shared_out_unless_the_owner_switched_it_on() {
         let home = home("spread", "http://127.0.0.1:9");
         // (neither the other devices nor the network are asked)
-        let never = || -> Vec<String> { panic!("the other devices are asked only when the work is shared out") };
+        let never = || -> Vec<Vec<String>> { panic!("the other devices are asked only when the work is shared out") };
         assert!(helpers(&home, "vision", &never).is_empty());
         let mut on = Map::new();
         on.insert("spread".to_string(), json!(true));

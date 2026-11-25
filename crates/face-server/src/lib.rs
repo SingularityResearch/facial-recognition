@@ -11,6 +11,8 @@ pub use face_core::runtime::no_telemetry;
 // log): shared with the sync
 pub use face_home::{alerts, exprlog, presence, store};
 
+#[cfg(feature = "import")]
+mod aiserve;
 pub mod app;
 pub mod camrelay;
 pub mod camstream;
@@ -30,11 +32,14 @@ pub mod firstrun;
 pub mod florence;
 pub mod guard;
 pub mod hardware;
+pub mod history;
 pub mod http;
 pub mod join;
 pub mod label;
 #[cfg(feature = "sync")]
 mod label_settings;
+#[cfg(feature = "import")]
+mod libhistory;
 #[cfg(feature = "import")]
 pub mod listen;
 #[cfg(feature = "import")]

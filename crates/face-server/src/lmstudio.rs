@@ -94,14 +94,37 @@ fn user_home() -> PathBuf {
     PathBuf::from(std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap_or_default())
 }
 
+/// The folders LM Studio may keep its own things in, the likeliest first: the one its home pointer names
+/// (`~/.lmstudio-home-pointer`: LM Studio's own way of keeping its folder elsewhere, on another drive say), its
+/// usual `~/.lmstudio`, and an older one.
+pub fn homes() -> Vec<PathBuf> {
+    homes_in(&user_home())
+}
+
+fn homes_in(user: &Path) -> Vec<PathBuf> {
+    let pointed = std::fs::read_to_string(user.join(".lmstudio-home-pointer"))
+        .ok()
+        .map(|text| PathBuf::from(text.trim()))
+        .filter(|p| p.is_absolute() && p.is_dir());
+    let mut out: Vec<PathBuf> = pointed.into_iter().collect();
+    for usual in [user.join(".lmstudio"), user.join(".cache").join("lm-studio")] {
+        if !out.contains(&usual) {
+            out.push(usual);
+        }
+    }
+    out
+}
+
+/// LM Studio's folder: the first of `homes` that is there (its usual one where none is).
+pub fn home() -> PathBuf {
+    let homes = homes();
+    homes.iter().find(|h| h.is_dir()).cloned().unwrap_or_else(|| user_home().join(".lmstudio"))
+}
+
 /// LM Studio's `lms` command, if it is on this computer.
 pub fn lms_path() -> Option<PathBuf> {
     let exe = if cfg!(windows) { "lms.exe" } else { "lms" };
-    let home = user_home();
-    let here = [home.join(".lmstudio"), home.join(".cache").join("lm-studio")]
-        .into_iter()
-        .map(|f| f.join("bin").join(exe))
-        .find(|p| p.exists());
+    let here = homes().into_iter().map(|f| f.join("bin").join(exe)).find(|p| p.exists());
     here.or_else(|| std::env::split_paths(&std::env::var_os("PATH")?).map(|dir| dir.join(exe)).find(|p| p.is_file()))
 }
 
@@ -117,7 +140,7 @@ fn command(lms: &Path, args: &[&str]) -> Command {
 }
 
 /// What `lms` says to these words: (it ended well, its output), or None without it, or when it takes too long.
-fn lms(args: &[&str], wait: Duration) -> Option<(bool, String)> {
+pub(crate) fn lms(args: &[&str], wait: Duration) -> Option<(bool, String)> {
     let mut child = command(&lms_path()?, args).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
     let mut out = child.stdout.take()?;
     let reader = std::thread::spawn(move || {
@@ -142,11 +165,7 @@ fn lms(args: &[&str], wait: Duration) -> Option<(bool, String)> {
 
 /// LM Studio's own server settings, where it keeps them.
 pub fn config_path() -> Option<PathBuf> {
-    let home = user_home();
-    [home.join(".lmstudio"), home.join(".cache").join("lm-studio")]
-        .into_iter()
-        .map(|f| f.join(".internal").join("http-server-config.json"))
-        .find(|p| p.exists())
+    homes().into_iter().map(|f| f.join(".internal").join("http-server-config.json")).find(|p| p.exists())
 }
 
 /// The port this computer's LM Studio serves on.
@@ -836,7 +855,7 @@ pub fn set_distributed(home: &Path, on: bool) -> Result<(), String> {
 
 /// LM Studio's models folder (from its settings) and where it keeps each model's description.
 pub fn models_dir() -> PathBuf {
-    let home = user_home().join(".lmstudio");
+    let home = home();
     let settings: Option<Value> =
         std::fs::read(home.join("settings.json")).ok().and_then(|b| serde_json::from_slice(&b).ok());
     let named =
@@ -845,7 +864,7 @@ pub fn models_dir() -> PathBuf {
 }
 
 fn hub_dir() -> PathBuf {
-    user_home().join(".lmstudio").join("hub").join("models")
+    home().join("hub").join("models")
 }
 
 /// A folder's files' names, in the order of paths (without regard to case on Windows).
@@ -1135,6 +1154,29 @@ pub fn share_status(home: &Path) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// LM Studio kept elsewhere (its home pointer names the folder): that folder first, then the usual ones; a
+    /// pointer that names nothing there, or no folder at all, is passed over.
+    #[test]
+    fn lm_studios_folder_is_where_its_own_pointer_says() {
+        let user = std::env::temp_dir().join(format!("face-lms-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&user);
+        let moved = user.join("elsewhere").join("lmstudio");
+        std::fs::create_dir_all(&moved).unwrap();
+        assert_eq!(homes_in(&user), vec![user.join(".lmstudio"), user.join(".cache").join("lm-studio")]);
+        std::fs::write(user.join(".lmstudio-home-pointer"), format!("{}\r\n", moved.display())).unwrap();
+        assert_eq!(homes_in(&user)[0], moved);
+        assert_eq!(homes_in(&user).len(), 3);
+        // the pointer naming the usual folder: listed once
+        std::fs::write(user.join(".lmstudio-home-pointer"), user.join(".lmstudio").display().to_string()).unwrap();
+        std::fs::create_dir_all(user.join(".lmstudio")).unwrap();
+        assert_eq!(homes_in(&user).len(), 2);
+        for not in ["", "relative\\folder", "Z:\\nowhere-at-all\\lmstudio"] {
+            std::fs::write(user.join(".lmstudio-home-pointer"), not).unwrap();
+            assert_eq!(homes_in(&user)[0], user.join(".lmstudio"), "{not}");
+        }
+        let _ = std::fs::remove_dir_all(&user);
+    }
 
     #[test]
     fn only_a_models_name_reaches_lms_get() {

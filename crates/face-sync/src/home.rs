@@ -79,14 +79,17 @@ const PRESENCE_MAX: i64 = 4_102_444_800_000;
 /// Settings that say where this device sends photos or fetches files, and the two that say whether and
 /// where the device itself is (its location's switch and its typed place), as (app, key). They are set on
 /// the device and never come from the database: not with Copy settings either. A location is switched on
-/// by its owner on each device, and one device's place is not another's.
-pub const STAY_HERE: [(&str, &str); 6] = [
+/// by its owner on each device, and one device's place is not another's. The signal history's switch and
+/// its days are the same kind: it is kept device by device, and the days delete rows.
+pub const STAY_HERE: [(&str, &str); 8] = [
     ("describe", "url"),
     ("describe", "spread"),
     ("lmstudio", "share"),
     ("lmstudio", "distributed"),
     ("track", face_home::location::OPTION),
     ("track", face_home::location::PLACE),
+    ("track", face_home::siglog::OPTION),
+    ("track", face_home::siglog::KEEP),
 ];
 /// the digest of a settings row this device never wrote: deleted at the next sending
 const NOT_OURS: &str = "not this device's";
@@ -233,7 +236,9 @@ async fn forget_on_server(tx: &Transaction<'_>, name: &str) -> Result<()> {
     .await
     .map_err(said)?;
     tx.execute("UPDATE faces SET fact_name = NULL WHERE fact_name = $1", &[&name]).await.map_err(said)?;
-    for table in ["expr_eval", "person_signals", "presence", "alerts", "sightings", "expression_log", "music_log"] {
+    for table in
+        ["expr_eval", "person_signals", "presence", "alerts", "sightings", "expression_log", "music_log", "signal_log"]
+    {
         tx.execute(&format!("DELETE FROM {table} WHERE name = $1"), &[&name]).await.map_err(said)?;
     }
     Ok(())

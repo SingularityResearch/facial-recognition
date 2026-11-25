@@ -11,7 +11,7 @@
 #   pwsh apps\android\make_key.ps1 [-Backup <folder>]        (run again: says what is there, changes nothing)
 param([string]$Backup = '')
 $ErrorActionPreference = 'Stop'
-$a = "$env:LOCALAPPDATA\Android"
+$a = if ($env:FACE_ANDROID_HOME) { $env:FACE_ANDROID_HOME } else { "$env:LOCALAPPDATA\Android" }
 $dir = "$a\release"; $ks = "$dir\facerecognizer.keystore"; $pwFile = "$dir\facerecognizer.password"
 $keytool = Join-Path (Get-ChildItem "$a\jdk" -Directory | Select-Object -First 1).FullName 'bin\keytool.exe'
 Add-Type -AssemblyName System.Security

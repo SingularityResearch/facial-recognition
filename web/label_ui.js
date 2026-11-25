@@ -1017,8 +1017,11 @@ function showImport(st) {
   const rate = st.done - st.known > 0 ? (st.done - st.known) / el : 0;
   const left = rate > 0 ? Math.round((st.total - st.done) / rate) : null;
   const descr = st.folder === "photo descriptions";
+  const hist = st.folder === "the library's history";   // the library's part of the signal history (Settings)
   // st.again: Describe everything again (Settings), which also covers video frames and what other devices have
-  const parts = descr ? [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.again ? "photos and video frames" : "photos"}`, `${st.new.toLocaleString()} described`]
+  const parts = hist ? [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} photos and videos`, `${(st.new || 0).toLocaleString()} rows written or changed`,
+                         `${(st.faces || 0).toLocaleString()} faces read for how they look`, ...(st.timeless ? [`${st.timeless.toLocaleString()} without a time left out`] : [])]
+    : descr ? [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.again ? "photos and video frames" : "photos"}`, `${st.new.toLocaleString()} described`]
     : [`${st.done.toLocaleString()} of ${st.total.toLocaleString()} ${st.videos ? "photos and videos" : "photos"}`, plural(st.faces, "face") + " found",
        `${st.auto.toLocaleString()} named automatically`];
   if (st.known) parts.push(descr && st.again ? `${st.known.toLocaleString()} on no device that answers now` : descr ? `${st.known.toLocaleString()} not on this computer now` : st.folder === "possible faces" ? `${st.known.toLocaleString()} not on this computer now` : `${st.known.toLocaleString()} already added`);
@@ -1030,10 +1033,10 @@ function showImport(st) {
   // the folder's own name (the whole path is in the tooltip): the counts are what matter at a glance
   const where = cam ? "webcam snapshots" : (st.folder || "").split(/[\\/]/).filter(Boolean).pop() || "";
   parts.unshift(where);
-  if (descr) parts.shift();                         // the stage already says what it is
+  if (descr || hist) parts.shift();                 // the stage already says what it is
   let txt = st.running && !st.total ? `${st.stage}: ${where}`
-    : st.running ? `${st.stage}: ${parts.join(", ")}${left != null && /^(Reading|Describing|Looking)/.test(st.stage) ? `, about ${left < 90 ? left + " s" : left < 5400 ? Math.round(left / 60) + " min" : (left / 3600).toFixed(1) + " h"} left` : ""}`
-    : st.error ? `Adding photos failed: ${st.error}` : `${st.stage === "Stopped" ? "Stopped" : "Finished"}: ${parts.join(", ")}.`;
+    : st.running ? `${st.stage}: ${parts.join(", ")}${left != null && /^(Reading|Describing|Looking|Working)/.test(st.stage) ? `, about ${left < 90 ? left + " s" : left < 5400 ? Math.round(left / 60) + " min" : (left / 3600).toFixed(1) + " h"} left` : ""}`
+    : st.error ? `${hist ? "The history couldn't be worked out" : "Adding photos failed"}: ${st.error}` : `${st.stage === "Stopped" ? "Stopped" : "Finished"}: ${parts.join(", ")}.`;
   p.querySelector(".txt").textContent = txt;
   p.querySelector(".txt").title = st.folder && !cam ? `${txt}\n${st.folder}` : txt;
   $("#stopimp").style.display = st.running ? "" : "none";
@@ -1148,13 +1151,13 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
 // The app window's Settings tab (settings_bridge.js): this page's settings, Web search, Describe photo, LM Studio and
 // this computer's hardware, each group in its own section, in that order
 {
-  const c = SettingsBridge.control, L = "Labeling", W = "Labeling: Web search", P = "Labeling: Describe photo",
+  const c = SettingsBridge.control, L = "Labeling", W = "Labeling: Web search", P = "Labeling: Describe photo", Y = "Labeling: history",
         U = "Music", M = "LM Studio", H = "This computer", D = "Shared database";
   let mus = {};
   const flag = (section, id, key, label, def, hint) => ({ section, id, label, type: "toggle", def, hint,
     get: () => (store.get(key) ?? (def ? "1" : "0")) === "1",
     set: v => { store.set(key, v ? "1" : "0"); const el = $("#" + id); if (el) el.checked = !!v; } });
-  let desc = {}, job = {}, hw = {}, lms = {}, lmsOffer = false, sdb = {};
+  let desc = {}, job = {}, hw = {}, lms = {}, lmsOffer = false, sdb = {}, lib = {};
   // Describe everything again: how many, how long, and the question asked before it starts (app_ui.js asks it)
   const count = n => (+n || 0).toLocaleString();
   const describing = () => !!job.running && job.folder === "photo descriptions";
@@ -1230,37 +1233,72 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                       ["server", "The server only"], ["builtin", "The built-in model only"]],
       get: () => desc.config?.use || "auto",
       set: v => post("/api/describe/config", { use: v }) },
+    { section: P, id: "describePlatform", label: "Kind of server", type: "select", def: "lmstudio", hidden: () => desc.config?.use === "builtin",
+      hint: () => ({
+        lmstudio: "LM Studio, on this computer or another of yours. It says which of its models read pictures and which is loaded.",
+        ollama: "Ollama. It says which of its models read pictures (pull one that does). It takes no API key of its own.",
+        llamacpp: "llama.cpp's server (llama-server). It serves the one model it was started with, and reads pictures only when it was started with that model's --mmproj file as well. An API key only if it was started with --api-key.",
+        vllm: "vLLM (vllm serve). It serves the models it was started with and doesn't say which of them read pictures: pick the vision model below. An API key if it was started with --api-key.",
+      })[desc.config?.platform || "lmstudio"] + " Changing the kind takes that kind's usual address, if the address was the usual one.",
+      options: () => (desc.platforms || [{ id: "lmstudio", name: "LM Studio" }]).map(p => [p.id, p.name]),
+      get: () => desc.config?.platform || "lmstudio",
+      set: v => post("/api/describe/config", { platform: v }) },
     { section: P, id: "describeUrl", label: "Server address", type: "text", hidden: () => desc.config?.use === "builtin",
       hint: () => {
         const c = desc.config || {};
-        const base = `LM Studio (its local server on), or another server with the same API: Ollama (port 11434), llama.cpp, vLLM, Jan. Empty for the default, ${c.default_url || "http://127.0.0.1:1234"}.`;
-        if (c.where === "your network") return base + " This is another device on your network: each photo you describe is sent to it (in LM Studio there, turn on \"Serve on local network\").";
+        const base = `Empty for this kind's usual address on this computer, ${c.default_url || "http://127.0.0.1:1234"}.`;
+        const served = { lmstudio: "in LM Studio there, turn on \"Serve on local network\"", ollama: "Ollama there needs OLLAMA_HOST=0.0.0.0",
+                         llamacpp: "llama-server there needs --host 0.0.0.0", vllm: "vllm serve there needs --host 0.0.0.0" }[c.platform || "lmstudio"];
+        if (c.where === "your network") return base + ` This is another device on your network: each photo you describe is sent to it (${served}).`;
         if (c.where === "the internet") return base + ` This is a server on the internet: each photo you describe is sent to it${c.unencrypted ? ", unencrypted (http): anyone on the way could see the photos; use https" : " (encrypted, https)"}. Only use a server you control.`;
         return base;
       },
       get: () => desc.config?.url || "",
       set: v => post("/api/describe/config", { url: v }) },
-    { section: P, id: "describeModel", label: "Model", type: "select", def: "", hidden: () => desc.config?.use === "builtin",
-      hint: "Automatic: LM Studio's loaded vision model, else its first one. Other servers don't say which models read pictures: pick a vision model.",
+    { section: P, id: "describeModel", label: () => desc.config?.platform === "llamacpp" ? "Model it serves" : "Model", type: "select", def: "", hidden: () => desc.config?.use === "builtin",
+      hint: () => ({
+        lmstudio: "Automatic: LM Studio's loaded vision model, else its first one.",
+        ollama: "Automatic: the first of Ollama's models that reads pictures, a loaded one first. Only those are listed.",
+        llamacpp: "The one model llama.cpp was started with: Automatic takes it.",
+        vllm: "vLLM doesn't say which of its models read pictures: pick the vision model (Automatic takes its first).",
+      })[desc.config?.platform || "lmstudio"],
       options: () => { const m = desc.models || [], pick = desc.config?.model;
         return [["", "Automatic"], ...m.map(x => [x, x]), ...(pick && !m.includes(pick) ? [[pick, pick + " (not on the server)"]] : [])]; },
       get: () => desc.config?.model || "",
       set: v => post("/api/describe/config", { model: v }) },
+    { section: P, id: "describeSuggested", label: "Suggested for this computer", type: "info",
+      hidden: () => desc.config?.use === "builtin" || !desc.suggested,
+      get: () => {
+        const s = desc.suggested || {}, l = desc.loading;
+        if (l?.running) setTimeout(SettingsBridge.changed, 3000);
+        if (!s.here || !s.model) return s.why || "";
+        const kind = desc.config?.platform || "lmstudio";
+        const how = kind === "llamacpp" || kind === "vllm" ? "Start the server with:" : kind === "lmstudio" ? "Loaded with:" : "Get it with:";
+        return [`${s.name} (${s.model}), about ${s.need_gb} GB.`, s.why,
+                ...(s.settings || []).map(([k, v]) => `${k}: ${v}`),
+                `${how} ${s.command}`,
+                l ? (l.running ? "Loading now…" : (l.ok ? "Last loading: " : "Last loading failed: ") + l.said) : ""].filter(Boolean).join("\n");
+      } },
+    { section: P, id: "describeLoad", label: "Load it", type: "button",
+      button: () => `Load ${desc.suggested?.model || "the suggested model"} with these settings`,
+      hidden: () => desc.config?.use === "builtin" || !desc.suggested?.here || !desc.suggested?.there
+        || ["llamacpp", "vllm"].includes(desc.config?.platform) || !!desc.loading?.running,
+      hint: "Loads the suggested model on this computer's server with the settings above (choosing the kind of server or the model does the same). It never downloads a model: one the server doesn't have yet is named above, to get first. llama.cpp and vLLM serve the model they were started with: start them with the command above." },
     { section: P, id: "describeTest", label: "Check the server", type: "button", button: "Test", hidden: () => desc.config?.use === "builtin",
       hint: "Asks the server above which models it has." },
-    { section: P, id: "describeKey", label: "API key", type: "form", button: "Save key", hidden: () => desc.config?.use === "builtin",
-      hint: () => `Only if the server asks for one (for example behind a proxy). ${desc.config?.key ? "A key is saved." : "None saved."} Save an empty key to remove it. Kept in %APPDATA%\\FaceLabels on this computer.`,
+    { section: P, id: "describeKey", label: "API key", type: "form", button: "Save key", hidden: () => desc.config?.use === "builtin" || desc.config?.platform === "ollama",
+      hint: () => `${desc.config?.platform === "vllm" || desc.config?.platform === "llamacpp" ? "The key the server was started with (--api-key), if it was." : "Only if the server asks for one (for example behind a proxy)."} ${desc.config?.key ? "A key is saved." : "None saved."} Save an empty key to remove it. Kept in %APPDATA%\\FaceLabels on this computer.`,
       fields: () => [{ name: "key", placeholder: "API key", secret: true, value: sec.describe || "" }] },
     { section: P, id: "describeSpread", label: "Share Describe all with other computers", type: "toggle", def: false,
       hidden: () => desc.config?.use === "builtin",
-      hint: "Describe all (and Describe everything again, below) also sends photos to the LM Studio servers of your other devices that have the same vision model, one photo at a time each. Your other devices are the computers in your shared database, at the addresses they gave there; no other computer on the network is sent a photo, and without a shared database nothing is shared. How it is shared: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice in a row is left out, its photo goes back to the others, and it is tried again every five minutes. Describing a single photo uses only the server above.",
+      hint: "Describe all (and Describe everything again, below) also sends photos to your other devices' servers of the same kind (LM Studio, Ollama, llama.cpp or vLLM) that have the same vision model, one photo at a time each. LM Studio's are found on the network, the other kinds at your devices' addresses on the kind's usual port. Your other devices are the computers in your shared database, at the addresses they gave there; no other computer on the network is sent a photo, and without a shared database nothing is shared. How it is shared: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice in a row is left out, its photo goes back to the others, and it is tried again every five minutes. Describing a single photo uses only the server above.",
       get: () => !!desc.config?.spread,
       set: v => post("/api/describe/config", { spread: !!v }) },
     { section: P, id: "describeHelpers", label: "Shared with", type: "info",
       hidden: () => !desc.config?.spread || desc.config?.use === "builtin",
       get: () => { const h = desc.helpers || [];
         return h.length ? h.map(x => `${x.host} (${x.url})`).join("\n") + `\nDescribe all uses ${h.length + 1} computers.`
-          : desc.ok ? `None of your other devices (the computers in your shared database) has an LM Studio server with ${desc.model} (see LM Studio below): Describe all uses this server alone.`
+          : desc.ok ? `None of your other devices (the computers in your shared database) has a ${({ ollama: "Ollama", llamacpp: "llama.cpp", vllm: "vLLM" })[desc.config?.platform] || "LM Studio"} server with ${desc.model}${(desc.config?.platform || "lmstudio") === "lmstudio" ? " (see LM Studio below)" : " on its usual port"}: Describe all uses this server alone.`
           : "Nothing to share with until the describer works."; } },
     { section: P, id: "describeAgain", label: "Describe everything again", type: "button",
       button: () => `Describe all ${count(desc.again?.total)} again`,
@@ -1281,6 +1319,21 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       button: () => `Download the built-in model (${((desc.builtin?.size_mb || 831) / 1000).toFixed(1)} GB)`,
       hidden: () => !!(desc.builtin?.ready || desc.builtin?.running),
       hint: "Florence-2 large, from Hugging Face; runs inside this app on the processor, so photos stay on this computer. Plainer descriptions than LM Studio's." },
+    { section: Y, id: "libHistory", label: "The library in the history", type: "info",
+      get: async () => {
+        lib = await get("/api/history/library");
+        try { job = await get("/api/import"); } catch { job = {}; }
+        if (job.running && job.folder === "the library's history") setTimeout(SettingsBridge.changed, 3000);
+        return [`${count(lib.named)} of ${count(lib.pictures)} photos and videos have a named face: ${count(lib.rows)} rows.`,
+                !lib.joined ? "The history is kept in your shared database, and none is set up on this device: nothing is written."
+                  : lib.on ? "After a folder is added, the rows are worked out again by themselves (this device's history is switched on)."
+                  : "This device's own history is switched off (Face tracking: history), so nothing is worked out by itself after a folder is added. The button below still does it.",
+                job.running && job.folder === "the library's history" ? `${job.stage}: ${count(job.done)} of ${count(job.total)}. The bar at the top of the Labeling tab shows the rest.` : ""].filter(Boolean).join("\n");
+      } },
+    { section: Y, id: "libHistoryRun", label: "Work out the history from the library", type: "button",
+      button: () => `Work out ${count(lib.rows)} rows`,
+      hidden: () => !lib.joined || !lib.rows || !!job.running,
+      hint: "For analysis, beside what the cameras keep (Face tracking: history): what each photo, and each video frame a face was found in, says of each named person in it. When: the camera's own time where the photo has one, else only the file's, and the row says which. How good the face's picture is, how large the face, how many faces the picture has and how many are named, and how the face looks (the expression model, on the picture the library keeps of the face). A still says less than a camera: no voice, no pulse, no movement, nothing of a person's usual, and it says how a face looked, not what the person felt. The rows follow the labels: do it again after naming more faces, and a face named otherwise since gets its row under the new name. It runs in the background like an import (progress and Stop are at the top of the Labeling tab), writes to your shared database only, and reads each face's picture once. These rows are as old as their pictures: the days set for a device's history don't delete them. Forget removes a person's." },
     { section: U, id: "musicstate", label: "Music", type: "info",
       hint: "Music as one more signal about a person: which song a music app on this computer shows as playing (Spotify), and how it sounds on every audio interface of this computer, each one measured by itself: every output (what the computer itself plays through speakers, a headset, a display) and every microphone (what sounds in the room, from any device). Only numbers are kept (how loud, tempo, how bright or bassy, major or minor), never the sound; they describe the music, not what anyone feels. Nothing is listened to or logged until the switch below is on, a person is chosen, and a shared database is set up to keep it in.",
       get: async () => {
@@ -1455,7 +1508,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                      { name: "alias", label: "Its name", placeholder: "for example Kitchen iPhone", value: "" }] },
     { section: D, id: "dbplaces", label: "Location history of", type: "select", def: "",
       hidden: () => !sdb.available || !sdb.config || !(sdb.named || []).length,
-      hint: "Where a device was, for the devices whose location you switched on (each device's own switch: Settings, Face tracking: location, or the Location card of its Face tracking tab). A row is written when the switch is turned on and then only when the device has moved more than about 100 m. Rows older than 90 days are deleted by themselves.",
+      hint: "Where a device was, for the devices whose location you switched on (each device's own switch: Settings, Face tracking: location, or the Location card of its Face tracking tab). A row is written when the switch is turned on and then only when the device has moved more than about 100 m. Rows older than the days set on that device (the History card of its Face tracking tab; 90 unless changed) are deleted by themselves.",
       options: () => [["", "Choose a device"], ...(sdb.named || []).map(d => [d.id, d.name + (d.me ? ", this device" : "")])],
       get: () => placesOf,
       set: async v => { placesOf = v || ""; places = null; if (placesOf) places = await get("/api/db/locations?device=" + encodeURIComponent(placesOf)); } },
@@ -1466,6 +1519,11 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         if (!rows.length) return "No rows: this device's location is not switched on, or it has not sent a row yet.";
         return rows.join("\n") + (places.count > rows.length ? `\n(the newest ${rows.length} of ${places.count} rows)` : "");
       } },
+    { section: D, id: "dbsignalsForget", label: "Delete a device's signal history", type: "form", button: "Delete its history",
+      hidden: () => !sdb.available || !sdb.config || !(sdb.named || []).length,
+      hint: "Deletes every row the chosen device wrote into the signal history (Face tracking: history) in the shared database, or every row that was worked out from the library's photos and videos (Labeling: history). This can't be undone. A device goes on writing rows while its own switch is on: switch that off on the device to stop it. The library's rows can be worked out again.",
+      fields: () => [{ name: "device", label: "Whose rows", options: [["", "Choose"],
+                       ...(sdb.named || []).map(d => [d.id, d.name + (d.me ? ", this device" : "")]), ["library", "The library's photos and videos"]] }] },
     { section: D, id: "dbplacesForget", label: "Delete a device's location history", type: "form", button: "Delete its history",
       hidden: () => !sdb.available || !sdb.config || !(sdb.named || []).length,
       hint: "Deletes every row of the chosen device's location history in the shared database. This can't be undone. The device goes on writing rows while its own switch is on: switch that off on the device to stop it.",
@@ -1537,6 +1595,11 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       if (r.error) throw new Error(r.error);
       return { ...r, message: (a.alias || "").trim() ? "It is called " + r.name + " now" : "It goes by its own name again: " + r.name };
     }),
+    dbsignalsForget: saved(async a => {
+      if (!a.device) throw new Error("Choose whose rows first");
+      const r = await post("/api/db/signals/forget", { device: a.device });
+      return { ...r, message: r.deleted ? `${r.deleted.toLocaleString()} row${r.deleted === 1 ? "" : "s"} deleted` : "There were no rows" };
+    }),
     dbplacesForget: saved(async a => {
       if (!a.device) throw new Error("Choose a device first");
       const r = await post("/api/db/locations/forget", { device: a.device });
@@ -1559,6 +1622,9 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     describeAgainOn: async () => { await post("/api/describe/again", { carry_on: true }); pollImport();
       return { message: "Carrying on: progress and Stop are at the top of the Labeling tab" }; },
     describeStop: async () => { await post("/api/import/stop", {}); return { message: "Stopping" }; },
+    describeLoad: async () => { await post("/api/describe/load", {}); setTimeout(SettingsBridge.changed, 1500); return { message: "Loading: the line above says when it's done" }; },
+    libHistoryRun: async () => { const r = await post("/api/history/library", {}); if (r.error) throw new Error(r.error); pollImport();
+      return { message: "Started: progress and Stop are at the top of the Labeling tab" }; },
     describeKey: saved(a => post("/api/describe/config", { key: a.key || "" })),
     spotify: async a => { await post("/api/music/spotify", { client_id: a.client_id || "" });
       return { message: "Spotify's page is opening in your browser: agree there" }; },

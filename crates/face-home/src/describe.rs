@@ -1,5 +1,8 @@
 //! Describe photo's settings:
-//! which describer to use, the server's address, a model (or automatic), an optional API key
+//! which describer to use, which kind of server it asks (LM Studio, Ollama, llama.cpp or vLLM: the owner,
+//! 2026-11-25, "I want to open up support for llama.cpp, vLLM and Ollama, When you select one - it should
+//! show the relevant fields that are required for that platform"), the server's address, a model (or
+//! automatic), an optional API key
 //! kept protected for this user, whether Describe all is shared with the owner's other devices, and an
 //! unfinished Describe everything again. In `HOME/describe.json`.
 
@@ -15,12 +18,23 @@ use serde_json::{Map, Value, json};
 const FILE: &str = "describe.json";
 /// server if it answers, else the built-in model / the server only / the built-in model only
 pub const USES: [&str; 3] = ["auto", "server", "builtin"];
+/// The kinds of server the describer asks: (its word, its name, the port it listens on as it comes). Each
+/// answers the same chat requests (`/v1/chat/completions`); they differ in how they list their models and
+/// say which of them read pictures, and in whether they take an API key.
+pub const PLATFORMS: [(&str, &str, u16); 4] = [
+    ("lmstudio", "LM Studio", 1234),
+    ("ollama", "Ollama", 11434),
+    ("llamacpp", "llama.cpp", 8080),
+    ("vllm", "vLLM", 8000),
+];
 
 /// The settings, with what goes for one that isn't set.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// "auto", "server" or "builtin"
     pub choice: String,
+    /// the kind of server: one of `PLATFORMS`
+    pub platform: String,
     pub url: String,
     /// "" for automatic
     pub model: String,
@@ -38,6 +52,14 @@ pub fn default_url() -> String {
         .unwrap_or_else(|_| "http://127.0.0.1:1234".to_string())
         .trim_end_matches('/')
         .to_string()
+}
+
+/// The address a kind of server has on this computer as it comes (LM Studio's: `default_url`).
+pub fn default_url_for(platform: &str) -> String {
+    match PLATFORMS.iter().find(|(p, _, _)| *p == platform) {
+        Some((p, _, port)) if *p != "lmstudio" => format!("http://127.0.0.1:{port}"),
+        _ => default_url(),
+    }
 }
 
 fn kept(home: &Path) -> Map<String, Value> {
@@ -67,9 +89,13 @@ pub fn config(home: &Path) -> Config {
         let (since, model) = (a.get("since")?.as_str()?, a.get("model")?.as_str()?);
         (is_time(since) && !model.is_empty()).then(|| (since.to_string(), model.to_string()))
     });
+    let platform = text("platform")
+        .filter(|p| PLATFORMS.iter().any(|(known, _, _)| known == p))
+        .unwrap_or_else(|| "lmstudio".to_string());
     Config {
         choice: text("use").filter(|u| USES.contains(&u.as_str())).unwrap_or_else(|| "auto".to_string()),
-        url: text("url").unwrap_or_else(default_url),
+        url: text("url").unwrap_or_else(|| default_url_for(&platform)),
+        platform,
         model: text("model").unwrap_or_default(),
         key: text("key").and_then(|k| reveal(&k).ok()).unwrap_or_default(),
         spread: c.get("spread") == Some(&Value::Bool(true)),
@@ -81,7 +107,8 @@ pub fn config(home: &Path) -> Config {
 fn write(home: &Path, c: &Config) -> Result<(), String> {
     let key = if c.key.is_empty() { String::new() } else { protect(&c.key)? };
     let again = c.again.as_ref().map(|(since, model)| json!({"since": since, "model": model}));
-    let kept = json!({"use": c.choice, "url": c.url, "model": c.model, "key": key, "spread": c.spread, "again": again});
+    let kept = json!({"use": c.choice, "url": c.url, "model": c.model, "key": key, "spread": c.spread, "again": again,
+                      "platform": c.platform});
     write_private(&home.join(FILE), filejson::dumps_lines(&kept, true, 1).as_bytes())
 }
 
@@ -164,9 +191,10 @@ pub fn where_is(url: &str) -> (&'static str, bool) {
     ("the internet", !url.to_lowercase().starts_with("https://"))
 }
 
-/// Change some of the settings ("use", "url", "model", "key", "spread", each only when it is among the
-/// changes); an empty url means the default. A key belongs to its server: a changed address clears it,
-/// unless a key comes with the change.
+/// Change some of the settings ("use", "platform", "url", "model", "key", "spread", each only when it is among
+/// the changes); an empty url means the platform's usual one. A key belongs to its server: a changed address
+/// clears it, unless a key comes with the change. Another platform takes its own usual address where the old
+/// one's was set, and its model is picked anew.
 pub fn set_config(home: &Path, changes: &Map<String, Value>) -> Result<Config, String> {
     let mut c = config(home);
     let text = |k: &str| changes.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
@@ -177,8 +205,25 @@ pub fn set_config(home: &Path, changes: &Map<String, Value>) -> Result<Config, S
         }
         c.choice = choice;
     }
+    if changes.contains_key("platform") {
+        let platform = text("platform");
+        if !PLATFORMS.iter().any(|(p, _, _)| *p == platform) {
+            return Err("Unknown kind of server".to_string());
+        }
+        if platform != c.platform {
+            if c.url == default_url_for(&c.platform) {
+                let url = default_url_for(&platform);
+                if !changes.contains_key("key") {
+                    c.key = String::new();
+                }
+                c.url = url;
+            }
+            c.model = String::new();
+            c.platform = platform;
+        }
+    }
     if changes.contains_key("url") {
-        let url = if text("url").is_empty() { default_url() } else { clean_url(&text("url"))? };
+        let url = if text("url").is_empty() { default_url_for(&c.platform) } else { clean_url(&text("url"))? };
         if url != c.url && !changes.contains_key("key") {
             c.key = String::new();
         }
@@ -289,6 +334,20 @@ mod tests {
         assert_eq!(change(json!({"use": "the cloud"})).unwrap_err(), "Unknown choice");
         assert!(change(json!({"url": "ftp://x"})).is_err());
         assert!(!change(json!({"spread": "yes"})).unwrap().spread);
+        // another kind of server: its own usual address where the old one's was set, its model picked anew
+        change(json!({"url": "", "model": "m"})).unwrap();
+        let o = change(json!({"platform": "ollama"})).unwrap();
+        assert_eq!((o.platform.as_str(), o.url.as_str(), o.model.as_str()), ("ollama", "http://127.0.0.1:11434", ""));
+        assert_eq!(config(&home).platform, "ollama");
+        assert_eq!(change(json!({"url": ""})).unwrap().url, "http://127.0.0.1:11434", "empty: the platform's own");
+        // an address of the owner's own stays when the kind changes
+        change(json!({"url": "http://192.168.1.30:9000", "key": "k"})).unwrap();
+        let v = change(json!({"platform": "vllm"})).unwrap();
+        assert_eq!((v.url.as_str(), v.key.as_str()), ("http://192.168.1.30:9000", "k"));
+        assert_eq!(change(json!({"platform": "the cloud"})).unwrap_err(), "Unknown kind of server");
+        assert_eq!(default_url_for("llamacpp"), "http://127.0.0.1:8080");
+        assert_eq!(default_url_for("lmstudio"), default_url());
+        change(json!({"platform": "lmstudio", "url": ""})).unwrap();
         // an unfinished Describe everything again is kept until it is done
         let began = set_again(&home, Some("a model")).unwrap().unwrap();
         assert_eq!((began.0.len(), began.1.as_str(), config(&home).again), (20, "a model", Some(began.clone())));
@@ -296,6 +355,8 @@ mod tests {
         assert_eq!(set_again(&home, None).unwrap(), None);
         std::fs::write(home.join(FILE), r#"{"again": {"since": "some day", "model": "m"}, "use": 3}"#).unwrap();
         assert_eq!((config(&home).again, config(&home).choice), (None, "auto".to_string()));
+        // a settings file from before the kinds of server: LM Studio
+        assert_eq!(config(&home).platform, "lmstudio");
         let _ = std::fs::remove_dir_all(home);
     }
 }

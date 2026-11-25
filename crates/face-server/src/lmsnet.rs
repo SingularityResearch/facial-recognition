@@ -175,14 +175,9 @@ pub fn mdns_services(wait: Duration) -> Vec<Announced> {
     announced_in(&found)
 }
 
-fn user_home() -> std::path::PathBuf {
-    std::path::PathBuf::from(std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap_or_default())
-}
-
 /// The port this computer's LM Studio serves on (its own settings), if it says.
 pub fn lmstudio_port() -> Option<u16> {
-    let home = user_home();
-    [home.join(".lmstudio"), home.join(".cache").join("lm-studio")].iter().find_map(|folder| {
+    crate::lmstudio::homes().iter().find_map(|folder| {
         let config: Value =
             serde_json::from_slice(&std::fs::read(folder.join(".internal").join("http-server-config.json")).ok()?)
                 .ok()?;

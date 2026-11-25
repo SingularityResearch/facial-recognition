@@ -11,8 +11,8 @@
 # their signature: one has to be removed before the other is installed.
 #
 # Needs, all per user under %LOCALAPPDATA%\Android: a JDK (jdk\), the SDK (Sdk\: platform-tools,
-# build-tools 36.0.0, platforms\android-36, ndk\android-ndk-r29) and Microsoft's onnxruntime-android AAR
-# (downloads\). The package is signed with a debug key made here on first use: for trying on one's own phone.
+# build-tools 36.0.0, platforms\android-36, ndk\android-ndk-r29) and Microsoft's onnxruntime-android 1.31.1 AAR
+# (downloads\, the file CI pins by size and SHA-256). The package is signed with a debug key made here on first use: for trying on one's own phone.
 #
 # With -Release -Bundle it also makes what Google Play takes, an app bundle (FaceRecognizer-android.aab), from the
 # same files: see "The app bundle" below. That needs Google's bundletool, as the pinned file, in downloads\ (or
@@ -24,11 +24,12 @@ $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $rust = Resolve-Path "$here\..\.."
 $repo = $rust
-# The tools: this user's own under %LOCALAPPDATA%\Android where they are (a developer's computer), else a build
+# The tools: this user's own under %LOCALAPPDATA%\Android, or the folder FACE_ANDROID_HOME names (a developer's
+# computer that keeps them on another drive), where they are; else a build
 # machine's (ANDROID_HOME, JAVA_HOME, and the model runtime's package in FACE_ORT_ANDROID_AAR). Always the same
 # versions, never "the newest that is there": a build machine has newer ones, betas and extension platforms beside
 # them, and a package made with those is not the one that was tried on a phone.
-$a = "$env:LOCALAPPDATA\Android"
+$a = if ($env:FACE_ANDROID_HOME) { $env:FACE_ANDROID_HOME } else { "$env:LOCALAPPDATA\Android" }
 $sdk = if (Test-Path "$a\Sdk") { "$a\Sdk" } else { $env:ANDROID_HOME }
 if (-not $sdk -or -not (Test-Path $sdk)) { throw 'no Android SDK: see the top of this file' }
 $bt = "$sdk\build-tools\36.0.0"
@@ -40,7 +41,10 @@ foreach ($need in $bt, $platform, $ndk) {
     if (-not $need -or -not (Test-Path $need)) { throw 'the Android tools this is built with are not all here (build-tools 36.0.0, platforms\android-36, NDK r29): see the top of this file' }
 }
 "tools: build-tools $(Split-Path $bt -Leaf), $(Split-Path (Split-Path $platform) -Leaf), NDK $(Split-Path $ndk -Leaf)"
-$ortAar = if ($env:FACE_ORT_ANDROID_AAR) { $env:FACE_ORT_ANDROID_AAR } else { (Get-ChildItem "$a\downloads" -Filter 'onnxruntime-android-*.aar' | Select-Object -First 1).FullName }
+# the model runtime: the version CI's release carries (1.31.1, pinned there), never another one that happens to
+# lie in downloads\ beside it (a local build once took an older one that sorted first)
+$ortAar = if ($env:FACE_ORT_ANDROID_AAR) { $env:FACE_ORT_ANDROID_AAR } else { "$a\downloads\onnxruntime-android-1.31.1.aar" }
+if (-not (Test-Path $ortAar)) { throw "the model runtime's package for Android isn't here ($ortAar): see the top of this file" }
 $java = "$env:JAVA_HOME\bin"
 $out = "$rust\target\android-app"
 Remove-Item $out -Recurse -Force -ErrorAction SilentlyContinue
@@ -52,7 +56,8 @@ $ndkbin = "$ndk\toolchains\llvm\prebuilt\windows-x86_64\bin"
 $env:CC_aarch64_linux_android = "$ndkbin\aarch64-linux-android24-clang.cmd"
 $env:AR_aarch64_linux_android = "$ndkbin\llvm-ar.exe"
 $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = "$ndkbin\aarch64-linux-android24-clang.cmd"
-& "$env:USERPROFILE\.cargo\bin\cargo.exe" build -p face-app --release --target aarch64-linux-android --manifest-path "$rust\Cargo.toml" 2>&1 | Select-String -Pattern "^error|Finished|^\s+-->" | ForEach-Object { $_.ToString() }
+$cargo = if ($env:CARGO_HOME -and (Test-Path "$env:CARGO_HOME\bin\cargo.exe")) { "$env:CARGO_HOME\bin\cargo.exe" } elseif (Get-Command cargo -ErrorAction SilentlyContinue) { (Get-Command cargo).Source } else { "$env:USERPROFILE\.cargo\bin\cargo.exe" }
+& $cargo build -p face-app --release --target aarch64-linux-android --manifest-path "$rust\Cargo.toml" 2>&1 | Select-String -Pattern "^error|Finished|^\s+-->" | ForEach-Object { $_.ToString() }
 # a failed build must stop here: the library of the build before is still in the target folder, and a package
 # made with it looks like the new one (it went onto the phone that way once)
 if ($LASTEXITCODE -ne 0) { throw 'the Rust library did not build' }
@@ -81,7 +86,7 @@ if (Test-Path "$repo\target\root\models\mediapipe-web") {
 
 # resources and the manifest, the Java shell, its dex
 & "$bt\aapt2.exe" compile --dir "$here\res" -o "$out\res.zip"
-# the app's version is the workspace's (Cargo.toml): 2.6.0 is version name 2.6.0 and version code 20600
+# the app's version is the workspace's (Cargo.toml): 2.7.0 is version name 2.7.0 and version code 20700
 $version = (Select-String -Path "$repo\Cargo.toml" -Pattern '^version = "(\d+)\.(\d+)\.(\d+)"' | Select-Object -First 1).Matches[0].Groups
 $code = [int]$version[1].Value * 10000 + [int]$version[2].Value * 100 + [int]$version[3].Value
 $versions = @('--min-sdk-version', '26', '--target-sdk-version', '36', '--replace-version', '--version-code', "$code",

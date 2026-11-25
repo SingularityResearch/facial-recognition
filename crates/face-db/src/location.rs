@@ -8,7 +8,9 @@ use tokio_postgres::Client;
 
 use crate::Result;
 
-/// Days a row is kept (the owner, 2026-11-24: "only keep the On a move for last 90 days").
+/// Days a row is kept where the device's owner set none (the owner, 2026-11-24: "only keep the On a move
+/// for last 90 days"; later that day: "There needs to be a setting that can adjust how long they are kept
+/// for", which is the history's days on each device).
 pub const KEEP_DAYS: i32 = 90;
 /// rows in one sending
 const MOST: usize = 500;
@@ -102,10 +104,15 @@ pub async fn send(client: &Client, device: &str, rows: &[Value]) -> Result<Vec<i
     Ok(done)
 }
 
-/// Delete every device's rows that are older than they are kept. How many went.
-pub async fn prune(client: &Client) -> Result<u64> {
+/// Delete a device's rows that are older than `days` (the days its owner set there for its history;
+/// `KEEP_DAYS` where none are set). How many went.
+pub async fn prune(client: &Client, device: &str, days: i32) -> Result<u64> {
+    an_id(device)?;
     client
-        .execute("DELETE FROM location_log WHERE at < now() - make_interval(days => $1)", &[&KEEP_DAYS])
+        .execute(
+            "DELETE FROM location_log WHERE device = $1::text::uuid AND at < now() - make_interval(days => $2)",
+            &[&device, &days.max(1)],
+        )
         .await
         .map_err(|e| format!("The location history's old rows couldn't be deleted: {e}"))
 }

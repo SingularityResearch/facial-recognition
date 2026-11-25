@@ -158,6 +158,8 @@ pub struct Tracker {
     followed: Arc<Followed>,
     /// where this device is, while its owner has switched that on (location.rs)
     location: Arc<crate::location::Location>,
+    /// the signal history's writer, with a thread and a database connection of its own (history.rs)
+    history: Arc<crate::history::History>,
     /// this device's sound for the page's Signals chart, listened to only while the page asks
     #[cfg(feature = "import")]
     sound_live: Arc<crate::soundlive::Live>,
@@ -209,6 +211,7 @@ impl Tracker {
             bus,
             followed,
             location: crate::location::Location::new(home),
+            history: crate::history::History::new(home),
             #[cfg(feature = "import")]
             sound_live: crate::soundlive::Live::of(root),
             #[cfg(feature = "sound")]
@@ -219,6 +222,9 @@ impl Tracker {
         t.say_node();
         t.start_shared();
         t.location.watch(t.bus.clone());
+        // (the history's writer: rows that waited from an earlier run go when the database is there, and
+        // the day's old rows are deleted, whether or not new rows come)
+        t.history.start();
         t
     }
 
@@ -457,6 +463,8 @@ impl Tracker {
             // a test device whose location is to be shown and kept (FACE_LOCATION=on in the app's
             // environment): its page then switches the location on when it starts, as if by hand
             "location": std::env::var("FACE_LOCATION").ok().filter(|on| on == "on"),
+            // a test device whose signal history is to be kept (FACE_HISTORY=on): the same for that switch
+            "history": std::env::var("FACE_HISTORY").ok().filter(|on| on == "on"),
             // the way this camera's frames leave the page, named to compare the ways on one device
             // (FACE_STREAM: transfer, bitmap or page); without it the page takes its engine's own
             "stream": stream_way(),
@@ -567,6 +575,19 @@ impl Tracker {
         }
     }
 
+    /// What the history's writer did, as numbers, with whether the history is kept here (`on`: a shared
+    /// database and this device's switch) and for how many days: what the page's line under the switch says.
+    fn history_state(&self) -> Value {
+        let mut state = self.history.status();
+        let joined = self.joining.joined();
+        let settings = self.store.settings().unwrap_or_default();
+        let said = |key: &str| settings.get("track").and_then(|t| t.get(key)).and_then(Value::as_str);
+        state["joined"] = json!(joined);
+        state["on"] = json!(joined && said(face_home::siglog::OPTION) == Some("1"));
+        state["days"] = json!(face_home::siglog::keep_days(said(face_home::siglog::KEEP)));
+        state
+    }
+
     /// Where each listed device is, put beside it as `place`, for the devices whose owner switched their
     /// location on: this device's own; another's as its node publishes it, while a page of this device
     /// follows that node; else the newest row of its history, where the shared database can be asked. A
@@ -662,6 +683,9 @@ impl Tracker {
         let ms = t0.elapsed().as_secs_f64() * 1000.0;
         self.frames.fetch_add(1, Ordering::Relaxed);
         self.last.store(((out.len() as u64) << 32) | ((ms * 100.0) as u64).min(0xffff_ffff), Ordering::Relaxed);
+        if !out.is_empty() {
+            self.history.face_seen(); // (the history writes in the moments nobody is in view)
+        }
         if let Some(posed) = record {
             // a posed test: the largest readable face's numbers go to the test's file (the first of equals)
             let area = |f: &Value| f["box"][2].as_f64().unwrap_or(0.0) * f["box"][3].as_f64().unwrap_or(0.0);
@@ -1203,6 +1227,7 @@ impl Service for Tracker {
             "/api/inview" => 400_000,
             "/api/bus" => 2 * crate::bus::MAX_VALUE,
             "/api/settings" | "/api/expression-log" | "/api/who" | "/api/expr-eval/report" => 200_000,
+            "/api/signal-log" => 4_000_000,
             "/api/signals" => MAX_SIGNALS + 1000,
             "/api/expr-eval/delete" => 2_000,
             "/api/voice" => 4 * 16_000 * 10 + 1,
@@ -1276,6 +1301,9 @@ impl Service for Tracker {
                 let _ = self.bus.set("place", self.location.look());
                 Response::json(self.location.answer())
             }
+            // the signal history: what its writer did, as numbers (whether it is kept here, for how many
+            // days, how many rows wait, how long the database took)
+            "/api/signal-log" => Response::json(self.history_state()),
             // is the screen locked? (Windows stops running cameras then)
             "/api/screen" => Response::json(json!({"locked": crate::desktop::screen_locked()})),
             "/api/alerts" => state(self.alerts.listing()),
@@ -1498,6 +1526,25 @@ impl Service for Tracker {
             })),
             // what this device's page publishes of it: its catalog, what is on, its settings
             "/api/bus" => done(parsed(&req.body).and_then(|b| self.bus_publish(&b))),
+            // Rows of the signal history: kept only with a shared database and while this device's switch is
+            // on. They are checked and handed to the history's own writer: this request writes no file and
+            // asks no database (it reads this device's own settings and its list of forgotten people). A
+            // forgotten person's rows are left out.
+            "/api/signal-log" => done(parsed(&req.body).and_then(|b| {
+                let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
+                let rows = face_home::siglog::rows(b.get("rows"), now)?;
+                // (answered with what the writer did, so that the page asks once where it would ask twice)
+                let mut state = self.history_state();
+                let kept = if state["on"] == true {
+                    let forgotten = self.store.forgotten();
+                    let named = |r: &Value| r["name"].as_str().is_some_and(|n| forgotten.contains(n));
+                    self.history.take(rows.into_iter().filter(|r| !named(r)).collect())
+                } else {
+                    0
+                };
+                state["kept"] = json!(kept);
+                Ok(state)
+            })),
             // Readings for the expression log: kept only with a shared database to keep them in and while
             // the page's switch is on. Not on a phone yet: nothing there sends them on,
             // and they would only pile up; on a computer the sync sends these files.

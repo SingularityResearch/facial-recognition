@@ -117,7 +117,7 @@ fn fault(e: Fault) -> Response {
 
 /// A face's number from a part of the address.
 pub(crate) fn number(text: &str) -> Result<i64, Response> {
-    text.trim().parse().map_err(|_| asked(format!("invalid literal for int() with base 10: '{text}'")))
+    text.trim().parse().map_err(|_| asked(format!("That is not a whole number: '{text}'")))
 }
 
 impl Inner {
@@ -139,6 +139,7 @@ impl Inner {
 
     /// The original of a photo (a video's frame) from another device of the shared database that has it:
     /// shown or described, never stored. None when no device can be asked or none sent it.
+    #[cfg_attr(not(feature = "import"), allow(dead_code))]
     pub(crate) fn from_peer(&self, photo: &str, frame: Option<i64>) -> Option<Vec<u8>> {
         if !self.peer_ready() {
             return None;
@@ -303,6 +304,8 @@ impl Labeler {
             learn(&inner);
         });
         self.watch_webcam();
+        #[cfg(feature = "import")]
+        crate::libhistory::follow_imports(self.inner.clone(), self.home.clone());
         self.make_pictures();
     }
 
@@ -614,7 +617,7 @@ impl Labeler {
         }
         // Describe photo: outside the labeling data's lock, as it asks a server
         #[cfg(feature = "import")]
-        if let Some(answer) = self.describe_get(req) {
+        if let Some(answer) = self.describe_get(req).or_else(|| self.libhistory_get(&req.path)) {
             return answer;
         }
         // the music log and a person's usual music (Settings)
@@ -799,6 +802,11 @@ impl Labeler {
         if let Some(answer) = self.import_post(&req.path, body).or_else(|| self.describe_post(&req.path, body)) {
             return answer;
         }
+        // the library's part of the signal history (a job in the import's slot)
+        #[cfg(feature = "import")]
+        if let Some(answer) = self.libhistory_post(&req.path) {
+            return answer;
+        }
         // NVIDIA CUDA for the model runtime, when asked: this program's runtime is fetched with it, and has
         // none to add yet (the page offers the download only when the tool says there is one: it never does)
         if req.path == "/api/cuda/download" {
@@ -879,7 +887,12 @@ impl Service for Labeler {
         let import = cfg!(feature = "import")
             && matches!(
                 path,
-                "/api/import" | "/api/import/stop" | "/api/possible/scan" | "/api/morefaces" | "/api/drawface"
+                "/api/import"
+                    | "/api/import/stop"
+                    | "/api/possible/scan"
+                    | "/api/morefaces"
+                    | "/api/drawface"
+                    | "/api/history/library"
             );
         #[cfg(feature = "sync")]
         let import = import || crate::label_settings::POSTS.contains(&path);
@@ -1037,7 +1050,7 @@ mod tests {
             assert_eq!(post(&tool, path, body), (400, json!({"error": why})), "{path}");
         }
         assert_eq!(get(&tool, "/thumb/12"), (404, json!({"error": "no such face"})));
-        assert_eq!(get(&tool, "/thumb/x.jpg"), (400, json!({"error": "invalid literal for int() with base 10: 'x'"})));
+        assert_eq!(get(&tool, "/thumb/x.jpg"), (400, json!({"error": "That is not a whole number: 'x'"})));
         assert_eq!(get(&tool, "/api/photoinfo/99"), (400, json!({"error": "no such face"})));
         // adding photos and the photo view's faces: only in a program built to read photos
         let import = cfg!(feature = "import");

@@ -21,6 +21,8 @@ pub struct WaitLog {
 pub const EXPRESSION: WaitLog = WaitLog { folder: "expression", needs: &[] };
 /// The songs that played for a person.
 pub const MUSIC: WaitLog = WaitLog { folder: "music", needs: &["song"] };
+/// The signal history's rows that the shared database couldn't take yet (`siglog`).
+pub const SIGNALS: WaitLog = WaitLog { folder: "signals", needs: &["data"] };
 
 fn truthy(v: Option<&Value>) -> bool {
     match v {

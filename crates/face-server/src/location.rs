@@ -16,7 +16,8 @@
 //! What is made of it: the page's own line (`Location::answer`), the node's `place` on the bus for the
 //! owner's other devices (numbers and one word; each device puts the town's name to them itself, from its
 //! own list), and the history's rows, which wait in the private folder until this program's own connection
-//! to the shared database has sent them (`send`). Rows older than 90 days are deleted there once a day.
+//! to the shared database has sent them (`send`). Once a day this device's rows that are older than the days
+//! its owner set for its history are deleted there (`siglog::keep_days`: 90 unless set).
 
 use std::{
     path::{Path, PathBuf},
@@ -393,7 +394,10 @@ pub async fn send(client: &tokio_postgres::Client, device: &str, home: &Path, se
     }
     let today = crate::paths::utc_now()[..10].to_string();
     if done.is_ok() && sending.pruned != today {
-        done = face_db::location::prune(client).await.map(|_| ());
+        // (kept as long as the device's history is: the days its owner set here)
+        let store = face_home::store::Store::new(home);
+        let days = face_home::siglog::keep_days(store.setting("track", face_home::siglog::KEEP).as_deref());
+        done = face_db::location::prune(client, device, days).await.map(|_| ());
         if done.is_ok() {
             sending.pruned = today;
         }

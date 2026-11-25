@@ -202,7 +202,19 @@ fn a_device_that_read_the_code_sets_itself_up() {
     rt.block_on(async {
         // (what came the second way: the first is the same login)
         let kept = face_db::setup(&handed, &home).await.unwrap_or_else(|e| panic!("{e}"));
-        assert_eq!((kept.host.as_str(), kept.port, kept.schema.as_str()), (s.host.as_str(), s.port, s.schema.as_str()));
+        // run on the database's own computer, whose login names the server as itself: another device is
+        // handed this computer's address instead (join's `for_others`)
+        let on_server = s.host.eq_ignore_ascii_case("localhost")
+            || s.host.parse::<std::net::IpAddr>().is_ok_and(|a| a.is_loopback() || a.is_unspecified());
+        if on_server {
+            assert!(
+                kept.host.parse::<std::net::IpAddr>().is_ok_and(|a| !a.is_loopback() && !a.is_unspecified()),
+                "a device elsewhere was handed a loopback address"
+            );
+        } else {
+            assert_eq!(kept.host, s.host);
+        }
+        assert_eq!((kept.port, kept.schema.as_str()), (s.port, s.schema.as_str()));
         let file = std::fs::read_to_string(home.join("database.json")).unwrap();
         assert!(file.contains("BEGIN CERTIFICATE"), "the server's authority is kept");
         assert!(file.contains("\"dpapi:") || file.contains("\"plain:"), "the password as paths.protect keeps it");
@@ -287,12 +299,196 @@ fn the_location_history_takes_rows_once_and_lets_old_ones_go() {
             location::send(&client, &device.id, &[json!({"lat": 1.5, "lon": 2.5, "acc": 9, "at": old, "source": "system"})])
                 .await?;
             assert_eq!(location::count(&client, &device.id).await?, 3);
-            assert_eq!(location::prune(&client).await?, 1);
+            // (each device's own rows, by the days its owner set there: the other device's stay)
+            location::send(&client, &other.id, &[json!({"lat": 1.5, "lon": 2.5, "acc": 9, "at": old, "source": "system"})])
+                .await?;
+            assert_eq!(location::prune(&client, &device.id, location::KEEP_DAYS).await?, 1);
+            assert_eq!(location::count(&client, &other.id).await?, 2);
+            assert_eq!(location::prune(&client, &other.id, 100_000).await?, 0, "kept for longer there");
+            assert_eq!(location::prune(&client, &other.id, 30).await?, 1, "its one row older than its 30 days");
             assert_eq!(location::count(&client, &device.id).await?, 2);
             // a device's whole history, at its owner's word: the other device's stays
             assert_eq!(location::forget(&client, &device.id).await?, 2);
             assert_eq!(location::count(&client, &device.id).await?, 0);
             assert_eq!(location::count(&client, &other.id).await?, 1);
+            Ok::<(), String>(())
+        })
+        .catch_unwind()
+        .await;
+        let dropped = client.batch_execute(&format!("DROP SCHEMA {schema} CASCADE")).await;
+        let _ = std::fs::remove_dir_all(&home);
+        dropped.unwrap();
+        match outcome {
+            Ok(told) => told.unwrap(),
+            Err(failed) => std::panic::resume_unwind(failed),
+        }
+    });
+}
+
+/// The signal history against the real server: many rows go in with one statement, a row that is there
+/// already changes nothing, what is no row is left out, a device's old rows are deleted by its own days, and
+/// a forgotten person's rows go by their name.
+#[test]
+fn the_signal_history_takes_many_rows_at_once_and_lets_old_ones_go() {
+    use face_db::signals;
+    use serde_json::json;
+    let Some(s) = settings() else {
+        eprintln!("skipped: no test database (FACE_TEST_DB_HOME)");
+        return;
+    };
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    rt.block_on(async {
+        let schema = made_up_schema();
+        let home = std::env::temp_dir().join(format!("face-db-signals-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let device = Device::load(&home, "a test device").unwrap();
+        let other = Device::load(&home.join("other"), "another").unwrap();
+        let mut client = face_db::connect(&s, &schema, &device).await.expect("the server");
+        client.batch_execute(&format!("CREATE SCHEMA {schema}")).await.unwrap();
+        let outcome = AssertUnwindSafe(async {
+            face_db::migrate(&mut client).await?;
+            let now: i64 = client
+                .query_one("SELECT (extract(epoch FROM now()) * 1000)::bigint", &[])
+                .await
+                .map_err(|e| e.to_string())?
+                .get(0);
+            let row = |name: &str, t: i64| {
+                json!({"t": t, "name": name, "s": 10, "n": 300,
+                       "data": {"pulse": [70.5, 60, 80, 300], "look": {"happy": 200, "neutral": 100}, "z": {"pulse": 2.4}, "odd": 1}})
+            };
+            // a whole batch in one statement: the device's own rows and two people's
+            let mut rows = Vec::new();
+            for k in 0..signals::MOST as i64 / 3 {
+                for name in ["", "Ann", "Zoë"] {
+                    rows.push(row(name, now - 3_600_000 + k * 10_000));
+                }
+            }
+            rows.push(json!({"t": now, "name": "Ann", "s": 0, "n": 1, "data": {}})); // no row: its stretch has no length
+            let began = std::time::Instant::now();
+            let new = signals::send(&client, &device.id, &rows).await?;
+            let took = began.elapsed();
+            assert_eq!(new as usize, rows.len() - 1, "every row but the one that is none");
+            eprintln!("{} rows in one statement: {} ms", new, took.as_millis());
+            assert_eq!(signals::count(&client, &device.id).await?, (new as i64, new as i64 * 2 / 3));
+            // sent again (the answer was lost on the way): nothing is there twice
+            assert_eq!(signals::send(&client, &device.id, &rows).await?, 0);
+            // the row as it is kept: its numbers, and the stretch's start as a time
+            let kept = client
+                .query_one(
+                    "SELECT seconds, readings, data->'pulse'->>0, data->'look'->>'happy', (extract(epoch FROM at) * 1000)::bigint
+                     FROM signal_log WHERE device = $1::text::uuid AND name = 'Zoë' ORDER BY at LIMIT 1",
+                    &[&device.id],
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+            assert_eq!((kept.get::<_, f32>(0), kept.get::<_, i32>(1)), (10.0, 300));
+            assert_eq!((kept.get::<_, String>(2).as_str(), kept.get::<_, String>(3).as_str()), ("70.5", "200"));
+            assert_eq!(kept.get::<_, i64>(4), now - 3_600_000);
+            // "together": two people's rows of the same device and the same stretch
+            let together: i64 = client
+                .query_one(
+                    "SELECT count(*) FROM signal_log a JOIN signal_log b USING (device, at) WHERE a.name = 'Ann' AND b.name = 'Zoë'",
+                    &[],
+                )
+                .await
+                .map_err(|e| e.to_string())?
+                .get(0);
+            assert_eq!(together as usize, signals::MOST / 3);
+            // each device deletes its own old rows, by its own days
+            let old = now - 100 * 86_400_000;
+            signals::send(&client, &device.id, &[row("Ann", old), row("", old)]).await?;
+            signals::send(&client, &other.id, &[row("Ann", old)]).await?;
+            assert_eq!(signals::prune(&client, &device.id, 365).await?, 0, "kept for a year here");
+            assert_eq!(signals::prune(&client, &device.id, 90).await?, 2);
+            assert_eq!(signals::count(&client, &other.id).await?, (1, 1), "another device's rows are its own to delete");
+            // what is no device's id is refused before anything is asked
+            assert!(signals::send(&client, "not an id", &rows).await.is_err());
+            assert!(signals::prune(&client, "x' OR '1'='1", 1).await.is_err());
+
+            // the expression and music logs follow the same days, each device its own rows
+            for (who, days_ago) in [(&device.id, 100), (&device.id, 10), (&other.id, 100)] {
+                let at = format!("{days_ago} days");
+                client
+                    .execute(
+                        "INSERT INTO expression_log (device, name, at, label, share) VALUES ($1::text::uuid, 'Ann', now() - $2::text::interval, 'happy', 0.8)",
+                        &[who, &at],
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+                client
+                    .execute(
+                        "INSERT INTO music_log (device, name, at, artist, song, seconds) VALUES ($1::text::uuid, 'Ann', now() - $2::text::interval, 'A', 'B', 200)",
+                        &[who, &at],
+                    )
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            assert_eq!(signals::prune_logs(&client, &device.id, 365).await?, (0, 0), "kept for a year here");
+            assert_eq!(signals::prune_logs(&client, &device.id, 90).await?, (1, 1));
+            let left: i64 = client
+                .query_one("SELECT (SELECT count(*) FROM expression_log) + (SELECT count(*) FROM music_log)", &[])
+                .await
+                .map_err(|e| e.to_string())?
+                .get(0);
+            assert_eq!(left, 4, "this device's newer rows and the other device's old ones stay");
+            assert!(signals::prune_logs(&client, "x' OR '1'='1", 1).await.is_err());
+
+            // The library's rows: what two pictures say of the people in them, at the pictures' own times
+            // (one from long ago: no device's days delete a library's rows).
+            let long_ago = 946_684_800_000i64; // 2000-01-01
+            let lib = |name: &str, t: i64, picture: &str, source: &str, looks: bool| {
+                let mut data = json!({"face": format!("{picture}-1-{}", name.len()), "quality": 0.8, "faces": 2});
+                if looks {
+                    data["looks"] = json!({"happy": 0.9, "neutral": 0.1});
+                }
+                json!({"t": t, "name": name, "source": source, "ref": picture, "data": data})
+            };
+            let pictures = vec!["aa11".to_string(), "bb22".to_string(), "cc33".to_string()];
+            let first = vec![
+                lib("Ann", long_ago, "aa11", "photo", true),
+                lib("Zoë", long_ago, "aa11", "photo", false),
+                lib("Ann", long_ago + 2000, "bb22", "video", true),
+                // (twice the same person at one moment of one picture: the first counts)
+                lib("Ann", long_ago + 2000, "bb22", "video", false),
+                // (a row of a picture that was not among those looked at is not written)
+                lib("Ann", long_ago, "dd44", "photo", true),
+            ];
+            assert_eq!(signals::send_library(&client, &pictures, &first).await?, 3);
+            assert_eq!(signals::count_library(&client).await?, (3, 2));
+            // (the same again changes nothing)
+            assert_eq!(signals::send_library(&client, &pictures, &first).await?, 0);
+            // who was in a picture together is read from the rows: the same picture
+            let together: i64 = client
+                .query_one(
+                    "SELECT count(*) FROM signal_log a JOIN signal_log b USING (device, ref, at)
+                     WHERE a.ref <> '' AND a.name = 'Ann' AND b.name = 'Zoë'",
+                    &[],
+                )
+                .await
+                .map_err(|e| e.to_string())?
+                .get(0);
+            assert_eq!(together, 1);
+            // what is known of a face's looks already is read back by the face
+            let looks = signals::library_looks(&client).await?;
+            assert_eq!(looks.len(), 2, "{looks:?}");
+            assert_eq!(looks["aa11-1-3"]["happy"], 0.9);
+            // The labels changed: the first picture's second face is someone else now, and the video's
+            // face is no longer named. Their old rows go with the same statement; the rest stays.
+            let second = vec![lib("Ann", long_ago, "aa11", "photo", true), lib("Bea", long_ago, "aa11", "photo", false)];
+            assert_eq!(signals::send_library(&client, &pictures[..2], &second).await?, 1);
+            let names: Vec<String> = client
+                .query("SELECT name FROM signal_log WHERE ref <> '' ORDER BY name", &[])
+                .await
+                .map_err(|e| e.to_string())?
+                .iter()
+                .map(|r| r.get(0))
+                .collect();
+            assert_eq!(names, ["Ann", "Bea"]);
+            // no device's tidying takes a library's rows, however old the picture
+            assert_eq!(signals::prune(&client, signals::LIBRARY, 1).await?, 0);
+            assert_eq!(signals::count_library(&client).await?, (2, 1));
+            // the cameras' rows were never touched by any of it
+            assert_eq!(signals::count(&client, &other.id).await?, (1, 1));
             Ok::<(), String>(())
         })
         .catch_unwind()

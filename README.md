@@ -80,9 +80,21 @@ project's own. To our knowledge no other system puts these together, and we rega
 - **Where each device is** (off until you switch it on, device by device): the nearest town with its state and
   country and the coordinates, on the device's own Face tracking tab and over its picture in the Cameras tab,
   from the device's own location service or a place you type; with a shared database, a history of its moves
-  for 90 days. The towns' names come from a list inside the app, so nothing is looked up on the internet.
-- **Describe photo**: a vision model on your own computer (LM Studio, or the built-in one) describes a photo and
-  reads its text.
+  for 90 days (or the days you set). The towns' names come from a list inside the app, so nothing is looked up
+  on the internet.
+- **A history of every signal** (off until you switch it on, device by device; needs a shared database): what
+  a device reads is kept for analysis, a row every 10 seconds for the device and for each named person in view,
+  each signal as its average, lowest and highest, for as many days as you set. Your photos and videos can be
+  added to it: what each says of the people named in it, at the picture's own time. It is written beside the
+  rest of the app, a second or two after each row is finished, and nothing else depends on it.
+- **Describe photo**: a vision model on your own computer describes a photo and reads its text: through LM Studio,
+  Ollama, llama.cpp or vLLM, or the built-in model. Settings suggests the model and settings for the computer's
+  own graphics memory and loads it, and Describe all can share its photos with your other computers' servers.
+  [What runs best where](docs/MODELS_AND_HARDWARE.md) has the measurements behind it, for five computers and four
+  servers, with the app's own models, Opsis 1 and Melos 1. In short:
+  - A Mac Studio (M5 Ultra) describes a photo in under a second.
+  - The Radeon 8060S PCs take about 3 s with the most detailed model, Qwen 3.6 35B-A3B.
+  - The 8 GB laptops are fastest with Gemma 4 E4B, under a second.
 - **Shared database** (optional): PostgreSQL with pgvector on a server of your own, over TLS; keys are encrypted
   on the device before they go there. A new phone or computer joins by a code: one device shows it, the other
   scans it (**Join a new device** in Face tracking → Controls), either way round.
@@ -132,7 +144,7 @@ The app is `target/release/FaceRecognizer`. The installers are made by `packagin
 | `web/` | the pages the app shows |
 | `migrations/` | the shared database's schema |
 | `packaging/` | the installers for each system |
-| `docs/` | settings, the reasoning behind the expression reading, the [research this work builds on](docs/REFERENCES.md), and the stores' listings |
+| `docs/` | settings, the reasoning behind the expression reading, the [research this work builds on](docs/REFERENCES.md), [models and hardware measured](docs/MODELS_AND_HARDWARE.md), and the stores' listings |
 
 ## Licence
 

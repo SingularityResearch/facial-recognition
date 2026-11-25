@@ -220,6 +220,52 @@ test("the device itself: its own readings are charted, checked, and reach anothe
   assert.equal(C.fmt({ unit: "°C", d: 1 }, 48.31), "48.3 °C");
 });
 
+test("the history's rows: every reading of a stretch in one row for the device and one for each named person", () => {
+  const H = new C.History(10000), T = 1_795_161_900_000;      // (a whole stretch begins here)
+  const dev = { ...device, load: 40, memory: 50, heat: 1, charging: true };
+  const snd = seq => ({ seq, t: T, interfaces: [{ name: "Speakers", kind: "output", what: "music", level: -20, tempo: 120 }] });
+  H.add(T + 100, { device: dev, faces: [{ ...face("Ann", { pulse: 60, smile: 0.2, hand: false, probs: [0.1, 0.7, 0.2] }, { pulse: [60, 5] }), look: "happy", state: "plain" },
+                                        face("Unknown")], sound: snd(1) });
+  H.add(T + 4000, { device: { ...dev, load: 60 }, faces: [{ ...face("Ann", { pulse: 80, smile: 0.4, hand: true, probs: [0.3, 0.5, 0.2] }, { pulse: [60, 5] }), look: "happy" }], sound: snd(1) });
+  H.add(T + 9000, { device: dev, faces: [{ ...face("Ann", { pulse: 70, smile: null, probs: [0.2, 0.6, 0.2] }, { pulse: [60, 5] }), look: "neutral" },
+                                        face("Bea", { pulse: 55 })], sound: snd(2) });
+  assert.deepEqual(H.take(T + 9500), [], "a stretch that is still running has no rows yet");
+  H.add(T + 10200, { device: dev, faces: [] });                 // the next stretch's first reading closes it
+  const rows = H.take(T + 10300);
+  assert.deepEqual(rows.map(r => [r.t, r.s, r.name, r.n]), [[T, 10, "", 3], [T, 10, "Ann", 3], [T, 10, "Bea", 1]]);
+  const [d, ann, bea] = rows.map(r => r.data);
+  // a number: its average, lowest, highest and how many readings; a yes-or-no the same, with yes as 1
+  assert.deepEqual(d.load, [46.6667, 40, 60, 3]);
+  assert.deepEqual(d.charging, [1, 1, 1, 3]);
+  assert.deepEqual([d.faces, d.unknown], [[1.6667, 1, 2, 3], [0.3333, 0, 1, 3]]);
+  assert.deepEqual(d.heat, { fair: 3 });
+  // a listening counts once however many checks it lasts
+  assert.deepEqual(d.sound, [{ name: "Speakers", kind: "output", level: [-20, -20, -20, 2], tempo: [120, 120, 120, 2], what: { music: 2 } }]);
+  assert.deepEqual(ann.pulse, [70, 60, 80, 3]);
+  assert.deepEqual(ann.smile, [0.3, 0.2, 0.4, 2], "a reading that wasn't there is not counted");
+  assert.deepEqual(ann.hand, [0.5, 0, 1, 2]);
+  assert.deepEqual(ann.looks, { angry: 0.2, happy: 0.6, neutral: 0.2 });
+  assert.deepEqual(ann.look, { happy: 2, neutral: 1 });
+  assert.deepEqual(ann.state, { plain: 1 });
+  // how far from her own usual the pulse was at its furthest (80 against 60 with a spread of 5), and that it was unusual
+  assert.deepEqual([ann.z, ann.odd], [{ pulse: 4 }, 1]);
+  assert.deepEqual([bea.pulse, bea.z, bea.odd], [[55, 55, 55, 1], undefined, undefined]);
+  // no row names another person, and a face nobody is named for has no row of its own
+  assert.ok(!JSON.stringify(ann).includes("Bea") && !JSON.stringify(d).includes("Ann"));
+  assert.ok(rows.every(r => r.name !== "Unknown"));
+  // every signal the chart draws for a person can be in a row, and nothing else is
+  const known = new Set([...C.SCALARS, ...C.FLAGS, "looks", "look", "state", "z", "odd"]);
+  assert.deepEqual(Object.keys(ann).filter(k => !known.has(k)), []);
+  // the stretch that only has the device's reading is closed by the clock, and each row is given once
+  assert.deepEqual(H.take(T + 21000).map(r => [r.t, r.name, r.n]), [[T + 10000, "", 1]]);
+  assert.deepEqual(H.take(T + 99000), []);
+  // what is no reading at all changes nothing, and a row is plain data of numbers and short words
+  H.add(T + 30000, null); H.add(T + 30100, { faces: "none", device: 7, sound: "loud" });
+  const odd = H.take(T + 41000);
+  assert.deepEqual(odd.map(r => [r.name, r.n, Object.keys(r.data)]), [["", 2, ["faces", "unknown"]]]);
+  assert.equal(C.HISTORY_MS, 10000);
+});
+
 test("no class of the chart has two methods of one name: the later one would silently be the only one", () => {
   // (it happened: a second tell() took the place of the one every channel's value is written with, and each
   // reading then threw in the page, which no test without a page sees)

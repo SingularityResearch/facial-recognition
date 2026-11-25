@@ -66,7 +66,7 @@ try {
     }
     $bootstrapper = if ($WebView2) { (Resolve-Path $WebView2).Path } else { Get-Bootstrapper }
     $version = (Select-String -Path (Join-Path $rust "Cargo.toml") -Pattern '^version = "(.*)"$' | Select-Object -First 1).Matches[0].Groups[1].Value
-    # (Windows takes a version of numbers only: 2.6.0-dev is 2.6.0 to it)
+    # (Windows takes a version of numbers only: 2.7.0-dev is 2.7.0 to it)
     $number = ($version -replace '[^0-9.].*$', '')
     $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
         Where-Object { Test-Path $_ } | Select-Object -First 1

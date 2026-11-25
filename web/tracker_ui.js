@@ -65,6 +65,7 @@ async function loadPeople() {
     calibration = r.calibration || null; vaFit = r.vaFit || null; voiceModel = !!r.voice;
     allSignals = r.signals === "all";
     if (r.location === "on" && !locationAsked) locationOn = locationAsked = true;
+    if (r.history === "on" && !keepAsked) keepOn = keepAsked = true;
     streamAsked = ["transfer", "page"].includes(r.stream) ? r.stream : "";
     forgetForgotten(r.forgotten);
     // a server with a page of its own for joining a shared database says where it is (a phone's app has no Settings tab)
@@ -1580,8 +1581,11 @@ let allSignals = false;
 // so): the location's switch is switched on once after the page loaded, as if by hand, so it is remembered too.
 // The system still asks whoever is at the device for its own permission.
 let locationOn = false, locationAsked = false;
+// The same for a test device whose signal history is to be kept (FACE_HISTORY=on).
+let keepOn = false, keepAsked = false;
 setInterval(() => {
   if (locationOn) { locationOn = false; const box = $("optLocation"); if (box && !box.checked) box.click(); }
+  if (keepOn) { keepOn = false; const box = $("optHistory"); if (box && !box.checked) box.click(); }
   if (!allSignals) return;
   for (const id of ALL_SIGNALS) { const box = $(id); if (box && !box.disabled && !box.checked) box.click(); }
 }, 5000);
@@ -1698,7 +1702,11 @@ function chartSample() {
   const now = performance.now(), at = Date.now();
   while (checkTimes.length && now - checkTimes[0] > 1000) checkTimes.shift();
   let faces = [];
-  try { if (running && !camPaused()) faces = tracks.filter(t => !t.missed).map(t => ({ name: t.name, ...faceNumbers(t, now) })); } catch {}
+  // (look and state: what the face's reading settled on, for the history's rows; the chart takes no notice of them)
+  try {
+    if (running && !camPaused()) faces = tracks.filter(t => !t.missed).map(t => ({ name: t.name, ...faceNumbers(t, now),
+      look: $("optExpr").checked ? t.expr?.label : undefined, state: $("optExpr").checked ? t.expr?.state : undefined }));
+  } catch {}
   // what is switched off here, or has no model on this device: the sections it leaves empty say so
   const off = Object.keys(CHART_OPTIONS).filter(k => !$(CHART_OPTIONS[k]).checked);
   if (!poseOn) off.push("nopose");
@@ -1707,7 +1715,9 @@ function chartSample() {
   const device = { checks: running ? checkTimes.length : null, check: running ? r4(checkMs) : null, strict: +$("optStrict").value, labels: expressions || undefined, off,
                    load: hostNow.load, memory: hostNow.memory, temp: hostNow.temp, heat: hostNow.heat, battery: hostNow.battery, charging: hostNow.charging,
                    facts: hostFacts ? { ...hostFacts, models: modelsRun, camera: running ? cameraFact() : "" } : undefined };
-  chart.sample(at, { device, faces, sound: soundHeard && $("optSoundChart").checked ? soundHeard : null });
+  const sound = soundHeard && $("optSoundChart").checked ? soundHeard : null;
+  chart.sample(at, { device, faces, sound });
+  if (historyOn()) { try { signalRows.add(at, { device, faces, sound }); } catch {} }   // (measured: millionths of a second a reading)
   recent.push({ t: at, device, faces });
   while (recent.length && at - recent[0].t > SignalsChart.C.SENT_MS) recent.shift();
   busFresh.push({ t: at, device, faces });                          // (for the bus: published within a moment)
@@ -1715,6 +1725,45 @@ function chartSample() {
   sampledAt = now;
 }
 setInterval(() => { if (performance.now() - sampledAt > 900) chartSample(); }, 1000);
+// The signal history (the owner, 2026-11-24: "Keep a history of ALL signals in the database", opt-in on each device,
+// and: "This should NOT slow down the FPS at all"). While its switch is on, every reading above also goes into the
+// history's rows (SignalsChart.History: one row every 10 s for the device and for each named person in view). The
+// page looks every HISTORY_SEND_MS whether a row is finished and hands it to its own server at once, which checks it
+// and gives it to its writer; the writer has a thread and a database connection of its own and paces itself: at once
+// with nobody in view, and with a face in view as often as costs the camera nothing that can be measured (the owner,
+// 2026-11-25: "get to / from the databases as fast as possible while slowing down the FPS the leasts amount"). Here
+// that is a few millionths of a second a reading and one small request every 10 s (measured: the guide has the
+// numbers). Nothing else in the app reads the history. Off, nothing of it runs here at all.
+const HISTORY_SEND_MS = 1000;              // a choice: a row is finished every 10 s, and is on its way within this (a look that finds none is a comparison)
+const HISTORY_ASK_MS = 30000;              // with nothing to send: how often the writer is asked what it did, for the line here
+const signalRows = new SignalsChart.History();   // (not "history": that is the browser's own word)
+function historyOn() { return $("optHistory").checked; }
+let historyState = "", historyAsked = 0;
+function historyShow() {
+  const says = $("historyState"), text = historyOn() ? historyState : "";
+  says.hidden = !text;
+  if (says.textContent !== text) says.textContent = text;
+}
+async function historyStep() {
+  if (!historyOn()) { signalRows.take(Date.now()); historyState = ""; historyAsked = 0; historyShow(); return; }      // (rows made before it was switched off are let go)
+  const rows = signalRows.take(Date.now()), now = performance.now();
+  if (!rows.length && historyAsked && now - historyAsked < HISTORY_ASK_MS) return;      // nothing is finished, and the line is fresh
+  try {
+    // (one request: the rows, answered with what the writer did; or only the question, when there are none)
+    const r = rows.length
+      ? await fetch("/api/signal-log", { method: "POST", headers: { "Content-Type": "application/json", "X-Face-Tool": "1" }, body: JSON.stringify({ rows }) })
+      : await fetch("/api/signal-log", { headers: { "X-Face-Tool": "1" } });
+    const s = await r.json();
+    historyAsked = now;
+    const n = v => (typeof v === "number" && isFinite(v) ? v : 0).toLocaleString();
+    historyState = !s.joined ? "Nothing is kept yet: this device has no shared database."
+      : s.trouble ? `The shared database can't be written to now; the rows wait on this device (${n(s.waited)} so far).`
+      : `Since the app started: ${n(s.written)} rows kept${s.batches ? `; they reach the database ${n(Math.round(s.averageLagMs / 1000))} s after they are made, and a writing takes ${n(s.averageMs)} ms on average` : ""}. Kept for ${n(s.days)} days.`;
+  } catch { /* the next look */ }
+  historyShow();
+}
+setInterval(historyStep, HISTORY_SEND_MS);
+for (const id of ["optHistory", "optHistoryDays"]) $(id).addEventListener("change", () => { historyShow(); setTimeout(historyStep, 1500); });
 // The last seconds' readings for the other devices' charts, each with its own time (they overlap from one readout
 // to the next, so a readout that is lost on the way loses no reading); thinned when there are too many to send.
 function signalsToSend() {
@@ -2008,7 +2057,7 @@ function recall(k) { try { return localStorage.getItem("ft-" + k); } catch { ret
 const KEEP = ["optPoints", "optTrail", "optUnknown", "optBlur", "optExpr", "optCalib", "optEvidence", "optExprLog", "optVoice", "optPulse",
               "optTalkGate", "optState", "optPose", "optHandGate", "optSoundChart", "optSkeleton", "optFingers", "optSmooth", "optStrict", "optMeshStrength",
               "optAlertArrive", "optAlertLeave", "optAlertMove", "optStream", "optKeepCam", "optAlertUnusual", "optArriveGap", "optLeaveGap", "optUnknownStay",
-              "optUnusualZ", "optUnusualFor", "optUnusualRepeat", "optDetailsAfter", "optBannerFor", "optLocation", "optPlace"];
+              "optUnusualZ", "optUnusualFor", "optUnusualRepeat", "optDetailsAfter", "optBannerFor", "optLocation", "optPlace", "optHistory", "optHistoryDays"];
 for (const id of KEEP) {
   const el = $(id), v = recall("o-" + id);
   if (v !== null) {
@@ -2055,7 +2104,7 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
 {
   const c = SettingsBridge.control, C = "Face tracking: camera", D = "Face tracking: display",
         E = "Face tracking: expression", S = "Face tracking: voice, pulse and posture", R = "Face tracking: recognition",
-        A = "Face tracking: alerts", P = "Face tracking: presence log", L = "Face tracking: location";
+        A = "Face tracking: alerts", P = "Face tracking: presence log", L = "Face tracking: location", H = "Face tracking: history";
   SettingsBridge.init("track", [
     c("camSelect", C, { noReset: true }),
     c("optMirror", C, { hint: "Turned on for the webcam and off for video files when the source starts." }),
@@ -2077,6 +2126,10 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
     c("optCollect", R, { hint: $("collectHint").textContent }),
     c("optKeepCam", R, { label: "Keep this camera running", hint: "Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. Stop camera turns this off." }),
     c("optStream", R, { label: "Stream this camera to my other devices", hint: "Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on here), with its live readout. Sent all the time at full rate (about 20 frames a second), over your local network, encrypted, only to your own devices; never stored. Needs a shared database and Share my photos with my other devices." }),
+    c("optHistory", H, { hint: $("historyHint").textContent }),
+    c("optHistoryDays", H, { label: "Keep the history for (days)", hint: "Rows older than this many days are deleted from your shared database, once a day: this device's signal history and its location history. From 1 to 3650 days; 90 unless you set another number. A shorter time deletes the older rows at the next daily tidying." }),
+    { section: H, id: "historyNow", label: "The history on this device", type: "info",
+      get: () => historyOn() ? historyState || "Switched on: the first rows are sent within half a minute." : "Not kept: the switch above is off." },
     c("optLocation", L, { hint: $("placeHint").textContent }),
     // (secret: a typed place is never among the settings this node publishes. Where the device is goes out only
     // as its location, and only while the switch is on.)

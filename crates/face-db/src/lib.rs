@@ -11,6 +11,7 @@ pub mod kept;
 pub mod location;
 pub mod members;
 pub mod peer;
+pub mod signals;
 
 use std::{path::Path, sync::Arc, time::Duration};
 
@@ -369,6 +370,7 @@ pub const MIGRATIONS: &[(i32, &str)] = &[
     (13, include_str!("../../../migrations/013_own_recognizer.sql")),
     (14, include_str!("../../../migrations/014_device_alias.sql")),
     (15, include_str!("../../../migrations/015_location_log.sql")),
+    (16, include_str!("../../../migrations/016_signal_log.sql")),
 ];
 
 /// What a device is called, as every statement reads it that shows a device's name: the name the owner gave
@@ -751,6 +753,11 @@ mod tests {
     #[test]
     fn the_migrations_are_the_folders() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+        if !dir.is_dir() {
+            // a test program run on a phone, beside the app, has no sources to compare with
+            eprintln!("skipped: the sources' migrations folder isn't on this device");
+            return;
+        }
         let mut files: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
             .filter_map(|f| f.ok().map(|f| f.file_name().to_string_lossy().into_owned()))

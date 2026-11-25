@@ -71,8 +71,11 @@ photo library.
 - `docs/` — `SETTINGS.md` (every setting, environment variable and what reaches the network),
   `WHY_LAYERED_EXPRESSION.md`, `REFERENCES.md` (the research articles the work builds on, each with what the
   project takes from it: a citation goes in only when it was checked against its source, and a model the app
-  does not have is not named there), and `store/` (one file a store: its listing's text and the answers to its
-  forms, so that every release says the same).
+  does not have is not named there), `MODELS_AND_HARDWARE.md` (Describe photo's servers and models measured on
+  the project's computers, with the own models Opsis 1 and Melos 1: the evidence behind `face-server` `aiserve.rs`'s
+  suggestions; its charts are `images/*.svg`, light and dark, drawn from the measurements: a change to
+  `aiserve::CANDIDATES` or its rules goes with new measurements there), and `store/` (one file a store: its
+  listing's text and the answers to its forms, so that every release says the same).
 - `.github/workflows/` — `ci.yml` (tests on four kinds of computer; the installers; signing on `main`; what cargo
   compiled of the libraries is kept between runs, by system, compiler and `Cargo.lock`, with GitHub's own cache
   action: the project's own code is compiled from the checkout every time, and only pushes to `main` write it),
@@ -102,6 +105,15 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - Every check that starts the app sets `FACE_LMSTUDIO=off`: its upkeep would act on the owner's own LM Studio.
 - A check or a test never asks a real outside service (Amazon, Google, Spotify, Hugging Face, the model
   publishers, Microsoft's installer): each has a stand-in address taken only as `http://127.0.0.1:<port>`.
+
+Where the work lives on the owner's Windows development computer (the owner's rule, 2026-11-25: "all work goes
+on the X drive and all backups go on the NAS RAID5 Y drive"; "I dont want my C drive filling up with this
+projects files (temp files or otherwise.)"): the checkout, the builds, every tool and cache the project needs,
+model files, test copies and every temporary or scratch file go on `X:` (an assistant's scratch folder there is
+`X:\scratch\<name>`), and backups go only on `Y:`. Nothing of the project goes on `C:`. A program that puts its
+files on `C:` by itself is pointed at `X:` with its own setting or variable, or installed again there where it has
+none (never a link left at the old path: the owner's word, "make it run from its new location not with a link"),
+it is checked that it works from there, and only then is what it left on `C:` deleted.
 
 ## The parts and their rules
 
@@ -142,7 +154,12 @@ device's library at the same time: each would send what the other took.
     with the page's own header, and nothing there is answered under the labeling lock;
   - one person's export and forget is `persondata.rs` (with `face-library` `person.rs`): a new place that
     keeps anything about a person goes into the list at its top, its `export` and `forget`, and its test;
-  - Describe photo is `describe.rs` (a describe server asked) and `describejob.rs` (Describe all and Describe
+  - Describe photo is `describe.rs` (a describe server asked, of one of four kinds: `face_home::describe::PLATFORMS`,
+    LM Studio, Ollama, llama.cpp, vLLM, each listed by `models_of` in its own way; the owner, 2026-11-25:
+    "When you select one - it should show the relevant fields that are required for that platform"; the
+    other devices' servers that share Describe all are of the same kind with the same model: LM Studio's found
+    on the network, the other kinds asked at each device's addresses on the kind's usual port; what is suggested
+    and loaded for a computer's hardware is `aiserve.rs`) and `describejob.rs` (Describe all and Describe
     everything again, in the importer's one slot), with the describer's settings and the kept descriptions in
     `crates/face-home`: a redirect is never followed, an answer is read only up to a size, the API key goes to
     its own server only, and a helper is only a computer of the shared database at an address it gave there,
@@ -335,8 +352,9 @@ device's library at the same time: each would send what the other took.
     (`APART_MS`). Both are choices, not measured values. Rows wait in `HOME/location.json` (at most
     `MOST_WAITING`) and go on the tracker's own connection to the database, with its "this device is here"
     (`location::send`, in `watch_device` and `start_heartbeat`): a phone has no sync, so the sync is not
-    their way. A database that can't take them never ends that connection's other work. Rows older than
-    `face_db::location::KEEP_DAYS` are deleted once a day, every device's. Nothing waits on a device without a
+    their way. A database that can't take them never ends that connection's other work. Once a day a
+    device deletes its own rows that are older than the days set for its history (`face_home::siglog::keep_days`;
+    `face_db::location::KEEP_DAYS` where none are set). Nothing waits on a device without a
     shared database. The rows are about a device, not a named person: they are in no person's export, and
     Settings deletes a device's history (`/api/db/locations/forget`).
   - A computer's location service is first asked a minute after the program started (`FIRST_ASK_AFTER`),
@@ -360,7 +378,7 @@ device's library at the same time: each would send what the other took.
   removed device's requests get no answer from the peer service (`peer.rs` `judge`, read for each request),
   its camera is neither listed nor asked for (`tracker.rs` `cameras`, `cameras_asked`), it is not asked for a
   photo (`face_db::kept::holders`'s `without`) and its LM Studio is sent no photo to describe
-  (`other_devices_addresses`). A new place where this device asks another one, or answers one, reads the
+  (`other_devices`). A new place where this device asks another one, or answers one, reads the
   list too. What it can't do is said where it is set: that device still has the database's login, and the
   devices' requests are signed with a key they all have, so the list binds a device that says who it is.
   A device is removed together with the certificate it had then (`blocked::set_with`, `certs`): a machine
@@ -772,8 +790,9 @@ servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker,
   other; it travels to the other devices with the readout like the rest (`pack`, `unpack`: the newest once).
 - The Signals chart (`web/signals_chart.js` and `.css`, on the tracker page and under each camera of the Cameras
   page; the owner's design, 2026-11-22: the mock-up they chose, "exactly like" it, and "the fastest signal polling
-  we can get from the devices we have") keeps its readings in the page's memory only, 15 minutes: never store
-  them, in the browser or anywhere. A reading is taken with every check of the picture (`chartSample`), and goes
+  we can get from the devices we have") keeps its readings in the page's memory only, 15 minutes: the chart
+  never stores them, in the browser or anywhere (what is kept of the signals over days is the signal history
+  below, a separate thing with a switch of its own). A reading is taken with every check of the picture (`chartSample`), and goes
   on while the drawer is closed or the tab hidden: only the drawing may be skipped. Another device's readings come
   with its readout (`signals` in `/api/inview`, passed on as they are up to `camstream::MAX_DEVICE_SIGNALS`; a
   device that sends none answers as it always did), every one with its own time (`pack`, `unpack`: the last 2.5 s
@@ -783,6 +802,80 @@ servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker,
   `web/tests/signals_chart.test.js`, which holds the three to each other. Its thresholds for "unusual signals"
   (`ODD_SIGNALS`, `ODD_FOR_MS`) and the sound's 4-second stretches (`soundlive::LISTEN_FOR`) are choices, not
   measured values: evidence only, like the page's other signals.
+- The signal history (`signal_log`, migration 16; `crates/face-home` `siglog.rs`, `crates/face-db` `signals.rs`,
+  `crates/face-server` `history.rs` and `libhistory.rs`; the page's `SignalsChart.History`). The owner's words
+  (2026-11-24): "Keep a history of ALL signals in the database", "it is opt-in per device in settings", "There
+  needs to be a setting that can adjust how long they are kept for", "make sure all database read / writes are
+  non-blocking on all other threads - this should NOT slow down ANY other part of the entire application",
+  "This should NOT slow down the FPS at all - if necessary, batch and only send to the database at the peak
+  idle time on the device. This is an important feature, but its more important that it is both optional and
+  does NOT impact FPS performance", "This should also not impact other existing features - we are not moving
+  to a centralized model - this optional feature is just for analysis purposes and opt-in", and of the
+  library: "We should also be able to run this on imported images / videos in the existing library and add the
+  feature to the image / video import", "We can only assume certain things from the image backfill - and that
+  is OK". So:
+  - It is off for a new copy and switched on device by device (the tracker page's `optHistory`,
+    `face_home::siglog::OPTION`); its days are each device's own (`KEEP`, 90 unless set), and the location
+    history, the expression log and the music log follow them (the owner, 2026-11-25: "Expression and music
+    logs should follow the same days settings"): the writer's daily tidying deletes this device's older rows
+    of all four (`signals::prune`, `prune_logs`), whether or not the history is on. Both are in the sync's `STAY_HERE`. Without a shared database nothing is kept.
+  - It is an archive and nothing else: no feature reads it, waits for it or fails without it (a page test
+    holds that no page asks for it). The devices go on working with each other as they do; never make
+    anything depend on the history or on the database being there for it.
+  - A row is not a reading: the page makes one row for each 10 seconds (`HISTORY_MS`, a choice) for the device
+    itself (name "") and for each named person in view, with each signal's average, lowest, highest and count;
+    a word as how often it was read. Numbers and short words only, never a picture or a sound. No row names
+    another person (who was together is read from rows of one device and time, or one picture), and a face
+    nobody is named for has no row. A new signal of the chart is in the rows by itself (`SCALARS`, `FLAGS`,
+    `HOST`); the test beside the module holds a row's shape.
+  - Only the writer touches the table, and it balances itself (the owner, 2026-11-25, once the first
+    measurements showed that frequent writing cost nothing that could be measured: "if the performance is good
+    (almost the same as with none) with faster with more frequent database writes / reads - then we should do
+    faster (more frequent) database writes / reads. It objective is to balance the database operations so
+    that they get to / from the databases as fast as possible while slowing down the FPS the leasts
+    amount"). The page hands a row to its server as soon as it is finished (`historyStep`, looking every
+    `HISTORY_SEND_MS`; one request, answered with what the writer did); the request (`/api/signal-log`)
+    checks it (`siglog::check`: sizes, shapes, a time near now), puts it into a list in memory, and is
+    done. ONE thread with a connection of its own writes what is in the list in one statement
+    (`signals::send`): at once when nobody has been in view for `QUIET_AFTER`, and with a face in view as
+    often as keeps its database work under one part in `BUSY_SHARE` of the time (`busy_wait`: after work
+    that took t it waits `BUSY_SHARE` x t, `BUSY_LEAST` at the least and `HOLD_MOST` at the most), so a
+    quick database is written to every few seconds and a slow or distant one less often, by itself. Never
+    write the history on a request's thread, on the tracker's "this device is here" connection or on the
+    sync's, and never give it a fixed pace that a slow device or link can't keep. While the database is away
+    the rows wait in `HOME/signals/` (`siglog::Spill`), the list has an end (`MOST_HELD`: the oldest are
+    lost and counted). What reads the history later (analysis) gets a connection and a thread of its own
+    in the same way.
+  - The programs are built to end as a whole when any thread fails (`panic = "abort"`): the first writer made
+    a timer outside its runtime and ended the tracker at its first connection. The writer's whole work is
+    `History::step`, and a test takes that step with the database away. A new thread of the app gets such a
+    test, and makes its timers inside its runtime.
+  - The library's rows (`libhistory.rs`): what a photo or a video's frame says of each named person in it,
+    under the device `signals::LIBRARY` and the picture's own time (the camera's, else the file's: the row
+    says which), with the face's looks from the picture the library keeps of it (the expression model; a
+    blurry face is not read). Nothing a still can't say is assumed. They follow the labels: a picture's rows
+    are made again when they are worked out again (`send_library` takes the stale ones away in the same
+    statement), and the looks the history has already are read back first, so a face is read once. It is a
+    job in the importer's one slot (`run_other`), started from Settings and by itself after a folder's import
+    where the device's history is on; the library's lock is held only to copy what the library says. No
+    device's days delete these rows.
+  - A person's rows go with a forget and are in their export (`persondata.rs`; the sync's forget list), the
+    waiting ones too; Settings deletes a device's rows or the library's (`/api/db/signals/forget`).
+  - What it costs is measured with a test copy, a made-up face in view the whole time (taken as a named
+    person, so that a person's rows are made too) and a test schema, the history OFF and ON in windows that
+    take turns (the rate drifts over minutes, so one stretch after the other says nothing), and nothing else
+    working on the computer meanwhile. Measured so (2026-11-25, a Windows computer, 60 s windows): the page's
+    part is 60 millionths of a second a reading with a person in view (30 without), under a thousandth of
+    its thread. At the writer's own pace, which was a statement every 10 s with the face in view (40 in
+    six minutes, 4.5 ms on average, 15 at most; a row was in the database 1.7 s after it was finished): 14.68
+    checks a second on against 14.70 off, over twelve windows. Before the pace was the writer's own, with
+    rows sent and written every 20 to 30 s: 14.82 checks a second on against 14.91 off, inside the windows' own spread (0.07), and no part of the
+    history stood out (no rows made: 14.87; nothing sent: 14.86). The camera's stream was 20.0 frames a
+    second in every window of every run. The library's part, on a library of 14,700 photos and videos:
+    11,416 rows and 11,388 faces read in 23 s; done again, nothing read and nothing changed, in 1 s.
+    `FACE_HISTORY_HOLD` names a fixed wait for such a measurement; `FACE_HISTORY=on` switches a test
+    device's history on. Change the writer's pace, the row's size or the page's part only with that
+    measurement.
 - Cameras are never paused (the owner's rule, 2026-11-12): the app never stops or slows a camera or its stream by
   itself, whether or not a face is in view, the window is shown, or anyone is watching. Only the owner's own
   Stop camera does. The Cameras page keeps fetching every stream while its tab is hidden; don't add a pause.

@@ -427,7 +427,12 @@ mod tests {
             assert!(f[name].as_str().is_some_and(|t| t.len() <= 200), "{name}: {f}");
         }
         assert!(f["app"].as_str().unwrap().starts_with("Face Recognizer "));
-        assert_eq!(f["device"], "a computer");
+        // (the tests run on the phones too: there the system names the phone)
+        if cfg!(any(target_os = "android", target_os = "ios")) {
+            assert!(f["device"].as_str().unwrap().starts_with("a phone"), "{f}");
+        } else {
+            assert_eq!(f["device"], "a computer");
+        }
     }
 
     #[test]

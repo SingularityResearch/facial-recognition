@@ -891,7 +891,108 @@
     }
   }
 
-  const api = { Panel, Model, clean, OFF: Object.keys(OFF), cleanNums, cleanUsual, cleanFacts, HOST, HEAT, FACTS, catalog, settle,
+  // ------------------------------------------------------------------ the history's rows
+  // What the signal history keeps (the owner, 2026-11-24: "Keep a history of ALL signals in the database", opt-in
+  // on each device): not every reading, but every reading's part in one row for each stretch of HISTORY_MS, a
+  // row for the device itself (name "") and a row for each named person in view. A row holds, for every number
+  // that was read in the stretch, [average, lowest, highest, how many readings]; for a yes-or-no the same with
+  // yes as 1 (so the average is the share of yes); for a word (the look that won, the heat state, what a sound
+  // interface heard) how often each was read. For a person also "looks" (each look's average share), "z" (how far
+  // from the person's own usual each signal was at its furthest, in spreads, with its sign) and "odd" (the most
+  // signals that were unusual at one reading). A face nobody is named for has no row: it is counted in the
+  // device's row ("unknown"). No row names another person, so a person's rows are that person's alone.
+  // HISTORY_MS is a choice, not a measured value: short enough that a quick change shows as a step between two
+  // rows or a wide lowest-to-highest inside one, long enough that a person in view all day is a few thousand rows.
+  const HISTORY_MS = 10000;
+  const r4 = x => Math.round(x * 1e4) / 1e4;
+  class Stat {
+    constructor() { this.n = 0; this.sum = 0; this.min = Infinity; this.max = -Infinity; }
+    add(v) { this.n++; this.sum += v; if (v < this.min) this.min = v; if (v > this.max) this.max = v; }
+    out() { return [r4(this.sum / this.n), r4(this.min), r4(this.max), this.n]; }
+  }
+  const statsOut = bag => Object.fromEntries(Object.entries(bag).map(([k, st]) => [k, st.out()]));
+  class History {
+    constructor(stretch = HISTORY_MS) { this.stretch = stretch; this.rows = []; this.at = null; this.begin(); }
+    begin() { this.n = 0; this.dev = {}; this.words = {}; this.people = new Map(); this.sound = new Map(); this.heard = null; }
+    // One reading (raw, as Model.sample takes it; a face may also say "look", the look its reading settled on, and
+    // "state"), at its time t. A reading of a later stretch closes the one before.
+    add(t, raw) {
+      const start = Math.floor(t / this.stretch) * this.stretch;
+      if (this.at !== null && start !== this.at) this.close();
+      if (this.at === null) this.at = start;
+      const s = clean(raw), given = Array.isArray(obj(raw).faces) ? raw.faces : [];
+      const stat = (bag, k, v) => { if (v != null) (bag[k] ||= new Stat()).add(v); };
+      const word = (bag, k, w) => { if (w) { const c = bag[k] ||= {}; c[w] = (c[w] || 0) + 1; } };
+      this.n++;
+      for (const k of ["checks", "check", ...HOST.filter(k => k !== "heat")]) stat(this.dev, k, s.device[k]);
+      if (s.device.charging != null) stat(this.dev, "charging", s.device.charging ? 1 : 0);
+      if (s.device.heat != null) word(this.words, "heat", HEAT[s.device.heat]);
+      stat(this.dev, "faces", s.faces.length);
+      stat(this.dev, "unknown", s.faces.filter(f => f.name === "Unknown").length);
+      // a listening is one reading however many checks of the picture it lasts: taken once, by its number
+      if (s.sound && s.sound.seq !== this.heard) {
+        this.heard = s.sound.seq;
+        for (const i of s.sound.interfaces) {
+          const key = i.kind + "\n" + i.name;
+          const io = this.sound.get(key) || this.sound.set(key, { name: i.name, kind: i.kind, nums: {}, words: {} }).get(key);
+          for (const k of SOUND_KEYS) stat(io.nums, k, i.v[k]);
+          if (i.v.what != null) word(io.words, "what", WHAT[i.v.what]);
+        }
+      }
+      s.faces.forEach((f, i) => {
+        if (f.name === "Unknown" || f.name.startsWith("#")) return;
+        const p = this.people.get(f.name) || this.people.set(f.name, { n: 0, nums: {}, words: {}, looks: null, labels: null, z: {}, odd: 0 }).get(f.name);
+        p.n++;
+        for (const k of SCALARS) stat(p.nums, k, f.nums[k]);
+        for (const k of FLAGS) if (f.nums[k] != null) stat(p.nums, k, f.nums[k] ? 1 : 0);
+        const labels = s.device.labels;
+        if (f.nums.probs && labels && labels.length === f.nums.probs.length && (!p.labels || p.labels.length === labels.length)) {
+          p.labels = labels; p.looks ||= labels.map(() => new Stat());
+          f.nums.probs.forEach((v, j) => p.looks[j].add(v));
+        }
+        let odd = 0;
+        for (const b of BASE) {
+          const u = f.usual[b.k], v = f.nums[b.k];
+          if (!u || v == null) continue;
+          const z = (v - u[0]) / u[1];
+          if (Math.abs(z) >= 2) odd++;
+          if (p.z[b.k] == null || Math.abs(z) > Math.abs(p.z[b.k])) p.z[b.k] = z;
+        }
+        if (odd > p.odd) p.odd = odd;
+        const said = obj(given[i]);
+        word(p.words, "look", text(said.look, 24));
+        word(p.words, "state", text(said.state, 20));
+      });
+    }
+    // The stretch is over: its rows are made. (Rows nobody took are not kept without end: the oldest go.)
+    close() {
+      if (this.at === null) return;
+      const t = this.at, s = this.stretch / 1000;
+      if (this.n) {
+        const data = { ...statsOut(this.dev), ...this.words };
+        if (this.sound.size) data.sound = [...this.sound.values()].slice(0, 24).map(io => ({ name: io.name, kind: io.kind, ...statsOut(io.nums), ...io.words }));
+        this.rows.push({ t, s, name: "", n: this.n, data });
+        for (const [name, p] of this.people) {
+          const d = { ...statsOut(p.nums), ...p.words };
+          if (p.looks) d.looks = Object.fromEntries(p.labels.map((l, j) => [l, r4(p.looks[j].sum / p.looks[j].n)]));
+          const z = Object.fromEntries(Object.entries(p.z).map(([k, v]) => [k, Math.round(Math.max(-99, Math.min(99, v)) * 100) / 100]));
+          if (Object.keys(z).length) d.z = z;
+          if (p.odd) d.odd = p.odd;
+          this.rows.push({ t, s, name, n: p.n, data: d });
+        }
+      }
+      this.at = null; this.begin();
+      if (this.rows.length > 2000) this.rows.splice(0, this.rows.length - 2000);
+    }
+    // The rows of the stretches that are over (now: this moment, which may end the current one), each once.
+    take(now) {
+      if (this.at !== null && now >= this.at + this.stretch) this.close();
+      const rows = this.rows; this.rows = [];
+      return rows;
+    }
+  }
+
+  const api = { Panel, Model, clean, OFF: Object.keys(OFF), cleanNums, cleanUsual, cleanFacts, HOST, HEAT, FACTS, catalog, settle, History, HISTORY_MS,
                 DEVICE: DEVICE.map(sec => ({ key: sec.key, signals: sec.signals.map(s => s.k) })), pack, unpack, thin, firstFrom, rowNear, rowBefore, points, fmt, range,
                 WHAT, LABELS, SCALARS, FLAGS, BASE: BASE.map(s => s.k),
                 C: { KEEP_MS, MAX_ROWS, GAP_MS, LISTEN_GAP_MS, ARRIVE_GAP_MS, ODD_SIGNALS, ODD_FOR_MS, CALM_FOR_MS, SENT_MS, DRAW_EVERY_MS } };

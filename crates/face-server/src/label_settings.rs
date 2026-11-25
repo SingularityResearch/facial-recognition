@@ -22,11 +22,12 @@ use crate::{
 };
 
 /// The POSTs answered here (for the size a body may have).
-pub const POSTS: [&str; 12] = [
+pub const POSTS: [&str; 13] = [
     "/api/db/setup",
     "/api/db/device",
     "/api/db/alias",
     "/api/db/locations/forget",
+    "/api/db/signals/forget",
     "/api/db/passphrase",
     "/api/db/passphrase/restore",
     "/api/db/passphrase/ask",
@@ -154,8 +155,9 @@ impl Labeler {
     /// The addresses of the owner's other devices: what each device in the shared database says it can be
     /// reached at (`devices.peer_addresses`). Asked at most once a minute, on the connection kept for short
     /// questions; while the database can't be reached the last answer stands. None without a shared database.
+    /// Each device's addresses together (the devices removed on this device left out).
     #[cfg(feature = "import")]
-    pub(crate) fn other_devices_addresses(&self) -> Vec<String> {
+    pub(crate) fn other_devices(&self) -> Vec<Vec<String>> {
         // (each device's id with its addresses: who is removed on this device is asked of its own file
         // every time, so a device removed in Settings gets no photo from that moment on)
         type Found = Vec<(String, Vec<String>)>;
@@ -164,10 +166,8 @@ impl Labeler {
             return Vec::new();
         }
         let removed = face_home::blocked::ids(&self.home);
-        let of_the_rest = |found: &Found| -> Vec<String> {
-            (found.iter().filter(|(id, _)| !removed.contains(id)))
-                .flat_map(|(_, addresses)| addresses.clone())
-                .collect()
+        let of_the_rest = |found: &Found| -> Vec<Vec<String>> {
+            (found.iter().filter(|(id, _)| !removed.contains(id))).map(|(_, addresses)| addresses.clone()).collect()
         };
         let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((at, found)) = &*kept
@@ -381,6 +381,16 @@ impl Labeler {
             "/api/db/locations/forget" => self
                 .device()
                 .and_then(|me| face_db::location::forget_device(&self.home, &me, text("device")))
+                .map(|deleted| Response::json(json!({"ok": true, "deleted": deleted})))
+                .map_err(asked),
+            // a device's whole signal history deleted, at the owner's word here ("library": the rows worked out
+            // from the library's pictures, which are no one device's)
+            "/api/db/signals/forget" => self
+                .device()
+                .and_then(|me| {
+                    let which = if text("device") == "library" { face_db::signals::LIBRARY } else { text("device") };
+                    face_db::signals::forget_device(&self.home, &me, which)
+                })
                 .map(|deleted| Response::json(json!({"ok": true, "deleted": deleted})))
                 .map_err(asked),
             // a device removed on this device alone, or added back: this device's own list, which changes

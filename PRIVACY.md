@@ -1,6 +1,6 @@
 # Privacy policy
 
-**Face Recognizer**, by Singularity Research. In effect since 24 November 2026. It covers the app on Windows,
+**Face Recognizer**, by Singularity Research. In effect since 25 November 2026. It covers the app on Windows,
 macOS, Linux, the Raspberry Pi, Android and iPhone.
 
 ## The short version
@@ -24,6 +24,7 @@ macOS, Linux, the Raspberry Pi, Android and iPhone.
 | **What a face looks like over time** (expression readings, each person's usual look) | Shows when a reading is unusual for that person. These are readings of how a face looks, not of what a person feels. | Each person's usual values on the device. Readings over time only if you set up a shared database and leave **Keep expression readings** on. If you switch on the feeling check, your answers to it (numbers) are kept on the device. |
 | **Who was in view, and when** | A log of names and times, and alerts you ask for (someone arrives, leaves, an unknown face stays). | The presence log is off until you switch it on. Alerts are kept on the device. |
 | **Where a device is** (its location), only while you switch it on for that device | Shows the device's place (the nearest town with its state and country, and its coordinates) on that device and to your other devices, and keeps a history of its moves. The place comes from the device's own location service, or from a place you type. The town's name comes from a list inside the app. | The place itself in memory. The history (a row when you switch it on, then one for each move of more than about 100 m) only if you set up a shared database, and there for 90 days. A place you type is kept as one of the device's settings. |
+| **Every signal over time** (the history), only while you switch it on for that device | Keeps a record of what the device reads, for you to analyse later: every 10 seconds one row for the device itself (how it works, what its sound interfaces hear) and one for each named person in view (recognition, expression, face, voice, body and hands, the pulse estimate and breathing rate, and how far each was from that person's usual), each signal as its average, lowest and highest in that time. Numbers and short words only: never a picture or a sound. A face nobody is named for gets no row of its own. On a computer you can have your photos and videos added to it: one row for each named person in a picture, at the picture's own time, with how the face looks and how many people the picture has. | Only in your own shared database (without one nothing is kept), and for as many days as you set on that device (90 unless you change it). Rows the database could not take yet wait on the device and are sent when it is back. |
 | **Music that plays** (computers), only while you switch the log on | Notes the song's name and numbers that describe the sound. | On the device. |
 | **Photo descriptions** | A vision model on your own computer describes a photo and reads its text. | On the device. |
 | **Keys and passwords you enter** (for the services below, for your database) | Used to reach that service. | Protected on the device for your user account. |
@@ -86,6 +87,7 @@ with that is under its own privacy policy.
 | You click **Check for updates** | A question for the latest version. No data of yours. | GitHub |
 | You click **Web search** on a face (off until you enter your own keys) | That one face, and the photo it is in. | Amazon (Rekognition) and Google (Cloud Vision), under your own accounts with them |
 | You point **Describe photo** at a server on another computer | Each photo that is described. | That server, which you chose |
+| You switch on **Share Describe all with other computers** (with a shared database) | The photos that Describe all shares out. | Your own other computers' describe servers (LM Studio, Ollama, llama.cpp or vLLM), at the addresses they gave your shared database |
 | You connect **Spotify** | A question for your liked songs. | Spotify, under your own account |
 | You click a download in Settings (a describe model) | A download. No data of yours. | Hugging Face, LM Studio's sources |
 | You switch on **Show and keep this device's location** and type no place | Nothing by the app itself. The device's own location service then works out where the device is. A computer has no GPS: its system does that from the Wi-Fi networks around it, which the system sends to its maker; what the maker does with them is under its own privacy policy. A place you type asks nobody. | The maker of the device's system, by the system itself: Microsoft (Windows), Apple (Mac, iPhone) or Google (Android) |
@@ -116,9 +118,17 @@ The app helps with this:
 
 Data stays until you delete it: nothing expires by itself, except that camera pictures and sound are never kept
 at all, that the Signals chart's readings are held in memory for 15 minutes and then dropped, and that a row of
-a device's location history is deleted 90 days after it was written.
+a device's location history, its signal history, its expression readings or its music log is deleted after the
+days you set on that device (90 unless you change it: **Keep it for (days)**, in the History card of its Face
+tracking tab). Rows that were
+worked out from your photos and videos are as old as the pictures and stay until you delete them.
 
 - **One person**: Forget (above).
+- **The signal history**: Settings, Shared database, **Delete a device's signal history** deletes everything a
+  device wrote, or everything that was worked out from your photos and videos. Forget removes a person's rows
+  with everything else about them. A smaller number of
+  days deletes a device's older rows at its next daily tidying. Switching the history off on a device stops new
+  rows.
 - **A device's location history**: Settings, Shared database, **Delete a device's location history**. Switching
   the location off on a device stops new rows; while it is off the app asks no location service, shows no
   location and tells your other devices none.

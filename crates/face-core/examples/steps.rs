@@ -41,7 +41,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let models = models.as_path();
     let runs = args.get(3).and_then(|v| v.parse().ok()).unwrap_or(60);
     let library = find_library(&models.join("..")).ok_or("no model runtime library (FACE_ORT_LIB)")?;
-    let faces = Faces::load(&Runtime::new(&library, Choice::from_env())?, models)?;
+    let runtime = Runtime::new(&library, Choice::from_env())?;
+    let faces = Faces::load(&runtime, models)?;
+    let voice = face_core::voice::Voice::load(&runtime, models);
     faces.warmup();
     let jpeg = std::fs::read(&frame)?;
     let img = Bgr::from_jpeg(&jpeg)?;
@@ -69,6 +71,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  print                {:6.2} ms", median_ms(runs, || drop(faces.embed(&crop))));
     println!("  quality              {:6.2} ms", median_ms(runs, || drop(faces.quality(&crop))));
     println!("  expression (2 runs)  {:6.2} ms", median_ms(runs, || drop(faces.expression(&crop))));
+    // four seconds of a sound with a voice's pitch and a little noise (nobody's voice)
+    let samples: Vec<f32> = (0..4 * face_core::voice::RATE)
+        .map(|k| {
+            let t = k as f32 / face_core::voice::RATE as f32;
+            0.3 * (2.0 * std::f32::consts::PI * 180.0 * t).sin()
+                * (1.0 + 0.5 * (2.0 * std::f32::consts::PI * 3.0 * t).sin())
+                + 0.02 * ((k * 7919 % 1000) as f32 / 500.0 - 1.0)
+        })
+        .collect();
+    if voice.loaded() {
+        println!("  voice, 4 s (Melos 1) {:6.2} ms", median_ms(runs, || drop(voice.avd(&samples))));
+    }
     println!(
         "  the whole frame      {:6.2} ms",
         median_ms(runs, || {

@@ -522,6 +522,84 @@ test("the camera a device is set to stays its camera: a start without it neither
   assert.match(sw, /finally \{ wantFacing = ""; camAsIs = false; switching = false; showCamSwitch\(\); \}/);
 });
 
+test("the signal history: off as the page comes, made and sent only while its switch is on, and no feature reads it", () => {
+  const html = read("tracker_ui.html"), js = read("tracker_ui.js");
+  // off for a new copy, and the server keeps rows only for "1"
+  assert.match(html, /<input type="checkbox" id="optHistory">/);
+  assert.match(html, /<input type="number" id="optHistoryDays" min="1" max="3650" step="1" value="90"/);
+  assert.match(read("../crates/face-server/src/tracker.rs"), /state\["on"\] = json!\(joined && said\(face_home::siglog::OPTION\) == Some\("1"\)\);/);
+  const keep = js.match(/const KEEP = \[([^\]]*)\]/)[1];
+  for (const id of ["optHistory", "optHistoryDays"]) assert.ok(keep.includes(`"${id}"`), id);
+  // a reading goes into the history only while the switch is on: off, nothing of it runs
+  assert.match(js, /if \(historyOn\(\)\) \{ try \{ signalRows\.add\(at, \{ device, faces, sound \}\); \} catch \{\} \}/);
+  assert.match(js, /if \(!historyOn\(\)\) \{ signalRows\.take\(Date\.now\(\)\); historyState = ""; historyAsked = 0; historyShow\(\); return; \}/);
+  // a finished row is handed over at once, in one request that is answered with what the writer did; with nothing
+  // finished the page asks at most every half minute
+  assert.match(js, /const HISTORY_SEND_MS = 1000;/);
+  assert.match(js, /if \(!rows\.length && historyAsked && now - historyAsked < HISTORY_ASK_MS\) return;/);
+  // (the page's own name for the rows is not "history": that is the browser's word for its own object)
+  assert.doesNotMatch(js, /(const|let|var) history\b/);
+  // the rows go to the page's own server and nowhere else, and what the server says is put in as text
+  const calls = [...js.matchAll(/fetch\("\/api\/signal-log"/g)].length;
+  assert.equal(calls, 2);
+  assert.match(js, /if \(says\.textContent !== text\) says\.textContent = text;/);
+  // a test device's switch comes from its own server's word, and is no part of the signal options
+  assert.match(js, /if \(r\.history === "on" && !keepAsked\) keepOn = keepAsked = true;/);
+  assert.match(read("../crates/face-server/src/tracker.rs"), /"history": std::env::var\("FACE_HISTORY"\)\.ok\(\)\.filter\(\|on\| on == "on"\)/);
+  assert.doesNotMatch(js.match(/const ALL_SIGNALS = \[([^\]]*)\]/)[1], /optHistory/);
+  // no page reads the history: it is an archive for analysis, and nothing the app does depends on it
+  for (const f of ["tracker_ui.js", "cameras_ui.js", "label_ui.js", "app_ui.js", "signals_chart.js"])
+    assert.doesNotMatch(read(f), /signal_log|\/api\/signal-log\?/, f);
+  // only the history's own writer touches its table: the tracker's request hands the rows over and is done
+  const tracker = read("../crates/face-server/src/tracker.rs");
+  assert.match(tracker, /self\.history\.take\(rows\.into_iter\(\)\.filter\(\|r\| !named\(r\)\)\.collect\(\)\)/);
+  assert.doesNotMatch(tracker, /face_db::signals::/);
+  assert.match(read("../crates/face-server/src/history.rs"), /face_db::signals::send\(client, device, rows\)/);
+  assert.match(read("../docs/SETTINGS.md"), /`FACE_HISTORY` \| `on`/);
+});
+
+test("Describe photo's kind of server: chosen in Settings, each with its own fields", () => {
+  const js = read("label_ui.js");
+  const has = (text, words) => assert.ok(text.includes(words), words);
+  has(js, `{ section: P, id: "describePlatform", label: "Kind of server", type: "select", def: "lmstudio"`);
+  has(js, `set: v => post("/api/describe/config", { platform: v })`);
+  for (const kind of ["lmstudio:", "ollama:", "llamacpp:", "vllm:"]) has(js, kind);
+  // Ollama takes no key; Describe all is shared with every kind of server
+  has(js, `hidden: () => desc.config?.use === "builtin" || desc.config?.platform === "ollama",`);
+  has(js, `also sends photos to your other devices' servers of the same kind (LM Studio, Ollama, llama.cpp or vLLM)`);
+  // the server takes the kind among the settings it changes, and knows the four
+  has(read("../crates/face-server/src/describejob.rs"), `["use", "platform", "url", "model", "key", "spread"]`);
+  // the suggestion for this computer, and loading it: from the button, or when the kind or model is chosen; never a download
+  has(js, `{ section: P, id: "describeSuggested", label: "Suggested for this computer", type: "info",`);
+  has(js, `describeLoad: async () => { await post("/api/describe/load", {});`);
+  has(read("../crates/face-server/src/describejob.rs"), `let chose = changes.contains_key("platform") || changes.contains_key("model");`);
+  has(read("../crates/face-server/src/aiserve.rs"), `(Settings never downloads one by itself)`);
+  const kinds = read("../crates/face-home/src/describe.rs");
+  for (const kind of [`("lmstudio", "LM Studio", 1234)`, `("ollama", "Ollama", 11434)`, `("llamacpp", "llama.cpp", 8080)`, `("vllm", "vLLM", 8000)`]) has(kinds, kind);
+});
+
+test("the library's part of the history: started only from its own button, a job in the import's slot, and the rows deleted only at the owner's word", () => {
+  const js = read("label_ui.js"), server = read("../crates/face-server/src/libhistory.rs"), docs = read("../docs/SETTINGS.md");
+  // the page asks how much there is and starts the job; it reads no row of the history
+  assert.equal([...js.matchAll(/"\/api\/history\/library"/g)].length, 2);
+  assert.match(js, /libHistoryRun: async \(\) => \{ const r = await post\("\/api\/history\/library", \{\}\);/);
+  assert.match(js, /hidden: \(\) => !lib\.joined \|\| !lib\.rows \|\| !!job\.running,/);
+  // the job's line at the top of the Labeling tab is its own, and the page knows it by the name the server gives it
+  const name = server.match(/pub\(crate\) const JOB: &str = "([^"]+)";/)[1];
+  assert.ok(js.includes(`const hist = st.folder === "${name}";`));
+  // it runs in the import's one slot, never beside an import, and writes through the database crate's one statement
+  assert.match(server, /if inner\.importer\.running\(\) \{\r?\n        return Err\("An import is already running\."\.to_string\(\)\);/);
+  assert.match(server, /\.run_other\(JOB, "Working out the history from the library"/);
+  assert.match(server, /face_db::signals::send_library\(&client, &keys, &rows\)/);
+  // by itself only after an import, and only where this device's own history is switched on
+  assert.match(server, /if switched_on\(&home\) \{\r?\n                let _ = start\(&inner, &home\);/);
+  // Settings deletes a device's rows, or the library's, from its own form
+  assert.match(js, /post\("\/api\/db\/signals\/forget", \{ device: a\.device \}\)/);
+  assert.match(read("../crates/face-server/src/label_settings.rs"), /"\/api\/db\/signals\/forget",/);
+  for (const words of ["## Face tracking: history", "## Labeling: history", "**Work out the history from the library**",
+                       "**Delete a device's signal history**", "**Keep it for (days)** | 90 |"]) assert.ok(docs.includes(words), words);
+});
+
 test("a device's location is switched on by itself only where the device's own server says it is a test device for that", () => {
   const code = read("tracker_ui.js");
   assert.match(code, /if \(r\.location === "on" && !locationAsked\) locationOn = locationAsked = true;/);

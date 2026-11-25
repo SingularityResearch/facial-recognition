@@ -314,6 +314,14 @@
       <p class="hint" id="placeHint">Off unless you switch it on. While it is on, this device shows where it is here and in your other devices' Cameras tab, and each move of more than about 100 m is kept in your shared database for 90 days. The place comes from this device's own location service (the system asks you once), or from a place you type here: a town, as in Springfield, Illinois, or latitude and longitude. A computer has no GPS: its system places it by the Wi-Fi networks around it, so it needs Wi-Fi switched on. Without Wi-Fi a Windows computer is placed only roughly (to within kilometres) and a Mac not at all: type the place for those. Linux and a Raspberry Pi have no location service, so there a place is typed. The town's name comes from a list inside the app: nothing is looked up on the internet.</p>
     </div>
 
+    <div class="card" id="historyCard">
+      <div class="label">History</div>
+      <label class="toggle" for="optHistory" title="Off unless you switch it on: every signal this device reads is then kept in your shared database, a row every 10 seconds for the device and each named person in view, for analysis">Keep a history of every signal <input type="checkbox" id="optHistory"></label>
+      <label class="toggle" for="optHistoryDays" title="Rows older than this many days are deleted (1 to 3650). This device's location history is kept for the same days.">Keep it for (days) <input type="number" id="optHistoryDays" min="1" max="3650" step="1" value="90" style="width:6em"></label>
+      <p class="hint" id="historyState" hidden></p>
+      <p class="hint" id="historyHint">Off unless you switch it on. While it is on, every signal this device reads is kept in your shared database for analysis: each named person's expression, face, voice, body and pulse readings, the device's own readings, and what its sound interfaces hear. Not every reading is kept, but one row every 10 seconds for the device and for each named person in view, with each signal's average, lowest and highest in that time. Rows older than the days set here are deleted, and this device's location history is kept for the same days. Nothing is kept without a shared database, and nothing else in the app depends on the history. Each row is written as soon as it is finished, by a part of the app that does nothing else and sets its own pace: at once while nobody is in view, and while somebody is, as often as keeps the camera's checks from being held up. On a computer, Settings, Labeling: history adds what your photos and videos say of the people named in them. They say how a face, a voice or a body looked and sounded, not what a person felt, and they are not medical readings.</p>
+    </div>
+
     <div class="card">
       <div class="label">Live readout</div>
       <div class="stats">

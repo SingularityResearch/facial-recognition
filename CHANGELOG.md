@@ -1,5 +1,52 @@
 # Changelog
 
+## 2.7.0 (2026-11-25)
+
+- **New: a history of every signal, for analysis.** A device can keep what it reads in your shared database:
+  one row every 10 seconds for the device itself (how fast it checks, faces in view, processor, memory,
+  temperature, battery, what its sound interfaces hear) and one for each named person in view (recognition,
+  expression, face, voice, body and hands, the pulse estimate and breathing rate, and how far each was from
+  that person's usual). A row holds each signal's average, lowest and highest in those 10 seconds, as numbers
+  and short words: never a picture or a sound. It is off until you switch it on, on each device by itself
+  (**Keep a history of every signal**: the History card of the Face tracking tab, or Settings, Face tracking:
+  history; on a phone, in its Controls). Without a shared database nothing is kept.
+- **You set how long it is kept.** **Keep it for (days)**, 90 unless you change it, 1 to 3650. Each device
+  deletes its own older rows once a day, and its location history now follows the same days.
+- **It is written beside the camera's work, not in it, and as fast as that allows.** The page hands each
+  row over as soon as it is finished, and one part of the app that does nothing else, with a database
+  connection of its own, writes it: at once while nobody is in view, and while somebody is in view as often
+  as keeps its database work under a thousandth of the time, so a row is usually in the database a second or
+  two after its 10 seconds end. A database that is slow or far away is written to less often, by itself.
+  While the database can't be reached the rows wait on the device. Nothing else in the app reads the history
+  or waits for it.
+- **Your photos and videos in the history.** Settings, Labeling: history, **Work out the history from the
+  library**: one row for each named person in each photo and in each video frame a face was found in, at the
+  picture's own time, with how the face looks, how good its picture is and how many people the picture has.
+  A still says less than a camera, and the rows say so. It runs in the background like an import, follows
+  the labels when it is run again, and runs by itself after a folder is added where the device's history is
+  on.
+- **The expression readings and the music log are kept for the same days.** Until now they were kept without
+  an end. Each device deletes its own rows that are older than its days (90 unless you change them), once a
+  day, whether or not its history is on: on a device that has kept them longer, the older rows go at the
+  first tidying.
+- **Describe photo with Ollama, llama.cpp or vLLM.** Settings, Labeling: Describe photo has a **Kind of
+  server**: LM Studio, Ollama, llama.cpp's server or vLLM. Each is asked for its models in its own way (which
+  of them read pictures, which is loaded) and shows only the fields it needs: its usual address, the model,
+  and an API key where it takes one.
+- **Settings suggests the model and settings for this computer, and loads it.** Under Describe photo,
+  **Suggested for this computer** names the model that suits the computer's graphics memory on the kind of
+  server chosen, with its settings (and for llama.cpp and vLLM the command to start them with); choosing the
+  kind or the model, or **Load it**, loads it (LM Studio on this computer, Ollama anywhere). It never downloads
+  a model. The measurements behind it, for five computers and four servers, are in
+  [docs/MODELS_AND_HARDWARE.md](docs/MODELS_AND_HARDWARE.md), with charts, together with how well and how fast
+  the app's own models, Opsis 1 and Melos 1, work on each computer.
+- **Share Describe all with every kind of server.** Your other computers' Ollama, llama.cpp and vLLM servers now
+  take photos too, as LM Studio's did: of the same kind and with the same model.
+- Forgetting a person deletes their rows of the history, and their export holds them. **Copy settings from**
+  never copies the history's switch or its days to another device.
+- The privacy policy was revised (25 November 2026): the signal history, the days each device keeps its rows,
+  and the photos Describe all shares with your other computers' servers.
+
 ## 2.6.0 (2026-11-24)
 
 - **New: where each device is.** A device can show its location: the nearest town with its state and country,

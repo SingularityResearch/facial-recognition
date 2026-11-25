@@ -33,7 +33,7 @@ pub fn cpu_threads() -> usize {
 }
 
 /// What a system tool says, or "".
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
 fn run(program: &str, args: &[&str]) -> String {
     let mut ask = Command::new(program);
     ask.args(args).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
@@ -53,7 +53,8 @@ mod registry {
     use std::ptr::{null, null_mut};
 
     use windows_sys::Win32::System::Registry::{
-        HKEY, HKEY_LOCAL_MACHINE, KEY_READ, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW,
+        HKEY, HKEY_LOCAL_MACHINE, KEY_READ, RRF_RT_ANY, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW, RegGetValueW,
+        RegOpenKeyExW,
     };
 
     fn wide(s: &str) -> Vec<u16> {
@@ -103,6 +104,47 @@ mod registry {
                 break;
             }
             out.extend(text(handle, sub.as_ptr(), name));
+        }
+        // SAFETY: the handle was opened above and is not used again
+        unsafe { RegCloseKey(handle) };
+        out
+    }
+
+    /// A whole number of 8 bytes (kept as a number or as 8 bytes, as drivers keep a memory's size).
+    fn eight(key: HKEY, sub: *const u16, name: &str) -> Option<u64> {
+        let name = wide(name);
+        let mut buf = [0u8; 8];
+        let mut size = 8u32;
+        // SAFETY: at most `size` bytes are written into `buf`, which has them; `key` is open and `sub` ends with a zero
+        let done = unsafe {
+            RegGetValueW(key, sub, name.as_ptr(), RRF_RT_ANY, null_mut(), buf.as_mut_ptr().cast(), &mut size)
+        };
+        (done == 0 && size >= 4).then(|| {
+            if size >= 8 {
+                u64::from_le_bytes(buf)
+            } else {
+                u64::from(u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]))
+            }
+        })
+    }
+
+    /// Each subkey of HKLM\key with a text value `name`: that text, and the 8-byte number `number` beside it.
+    pub fn pairs(key: &str, name: &str, number: &str) -> Vec<(String, Option<u64>)> {
+        let Some(handle) = open(key) else { return Vec::new() };
+        let mut out = Vec::new();
+        for i in 0.. {
+            let mut sub = [0u16; 256];
+            let mut len = sub.len() as u32;
+            // SAFETY: as in `values`
+            if unsafe {
+                RegEnumKeyExW(handle, i, sub.as_mut_ptr(), &mut len, null(), null_mut(), null_mut(), null_mut())
+            } != 0
+            {
+                break;
+            }
+            if let Some(said) = text(handle, sub.as_ptr(), name) {
+                out.push((said, eight(handle, sub.as_ptr(), number)));
+            }
         }
         // SAFETY: the handle was opened above and is not used again
         unsafe { RegCloseKey(handle) };
@@ -284,6 +326,110 @@ pub fn gpus() -> Vec<String> {
     Vec::new()
 }
 
+/// A graphics processor and the memory a model can be put in there, in GB, as the system says it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GpuMemory {
+    pub name: String,
+    /// its own memory (a separate card's, or what is set aside for a processor's built-in graphics)
+    pub own_gb: f64,
+    /// the computer's memory it can use as well: a built-in one (it shares the computer's memory) or a Mac
+    /// (unified memory); 0 for a separate card, whose models must fit its own memory to run at its speed
+    pub shared_gb: f64,
+}
+
+/// What a 0.0 to 1.0 GB figure is rounded to.
+#[cfg_attr(not(any(windows, target_os = "linux", target_os = "macos")), allow(dead_code))]
+fn gb(bytes: f64) -> f64 {
+    (bytes / (1u64 << 30) as f64 * 10.0).round() / 10.0
+}
+
+/// Whether a graphics processor is built into the processor (it shares the computer's memory): told by its name.
+pub fn built_in(name: &str) -> bool {
+    let n = name.to_lowercase();
+    let separate = n.contains("geforce")
+        || n.contains("rtx")
+        || n.contains("quadro")
+        || n.contains("tesla")
+        || n.contains("radeon rx")
+        || n.contains("radeon pro")
+        || n.contains("arc a")
+        || n.contains("arc b")
+        || n.contains("arc(tm)");
+    !separate && (n.contains("radeon") || n.contains("intel") || n.contains("apple") || n.contains("graphics"))
+}
+
+/// Each graphics processor with the memory a model can be put in (the separate ones first). Windows: the
+/// driver's own figure in the registry, and for a built-in one half the computer's memory beside it (what
+/// Windows lets a graphics processor share); Linux: NVIDIA's own tool where it is there, else what the AMD
+/// driver says in /sys; a Mac: the unified memory, of which macOS lets the graphics processor use about three
+/// quarters.
+pub fn gpu_memory() -> Vec<GpuMemory> {
+    let memory = memory_gb().unwrap_or(0) as f64;
+    let mut out: Vec<GpuMemory> = Vec::new();
+    #[cfg(windows)]
+    {
+        for (name, bytes) in registry::pairs(
+            r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}",
+            "DriverDesc",
+            "HardwareInformation.qwMemorySize",
+        ) {
+            if name.contains("Basic")
+                || name.contains("Remote")
+                || name.contains("Virtual")
+                || out.iter().any(|g| g.name == name)
+            {
+                continue;
+            }
+            let own = gb(bytes.unwrap_or(0) as f64);
+            let shared = if built_in(&name) { (memory / 2.0).round() } else { 0.0 };
+            out.push(GpuMemory { name, own_gb: own, shared_gb: shared });
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let said = run("nvidia-smi", &["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"]);
+        for line in said.lines() {
+            if let Some((name, mib)) = line.rsplit_once(',') {
+                let mib: f64 = mib.trim().parse().unwrap_or(0.0);
+                out.push(GpuMemory {
+                    name: format!("NVIDIA {}", name.trim().trim_start_matches("NVIDIA ")),
+                    own_gb: gb(mib * 1048576.0),
+                    shared_gb: 0.0,
+                });
+            }
+        }
+        let mut cards: Vec<PathBuf> =
+            std::fs::read_dir("/sys/class/drm").into_iter().flatten().flatten().map(|d| d.path()).collect();
+        cards.sort();
+        for card in cards.iter().filter(|c| {
+            c.file_name().is_some_and(|n| {
+                let n = n.to_string_lossy();
+                n.starts_with("card") && !n.contains('-')
+            })
+        }) {
+            let read = |name: &str| std::fs::read_to_string(card.join("device").join(name)).ok();
+            if read("vendor").is_some_and(|v| v.trim() == "0x1002")
+                && let Some(bytes) = read("mem_info_vram_total").and_then(|b| b.trim().parse::<f64>().ok())
+            {
+                let gtt = read("mem_info_gtt_total").and_then(|b| b.trim().parse::<f64>().ok()).unwrap_or(0.0);
+                let own = gb(bytes);
+                // (a built-in one has little memory of its own and much it may share)
+                let shared = if own < 16.0 && gtt > bytes { gb(gtt) } else { 0.0 };
+                out.push(GpuMemory { name: "AMD Radeon".to_string(), own_gb: own, shared_gb: shared });
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(name) = gpus().into_iter().next() {
+            out.push(GpuMemory { name, own_gb: 0.0, shared_gb: (memory * 0.75).round() });
+        }
+    }
+    out.sort_by_key(|g| built_in(&g.name));
+    let _ = memory;
+    out
+}
+
 /// The neural processing unit, if the system lists one.
 pub fn npu() -> Option<String> {
     #[cfg(windows)]
@@ -365,7 +511,9 @@ pub fn describe() -> Value {
     static KEPT: OnceLock<Value> = OnceLock::new();
     (KEPT.get_or_init(|| {
         json!({"system": system(), "cpu": cpu_name(),
-               "threads": cpu_threads(), "memory_gb": memory_gb(), "gpus": gpus(), "npu": npu(), "onnxruntime": providers()})
+               "threads": cpu_threads(), "memory_gb": memory_gb(), "gpus": gpus(),
+               "gpu_memory": gpu_memory().iter().map(|g| json!({"name": g.name, "own_gb": g.own_gb, "shared_gb": g.shared_gb})).collect::<Vec<_>>(),
+               "npu": npu(), "onnxruntime": providers()})
     }))
     .clone()
 }
@@ -632,6 +780,7 @@ fn installed_ai_apps() -> Vec<&'static str> {
         (
             "LM Studio",
             vec![
+                crate::lmstudio::home(),
                 home.join(".lmstudio"),
                 home.join(".cache").join("lm-studio"),
                 local.join("Programs").join("LM Studio"),
@@ -660,7 +809,7 @@ fn installed_ai_apps() -> Vec<&'static str> {
 /// LM Studio's downloaded models (its models folder, from its settings.json): (name, reads pictures), a
 /// vision model being one with an mmproj (picture projector) file beside it. None when LM Studio isn't there.
 fn lmstudio_downloads() -> Vec<(String, bool)> {
-    let home = user_home().join(".lmstudio");
+    let home = crate::lmstudio::home();
     let settings: Option<Value> =
         std::fs::read(home.join("settings.json")).ok().and_then(|b| serde_json::from_slice(&b).ok());
     let named =
@@ -706,7 +855,13 @@ pub fn ai_apps(home: &Path) -> Value {
     // programs' too (macOS's own AirPlay Receiver has 5000 and answers 403).
     let probe = |app: &str, url: &str, from_settings: bool, out: &mut Vec<Value>| -> bool {
         let mut entry = json!({"app": app, "url": url, "running": true, "models": 0, "vision": [], "note": ""});
-        match server_models(&c, (!from_settings).then_some((url, ""))) {
+        // (a usual port is asked as the kind of server that has it; the server set in Settings as its own kind)
+        let kind = face_home::describe::PLATFORMS
+            .iter()
+            .find(|(_, _, port)| url.ends_with(&format!(":{port}")))
+            .map_or("lmstudio", |(p, _, _)| p);
+        let asked = if from_settings { server_models(&c, None) } else { crate::describe::models_of(kind, url, "") };
+        match asked {
             Ok((found, loaded)) => {
                 entry["models"] = json!(found.len());
                 entry["vision"] = json!(
@@ -789,6 +944,30 @@ pub fn ai_apps(home: &Path) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_graphics_processor_built_into_the_processor_is_told_by_its_name() {
+        for name in
+            ["AMD Radeon(TM) 8060S Graphics", "Intel(R) UHD Graphics", "Apple M5 Ultra GPU", "AMD Radeon 780M Graphics"]
+        {
+            assert!(built_in(name), "{name}");
+        }
+        for name in [
+            "NVIDIA GeForce RTX 3080 Laptop GPU",
+            "NVIDIA RTX A4000",
+            "AMD Radeon RX 7900 XTX",
+            "Intel(R) Arc(TM) A770 Graphics",
+        ] {
+            assert!(!built_in(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn this_computers_graphics_memory_is_said_as_numbers() {
+        for g in gpu_memory() {
+            assert!(g.own_gb >= 0.0 && g.shared_gb >= 0.0 && g.own_gb.is_finite() && !g.name.is_empty(), "{g:?}");
+        }
+    }
 
     #[test]
     fn an_arm_processor_is_named_by_its_board_and_core() {

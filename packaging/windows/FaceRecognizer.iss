@@ -1,6 +1,6 @@
 ; Face Recognizer's Windows installer (Inno Setup 6): FaceRecognizer-Setup-x64.exe.
 ; Built by packaging\windows\build.ps1 (and CI), which passes the version, the built program and the folder
-; of what it runs with:  ISCC /DAppVersion=2.6.0 /DBuilt=<folder with FaceRecognizer.exe> /DRuntime=<runtime folder>
+; of what it runs with:  ISCC /DAppVersion=2.7.0 /DBuilt=<folder with FaceRecognizer.exe> /DRuntime=<runtime folder>
 ;                         /DWebView2=<Microsoft's WebView2 bootstrapper, as build.ps1 fetched and checked it>
 ;
 ; What it does: copies FaceRecognizer.exe and what the program runs with (in runtime\: the model runtime with the
