@@ -64,6 +64,13 @@
 .sg .ch.wide { grid-column: 1 / -1; }
 .sg figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 3px;
                  font: 11px var(--mono); color: var(--muted); }
+/* a reading's name: it opens what the reading means */
+.sg .rd { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: help; text-align: left;
+          text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-color: var(--line); }
+.sg .rd:hover { color: var(--fg); text-decoration-color: var(--accent); }
+.sg .rd:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.sg .rd.more { color: var(--accent); cursor: pointer; text-decoration: none; white-space: nowrap; }
+.sg .rd.more:hover { text-decoration: underline; }
 .sg figcaption b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sg figcaption b.hot { color: var(--warn); }
 .sg figcaption b.na { color: var(--muted); }

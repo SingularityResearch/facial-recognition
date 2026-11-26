@@ -193,13 +193,13 @@
     return e.state === "unsure" ? e.label + "?" : e.state === "usual" ? e.label + " · usual" : e.label;
   }
 
-  // One-line evidence for the readout: "8 votes · 62% · lead 21 · V+0.5 A+0.4 · smile .82 cheek .61".
+  // One-line evidence for the readout: "8 votes · 62% · lead 21% · V+0.5 A+0.4 · smile .82 cheek .61".
   function evidence(e) {
     if (!e) return "";
     const sign = v => (v >= 0 ? "+" : "") + v.toFixed(1);
     const va = e.vaFit ? `V${sign(e.vaFit[0])} A${sign(e.vaFit[1])} fit` : `V${sign(e.va[0])} A${sign(e.va[1])}`;
     const parts = [`${e.votes} vote${e.votes === 1 ? "" : "s"}`, `${Math.round(e.share * 100)}%`,
-                   `lead ${Math.round(e.lead * 100)}`, va];
+                   `lead ${Math.round(e.lead * 100)}%`, va];
     if (e.cal != null) parts.push(`cal ${Math.round(e.cal * 100)}%`);
     if (e.belief && e.belief.label !== e.label) parts.push(`state ${e.belief.label} ${Math.round(e.belief.p * 100)}%`);
     if (e.cues && Object.keys(e.cues).length)
@@ -227,7 +227,7 @@
     return [
       ["votes", e ? String(e.votes) : null],
       ["share", e ? `${Math.round(e.share * 100)}%` : null],
-      ["lead", e ? String(Math.round(e.lead * 100)) : null],
+      ["lead", e ? `${Math.round(e.lead * 100)}%` : null],
       [e?.vaFit ? "valence (fit)" : "valence", va ? sign(va[0]) : null],
       [e?.vaFit ? "arousal (fit)" : "arousal", va ? sign(va[1]) : null],
       ["calibrated", e?.cal != null ? `${Math.round(e.cal * 100)}%` : null],

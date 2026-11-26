@@ -377,6 +377,19 @@ $("privacyLink").onclick = e => {
 };
 $("privacyClose").onclick = closePrivacy;
 addEventListener("keydown", e => { if (e.key === "Escape" && !$("privacySheet").hidden) closePrivacy(); });
+// What each reading means (the server's own page, /readings, from docs/READINGS.md), in a sheet over this page like
+// the policy: from its link at the top, or at the part a name in the Signals chart asks for (its "readings" event).
+const PART = /^[a-z0-9-]{1,60}$/;
+function openReadings(part) {
+  $("readingsFrame").src = "/readings" + (PART.test(part || "") ? "#" + part : "");
+  $("readingsSheet").hidden = false;
+  $("readingsClose").focus();
+}
+function closeReadings() { $("readingsSheet").hidden = true; $("readingsFrame").removeAttribute("src"); }
+$("readingsLink").onclick = e => { e.preventDefault(); openReadings(""); };
+$("readingsClose").onclick = closeReadings;
+document.addEventListener("readings", e => openReadings(e.detail));
+addEventListener("keydown", e => { if (e.key === "Escape" && !$("readingsSheet").hidden) closeReadings(); });
 function beep() {
   try {
     const ac = beep.ac ||= new AudioContext(), t = ac.currentTime;

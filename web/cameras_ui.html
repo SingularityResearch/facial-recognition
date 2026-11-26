@@ -19,9 +19,25 @@
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
   header h1 { font: 600 15px var(--sans); margin: 0; }
   .label { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
-  #pick { display: flex; flex-wrap: wrap; gap: 6px 14px; }
-  #pick label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-  #pick label.off { color: var(--muted); }
+  /* the cameras to show: a fly-out list under its button, every camera with its own tick and one for all */
+  .pickwrap { position: relative; }
+  .evbtn.pickbtn { margin-left: 0; }
+  .caret { width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+           transform: translateY(-2px) rotate(45deg); }
+  .pickbtn[aria-expanded="true"] .caret { transform: translateY(1px) rotate(-135deg); }
+  .menu { position: absolute; left: 0; top: calc(100% + 6px); z-index: 20; width: 320px; max-width: calc(100vw - 32px);
+          max-height: 65vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+          box-shadow: 0 10px 28px #0005; padding: 8px 10px 10px; }
+  .menu label { display: flex; align-items: center; gap: 9px; padding: 6px; border-radius: 5px; cursor: pointer; }
+  .menu label:hover { background: var(--bg); }
+  .menu label.all { font-weight: 600; border-bottom: 1px solid var(--line); border-radius: 5px 5px 0 0; margin: 4px 0 4px; padding-bottom: 9px; }
+  .menu .dot { width: 8px; height: 8px; border-radius: 50%; background: #888; flex: none; }
+  .menu .dot.live { background: #34d399; }
+  .menu .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .menu .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu .sub { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu label.off .nm { color: var(--muted); }
+  .menu .none { color: var(--muted); padding: 6px; }
   #why { color: var(--muted); }
   main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } #events { max-height: 30vh; } }
@@ -35,7 +51,7 @@
      laid out as that device's own Face tracking tab is. The picture is as large as the window allows, its live
      readout stands beside it with the three counts, and its Signals chart is a drawer under the picture. */
   #grid.focus { grid-auto-rows: minmax(0, 1fr); align-items: stretch; overflow: hidden; height: 100%; padding: 12px 16px 16px; }
-  .tile.solo, .tile.solo.charted { height: 100%; grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: minmax(0, 1fr) auto;
+  .tile.solo, .tile.solo.charted { height: 100%; grid-template-columns: minmax(0, 1fr) minmax(360px, 44%); grid-template-rows: minmax(0, 1fr) auto;
                                    column-gap: 16px; background: none; border: 0; border-radius: 0; overflow: visible; }
   .tile.solo .vid { grid-column: 1; grid-row: 1; aspect-ratio: auto; min-height: 0; height: 100%; border-radius: 6px; overflow: hidden; }
   .tile.solo .side { grid-column: 2; grid-row: 1 / 3; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; gap: 12px; }
@@ -46,7 +62,7 @@
   .tile.solo .faces { max-height: none; flex: 1; min-height: 0; padding: 0; }
   .tile.solo > details.sigs { grid-column: 1; grid-row: 2; margin-top: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
   .tile.solo > details.sigs[open] { height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
-  header.focus .label, header.focus #pick { display: none; }
+  header.focus #pickWrap { display: none; }
   .backbtn { display: inline-flex; align-items: center; gap: 6px; font: 600 13px var(--sans); color: var(--fg); background: var(--panel);
              border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
   .backbtn:hover { border-color: var(--accent); }
@@ -105,13 +121,42 @@
   .meter i { display: block; height: 100%; background: var(--accent); }
   .fsub { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
   .fsub .change { color: var(--accent); font-weight: 600; }
-  .grp { margin-top: 6px; padding-top: 4px; border-top: 1px dashed var(--line); }
-  .gl { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 2px; }
+  /* a face's summary: what stands out now, then its key numbers; its groups of readings open one by one below */
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .chip { font-size: 11.5px; line-height: 1.5; padding: 0 7px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); }
+  .chip.hot { color: var(--warn); border-color: var(--warn); }
+  .chip.ok { color: var(--accent); border-color: var(--accent); }
+  .chip.muted { color: var(--muted); }
+  .keys { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 8px; margin-top: 6px; }
+  .grp { margin-top: 6px; border-top: 1px dashed var(--line); }
+  .gh { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: flex; align-items: baseline; gap: 8px; padding: 5px 0 3px; user-select: none; min-width: 0; }
+  .gh::before { content: ""; width: 5px; height: 5px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted);
+                transform: rotate(45deg); transition: transform .15s; align-self: center; flex: none; }
+  .grp.shut .gh::before { transform: rotate(-45deg); }
+  .gh:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .grp.shut .gbody { display: none; }
+  .grp:not(.shut) .gp.pre { display: none; }
+  /* the camera alone (Focus): the full view of every reading. The summary first, then every group open, side by side
+     as cards, three readings a row; the readout beside the picture is wider to make room */
+  .tile.solo .face { padding: 10px 12px; }
+  .tile.solo .who { font-size: 16px; }
+  .tile.solo .groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; margin-top: 10px; }
+  .tile.solo .grp { margin: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 0 10px 6px; }
+  .tile.solo .grp.shut .gbody { display: block; }
+  .tile.solo .gh { cursor: default; pointer-events: none; padding-top: 7px; }
+  .tile.solo .gh::before, .tile.solo .gp.pre { display: none; }
+  .tile.solo .cells { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px; }
+  .tile.solo .keys { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .tile.solo .keys b { font-size: 15px; }
+  .gl { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); flex: none; }
   .gl em { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--warn); }
-  .cells { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
+  .gp { font-size: 11px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gp.hot { color: var(--warn); }
+  .gabout { font-size: 11px; color: var(--muted); margin: 0 0 4px; }
+  .cells { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; padding-bottom: 4px; }
   .cell { min-width: 0; display: flex; flex-direction: column; }
   .cell.wide { grid-column: 1 / -1; }
-  .cell span { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell span, .cell .rdn { font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cell b { font: 600 12px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cell b.na { color: var(--muted); font-weight: 400; } .cell b.hot { color: var(--warn); }
   /* each camera's Signals chart (signals_chart.js): under its picture and readout, closed until it is opened */
@@ -143,18 +188,43 @@
   .evx:hover { color: var(--fg); background: var(--bg); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .empty { color: var(--muted); padding: 30px; text-align: center; grid-column: 1 / -1; }
+  /* what each reading means (/readings), over the whole page: every camera goes on behind it */
+  .sheet { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); }
+  .sheetHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .sheet iframe { flex: 1; width: 100%; border: 0; }
+  /* a reading's name in a readout, and a group's "what these mean": they open the readings at their part */
+  .rdn { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: help; text-align: left; min-width: 0;
+         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: underline dotted; text-decoration-color: var(--line); text-underline-offset: 2px; }
+  .rdn:hover { color: var(--fg); text-decoration-color: var(--accent); }
+  .rdmore { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; }
+  .rdmore:hover { text-decoration: underline; }
+  .readlink { font: 13px var(--sans); color: var(--accent); background: none; border: 0; padding: 4px 6px; cursor: pointer; }
+  .readlink:hover { text-decoration: underline; }
 </style></head><body>
 <header>
   <h1>Cameras</h1>
   <button id="allBtn" class="backbtn" type="button" hidden title="Back to every camera (Esc)">&#8249; All cameras</button><span id="focusName"></span>
-  <span class="label">Show</span><div id="pick" role="group" aria-label="Cameras to show"></div>
+  <div class="pickwrap" id="pickWrap">
+    <button id="camBtn" class="evbtn pickbtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="camMenu"
+      title="Choose the cameras to show"><span id="camBtnText">Cameras</span><span class="caret" aria-hidden="true"></span></button>
+    <div id="camMenu" class="menu" role="group" aria-label="Cameras to show" hidden>
+      <div class="evhead"><span class="label">Cameras to show</span><button id="camClose" class="evx" type="button" aria-label="Close the list">×</button></div>
+      <label class="all"><input type="checkbox" id="camAll"> All cameras</label>
+      <div id="pick"></div>
+    </div>
+  </div>
   <span id="why"></span>
+  <button id="readingsBtn" class="readlink" type="button" title="Every reading explained: what it measures, what its values mean and why it matters">What each reading means</button>
   <button id="evBtn" class="evbtn" type="button" aria-controls="events" aria-expanded="true"><span id="evBtnText">Hide events</span><span id="evN" class="evn" hidden>0</span></button>
 </header>
 <main>
   <div id="grid" aria-live="polite"></div>
   <aside id="events" aria-label="Events from every camera"><div class="evhead"><span class="label">Events, every camera</span><button id="evClose" class="evx" type="button" aria-label="Hide events">×</button></div><ol id="evlist"></ol></aside>
 </main>
+<div id="readingsSheet" class="sheet" role="dialog" aria-modal="true" aria-label="What each reading means" hidden>
+  <div class="sheetHead"><strong>What each reading means</strong><button id="readingsClose" class="evbtn" type="button">Close</button></div>
+  <iframe id="readingsFrame" title="What each reading means"></iframe>
+</div>
 <script src="/settings_bridge.js"></script>
 <script src="/place.js"></script>
 <script src="/signals_chart.js"></script>

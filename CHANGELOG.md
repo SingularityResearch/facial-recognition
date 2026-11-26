@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.9.0 (2026-11-26)
+
+- **What each reading means**: [docs/READINGS.md](docs/READINGS.md) explains every reading the app takes, from the
+  face, the voice, the body, the room's sound and the device itself: what it is, what its values mean, why it
+  matters, what the app does with it and where you see it. Words like valence and arousal are explained. The app
+  carries the same page: **What each reading means** on the Face tracking and Cameras tabs, and a reading's name in
+  the Signals chart or a camera's readout opens it at that reading.
+- **The Cameras tab reads more easily.** Each person's readout beside a camera starts with a summary (the
+  expression, what stands out now, such as talking, looking away or unusual for them, and the key numbers), and
+  their readings follow group by group, each opened when you want it; every reading says what it is when you point
+  at it. **Focus** shows one camera with every reading laid out in full. The cameras shown are chosen in a list
+  that opens from the header, with **All cameras** or one by one.
+- **Setup is at the top of the Settings tab**, no longer in the tab bar, and **Check for updates** is above it with
+  the app's version (the tab bar shows the version only).
+- The expression's lead is shown as a percentage ("lead 21%").
+
 ## 2.8.0 (2026-11-26)
 
 - **New: the Analyze tab.** Ask in your own words, typed or spoken, about anyone or any signal, now or over time.

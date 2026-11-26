@@ -1,5 +1,5 @@
-// setup.js - the setup page (setup.html): a page of the labeling tool's server, shown over the app window from its
-// Setup button, and by itself at a new copy's first start. The owner's words (2026-11-25): "an in-app setup wizard
+// setup.js - the setup page (setup.html): a page of the labeling tool's server, shown over the app window from the
+// Setup button at the top of the Settings tab, and by itself at a new copy's first start. The owner's words (2026-11-25): "an in-app setup wizard
 // asks the user the relevant questions about their environment and that guides the user thru the setup process and
 // automates anything possible (with their consent)", "If the user has already setup everything ... detect that and
 // only show whats missing", and "this is really about how new users setup their devices ... only change any of the

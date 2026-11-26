@@ -5,7 +5,7 @@
 // its own in this window, so a busy Cameras page can't slow the tracker's page), else the tracker's own address.
 const camsUrl = s => s.cameras || new URL("cameras", s.url).href;
 const anaUrl = s => new URL("analyze", s.url).href;
-// The setup page (setup.html, the labeling tool's): over every tab from the Setup button, and by itself at a new
+// The setup page (setup.html, the labeling tool's): over every tab from Settings' Setup button, and by itself at a new
 // copy's first start, when the page, loaded hidden, says nothing is set up yet. It is not a tab: the watchdog
 // doesn't ask it, and closing it shows the tab that was open.
 const setupUrl = (s, auto) => new URL(auto ? "setup?auto=1" : "setup", s.url).href;
@@ -171,7 +171,7 @@ addEventListener("keydown", e => { if (e.ctrlKey && hotkey(e.key)) e.preventDefa
 let newer = false;                               // a newer release was found: the buttons open its download page
 async function checkUpdate() {
   if (newer) return fetch("/open-release", { headers: { "X-Face-Tool": "1" } }).then(drop);
-  const bs = ["upd", "upd2"].map(id => document.getElementById(id)), say = t => bs.forEach(b => b.textContent = t);
+  const b = document.getElementById("upd"), say = t => b.textContent = t;
   say("Checking…");
   try {
     const r = await (await fetch("/update", { cache: "no-store", headers: { "X-Face-Tool": "1" } })).json();
@@ -182,9 +182,9 @@ async function checkUpdate() {
 }
 // The page's buttons: no inline onclick attributes, so the page's Content-Security-Policy can refuse inline script
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
-document.querySelectorAll("#upd, #upd2").forEach(b => b.addEventListener("click", checkUpdate));
+document.getElementById("upd").addEventListener("click", checkUpdate);
 document.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openDir(b.dataset.open)));
-document.querySelectorAll("#setupBtn, #setupBtn2").forEach(b => b.addEventListener("click", openSetup));
+document.getElementById("setupBtn").addEventListener("click", openSetup);
 
 // ---------------------------------------------------------------- Settings tab
 // The tracker's and the labeling tool's settings live in their own pages (their controls, their browser storage,

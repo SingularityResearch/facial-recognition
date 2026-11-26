@@ -2,7 +2,8 @@
 
 This guide takes you from a computer that has never had Face Recognizer on it to every feature working, on one
 device or on several. Each part says what the app does for you and what you do yourself. Every setting it names is
-in the app window's **Settings** tab (Ctrl+3); [SETTINGS.md](SETTINGS.md) describes each one.
+in the app window's **Settings** tab (Ctrl+3); [SETTINGS.md](SETTINGS.md) describes each one, and
+[READINGS.md](READINGS.md) explains every reading the app shows.
 
 What you need depends on what you want:
 
@@ -13,7 +14,7 @@ What you need depends on what you want:
 | Several devices that share names, labels and history, watch each other's cameras, phones | Part 3 (once) and part 4 (each further device): a shared database |
 | Web search on a face, music as a signal | Part 6: your own keys |
 
-The app has this guide built in: the **Setup** button in the window's tab bar shows what is set up on this device
+The app has this guide built in: the **Setup** button at the top of the Settings tab shows what is set up on this device
 and what is left, and does each step it can for you at a button you press (making the certificates, preparing a
 new database server, choosing a model server, downloads). It opens by itself at a new install's first start.
 
@@ -63,7 +64,7 @@ for you.
 
 The easiest way: the computer the app runs on holds the database, and the app does every step itself.
 
-1. **Setup** (in the window's tab bar), **Your devices**, **Several devices**, **Set up a new one on this computer**,
+1. **Setup** (at the top of the Settings tab), **Your devices**, **Several devices**, **Set up a new one on this computer**,
    then **Install and set it up**.
 2. The app downloads PostgreSQL with pgvector from conda-forge (about 55 MB on Windows, 30 MB on a Mac, 45 MB on
    Linux, each file checked by its size and SHA-256), makes the database in the app's folder (`database` beside `data`), makes

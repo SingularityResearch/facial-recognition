@@ -72,11 +72,14 @@ project's own. To our knowledge no other system puts these together, and we rega
 - **Face tracking**: names on the faces a camera sees, with how sure the match is; alerts when someone arrives,
   leaves or moves between cameras; optional reading of expression, posture, voice and the room's sound, as
   numbers only. **Signals** charts every one of those readings over the last minutes, as fast as the device
-  takes them, one expander a section.
+  takes them, one expander a section. [What each reading means](docs/READINGS.md) explains every one of them: what
+  it is, what its values mean and why it matters. The app carries the same page: a reading's name in a chart or a
+  readout opens it at that reading.
 - **Labeling**: add photos and videos, name the faces found in them or ignore them, with clues (closest people,
   photo tags, same occasion) and Undo. A person's data can be exported or forgotten everywhere.
-- **Cameras**: every device's live camera in one grid, with what each sees and its Signals chart; any one of
-  them alone, laid out like its own Face tracking tab.
+- **Cameras**: every device's live camera in one grid, with what each sees and its Signals chart: for each person a
+  summary (the expression, what stands out now, the key numbers) and their readings group by group; any one camera
+  alone, with every reading laid out in full. A list in the tab's header chooses the cameras shown.
 - **Where each device is** (off until you switch it on, device by device): the nearest town with its state and
   country and the coordinates, on the device's own Face tracking tab and over its picture in the Cameras tab,
   from the device's own location service or a place you type; with a shared database, a history of its moves
@@ -124,7 +127,7 @@ Download the file for your computer from the [latest release](../../releases/lat
 
 Setting everything up from scratch, step by step (a shared database for several devices, model servers for
 Describe photo and Analyze, keys, your network): [docs/SETUP.md](docs/SETUP.md). The app carries the same guide:
-its **Setup** button shows what is set up on the device and what is left, does each step it can at a button you
+its **Setup** button (at the top of the Settings tab) shows what is set up on the device and what is left, does each step it can at a button you
 press, and opens the guide at the step you are on.
 
 No administrator rights are needed. The installers bring what the app runs with; nothing has to be installed
@@ -159,7 +162,7 @@ The app is `target/release/FaceRecognizer`. The installers are made by `packagin
 | `web/` | the pages the app shows |
 | `migrations/` | the shared database's schema |
 | `packaging/` | the installers for each system |
-| `docs/` | settings, the reasoning behind the expression reading, the [research this work builds on](docs/REFERENCES.md), [models and hardware measured](docs/MODELS_AND_HARDWARE.md), and the stores' listings |
+| `docs/` | settings, [what each reading means](docs/READINGS.md), the reasoning behind the expression reading, the [research this work builds on](docs/REFERENCES.md), [models and hardware measured](docs/MODELS_AND_HARDWARE.md), and the stores' listings |
 
 ## Licence
 

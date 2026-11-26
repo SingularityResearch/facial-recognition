@@ -40,7 +40,19 @@ test("the Cameras page: one camera can be looked at alone, and every camera goes
   const code = read("cameras_ui.js"), page = read("cameras_ui.html");
   assert.match(code, /function focusOn\(id\)/);
   assert.match(page, /id="allBtn"[^>]*hidden/);                       // the way back, there only while one is looked at
-  assert.match(code, /e\.key === "Escape" && solo/);
+  assert.match(code, /e\.key !== "Escape"[\s\S]{0,160}else if \(solo\) focusOn\(null\)/);   // Esc: the cameras' list first, then back
+  // the cameras to show: a list that opens from its button, with a tick for each camera and one for all of them
+  assert.match(page, /id="camBtn"[^>]*aria-expanded="false"/);
+  assert.match(page, /id="camMenu"[^>]*hidden/);
+  assert.match(page, /id="camAll"/);
+  assert.match(code, /\$\("camAll"\)\.onchange/);
+  // a face's readout: a summary, then its groups one by one; with the camera alone every group is open, by the
+  // page's style alone (the readouts are made the same way whatever is shown)
+  assert.match(code, /className: "chips"/);
+  assert.match(page, /\.grp\.shut \.gbody \{ display: none; \}/);
+  assert.match(page, /\.tile\.solo \.grp\.shut \.gbody \{ display: block; \}/);
+  const block = code.slice(code.indexOf("function faceBlock"), code.indexOf("// Each camera's readings as its device publishes them"));
+  assert.ok(block.length > 500 && !/\bsolo\b/.test(block.replace(/\/\/.*$/gm, "")), "a face's readout must not depend on what is shown");
   // the frames of every camera are asked for whatever is shown (cameras are never paused): the pump never looks at solo
   const pump = code.slice(code.indexOf("async function pumpAll"), code.indexOf("pumpAll();"));
   assert.ok(pump.length > 200 && !/\bsolo\b|\.tile\.hidden/.test(pump), "the frame pump must not depend on what is shown");
@@ -679,4 +691,71 @@ test("a device's location: off as the page comes, asked of the page's own server
   // the phones ask for the location only while the app is open: no background location anywhere
   assert.doesNotMatch(read("../apps/android/AndroidManifest.xml"), /ACCESS_BACKGROUND_LOCATION/);
   assert.doesNotMatch(read("../apps/ios/project.sh"), /NSLocationAlways/);
+});
+
+test("every reading a device sends with its readout has a fuller name and what it says on the Cameras page", () => {
+  const code = read("cameras_ui.js");
+  const grab = name => {
+    const at = code.indexOf(`const ${name} = {`), end = code.indexOf("\n};", at);
+    assert.ok(at >= 0 && end > at, `${name} is missing`);
+    return vm.runInNewContext("(" + code.slice(at + `const ${name} = `.length, end + 2) + ")");
+  };
+  const ABOUT = grab("ABOUT"), GROUPS = grab("GROUP_ABOUT");
+  const S = require("../signals.js"), X = require("../expression.js");
+  const f = new S.FaceSignals(), { face, voice } = S.fields(f, 0, null, false);
+  // the groups as the tracker page sends them (tracker_ui.js: Expression, Face, Voice, Body, Their normal)
+  const sent = {
+    "Expression": [...X.fields(null), ...X.fields({ votes: 3, share: 0.5, lead: 0.2, va: [0, 0], vaFit: [0, 0], flags: [], cues: {}, label: "neutral" })],
+    "Face": face, "Voice": voice, "Body": S.bodyFields(f, 0), "Their normal": S.normalFields(null, "", null, null),
+  };
+  for (const [group, cells] of Object.entries(sent)) {
+    assert.ok(GROUPS[group], `the group ${group} has no words of its own`);
+    for (const [k] of cells) {
+      const a = ABOUT[group]?.[k];
+      assert.ok(a && a[0] && a[1], `${group}: "${k}" has no fuller name and meaning on the Cameras page`);
+    }
+  }
+  assert.match(code, /title: GROUP_ABOUT\[g\.title\] \|\| g\.title/);
+  // Their normal names a signal by its key ("gazeAway +2.6 SD"): every signal a normal is learned for has its name
+  const NAMES = grab("NORMAL_NAMES");
+  for (const k of Object.keys(S.B_KEYS)) assert.ok(NAMES[k], `the signal ${k} of a person's normal has no fuller name on the Cameras page`);
+  assert.match(read("tracker_ui.js"), /\["Expression", [^\]]*\], \["Face", "", sig\.face\]/);
+  for (const g of ["Voice", "Body", "Their normal"]) assert.ok(read("tracker_ui.js").includes(`f.groups.push(["${g}"`), `the tracker sends no ${g} group`);
+});
+
+test("what each reading means is read inside the app, at the part a reading's name names", () => {
+  const grab = (code, name) => {
+    const at = code.indexOf(`const ${name} = {`), end = code.indexOf("\n};", at);
+    assert.ok(at >= 0 && end > at, `${name} is missing`);
+    return vm.runInNewContext("(" + code.slice(at + `const ${name} = `.length, end + 2) + ")");
+  };
+  // every section and reading of the Signals chart has its part (readings.rs holds each part to the page)
+  const READ = grab(read("signals_chart.js"), "READ"), cat = require("../signals_chart.js").catalog();
+  for (const s of [...cat.device, ...cat.person]) {
+    assert.ok(READ["sec:" + s.key], `the section ${s.key} has no part in the readings`);
+    for (const g of s.signals) assert.ok(READ[g.key], `${s.key}: ${g.key} has no part in the readings`);
+  }
+  for (const g of [...cat.sound.output, ...cat.sound.input]) assert.ok(READ["sound:" + g.key], `sound: ${g.key} has no part in the readings`);
+  assert.ok(READ["sec:sound"]);
+  // a name asks the page around the chart, which shows the server's own page in a sheet over itself: never by
+  // leaving the page (the camera goes on behind it), and only at a part that is a plain name
+  assert.match(read("signals_chart.js"), /new CustomEvent\("readings", \{ bubbles: true, detail: part \}\)/);
+  for (const f of ["tracker_ui.js", "cameras_ui.js"]) {
+    const code = read(f);
+    assert.match(code, /document\.addEventListener\("readings", e => openReadings\(e\.detail\)\)/, f);
+    assert.match(code, /\$\("readingsFrame"\)\.src = "\/readings" \+ \(PART\.test\(part \|\| ""\) \? "#" \+ part : ""\)/, f);
+    assert.match(code, /const PART = \/\^\[a-z0-9-\]\{1,60\}\$\/;/, f);
+  }
+  assert.match(read("tracker_ui.html"), /<a id="readingsLink" href="\/readings"/);
+  assert.match(read("tracker_ui.html"), /id="readingsSheet"[^>]*hidden/);
+  assert.match(read("cameras_ui.html"), /id="readingsSheet"[^>]*hidden/);
+  assert.match(read("cameras_ui.html"), /id="readingsBtn"/);
+  assert.match(read("../crates/face-server/src/tracker.rs"), /"\/readings" => Response::bytes\("text\/html; charset=utf-8", crate::readings::page\(\)/);
+  assert.match(read("../crates/face-server/src/readings.rs"), /include_str!\("\.\.\/\.\.\/\.\.\/docs\/READINGS\.md"\)/);
+  // each reading of a readout has its part too
+  const AT = grab(read("cameras_ui.js"), "READ_AT"), ABOUT = grab(read("cameras_ui.js"), "ABOUT");
+  for (const [g, cells] of Object.entries(ABOUT)) {
+    assert.ok(AT[g], `the group ${g} has no part in the readings`);
+    for (const k of Object.keys(cells)) assert.ok(AT[`${g}/${k}`], `${g}/${k} has no part in the readings`);
+  }
 });

@@ -151,9 +151,9 @@ test("valence/arousal and cues follow the votes", () => {
   const e = X.read(t, LABELS, "Unknown", null);
   assert.deepEqual(e.va.map(v => +v.toFixed(2)), X.VA.happy);
   assert.deepEqual(e.cues, { smile: 0.8, cheek: 0.6 });          // only the cues that go with "happy"
-  assert.match(X.evidence(e), /^4 votes · 100% · lead 100 · V\+0\.8 A\+0\.5 · smile \.80 cheek \.60$/);
+  assert.match(X.evidence(e), /^4 votes · 100% · lead 100% · V\+0\.8 A\+0\.5 · smile \.80 cheek \.60$/);
   // the Live readout's cells: the same numbers, fixed labels first, then the cues
-  assert.deepEqual(X.fields(e).map(([k, v]) => [k, v]), [["votes", "4"], ["share", "100%"], ["lead", "100"],
+  assert.deepEqual(X.fields(e).map(([k, v]) => [k, v]), [["votes", "4"], ["share", "100%"], ["lead", "100%"],
     ["valence", "+0.8"], ["arousal", "+0.5"], ["calibrated", null], ["state model", X.fields(e)[6][1]],
     ["usual look", "not used"], ["flags", "none"], ["cues", "smile .80 · cheek .60"]]);
   assert.match(X.fields(e)[6][1], /^happy \d+%$/);                // the state model's answer, even when it agrees

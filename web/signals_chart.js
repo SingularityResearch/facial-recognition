@@ -131,6 +131,28 @@
       about: "Each signal against this person's own usual level. Darker means further from usual; from 2 SD it counts as unusual.",
       signals: [S("z", "every signal against their usual", { kind: "heat", wide: true }), S("odd", "", { lo: 0, hi: 8, hidden: true })] },
   ];
+  // Where each section and each reading is explained: a name in the chart is a button that asks the page around the
+  // chart to show what each reading means (/readings, docs/READINGS.md) at that part, by a "readings" event; a page
+  // that doesn't show it leaves the click at that. A sound interface's reading is "sound:" and its key, a section
+  // "sec:" and its key.
+  // the parts of docs/READINGS.md each section and reading is explained in (readings.rs holds every one to the page)
+  const READ = {
+    "sec:people": "people-in-view", "sec:camera": "camera", "sec:host": "device", "sec:sound": "sound-speakers-and-microphones",
+    "sec:recognition": "recognition", "sec:expression": "expression", "sec:face": "face", "sec:voice": "voice",
+    "sec:body": "body-and-hands", "sec:normal": "their-normal",
+    lanes: "in-view", faces: "faces-in-view", checks: "checks", check: "one-check", load: "processor-in-use",
+    memory: "memory-in-use", temp: "temperature", heat: "heat-state", battery: "battery", charging: "on-power",
+    "sound:what": "heard", "sound:level": "level", "sound:tempo": "tempo", "sound:pulse": "beat-clarity",
+    "sound:bright": "brightness", "sound:bass": "bass-share", "sound:events": "events", "sound:steady": "steady",
+    "sound:speechlike": "speech-like", "sound:hum": "mains-hum",
+    match: "match", quality: "picture-quality", size: "face-size", probs: "share-of-each-look", valence: "valence-face",
+    arousal: "arousal-face", share: "share-of-votes", motion: "moving", pulse: "pulse", blinkRate: "blinks",
+    gazeAway: "gaze-away", smile: "smile", jaw: "jaw", cheek: "cheek-raise", frown: "frown", browDown: "brow-down",
+    browInnerUp: "inner-brow-up", eyeWide: "eyes-wide", speaking: "speaking", loudness: "loudness", pitch: "pitch",
+    pitchSd: "pitch-range", speechRate: "speech-rate", voiceArousal: "voice-arousal", voiceValence: "voice-valence",
+    head: "head-height", neck: "neck", tilt: "shoulder-tilt", bodyMotion: "body-movement", breathing: "breathing",
+    hand: "hand-on-face", armsCrossed: "arms-crossed", z: "spreads-away",
+};
   // Why a section has no readings: the option of the device's Face tracking tab that makes them is off (the device
   // says which are, with its readings), or the device has no model for them. [the section it is said in, the words]
   const OFF = {
@@ -558,6 +580,12 @@
       }
     }
 
+    // a name that opens what it means (see READ)
+    readButton(part, text, title, cls = "") {
+      const b = el("button", { type: "button", className: "rd " + cls, textContent: text, title });
+      b.onclick = () => b.dispatchEvent(new CustomEvent("readings", { bubbles: true, detail: part }));
+      return b;
+    }
     axis() { return el("div", { className: "axis" }, el("span", { className: "from" }), el("span", { className: "at" }), el("span", { textContent: "now" })); }
     seg(host, items, current, set) {
       host.replaceChildren(...items.map(([label, value]) => {
@@ -627,15 +655,19 @@
         cv.onpointermove = e => { this.hoverT = Date.now() - this.windowMs + clamp((e.offsetX - x0) / (cv.clientWidth - x0), 0, 1) * this.windowMs; this.draw(); };
         cv.onpointerleave = () => { this.hoverT = null; this.draw(); };
         this.charts.push(ch);
-        ch.fig = el("figure", { className: "ch" + (s.wide ? " wide" : "") }, el("figcaption", {}, el("span", { textContent: s.label }), val), cv, legend);
+        const part = READ[sec.sound ? "sound:" + s.k : s.k];
+        ch.fig = el("figure", { className: "ch" + (s.wide ? " wide" : "") }, el("figcaption", {},
+          part ? this.readButton(part, s.label, `What "${s.label}" means: what it measures, its values and why it matters`) : el("span", { textContent: s.label }), val), cv, legend);
         if (sec.key === "host") ch.fig.hidden = true;     // (shown from the first reading the device gives of it: itself())
         return ch.fig;
       }));
       this.charts.push({ cv: spark, val: now, sec, sig: sec.signals.find(s => s.k === sec.head), spark: true, det });
       const note = el("p", { className: "off", hidden: true });
       if (sec.person) this.notes[sec.key] = note;
-      const about = el("p", { className: "about", textContent: sec.about });
-      this.abouts[sec.key] = { el: about, base: sec.about };
+      const aboutText = el("span", { textContent: sec.about }), secPart = READ["sec:" + (sec.sound ? "sound" : sec.key)];
+      const about = el("p", { className: "about" }, aboutText, secPart ? " " : null,
+                       secPart ? this.readButton(secPart, "What each reading means", "Every reading of this section explained: what it measures, its values and why it matters", "more") : null);
+      this.abouts[sec.key] = { el: aboutText, base: sec.about };
       det.append(el("summary", {}, el("span", { className: "name", textContent: sec.title }), spark, now), about, note, grid, this.axis());
       det.ontoggle = () => { this.saveOpen(); this.draw(); };
       if (sec.key === "host") det.hidden = true;          // (a device that says nothing of itself has no such section)

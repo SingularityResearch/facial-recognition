@@ -293,7 +293,7 @@ device's library at the same time: each would send what the other took.
   one knows that shows another certificate raises the same kind of alert, once: the same device set up
   again, or another machine under its id. A row is read without trusting its shape (`try_get`).
 - **The setup page** (`web/setup.html`, `setup.js`, a page of the labeling tool's server at `/setup`, over the app
-  window from its Setup button: `app_ui.js` `openSetup`). The owner's words (2026-11-25): "an in-app setup wizard
+  window from the Setup button at the top of the Settings tab: `app_ui.js` `openSetup`). The owner's words (2026-11-25): "an in-app setup wizard
   asks the user the relevant questions about their environment and that guides the user thru the setup process and
   automates anything possible (with their consent)", "If the user has already setup everything ... detect that and
   only show whats missing", "this is for users who have just freshly installed the application, or for users who are
@@ -951,6 +951,26 @@ servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker,
   `web/tests/signals_chart.test.js`, which holds the three to each other. Its thresholds for "unusual signals"
   (`ODD_SIGNALS`, `ODD_FOR_MS`) and the sound's 4-second stretches (`soundlive::LISTEN_FOR`) are choices, not
   measured values: evidence only, like the page's other signals.
+- **What each reading means** (`docs/READINGS.md`; the owner, 2026-11-25: "We need to describe what every sensor
+  means, what it measures and how its used", "ALL currently supported sensor readings should have a name and
+  summary", "This should be in the GitHub documentation", and "most people dont know what valence means, etc. so it
+  ALL needs to be explained"): one entry for every reading, each with what it is, its values (what is low, usual
+  and high), why it matters, what the app does with it and where it is seen, in plain words; a word like valence
+  is explained where it is used. It describes the readings, not how they were tested. A new reading goes into it,
+  and, where the Cameras page shows it in a readout, into that page's `ABOUT` (a fuller name and a line of what it
+  says; `web/tests/pages.test.js` holds `ABOUT` to every cell the tracker page sends, and `NORMAL_NAMES` to
+  `Signals.B_KEYS`). The app carries it (`crates/face-server` `readings.rs`, `/readings` on the tracker's server,
+  made by `markdown.rs`: a page that leads nowhere outside itself), shown in a sheet over the tracker page and the
+  Cameras page, never by leaving them; a reading's name opens it at its part (`signals_chart.js` `READ`, a
+  "readings" event the page answers; `cameras_ui.js` `READ_AT`), and `readings.rs` holds every part they name to
+  a heading of the page, so a heading renamed there is a reading's part renamed in both lists. A typical value it gives comes from the devices' own signal history or from common knowledge
+  (a resting pulse), never a guess; never word a reading as a diagnosis or a feeling.
+- The Cameras page's readout of a person (`cameras_ui.js` `faceBlock`; the owner, 2026-11-25: "a general summary
+  and then expandable sections", and of Focus: "a full data centric view - but better organized"): the name and
+  match, the expression, what stands out now, the key numbers, then each group of readings closed until it is
+  opened (remembered). With one camera alone every group is open, side by side; which of the two it is, is the
+  page's style alone (`.tile.solo`), so the readouts are made the same way whatever is shown (a test). The
+  cameras shown are chosen in a list that opens from the header (`camBtn`), with a tick for each and one for all.
 - The signal history (`signal_log`, migration 16; `crates/face-home` `siglog.rs`, `crates/face-db` `signals.rs`,
   `crates/face-server` `history.rs` and `libhistory.rs`; the page's `SignalsChart.History`). The owner's words
   (2026-11-24): "Keep a history of ALL signals in the database", "it is opt-in per device in settings", "There

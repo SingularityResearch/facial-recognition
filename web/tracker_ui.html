@@ -195,7 +195,8 @@
   #joinLink { display: flex; align-items: center; justify-content: center; min-height: 40px; margin: 8px 0 2px; padding: 8px 14px;
               border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); font: 600 13px var(--sans); text-decoration: none; }
   #joinLink[hidden] { display: none; }
-  #privacyLink { display: inline-block; padding: 8px 0; color: var(--accent); font-size: 13px; }
+  #privacyLink, #readingsLink { display: inline-block; padding: 8px 0; color: var(--accent); font-size: 13px; }
+  #readingsLink { margin-right: 14px; }
   /* the privacy policy, over the whole page: the camera and its checks go on behind it */
   .policy { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); }
   .policyHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px;
@@ -301,6 +302,7 @@
       <div class="flat" id="camFlat" role="alert" hidden><span id="camFlatText"></span>
         <button class="small" id="camFlatTry" type="button" hidden></button></div>
       <a id="joinLink" hidden title="Let a new phone or computer into your shared database, or join this device to one: one device shows a code, the other scans it">Join a shared database…</a>
+      <a id="readingsLink" href="/readings" title="Every reading the app takes explained: what it measures, what its values mean and why it matters">What each reading means</a>
       <a id="privacyLink" href="/privacy" title="What the app handles, where it is kept and what leaves this device: readable here, without the internet">Privacy policy</a>
     </div>
 
@@ -450,6 +452,10 @@
   </div></aside>
 </div>
 
+<div id="readingsSheet" class="policy" role="dialog" aria-modal="true" aria-label="What each reading means" hidden>
+  <div class="policyHead"><strong>What each reading means</strong><button class="small" id="readingsClose" type="button">Close</button></div>
+  <iframe id="readingsFrame" title="What each reading means"></iframe>
+</div>
 <div id="privacySheet" class="policy" role="dialog" aria-modal="true" aria-label="Privacy policy" hidden>
   <div class="policyHead"><strong>Privacy policy</strong><button class="small" id="privacyClose" type="button">Close</button></div>
   <iframe id="privacyFrame" title="Privacy policy"></iframe>

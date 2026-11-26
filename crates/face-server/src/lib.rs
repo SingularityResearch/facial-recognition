@@ -69,6 +69,7 @@ pub mod peer;
 pub mod peerphoto;
 mod persondata;
 pub mod privacy;
+pub mod readings;
 pub mod recorder;
 #[cfg(feature = "import")]
 mod servekeep;

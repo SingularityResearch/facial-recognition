@@ -1317,6 +1317,8 @@ impl Service for Tracker {
             "/mp/parts_worker.js" => self.parts_script("parts_worker.js", PARTS_WORKER),
             // the privacy policy, readable inside the app (a page like the others: no data, nothing of this device)
             "/privacy" => Response::bytes("text/html; charset=utf-8", crate::privacy::page().into_bytes()),
+            // what each reading means, the same kind of page: shown over the tracker and the Cameras page
+            "/readings" => Response::bytes("text/html; charset=utf-8", crate::readings::page().into_bytes()),
             path if path.starts_with("/mp/") => {
                 // fixed names only: nothing of the request goes into a file's path
                 let file = MP_FILES
