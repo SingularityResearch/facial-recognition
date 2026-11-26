@@ -33,6 +33,11 @@ nav .ver { margin-left: 0; }
 @keyframes pop { from { transform: translate(-50%, -12px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; visibility: hidden; }
 iframe.on { visibility: visible; }
+#f-setup { z-index: 2; background: #0d1512; }
+nav .setupb { font: 600 13px "Segoe UI", system-ui, sans-serif; color: #dfe8e4; background: #18332a; border: 1px solid #2f5a4b;
+  border-radius: 999px; padding: 4px 12px; cursor: pointer; align-self: center; margin: 0 0 6px auto; }
+nav .setupb:hover { background: #1f4236; }
+nav .setupb + .bell { margin-left: 6px; }
 .wait { position: absolute; inset: 0; display: grid; place-content: center; color: #9fb2ab; }
 .wait.err { color: #f0a08f; white-space: pre-wrap; padding: 24px; }
 .wait[hidden] { display: none; }          /* display: grid above would otherwise keep it on screen */
@@ -42,9 +47,21 @@ iframe.on { visibility: visible; }
 #sec-programs { width: 100%; }
 .sets h1 { font-size: 18px; font-weight: 600; margin: 0 0 2px; }
 .sets > p { margin: 0; color: #9fb2ab; }
-.sec { border: 1px solid #24342e; border-radius: 10px; background: #111c18; padding: 4px 16px 10px; }
-.sec h2 { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
-.sec h2 button { margin-left: auto; }
+.sec { border: 1px solid #24342e; border-radius: 10px; background: #111c18; padding: 4px 16px 10px; scroll-margin-top: 64px; }
+.sec h3 { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
+.sec h3 button { margin-left: auto; }
+/* groups of cards, and the jump list over them */
+.grp { display: grid; gap: 10px; scroll-margin-top: 64px; }
+.grp[hidden], #sec-waits:empty { display: none; }
+#sec-waits .note { color: #9fb2ab; margin: 0; }
+.grp .gt { font-size: 16px; font-weight: 600; margin: 10px 0 0; color: #e8f1ee; }
+.grp .gnote { margin: -4px 0 0; color: #9fb2ab; font-size: 13px; line-height: 1.45; }
+.setnav { position: sticky; top: -18px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0;
+  background: #0d1512; border-bottom: 1px solid #1b2924; }
+.setnav button { font: inherit; font-size: 12.5px; color: #cfe0da; background: #111c18; border: 1px solid #24342e;
+  border-radius: 999px; padding: 4px 11px; cursor: pointer; }
+.setnav button:hover { background: #18332a; border-color: #2f5a4b; }
+.setnav button[hidden] { display: none; }
 .sec .note { color: #9fb2ab; margin: 6px 0; }
 .row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.3fr); gap: 4px 18px; align-items: center;
   padding: 9px 0; border-top: 1px solid #1b2924; }
@@ -90,7 +107,9 @@ iframe.on { visibility: visible; }
   <button role="tab" id="tab-track" aria-selected="true" data-tab="track">Face tracking<small id="st-track">starting…</small></button>
   <button role="tab" id="tab-label" aria-selected="false" data-tab="label">Labeling<small id="st-label">starting…</small></button>
   <button role="tab" id="tab-cams" aria-selected="false" data-tab="cams">Cameras</button>
+  <button role="tab" id="tab-ana" aria-selected="false" data-tab="ana">Analyze</button>
   <button role="tab" id="tab-set" aria-selected="false" data-tab="set">Settings</button>
+  <button class="setupb" id="setupBtn" type="button" title="What is set up on this device, and what is left">Setup</button>
   <button class="bell" id="bell" type="button" aria-label="Alerts" title="Alerts: see, acknowledge or archive (Ctrl+4)"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 22a2.4 2.4 0 0 0 2.4-2.2H9.6A2.4 2.4 0 0 0 12 22Zm7-5.6V11a7 7 0 0 0-5.3-6.8V3.6a1.7 1.7 0 0 0-3.4 0v.6A7 7 0 0 0 5 11v5.4L3 18.5v.8h18v-.8Z"/></svg><span>Alerts</span><b id="bellN" hidden>0</b></button>
   <span class="ver"><span id="ver">v{{VERSION}}</span><button id="upd" title="Asks GitHub for the latest release (only when you click)">Check for updates</button></span>
 </nav>
@@ -102,10 +121,14 @@ iframe.on { visibility: visible; }
   <iframe id="f-track" title="Face tracking" allow="camera; microphone; autoplay; fullscreen"></iframe>
   <iframe id="f-label" title="Labeling" allow="clipboard-read; clipboard-write; fullscreen"></iframe>
   <iframe id="f-cams" title="Cameras" allow="fullscreen"></iframe>
+  <iframe id="f-ana" title="Analyze" allow="clipboard-write; fullscreen"></iframe>
+  <!-- the setup page: over every tab while it is open; not a tab, and loaded hidden so it can say a new copy wants it -->
+  <iframe id="f-setup" title="Setup"></iframe>
   <div id="settings" hidden><div class="sets" id="sets">
-    <div><h1>Settings</h1><p>Everything you can set in the app, in one place. Changes apply at once and are remembered;
-      the same options stay on the Face tracking and Labeling tabs too.</p></div>
-    <section class="sec" id="sec-app"><h2>App</h2>
+    <div><h1>Settings</h1><p>Everything you can set in the app, in one place, grouped by what it is for. Changes apply at
+      once and are remembered; the same options stay on the Face tracking, Labeling and Analyze tabs too.</p></div>
+    <div class="setnav" id="setnav" aria-label="Go to a group of settings"></div>
+    <section class="sec" id="sec-app"><h3>App</h3>
       <div class="row"><span class="lab">Version</span><div class="ctl"><span>v{{VERSION}}</span>
         <button class="b" id="upd2">Check for updates</button></div>
         <div class="hint">Asks GitHub for the latest release, only when you click.</div></div>
@@ -115,8 +138,11 @@ iframe.on { visibility: visible; }
       <div class="row"><span class="lab">Keys, descriptions, snapshots, log</span><div class="ctl"><code id="p-private">%APPDATA%</code>
         <button class="b" data-open="private">Open folder</button></div>
         <div class="hint">Web search keys, photo descriptions, webcam snapshots, the presence log and this app's messages (app.log).</div></div>
-      <div class="row"><span class="lab">Switch tabs</span><div class="ctl"><span>Ctrl+1 Face tracking, Ctrl+2 Labeling, Ctrl+3 Settings, Ctrl+4 Alerts</span></div></div>
+      <div class="row"><span class="lab">Setup</span><div class="ctl"><button class="b" id="setupBtn2" type="button">Open setup</button></div>
+        <div class="hint">What is set up on this device and what is left: photos, your devices and their shared database, the model servers, the optional keys. What is set up stays as it is; each step is a button that says what it does.</div></div>
+      <div class="row"><span class="lab">Switch tabs</span><div class="ctl"><span>Ctrl+1 Face tracking, Ctrl+2 Labeling, Ctrl+3 Settings, Ctrl+4 Alerts, Ctrl+5 Analyze</span></div></div>
     </section>
+    <div id="sec-waits"></div>
     <div id="sec-programs"></div>
   </div></div>
 </main>

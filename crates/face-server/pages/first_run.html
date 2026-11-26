@@ -4,6 +4,7 @@
 html, body { margin: 0; height: 100%; background: #0d1512; color: #dfe8e4; font: 14px "Segoe UI", system-ui, sans-serif; }
 body { display: flex; align-items: center; justify-content: center; }
 main { width: min(580px, calc(100vw - 48px)); background: #111c18; border: 1px solid #24342e; border-radius: 12px; padding: 26px 28px 22px; }
+main.wide { width: min(820px, calc(100vw - 48px)); }
 h1 { font-size: 19px; font-weight: 600; margin: 0 0 12px; }
 p { line-height: 1.5; margin: 8px 0; }
 ul { margin: 8px 0 14px; padding-left: 20px; line-height: 1.6; }
@@ -15,7 +16,17 @@ progress { width: 100%; height: 10px; margin-top: 14px; accent-color: #34d399; }
 button { font: inherit; padding: 7px 18px; border-radius: 8px; cursor: pointer; background: transparent; color: #dfe8e4; border: 1px solid #2c3f38; }
 button.yes { border-color: #34d399; color: #a7f3d0; font-weight: 600; }
 button:disabled { opacity: .5; cursor: default; }
-</style></head><body><main>
+#licenceText { white-space: pre-wrap; overflow-wrap: anywhere; max-height: min(52vh, 460px); overflow-y: auto; margin: 10px 0 0;
+  padding: 12px 14px; background: #0d1512; border: 1px solid #24342e; border-radius: 8px; font: 13px/1.5 "Segoe UI", system-ui, sans-serif; }
+</style></head><body><main id="main">
+<section id="licence" hidden>
+<h1>Licence agreement</h1>
+<p>Please read the licence of Face Recognizer. Accept it to go on; if you decline, the app ends.</p>
+<div id="licenceText" tabindex="0" aria-label="The licence"></div>
+<p class="note" id="declined" hidden>You declined the licence: Face Recognizer ends. Start it again to read it again.</p>
+<div class="row" id="licenceRow"><button id="decline" type="button">Decline</button><button id="accept" class="yes" type="button">Accept</button></div>
+</section>
+<section id="files">
 <h1>Before Face Recognizer starts</h1>
 <p id="what">Looking at what is on this computer …</p>
 <ul id="lines"></ul>
@@ -23,6 +34,7 @@ button:disabled { opacity: .5; cursor: default; }
 <p class="note" id="without" hidden></p>
 <progress id="bar" max="1" value="0" hidden></progress>
 <p class="note" id="step" hidden></p>
-<p class="error" id="error" role="alert" hidden></p>
 <div class="row"><button id="skip" type="button" disabled>Start without them</button><button id="get" class="yes" type="button" disabled>Download</button></div>
+</section>
+<p class="error" id="error" role="alert" hidden></p>
 </main><script src="/first_run.js"></script></body></html>

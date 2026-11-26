@@ -140,6 +140,25 @@ fn post(url: &str, path: &str, key: &str, body: &Value, timeout: Duration) -> Sa
     read(ask.send(filejson::dumps(body).as_bytes()))
 }
 
+/// A JSON request to a server of the describer's kinds, made as every request here is (no redirect followed, the
+/// answer read only up to a size, the key sent only where it is given): the JSON answer, or (the status it
+/// answered with, if it answered, and why).
+pub(crate) fn post_json(
+    url: &str,
+    path: &str,
+    key: &str,
+    body: &Value,
+    timeout: Duration,
+) -> Result<Value, (Option<u16>, String)> {
+    match post(url, path, key, body, timeout) {
+        Said::Json(v) => Ok(v),
+        Said::Status(code, why) => Err((Some(code), why)),
+        Said::Nothing(why) => Err((None, format!("didn't answer: {why}"))),
+        Said::Unreadable => Err((None, "gave an answer that wasn't understood".to_string())),
+        Said::TooLarge => Err((None, "gave an answer that was too large".to_string())),
+    }
+}
+
 /// A request that loads a model (Ollama's `/api/generate` without a prompt), given ten minutes: Ok when the
 /// server took it.
 pub(crate) fn post_for_load(url: &str, path: &str, key: &str, body: &Value) -> Result<(), String> {
@@ -385,7 +404,7 @@ pub fn status(home: &Path, devices: &dyn Fn() -> Vec<Vec<String>>) -> Value {
 }
 
 /// Seconds to open a connection to an address's host and port (9 when it doesn't open).
-fn connect_secs(url: &str) -> f64 {
+pub(crate) fn connect_secs(url: &str) -> f64 {
     use std::net::ToSocketAddrs;
     let place = url.split_once("//").map_or(url, |(_, rest)| rest).split('/').next().unwrap_or("");
     let place = if place.rsplit_once(':').is_some_and(|(_, port)| port.parse::<u16>().is_ok()) {

@@ -28,12 +28,14 @@ photo library.
     locks, JSON as the files have always been written), `face-home` (the private folder's stores), `face-library`
     (the store, the labeling engine, what photos say about themselves), `face-import` (photos and videos decoded,
     the importer), `face-db` (the shared database), `face-sync` (the sync with it), `face-tools` (`face-tools get`
-    and `have`: every pinned download the programs need; the first-run list), `face-server` (the three local
+    and `have`: every pinned download the programs need; the first-run list; `postgres`: PostgreSQL with pgvector for
+    a computer that holds the shared database), `face-server` (the three local
     servers: the tab page, the labeling tool, the tracker; everything their pages ask for), `face-app` (the
     tracker as a library for the phones' apps).
   - `crates/face-server/pages/` — the pages that are not in `web/` (the first-run question, joining by a
     code, the MediaPipe module and its worker), with their Node test.
-- `apps/` — `desktop` (the program `FaceRecognizer`: the app with its window, and as `tracker-child` the
+- `apps/` — `desktop` (the program `FaceRecognizer`: the app with its window, as `start-database` and
+  `stop-database` this computer's shared database started at sign-in or stopped at an uninstall, and as `tracker-child` the
   tracker's own process), `android` (the Java shell, `build.ps1`: the package without Gradle, for trying or
   with `-Release` as it is published, and with `-Release -Bundle` also the app bundle Google Play takes: the
   app as the module `base` and the models as an install-time asset pack, which the app reads as the assets it
@@ -54,7 +56,7 @@ photo library.
   before a new one is started (`linux.rs` `end_leftover`: a second browser on one profile only hands its
   page to the first and ends at once, which read as "no window"); a browser that ends before its page ever ran counts as no window, and
   the app then opens the default browser; `FACE_UI=hidden` runs it headless.
-- `web/` — the pages the servers send (the tab page, the labeling page, the tracker and Cameras pages, what they
+- `web/` — the pages the servers send (the tab page, the labeling and Analyze pages, the tracker and Cameras pages, what they
   share), carried inside the programs (`crates/face-server` `pagefiles.rs`), and `web/tests/` (Node).
 - `migrations/` — the shared database's `NNN_*.sql`, carried inside `face-db`.
 - `assets/icons/` — the app's icon in every form the systems want (one drawing; the
@@ -68,7 +70,10 @@ photo library.
 - Rust only: no script in another language in the tree, the pages' JavaScript and the build scripts apart. The checks that need more than `cargo test` (a
   desktop, a camera's page, an installer run for real, the shared database) are not all Rust tests yet: those
   that aren't are kept outside this repository. New checks are written in Rust.
-- `docs/` — `SETTINGS.md` (every setting, environment variable and what reaches the network),
+- `docs/` — `SETUP.md` (setting the app up from scratch, step by step, for a user whose computers have never seen
+  it: the install, the first start, a shared database from PostgreSQL and pgvector to Connect, joining, model
+  servers, keys, the network's ports: keep it true whenever a step changes), `SETTINGS.md` (every setting,
+  environment variable and what reaches the network),
   `WHY_LAYERED_EXPRESSION.md`, `REFERENCES.md` (the research articles the work builds on, each with what the
   project takes from it: a citation goes in only when it was checked against its source, and a model the app
   does not have is not named there), `MODELS_AND_HARDWARE.md` (Describe photo's servers and models measured on
@@ -105,15 +110,6 @@ Test UI changes in the real app or a test copy, never against the owner's runnin
 - Every check that starts the app sets `FACE_LMSTUDIO=off`: its upkeep would act on the owner's own LM Studio.
 - A check or a test never asks a real outside service (Amazon, Google, Spotify, Hugging Face, the model
   publishers, Microsoft's installer): each has a stand-in address taken only as `http://127.0.0.1:<port>`.
-
-Where the work lives on the owner's Windows development computer (the owner's rule, 2026-11-25: "all work goes
-on the X drive and all backups go on the NAS RAID5 Y drive"; "I dont want my C drive filling up with this
-projects files (temp files or otherwise.)"): the checkout, the builds, every tool and cache the project needs,
-model files, test copies and every temporary or scratch file go on `X:` (an assistant's scratch folder there is
-`X:\scratch\<name>`), and backups go only on `Y:`. Nothing of the project goes on `C:`. A program that puts its
-files on `C:` by itself is pointed at `X:` with its own setting or variable, or installed again there where it has
-none (never a link left at the old path: the owner's word, "make it run from its new location not with a link"),
-it is checked that it works from there, and only then is what it left on `C:` deleted.
 
 ## The parts and their rules
 
@@ -296,6 +292,84 @@ device's library at the same time: each would send what the other took.
   whoever writes the row sets. The file keeps the certificate each device showed as well, and a device this
   one knows that shows another certificate raises the same kind of alert, once: the same device set up
   again, or another machine under its id. A row is read without trusting its shape (`try_get`).
+- **The setup page** (`web/setup.html`, `setup.js`, a page of the labeling tool's server at `/setup`, over the app
+  window from its Setup button: `app_ui.js` `openSetup`). The owner's words (2026-11-25): "an in-app setup wizard
+  asks the user the relevant questions about their environment and that guides the user thru the setup process and
+  automates anything possible (with their consent)", "If the user has already setup everything ... detect that and
+  only show whats missing", "this is for users who have just freshly installed the application, or for users who are
+  upgrading and need to setup new options. Keep their existing setup where possible - if not notify them about what
+  will change and how", and of the owner's own devices: "only change any of the settings ... if the wizard detects
+  differences or needs new install or settings decisions". So:
+  - It looks first and marks what is set up as done, offering nothing there; it changes nothing but at a button the
+    user presses, each saying what it does (a test holds that every change sits behind a button). It asks its own
+    server alone and talks only to the window around it (`fs: "setup"`: open, close, a tab, the private folder).
+  - It opens by itself only on a new copy's first start with nothing set up, or once after an update whose changes
+    weren't seen (`versionnote.rs`, `HOME/app-version.json`, noted first thing at the start, before the log).
+  - An update that changes anything of a device's setup keeps what it can (as `lmstudio::settle_keep_open` keeps the
+    upkeep on where it went on before) and says what changed on that device: a new entry in `setup.js` `NOTICES`,
+    worded for what the device has. A new option a user should decide on gets its place on the page too.
+  - The guide is inside the app (the owner, 2026-11-25: "We need a wizard guide"): `docs/SETUP.md`, carried in the
+    program and turned into a page at `/guide` (`guide.rs`, with `markdown.rs`, which the privacy policy's page uses
+    too: a page that runs nothing, loads nothing and leads nowhere outside itself), shown over the Setup page at the
+    part a button names (`guideAt`; a test holds every part named to one the guide has). The page never names a file
+    of the repository: a person who installed the app has none.
+- **Setting up from scratch** (the owner's words, 2026-11-25: "these have to be configurable and useable from a newly
+  downloaded application that has never been on this computer or any of our test computers", "Make Connect prepare
+  a new server by itself - if one does not exist. Also, offer to create the CA for the user when the database gets
+  setup and register it", "anything we did here in our tests - the app or app installer should be able to do for
+  the user - prompting them when important or necessary decisions are made", and "If the user has already setup
+  everything ... detect that and only show whats missing"). So:
+  - The certificates for a new server are the app's (`face_db::servercert`, Settings' **Certificates for a new
+    database server**): an authority of the owner's own, kept on the device that made it (`HOME/database-server/`,
+    its key protected) so that a server's certificate made again is under the same authority, and the server's
+    certificate and key with `setup-the-server.txt`. ECDSA P-256 with SHA-256: the first login's channel binding
+    needs a signature it knows. A pasted authority of the owner's own (`keep_given`) takes the place of one made here.
+  - `face_db::setup` prepares a server that isn't set up (`prepare_as_admin`, `prepare_as_owner`): first the server
+    must show a certificate from that authority, before anything on it is changed; with the administrator's login it
+    makes the app's own login (named as the schema, no administrator, a password of the app's making, scram), the
+    database, pgvector and the schema; then the tables and the authority in `server_ca`. Never keep the
+    administrator's login, never change a login that is there already (other devices, of this setup or another on
+    the same server, may use it: only the one this device made in a preparing that didn't finish is taken on,
+    `HOME/database-preparing.json`), and refuse the administrator's login for a server that is set up already. A
+    device that has a shared database is never shown the setup steps, and its server is taken as it is.
+  - Its tests: the app's own login in a schema named `t_...` on the shared server (`FACE_TEST_DB_HOME`, as the other
+    server tests); the administrator's path only against a throwaway server a check set up itself
+    (`FACE_TEST_PG_ADMIN`, `FACE_TEST_PG_HOME`, certificates from `examples/server_certs.rs`), never the shared
+    one: it makes logins and databases. Names made up `t_...`, removed after.
+  - The shared database on this computer (`dbhost.rs`, with `face_tools::database`; the owner, 2026-11-25: "We should
+    try to install PostgreSQL ourselves", "Make sure to install pgvector as well", and "what if they close the app -
+    does Postgres stop? It should not"). At one button (Setup, "Set up a new one on this computer"; Windows, a Mac and Linux,
+    not the Raspberry Pi: the owner, 2026-11-25, "Rasberry Pi is unecessary (it wont work well.)"): the pinned server fetched, its data folder made, certificates made, started, connected with
+    `face_db::setup`. Its rules:
+    - The packages come from conda-forge alone (`conda.anaconda.org/conda-forge`), each pinned by size and SHA-256
+      as published, and only the files named are taken out of them (`take`); never Anaconda's own channels
+      (`repo.anaconda.com`, "defaults": their terms bind commercial use), never `psql` or what only it needs
+      (readline is GPL). A pin is taken from the file downloaded once. Another address only from `FACE_TEST_CONDA`,
+      only `http://127.0.0.1:<port>`: never widen that. A pin of another major version of PostgreSQL needs the data
+      folders made with the old one upgraded: a change of its own.
+    - Everything of it is under `<root>/database` (`server`, `data`), which no installer, update or uninstall
+      deletes; `HOME/database-host.json` says where and which port, never a password.
+    - The administrator's password is made for the one preparing, given to `initdb` in a file deleted at once, and
+      never kept; after the preparing `pg_hba.conf` refuses the administrator from everywhere. It lets in only
+      `hostssl` with `scram-sha-256` from `samenet` (a test holds the lines).
+    - It runs whether the app runs or not: closing the app never stops it; it starts at the owner's sign-in (Windows:
+      this user's `Run` value "Face Recognizer database" with the program as `start-database`; a Mac: a launch agent
+      of this user, its label one of each folder of the app, so that a test copy never takes the app's, and the
+      ONLY thing that starts the server there: a server started beside it has the agent's start fail again and
+      again; Linux: an entry in this user's autostart folder, one of each folder of the app); the app
+      starts it again should it have ended (`keep`, the first look before the sync's). No administrator rights, no
+      service, no account. Setup's uninstaller stops it and takes the start away (`stop-database`, `[UninstallRun]`,
+      `[Registry]` `uninsdeletevalue`); its data stays.
+    - The packages' programs name the folder they were built in (conda's placeholder, `info/paths.json`): it is put
+      in as the folder they are in (`face_tools::database::put_folder`, conda's own way), and on a Mac the changed
+      programs are signed again ad hoc (`codesign`); Windows' packages are taken as they are. Without it a Mac's and
+      Linux's server finds no time zones.
+    - Where it is comes from its note (`place`): installed again into another folder, the app still finds it. A
+      database in the app's folder that the private folder doesn't know (installed again after the private folder
+      was lost) is taken on (`take_on`): only the app's own login's password changes, by single-user mode; one whose
+      folder is gone is forgotten at the owner's click (`forget`).
+    - Tried for real only in a throwaway machine (a fresh Windows virtual machine, a Mac test copy with its own
+      folders): it listens on the network and writes a start at sign-in.
 - **A device's name** (`devices.alias`, migration 14; `face_db::set_alias`, `name_device`, `device_names`). The
   owner's words (2026-11-23): "We need to be able to create device aliases (for a device id)", "in the UI",
   "unique constraint on device name - similar to an email account", "if 2 devices have the same name on first
@@ -369,7 +443,7 @@ device's library at the same time: each would send what the other took.
   - Its tests ask no location service: a test says what a system would (`location::told`), and the one
     example that does ask (`examples/where.rs`) is for trying a kind of system by hand and prints no place
     unless told to. Never print a device's coordinates in a log line or a check's output.
-- **Removing a device** (`face_home::blocked`, `HOME/blocked-devices.json`; Settings → Shared database, the route
+- **Removing a device** (`face_home::blocked`, `HOME/blocked-devices.json`; Settings → Your devices, the route
   `/api/db/device`). The owner's words (2026-11-22): "the settings let you remove devices that you dont want to
   see the data ONLY on your device. You should also be able to add devices back as well - per device", and "I
   dont want the removing devices to change database passwords or keys". So it is this device's own list, in
@@ -427,7 +501,16 @@ device's library at the same time: each would send what the other took.
     for models and data is `paths::app_root` (macOS and Linux: the user's own `FaceRecognizer` folder, where
     the installed app keeps the real library): a test copy of `FaceRecognizer` always gets `FACE_ROOT` and
     `FACE_HOME`.
-- **The installers.** The Windows one is `packaging/windows` (`FaceRecognizer.iss`, `build.ps1`): it never
+- **The licence at the first start** (`licence.rs`, the first stage of the first-run question; the owner,
+  2026-11-25: "Add accept / decline page at Mac first start on Mac / Linux / Pi"): where no installer asked for it
+  (a Mac, Linux, the Raspberry Pi; not Windows, whose Setup does), the app's own page shows `LICENSE` with Accept and
+  Decline before anything else; accepted is kept with the licence's SHA-256 (`HOME/licence.json`, asked again for
+  another text), declined ends the app. A download answer is never taken while the licence is asked about (a test).
+  A start that nobody watches (`--get`, `--no-get`, `FACE_UI=none` or `hidden`) isn't asked.
+- **The installers.** The Windows one is `packaging/windows` (`FaceRecognizer.iss`, `build.ps1`). It shows the
+  licence (`LICENSE`, as `build.ps1` gives it: Windows' line ends, a line broken only for the file's width joined to
+  the next, no word changed) on a page of its own first, and goes on only once it is accepted (the owner,
+  2026-11-25: "Setup should show the license page and accept / decline in the installer"). It never
   deletes or touches `models` or `data` (no `[UninstallDelete]`, no deleting code; its one `[InstallDelete]`
   takes away the FFmpeg an earlier Setup left in `runtime\`). It puts FFmpeg beside the program, not into
   `runtime\`: signed, it is no longer the pinned file, in `runtime\` only the pinned file counts as there, and
@@ -462,13 +545,54 @@ device's library at the same time: each would send what the other took.
   lock; nothing is sent to a device whose certificate isn't the database's; and only while the sync runs and
   is online (`Inner::peer_ready`). Its test has three devices in a schema named `t_...` that it makes and
   drops, never the shared one.
+- **Analyze** (`crates/face-server` `analyze.rs`, `analyze_tools.rs`, `speech.rs`; `face_db::analysis`;
+  `web/analyze.html`, `analyze.js`; the window's tab Ctrl+5, a page of the labeling tool's server at `/analyze`).
+  The owner's words (2026-11-25): "The Analyze tab should work like a regular LLM based UI - you should be able to
+  type in or say (voice support) anything related to the historical or current data related to ANY sensor on an
+  device, and and faces we are recording", "where possible - show historical trend charts", "I want analyze to
+  include all signals - everything", "nothing should slow down the FPS of the video when Analyze is running", and
+  of how: "lets it run its own queries? I dont want to hard code a bunch of queries inside the app for specific
+  scenarios - unless they are just for testing". So:
+  - The model writes its own SQL over the layer `analysis::layer` (flat tables over the shared database, documented
+    for the model by `LAYER_DOC`), with four tools: `sql`, `chart`, `gallery` and `now` (the devices' buses, through
+    the tracker's `/api/local/now`). Never add a query for a scenario. A new table of the shared database that
+    holds something worth asking about gets its place in the layer, in `LAYER_DOC` and in the layer's test
+    (`crates/face-db/tests/analysis.rs`, in a schema named `t_...`).
+  - A question runs only as `analysis::query` runs it: `BEGIN READ ONLY`, the statement time limit, `search_path`
+    `pg_temp` (the schema's own tables out of view: keys, logins, the change log and the app's log are never in
+    the layer), the owner's time zone and a row limit, on a connection of the answer's own that can only read.
+  - The model is Describe photo's (its server, its API key to that server only), with a model of Analyze's own
+    (`HOME/analyze.json`) and the context `analyze::CONTEXT`; with Share Describe all on, also the other computers'
+    servers of `describe::helpers`, when this one doesn't answer or is busy describing. Nothing else is asked.
+    A first answer given before any tool was used is set aside once and the model asked to look first (a model
+    given the long instructions otherwise sometimes answered from them alone, with readings it made up); a server
+    made to use a tool (`tool_choice` "required") was tried and wrote nothing but filler up to its limit, so it
+    isn't. The time goes with the question, never into the instructions (they stay the same, so the server keeps
+    them read). A tool call a server leaves in the words
+    (`<tool_call>`, JSON or Qwen's `<function=...>`) is read; any other text is words.
+  - The conversation lives in the page only (it is sent with each question); nothing of it is written anywhere.
+    What came from the rows is put into the page as text only (the answer's Markdown is read into elements by
+    the page, never handed to `innerHTML`).
+  - A chart shows all the history its question covers (the owner: "always make the charts include all the history
+    data"): one that would be cut is not drawn, and the model is told to group it by a longer stretch. A gallery
+    shows a page of pictures at a time with first, back, forward and last (the owner: "show X number of images at a
+    time - then go back and forward in the list"), only the page shown fetched.
+  - Pictures by content hash only (`/api/analyze/photo`, `trackerlink::photo_id`): this computer's own file, else
+    the device that has it (`Inner::from_peer`); made one at a time and kept in memory only.
+  - Speech (`speech.rs`, the owner's choice of a local model): Whisper base.en, pinned and checked as Florence's
+    files are, downloaded only at the owner's click (another address only from `FACE_TEST_HUGGINGFACE`, only
+    `http://127.0.0.1:<port>`); the default microphone listened to only between the owner's two clicks
+    (`listen::record_while`, `MAX_SECONDS` at most; a Mac never opens an iPhone's), the sound kept in memory and
+    dropped once made into words. Never written, never sent.
 
 ## Security rules
 
 (The modules named are in `crates/face-server` unless another crate is named: `guard.rs` and `http.rs` are the
 servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker, `label.rs` the labeling tool.)
 
-- The programs' servers listen on 127.0.0.1 only. The one exception is the peer service (`peer.rs`, with a shared
+- The programs' servers listen on 127.0.0.1 only. (PostgreSQL, where the owner had the app set the shared database up
+  on this computer, is a server of its own: on the network, `hostssl` and `scram-sha-256` from this computer's own
+  networks only, the administrator refused: `dbhost.rs`.) The one exception is the peer service (`peer.rs`, with a shared
   database, on by default there, Settings switch): LAN, TLS with the device's pinned certificate, HMAC-signed
   requests from the cluster key, original photos by content hash only, never a path or anything else; and
   the device's live camera as its tracker page shows it (`/stream`) with its readout (`/readout`, and as JSON parts
@@ -575,9 +699,22 @@ servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker,
   the browser reports for the frame's parent (`location.ancestorOrigins`).
 - `lmstudio.rs` changes another program's settings (LM Studio's `networkInterface` to 0.0.0.0, restarting its server
   on all interfaces, CORS left as LM Studio's own settings have it) and announces it on the local network: the owner's rule for every computer with this app and LM
-  Studio (2026-11-10); `FACE_LMSTUDIO=off` turns it off. Model downloads start only from a Settings button.
+  Studio (2026-11-10), and since 2026-11-25 only while this computer's switch is on (Settings, **Keep the model
+  servers here open to my other devices**, `lmstudio::keep_open`, `HOME/lmstudio.json`; the owner: "Add a Settings
+  switch for the LM Studio/Ollama/llama.cpp/vLLM upkeep"): off for a new copy, so a new user's programs are not
+  changed until they say so; on, the owner's devices; never synced or copied to another device.
+  `FACE_LMSTUDIO=off` turns it off whatever the switch says. Model downloads start only from a Settings button.
+- `servekeep.rs` does the same for the other kinds (the owner, 2026-11-25: "Yes, keep Ollama open to the network like
+  LM Studio", "same with llama.cpp and vLLM if they are installed"). They have no setting to change, so a server of
+  this user's that listens on this computer only is ended and started again exactly as it was started (program,
+  arguments, folder, environment, read through `sysinfo`), with OLLAMA_HOST or `--host` made 0.0.0.0; Ollama that its
+  own app runs, through its app. A server that doesn't answer on the network in its time is started again as it was
+  and not tried again while the app runs: never leave the owner's server off. A server whose start can't be read
+  (another user's, a system service) is never touched. It runs in LM Studio's upkeep loop, so `FACE_LMSTUDIO=off`
+  (every check sets it) turns it off as well as `FACE_KEEP_SERVERS=off`: a check never ends or starts the owner's
+  servers. Its tests are of the parsing only.
 - `hardware::ai_apps` asks 127.0.0.1's usual AI ports and the configured describe server (with that server's own key,
-  through `describe::server_models`). `lmsnet::lmstudio_network` (Settings → LM Studio on the network, only while the
+  through `describe::server_models`). `lmsnet::lmstudio_network` (Settings → Model servers on your other devices, only while the
   tab is open, cached a minute):
   - takes announced servers from mDNS (`mdns_services`: `_lmstudio._tcp`, or `_http._tcp` with `app=LM Studio`;
     their own port);
@@ -658,8 +795,20 @@ servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker,
   or an assembler is for developers and CI: what is built from source reaches users already built.
 - A new setting goes in `docs/SETTINGS.md` too (its section, default, what it is for; and in "What reaches the
   network" if it sends anything anywhere). A new environment variable goes in its table there.
-- A new option on the tracker or labeling page should also be listed in that page's `SettingsBridge.init` list,
-  so it shows in the Settings tab. Options the user changes should be remembered (`remember`/`store.set`).
+- A new option on the tracker, labeling or Analyze page should also be listed in that page's `SettingsBridge.init`
+  list, so it shows in the Settings tab. Options the user changes should be remembered (`remember`/`store.set`).
+  The Settings tab is grouped by what a setting is for, not by the page that holds it (the owner, 2026-11-25:
+  "reorganize it so that everything related is grouped together. Like all AI / LLM settings should go together and
+  be easy to recognize what each one does"): `web/app_ui.js` `LAYOUT` is its groups and their cards in a fixed order,
+  a page's section is the name of a card, and a card may hold several pages' settings (Location: the tracker's switch
+  and the labeling tool's location history). A setting goes into the card of what it is for; a new card goes into
+  `LAYOUT` (the pages test holds that every section a page names is there) and into `docs/SETTINGS.md` in the same
+  place. The model server is one, shared by Describe photo and Analyze (its fields never hide for the built-in
+  describer). No card is one kind of server's (the owner, the same day: "it might make more sense to list all the LLM
+  servers on the computer. We are not tied directly to LM Studio anymore"): Model servers on this computer lists every
+  kind found here, Model servers on your other devices every kind on each device (`/api/analyze/servers`, the list
+  Analyze chooses from), and what the app does for LM Studio alone (its upkeep, its shared models folder) is rows of
+  the first, shown only where LM Studio is installed.
 - Thresholds are **measured values** — don't change them without re-measuring on `data/`:
   `face-core` `faces.rs` (`REC_MODELS`: each recognition model's `match_at`, `auto` and `cluster`, which belong
   to the model and are measured with it by `rec_eval` on a copy of a library), `Q_ENROLL`, `Q_EXPR`, `MAX_TURN`,

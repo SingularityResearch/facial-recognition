@@ -1,17 +1,19 @@
 //! Everything a computer needs beside the programs, fetched by a program of the project's own: nothing has to
 //! be installed first, and nothing is used that isn't the pinned file (its size and SHA-256).
 //!
-//!     face-tools get [--root <the folder with models/ and data/>] [models] [runtime] [mediapipe] [ffmpeg] [heif]
+//!     face-tools get [--root <the folder with models/ and data/>] [models] [runtime] [mediapipe] [ffmpeg] [heif] [postgres]
 //!     face-tools have [--root <folder>]
 //!     face-tools list
 //!
 //! `get` with nothing named fetches all of them; what is there and right is left alone. `have` only says
 //! what is there, and `list` what would be fetched, as JSON. The models go to `<root>/models`, MediaPipe's web runtime to `<root>/models/mediapipe-web`,
 //! the model runtime, FFmpeg and the HEIC libraries to `<root>/runtime`, where the programs look for them.
-//! `heif` builds libheif and libde265 from their source, which needs CMake and a C++ compiler.
+//! `heif` builds libheif and libde265 from their source, which needs CMake and a C++ compiler. `postgres`
+//! (PostgreSQL with pgvector, into `<root>/database/server`, for a computer that holds the shared database
+//! itself) only when named: the app fetches it at its owner's click.
 //!
 //! What is sent: a request for each file, to its publisher (Hugging Face, Google's model storage, GitHub,
-//! the host of Microsoft's runtime packages, the npm registry), as "model-fetch". Nothing about the user or the computer.
+//! the host of Microsoft's runtime packages, the npm registry, conda-forge for `postgres`), as "model-fetch". Nothing about the user or the computer.
 
 use std::{
     io::Write,
@@ -25,7 +27,7 @@ use face_tools::{
     parts,
 };
 
-const PARTS: [&str; 5] = ["models", "runtime", "mediapipe", "ffmpeg", "heif"];
+const PARTS: [&str; 6] = ["models", "runtime", "mediapipe", "ffmpeg", "heif", "postgres"];
 
 /// A line that is written over as a download goes on, a whole percent at a time.
 struct Shown {
@@ -209,6 +211,20 @@ fn get(root: &Path, wanted: &[String]) -> Result<(), String> {
                 println!("The HEIC libraries weren't built (HEIC photos can't be read without them): {}", e.why)
             }
             Err(e) => return Err(format!("The HEIC libraries: {}", e.why)),
+        }
+    }
+    // (named only: the server is for the computer that holds the shared database)
+    if wanted.iter().any(|w| w == "postgres") {
+        let server = face_tools::database::server(system)
+            .ok_or(format!("There is no pinned PostgreSQL with pgvector for this kind of computer ({system}) yet."))?;
+        let folder = face_tools::database::folder(root);
+        let what = format!("PostgreSQL {} with pgvector {}", server.postgres, server.pgvector);
+        let got = face_tools::database::get(server, &folder, &mut |d, t| shown.at(d, t, &what));
+        shown.end();
+        match got {
+            Ok(true) => println!("{what}: put into {}", folder.display()),
+            Ok(false) => println!("{what}: here"),
+            Err(e) => return Err(format!("{what}: {}", e.why)),
         }
     }
     Ok(())

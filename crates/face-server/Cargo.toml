@@ -13,7 +13,7 @@ default = ["import", "fetch", "sync"]
 fetch = ["dep:face-tools"]
 # Reading photos and videos into the library (and showing a photo): this builds libjpeg-turbo with the program
 # and uses the decoders beside it. A phone's app is built without: it tracks, it doesn't keep a photo library.
-import = ["dep:face-import", "dep:ureq", "dep:cpal", "sound", "dep:objc2-core-audio", "dep:objc2-core-foundation"]
+import = ["dep:face-import", "dep:ureq", "dep:cpal", "sound", "dep:objc2-core-audio", "dep:objc2-core-foundation", "dep:sysinfo"]
 # Measuring a stretch of sound (sound.rs, soundheard.rs): on a computer what its audio interfaces play and hear,
 # on a phone what its own page heard with the microphone. The phones' app has this without the sound library.
 sound = ["dep:rustfft"]
@@ -50,6 +50,10 @@ tokio-postgres = "0.7"
 # Music's listening (the computers only): every audio interface's sound; and a sound's spectrum (phones too)
 cpal = { version = "0.18.2", optional = true }
 rustfft = { version = "6.4", optional = true }
+# the model servers of the other kinds kept open to the owner's devices (servekeep.rs, the computers only): a
+# running server's program, arguments, folder and environment, to start it again just so. Its "system" part
+# only; it asks no network (its source looked through when it went in, 2026-11-25)
+sysinfo = { version = "=0.37.2", default-features = false, features = ["system"], optional = true }
 # asking a describe server (LM Studio or any server with its API), also over plain http on this computer
 ureq = { version = "3.5", default-features = false, features = ["rustls"], optional = true }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "macros", "time", "signal"] }

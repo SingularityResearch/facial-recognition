@@ -37,7 +37,8 @@ use crate::{
 };
 
 /// The routes of LM Studio's settings that are sent something.
-pub(crate) const POSTS: [&str; 3] = ["/api/lmstudio/share", "/api/lmstudio/distributed", "/api/lmstudio/get"];
+pub(crate) const POSTS: [&str; 4] =
+    ["/api/lmstudio/share", "/api/lmstudio/distributed", "/api/lmstudio/get", "/api/lmstudio/keep"];
 
 impl Labeler {
     /// `/api/lmstudio`: LM Studio on this computer, the models it lacks, and the distributed setting. It asks
@@ -51,6 +52,7 @@ impl Labeler {
         };
         st["missing"] = json!(missing);
         st["distributed"] = json!(hardware::distributed(&self.home));
+        st["keep_open"] = json!(keep_open(&self.home));
         st
     }
 
@@ -65,6 +67,12 @@ impl Labeler {
                     std::thread::spawn(move || publish(&home));
                     Response::json(json!({"ok": true, "shared": share_status(&self.home)}))
                 }),
+            // keep this computer's model servers open to the owner's other devices (off for a new copy)
+            "/api/lmstudio/keep" => {
+                save_conf(&self.home, "keep_open", json!(body.get("on") == Some(&Value::Bool(true))))
+                    .map_err(asked)
+                    .map(|()| Response::json(json!({"ok": true, "keep_open": keep_open(&self.home)})))
+            }
             // "Fully distributed system": every adapter, any network
             "/api/lmstudio/distributed" => set_distributed(&self.home, body.get("on") == Some(&Value::Bool(true)))
                 .map_err(asked)
@@ -777,13 +785,38 @@ pub fn announce(home: &Path) {
     });
 }
 
-/// One round of the upkeep: nothing without LM Studio here.
+/// Whether this computer's model servers are kept open to the owner's other devices: this computer's own
+/// setting (Settings, Model servers on this computer), off for a new copy. The owner's words (2026-11-25): "Add a
+/// Settings switch for the LM Studio/Ollama/llama.cpp/vLLM upkeep", after "these have to be configurable and
+/// useable from a newly downloaded application": a new user's programs are not changed until they say so.
+pub fn keep_open(home: &Path) -> bool {
+    conf(home).get("keep_open") == Some(&json!(true))
+}
+
+/// The switch's first value, once, on a device that has none yet (the first start of the version that brought
+/// it): on where the device has a shared database already, whose upkeep went on before the switch existed (the
+/// owner, 2026-11-25: "keep what we have configured how it is on the release build"), off for a new copy. Written
+/// out, so that a database set up later changes nothing of it.
+pub fn settle_keep_open(home: &Path) {
+    if !conf(home).contains_key("keep_open") {
+        let _ = save_conf(home, "keep_open", json!(home.join("database.json").is_file()));
+    }
+}
+
+/// One round of the upkeep: nothing without LM Studio here. LM Studio is kept serving on every interface and
+/// announced only while the switch is on (its models go on into the shared models folder, which has a setting
+/// of its own).
 pub fn keep_once(home: &Path) {
     if lms_path().is_none() && config_path().is_none() {
         return;
     }
-    serve_everywhere(home);
-    announce(home);
+    if keep_open(home) {
+        serve_everywhere(home);
+        announce(home);
+    } else if let Some((_, announcer)) = held(&ACTIVE).take() {
+        announcer.stop();
+        *held(&ANNOUNCED) = Some("not announced: Keep model servers open is off".to_string());
+    }
     let getting = held(&GET).as_ref().is_some_and(|get| get.get("running") == Some(&json!(true)));
     if !getting {
         let home = home.to_path_buf();
@@ -798,11 +831,17 @@ pub fn keep(home: &Path) {
     if off {
         return;
     }
+    settle_keep_open(home);
     let home = home.to_path_buf();
     let _ = std::thread::Builder::new().name("lmstudio-keeper".into()).spawn(move || {
         std::thread::sleep(Duration::from_secs(20)); // after the start: while the models load, checks time out
         loop {
             keep_once(&home);
+            // and every other kind of model server here, kept open as LM Studio is (servekeep.rs), with the
+            // same switch
+            if keep_open(&home) {
+                crate::servekeep::keep_once(&home);
+            }
             std::thread::sleep(Duration::from_secs(60));
         }
     });
@@ -1329,6 +1368,32 @@ mod tests {
         set_share(&home, "").unwrap();
         assert!(share(&home).is_none() && hardware::distributed(&home));
         assert_eq!(std::fs::read_to_string(home.join(CONF)).unwrap(), r#"{"share": "", "distributed": true}"#);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn keeping_the_model_servers_open_is_off_for_a_new_copy_and_stays_on_where_it_went_on_before() {
+        let dir = std::env::temp_dir().join(format!("face-keep-open-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // a new copy: off, written once, and a database set up later changes nothing of it
+        let new = dir.join("new");
+        std::fs::create_dir_all(&new).unwrap();
+        settle_keep_open(&new);
+        assert!(!keep_open(&new));
+        std::fs::write(new.join("database.json"), "{}").unwrap();
+        settle_keep_open(&new);
+        assert!(!keep_open(&new), "decided once");
+        // a device that had a shared database before the switch: its upkeep goes on as it did
+        let old = dir.join("old");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("database.json"), "{}").unwrap();
+        std::fs::write(old.join(CONF), r#"{"share": "", "distributed": true}"#).unwrap();
+        settle_keep_open(&old);
+        assert!(keep_open(&old) && hardware::distributed(&old), "on, and its other settings kept");
+        // the owner's own choice stands
+        save_conf(&old, "keep_open", json!(false)).unwrap();
+        settle_keep_open(&old);
+        assert!(!keep_open(&old));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.8.0 (2026-11-26)
+
+- **New: the Analyze tab.** Ask in your own words, typed or spoken, about anyone or any signal, now or over time.
+  The language model of Describe photo writes its own read-only SQL over your shared database's records, draws
+  trend charts with all the history the question covers, and shows the pictures it finds a page at a time, by
+  relevance or by time. Speech is made into words on the computer itself (a speech model downloaded when you ask
+  for it); the conversation is never stored.
+- **New: Setup.** A **Setup** button in the window's tab bar shows what is set up on this device and what is left:
+  your photos, your devices and their shared database, the model servers for Describe photo and Analyze, the
+  optional keys, your network. What is set up is marked done and left as it is; each step it can do is a button
+  that says what it does. It opens by itself on a new install, and once after an update to say what the update
+  changed on that device.
+- **The setup guide is in the app.** Setup's **Guide** shows it, and a button beside each step opens it at that
+  step. The same guide is [docs/SETUP.md](docs/SETUP.md).
+- **New: a shared database on this computer, at one button.** Setup, Your devices, **Set up a new one on this
+  computer** (Windows, a Mac and Linux): the app downloads PostgreSQL with pgvector (from conda-forge, each package
+  checked by its size and SHA-256), makes the database with certificates of your own, starts it and connects. No
+  administrator rights, no service, no account. It keeps running when the app is closed and starts again when you
+  sign in. Installed again, the app finds it; with a lost private folder, **Take it on** connects to it again.
+- **Connect prepares a new server by itself.** Given another server's administrator login once, the app makes its
+  own login, the database, pgvector and the tables, registers your certificate authority there, and keeps only its
+  own login. Settings makes the server's certificates under an authority of yours, with the lines its settings need.
+- **The licence is shown first.** Windows Setup shows it on a page of its own; on a Mac, Linux and a Raspberry Pi
+  the app shows it at its first start. Accept to go on; declining ends Setup or the app.
+- **Settings are grouped by what each one is for,** with a row of buttons at the top for the groups. All the AI
+  settings are together; **Model servers on this computer** lists every kind found here (LM Studio, Ollama,
+  llama.cpp, vLLM), **Model servers on your other devices** every kind on each device.
+- **Keeping this computer's model servers open to your other devices is a switch now** (off for a new install; on
+  where a shared database was set up before), and it covers Ollama, llama.cpp and vLLM as well as LM Studio.
+- **Fixed: face recognition didn't start on a Windows computer without Microsoft's Visual C++ runtime.** The app
+  carried the runtime but Windows didn't find it; it does now.
+- The privacy policy was revised (25 November 2026): the database the app can set up on your computer, and what
+  it downloads for it.
+
 ## 2.7.0 (2026-11-25)
 
 - **New: a history of every signal, for analysis.** A device can keep what it reads in your shared database:

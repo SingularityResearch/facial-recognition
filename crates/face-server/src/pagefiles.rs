@@ -13,8 +13,10 @@ macro_rules! built {
 }
 
 /// (name below the pages' folder, the file as it was when the program was built)
-const BUILT: [(&str, &[u8]); 18] = built![
+const BUILT: [(&str, &[u8]); 22] = built![
     "app_ui.html",
+    "analyze.html",
+    "analyze.js",
     "app_ui.js",
     "ask.js",
     "cameras_ui.html",
@@ -26,6 +28,8 @@ const BUILT: [(&str, &[u8]); 18] = built![
     "page_store.js",
     "place.js",
     "settings_bridge.js",
+    "setup.html",
+    "setup.js",
     "signals.js",
     "signals_chart.css",
     "signals_chart.js",

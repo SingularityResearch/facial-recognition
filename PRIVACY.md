@@ -27,6 +27,7 @@ macOS, Linux, the Raspberry Pi, Android and iPhone.
 | **Every signal over time** (the history), only while you switch it on for that device | Keeps a record of what the device reads, for you to analyse later: every 10 seconds one row for the device itself (how it works, what its sound interfaces hear) and one for each named person in view (recognition, expression, face, voice, body and hands, the pulse estimate and breathing rate, and how far each was from that person's usual), each signal as its average, lowest and highest in that time. Numbers and short words only: never a picture or a sound. A face nobody is named for gets no row of its own. On a computer you can have your photos and videos added to it: one row for each named person in a picture, at the picture's own time, with how the face looks and how many people the picture has. | Only in your own shared database (without one nothing is kept), and for as many days as you set on that device (90 unless you change it). Rows the database could not take yet wait on the device and are sent when it is back. |
 | **Music that plays** (computers), only while you switch the log on | Notes the song's name and numbers that describe the sound. | On the device. |
 | **Photo descriptions** | A vision model on your own computer describes a photo and reads its text. | On the device. |
+| **Questions you ask in Analyze** | A language model answers them from the records above, with charts and the pictures it finds. A spoken question is made into words on the computer itself. | In the page only, while it is open: never stored. The sound of a spoken question is never kept. |
 | **Keys and passwords you enter** (for the services below, for your database) | Used to reach that service. | Protected on the device for your user account. |
 | **Settings** | Remembered. | On the device. |
 
@@ -59,7 +60,9 @@ for your user account (keys, settings, descriptions, logs). On a phone both are 
 **Your own shared database (optional).** If you set one up, your devices share their faces, names, labels and the
 other records above through a PostgreSQL database on a server of your own. The connection is encrypted (TLS,
 checked against your server's own certificate authority). Keys you enter are stored there only encrypted with a
-passphrase that stays on your devices. A device joins the database when you let it in from a device that is
+passphrase that stays on your devices. The app can set that database up on one of your computers itself (Setup,
+"Set up a new one on this computer"): it then downloads PostgreSQL with pgvector from conda-forge, at your click
+only, and the database's files stay on that computer, in the app's folder. A device joins the database when you let it in from a device that is
 already in it (one shows a code, the other scans it): the database's login and that passphrase then go from the
 one device to the other over your local network, encrypted. We have no access to that database: it is yours, and you are the one who
 runs and secures it.
@@ -87,6 +90,7 @@ with that is under its own privacy policy.
 | You click **Check for updates** | A question for the latest version. No data of yours. | GitHub |
 | You click **Web search** on a face (off until you enter your own keys) | That one face, and the photo it is in. | Amazon (Rekognition) and Google (Cloud Vision), under your own accounts with them |
 | You point **Describe photo** at a server on another computer | Each photo that is described. | That server, which you chose |
+| You ask a question in **Analyze** while its language model is on another computer | The question, and what the model reads of your records to answer it (names, readings, times, places, songs, descriptions). | That server, which you chose (with Share Describe all on, also your own other computers' servers) |
 | You switch on **Share Describe all with other computers** (with a shared database) | The photos that Describe all shares out. | Your own other computers' describe servers (LM Studio, Ollama, llama.cpp or vLLM), at the addresses they gave your shared database |
 | You connect **Spotify** | A question for your liked songs. | Spotify, under your own account |
 | You click a download in Settings (a describe model) | A download. No data of yours. | Hugging Face, LM Studio's sources |

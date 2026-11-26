@@ -146,6 +146,15 @@ fn run() -> Result<(), String> {
     if args.peek().map(String::as_str) == Some("tracker-child") {
         return app::tracker_child(args.skip(1));
     }
+    // at the owner's sign-in: the shared database held on this computer started, nothing else
+    if args.peek().map(String::as_str) == Some("start-database") {
+        let named: Vec<String> = args.skip(1).collect();
+        let at = |flag: &str| named.iter().position(|a| a == flag).and_then(|i| named.get(i + 1)).cloned();
+        let root = at("--root").map_or_else(paths::root, PathBuf::from);
+        let home = at("--home").map_or_else(paths::home, PathBuf::from);
+        face_server::dbhost::at_sign_in(&root, &home);
+        return Ok(());
+    }
     if args.peek().map(String::as_str) == Some("app") {
         return the_app(args.skip(1));
     }

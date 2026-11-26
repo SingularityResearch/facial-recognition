@@ -149,6 +149,17 @@ pub fn devices() -> (Map<String, Value>, Map<String, Value>) {
     (part("devices"), part("decisions"))
 }
 
+/// What every device's bus says now, as the tracker's process gathers it for Analyze: {nodes: [{id, name, me,
+/// whole, said}]} (each node's tree, and what it said of who is in view and their readings in the next `wait`).
+/// No nodes while the tracker is in no process of its own or doesn't answer.
+pub fn now(wait: Duration) -> Value {
+    let ms = wait.as_millis().clamp(500, 6000) as u64;
+    let got = tracker().and_then(|port| ask(port, &format!("/api/local/now?wait={ms}"), None, wait + TIMEOUT, true));
+    got.filter(|(status, _)| *status == 200)
+        .and_then(|(_, body)| serde_json::from_slice(&body).ok())
+        .unwrap_or_else(|| serde_json::json!({"nodes": []}))
+}
+
 /// The port the tracker's process serves the Cameras page on besides its own, or None.
 pub fn cameras_port() -> Option<u16> {
     let port = tracker().and_then(|port| asked(port, "/api/local/cameras"))?["port"].as_u64()?;

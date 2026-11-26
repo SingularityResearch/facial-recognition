@@ -72,7 +72,19 @@ try {
         Where-Object { Test-Path $_ } | Select-Object -First 1
     if (-not $iscc) { throw "Inno Setup 6 isn't installed (ISCC.exe not found)" }
     $dist = if ($Output) { $Output } else { Join-Path $rust "target\dist" }
-    $defines = @("/DAppVersion=$number", "/DWebView2=$bootstrapper", "/DOutput=$dist", "/Q")
+    # the licence for Setup's licence page, with Windows' line endings (the file in the repository has the other
+    # kind), and a line that was broken only for the file's width (90 characters or more) going on into the next,
+    # so that Setup's narrower box wraps the words itself; short lines (the heading) and list items stay lines
+    New-Item -ItemType Directory -Force $dist | Out-Null
+    $license = Join-Path $dist "LICENSE.txt"
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($line in (Get-Content (Join-Path $rust "LICENSE"))) {
+        $previous = if ($lines.Count) { $lines[$lines.Count - 1] } else { "" }
+        $goesOn = $previous.Length -ge 90 -and $line.Trim() -and $line.Trim() -notmatch '^(-|\(\w\)|\d+\.)\s'
+        if ($goesOn) { $lines[$lines.Count - 1] = $previous + " " + $line.Trim() } else { $lines.Add($line) }
+    }
+    [IO.File]::WriteAllText($license, (($lines -join "`r`n") + "`r`n"))
+    $defines = @("/DAppVersion=$number", "/DWebView2=$bootstrapper", "/DOutput=$dist", "/DLicense=$license", "/Q")
     if ($Trial) { $defines += "/DTrial=1" }
     $program = Join-Path $rust "target\release\FaceRecognizer.exe"
     $signer = Join-Path $PSScriptRoot "sign.ps1"

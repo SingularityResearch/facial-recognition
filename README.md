@@ -95,7 +95,15 @@ project's own. To our knowledge no other system puts these together, and we rega
   - A Mac Studio (M5 Ultra) describes a photo in under a second.
   - The Radeon 8060S PCs take about 3 s with the most detailed model, Qwen 3.6 35B-A3B.
   - The 8 GB laptops are fastest with Gemma 4 E4B, under a second.
-- **Shared database** (optional): PostgreSQL with pgvector on a server of your own, over TLS; keys are encrypted
+- **Analyze**: ask in your own words, typed or spoken, about anyone or any signal, now or over time ("when did we
+  last see Ann, and what were her signals?", "all the pictures of Ann and Ben together"). The language model of
+  Describe photo writes its own read-only SQL over your shared database's records, draws trend charts and shows the
+  pictures it finds, each with what was read from it; every step shows its SQL. Speech is made into words on the
+  computer itself (Whisper, downloaded when you ask for it), and the conversation is never stored.
+- **Shared database** (optional): PostgreSQL with pgvector on a server of your own, over TLS checked against a
+  certificate authority of yours that the app makes; the app can install and run it on this computer itself (Windows,
+  a Mac and Linux, one button in Setup, no administrator rights), or, given another server's administrator login once,
+  prepare that server itself and keep only a login of its own; keys are encrypted
   on the device before they go there. A new phone or computer joins by a code: one device shows it, the other
   scans it (**Join a new device** in Face tracking → Controls), either way round.
 - **Device to device**: your devices publish to each other directly what each has, what is switched on, its
@@ -114,9 +122,16 @@ Download the file for your computer from the [latest release](../../releases/lat
 | Raspberry Pi 4 or 5 with a 64-bit system | `FaceRecognizer-raspberrypi-arm64.run` |
 | Android phone (64-bit ARM, Android 8 or later) | `FaceRecognizer-android-arm64.apk`: the tracker as an app; it joins your shared database by scanning a code another device shows |
 
+Setting everything up from scratch, step by step (a shared database for several devices, model servers for
+Describe photo and Analyze, keys, your network): [docs/SETUP.md](docs/SETUP.md). The app carries the same guide:
+its **Setup** button shows what is set up on the device and what is left, does each step it can at a button you
+press, and opens the guide at the step you are on.
+
 No administrator rights are needed. The installers bring what the app runs with; nothing has to be installed
-beforehand. At its first start the app asks before it downloads the face models (79 MB), each file checked by
-its size and SHA-256. An update or uninstall never touches your models or your data.
+beforehand. The licence is shown first and goes on only once you accept it (on Windows by Setup, on a Mac, Linux
+and a Raspberry Pi at the app's first start). At its first start the app asks before it downloads the face models
+and MediaPipe's runtime (about 90 MB), each file checked by its size and SHA-256. An update or uninstall never
+touches your models or your data.
 
 The app has a window of its own on every system. On Windows and on a Mac it is the system's own web view; on
 Linux and the Raspberry Pi it is a Chromium window (Chromium, Chrome, Edge or Brave: Raspberry Pi OS brings

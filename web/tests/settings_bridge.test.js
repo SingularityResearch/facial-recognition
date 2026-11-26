@@ -31,13 +31,13 @@ function page({ ancestor = "http://127.0.0.1:8764", alone = false } = {}) {
   return { send, posted, key, get value() { return value; }, parent, bridge: ctx.SettingsBridge };
 }
 
-test("Ctrl+1 to Ctrl+4 pressed inside a tab go to the app window's tab page, and only there", () => {
+test("Ctrl+1 to Ctrl+5 pressed inside a tab go to the app window's tab page, and only there", () => {
   const p = page();
-  assert.deepStrictEqual(["1", "2", "3", "4"].map(k => p.key(k)), [true, true, true, true]);
+  assert.deepStrictEqual(["1", "2", "3", "4", "5"].map(k => p.key(k)), [true, true, true, true, true]);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(p.posted.map(m => [m.msg.fs, m.msg.key, m.origin]))),
-                         ["1", "2", "3", "4"].map(k => ["key", k, "http://127.0.0.1:8764"]));
-  assert.deepStrictEqual([p.key("5"), p.key("a"), p.key("1", { ctrlKey: false }), p.key("1", { altKey: true })], [false, false, false, false]);
-  assert.strictEqual(p.posted.length, 4);                           // other keys stay with the page
+                         ["1", "2", "3", "4", "5"].map(k => ["key", k, "http://127.0.0.1:8764"]));
+  assert.deepStrictEqual([p.key("6"), p.key("a"), p.key("1", { ctrlKey: false }), p.key("1", { altKey: true })], [false, false, false, false]);
+  assert.strictEqual(p.posted.length, 5);                           // other keys stay with the page
   const alone = page({ alone: true });                              // opened on its own: the browser's shortcut
   assert.strictEqual(alone.key("1"), false);
   const framed = page({ ancestor: "https://evil.example" });        // framed by another site: nothing is told

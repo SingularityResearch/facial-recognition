@@ -250,6 +250,33 @@ pub fn find_library(root: &Path) -> Option<PathBuf> {
     [beside, Some(root.join("runtime").join(library_name()))].into_iter().flatten().find(|p| p.is_file())
 }
 
+/// The Visual C++ runtime's libraries that ONNX Runtime's library names (`face_tools::parts::VC_RUNTIME`),
+/// in the order they name each other.
+#[cfg(windows)]
+pub const VC_RUNTIME: [&str; 4] = ["vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll"];
+
+/// The Visual C++ runtime's libraries shipped beside the model runtime's, loaded by their own path. Windows looks
+/// for a library that another one names in the program's folder and the system's, never in the folder of the
+/// library that names it, so the copies beside it were found only where the Visual C++ runtime is installed
+/// anyway: on a fresh Windows 11 the model runtime didn't load ("LoadLibraryExW failed", 2026-11-25). Loaded
+/// first, they are the ones it finds. One that isn't there (a runtime named by `FACE_ORT_LIB`) is left to the
+/// system.
+#[cfg(windows)]
+fn vc_runtime_beside(library: &Path) -> std::result::Result<(), String> {
+    for name in VC_RUNTIME {
+        let file = library.with_file_name(name);
+        if !file.is_file() {
+            continue;
+        }
+        // SAFETY: Microsoft's own runtime libraries, shipped with the model runtime; they stay loaded for the
+        // life of the process, as the model runtime does
+        let loaded = unsafe { libloading::Library::new(&file) }
+            .map_err(|e| format!("{} couldn't be loaded: {e}", file.display()))?;
+        std::mem::forget(loaded);
+    }
+    Ok(())
+}
+
 fn env(library: &Path) -> Result<&'static Environment> {
     ENV.get_or_init(|| {
         // One pool of worker threads for every model. Left to itself each model gets a pool of its own, and
@@ -264,6 +291,8 @@ fn env(library: &Path) -> Result<&'static Environment> {
         // And before anything of it runs, its telemetry is switched off (`no_telemetry`): the programs do that
         // at their start; here it is made sure of.
         no_telemetry();
+        #[cfg(windows)]
+        vc_runtime_beside(library)?;
         #[cfg(not(target_os = "ios"))]
         let builder = ort::init_from(library)
             .map_err(|e| format!("The model runtime couldn't be loaded from {}: {e}", library.display()))?;

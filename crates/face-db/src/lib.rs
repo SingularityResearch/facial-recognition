@@ -6,11 +6,13 @@
 //! writing side so far: the schema's migrations, and a device's own row with its heartbeat. `join` is how a
 //! new device gets the login from one that has it, and `setup` keeps it.
 
+pub mod analysis;
 pub mod join;
 pub mod kept;
 pub mod location;
 pub mod members;
 pub mod peer;
+pub mod servercert;
 pub mod signals;
 
 use std::{path::Path, sync::Arc, time::Duration};
@@ -41,6 +43,7 @@ const Q_ENROLL: f64 = 0.30;
 const IGNORE: &str = "#ignore";
 
 /// This device's database settings (`HOME/database.json`).
+#[derive(Clone)]
 pub struct Settings {
     pub host: String,
     pub port: u16,
@@ -272,6 +275,8 @@ async fn open(s: &Settings) -> Result<Client> {
             let refused = [SqlState::INVALID_PASSWORD, SqlState::INVALID_AUTHORIZATION_SPECIFICATION];
             if e.code().is_some_and(|code| refused.contains(code)) {
                 format!("{LOGIN_REFUSED}: {e}")
+            } else if e.code() == Some(&SqlState::INVALID_CATALOG_NAME) {
+                format!("{NO_DATABASE}: {e}")
             } else {
                 format!("The shared database can't be reached: {e}")
             }
@@ -283,6 +288,8 @@ async fn open(s: &Settings) -> Result<Client> {
 }
 
 const LOGIN_REFUSED: &str = "The shared database refused this device's login";
+/// (the server answered: there is no database of that name on it)
+const NO_DATABASE: &str = "The server has no database of that name";
 
 /// Whether an error of connecting says that the server answered and refused this device's login (its
 /// password was changed, or its role taken away), as opposed to a server that can't be reached. A device
@@ -628,8 +635,18 @@ use face_files::protect::{protect, write_private};
 /// and hand over an authority of its own); take the server's certificate authority from its `server_ca`
 /// table; keep the settings with it in `HOME/database.json`, so that every later connection checks the
 /// server. The settings as kept.
+///
+/// A server that isn't set up for the app yet is prepared by it (the owner's words, 2026-11-25: "Make Connect
+/// prepare a new server by itself - if one does not exist", "anything we did here in our tests - the app or app
+/// installer should be able to do for the user"). Before anything on it is changed, the server must show a
+/// certificate from the authority this device made or was given (`servercert`): that is what every device will
+/// check it with. With the server's administrator login, the app makes its own login (named as its schema, not an
+/// administrator, with a password of its own making), the database, pgvector and the schema; with the app's own
+/// login, what that login may make. Then the tables, and the authority goes into `server_ca`. Only the app's own
+/// login is kept, never the administrator's; and the administrator's login is refused for a server that is set up
+/// already, whose login is in use by its devices.
 pub async fn setup(join: &join::Login, home: &Path) -> Result<Settings> {
-    let first = Settings {
+    let given = Settings {
         host: join.host.clone(),
         port: join.port,
         dbname: join.dbname.clone(),
@@ -638,27 +655,286 @@ pub async fn setup(join: &join::Login, home: &Path) -> Result<Settings> {
         ca: String::new(), // none yet: `open` then insists on channel binding
         schema: join.schema.clone(),
     };
-    let client = open(&first).await.map_err(|e| format!("Couldn't log in: {e}"))?;
-    let e = |e: tokio_postgres::Error| format!("Couldn't read the server's certificate authority: {e}");
-    client.batch_execute(&format!("SET search_path = {}, public", first.schema)).await.map_err(e)?;
-    let there: bool = client.query_one("SELECT to_regclass('server_ca') IS NOT NULL", &[]).await.map_err(e)?.get(0);
-    let pem: Option<String> = if there {
-        client.query_opt("SELECT pem FROM server_ca WHERE id = 1", &[]).await.map_err(e)?.map(|r| r.get(0))
-    } else {
-        None
+    if !schema_name(&given.schema) {
+        return Err("The schema's name may have only lower-case letters, digits and _.".to_string());
+    }
+    // 1. logged in: any certificate, the login itself proving whose server it is. A database not made yet is
+    //    made from the server's own first one, by its administrator.
+    let (client, made_yet) = match open(&given).await {
+        Ok(c) => (c, true),
+        Err(e) if e.starts_with(NO_DATABASE) => {
+            let first = Settings { dbname: "postgres".to_string(), ..given.clone() };
+            (open(&first).await.map_err(|e| format!("Couldn't log in: {e}"))?, false)
+        }
+        Err(e) => return Err(format!("Couldn't log in: {e}")),
     };
-    let Some(pem) = pem.filter(|p| p.contains("BEGIN CERTIFICATE")) else {
-        return Err("The server has no certificate authority in its server_ca table: ask its administrator to add it \
-                    so this device can check the server."
-            .to_string());
+    let admin = superuser(&client).await?;
+    // 2. a server set up already: its authority, as every device that joins takes it
+    if made_yet && let Some(pem) = registered_ca(&client, &given.schema).await? {
+        if admin {
+            return Err(already_set_up(&given.schema));
+        }
+        return keep(home, &given, pem);
+    }
+    if !made_yet && !admin {
+        return Err(format!(
+            "The server has no database {}, and this login can't make it: Connect once with the server's \
+             administrator login (user postgres), and the app prepares the server itself.",
+            given.dbname
+        ));
+    }
+    // 3. a new server: it must show a certificate from this device's authority before anything is changed
+    let folder = home.join(servercert::FOLDER);
+    let ca = servercert::authority(home).ok_or(
+        "This server isn't set up for Face Recognizer yet, and this device has no certificate authority to give it: \
+         make the server's certificates first (Certificates for the database server, above), put them on the server, \
+         and Connect again.",
+    )?;
+    let checked = Settings {
+        ca: ca.clone(),
+        dbname: if made_yet { given.dbname.clone() } else { "postgres".into() },
+        ..given.clone()
     };
-    let kept = serde_json::json!({"host": first.host, "port": first.port, "dbname": first.dbname, "user": first.user,
-                                  "schema": first.schema, "password": protect(&first.password)?, "ca": pem});
+    if let Err(e) = open(&checked).await {
+        return Err(format!(
+            "The server doesn't show a certificate from this device's certificate authority yet: put server.crt and \
+             server.key from {} on the server as setup-the-server.txt there says, restart PostgreSQL, and Connect \
+             again. ({})",
+            folder.display(),
+            e.lines().next().unwrap_or("")
+        ));
+    }
+    // 4. the app's own login, database, pgvector and schema (the administrator makes them), then the tables
+    let app = if admin { prepare_as_admin(&client, &checked, &given, home).await? } else { given.clone() };
+    drop(client);
+    let mut own = open(&Settings { ca: ca.clone(), ..app.clone() })
+        .await
+        .map_err(|e| format!("The app's own login couldn't log in: {e} (pg_hba.conf needs a hostssl line for it)"))?;
+    prepare_as_owner(&mut own, &app).await?;
+    // 5. the authority, registered for every device to take
+    own.execute(&format!("INSERT INTO {}.server_ca VALUES (1, $1) ON CONFLICT (id) DO NOTHING", app.schema), &[&ca])
+        .await
+        .map_err(|e| format!("The server's certificate authority couldn't be registered: {e}"))?;
+    match registered_ca(&own, &app.schema).await? {
+        Some(pem) if pem.trim() == ca.trim() => {
+            let kept = keep(home, &app, pem);
+            if kept.is_ok() {
+                let _ = std::fs::remove_file(home.join(PREPARING));
+            }
+            kept
+        }
+        _ => Err("The server has another certificate authority registered already: Connect with the login its \
+                  devices use, or join from one of them with a code."
+            .to_string()),
+    }
+}
+
+/// Keeps the login and the server's authority in `HOME/database.json`: every later connection checks the server.
+fn keep(home: &Path, s: &Settings, pem: String) -> Result<Settings> {
+    let kept = serde_json::json!({"host": s.host, "port": s.port, "dbname": s.dbname, "user": s.user,
+                                  "schema": s.schema, "password": protect(&s.password)?, "ca": pem});
     write_private(
         &home.join("database.json"),
         serde_json::to_string_pretty(&kept).map_err(|e| e.to_string())?.as_bytes(),
     )?;
     Settings::load(home)?.ok_or_else(|| "The settings were kept but can't be read back.".to_string())
+}
+
+fn already_set_up(schema: &str) -> String {
+    format!(
+        "This server is set up for Face Recognizer already: Connect with its own login (user {schema} and its \
+         password, as your other devices have it), or let one of your devices hand it to this one with a join \
+         code (Join a shared database). The administrator's login is never kept."
+    )
+}
+
+/// Whether the login is the server's administrator.
+async fn superuser(c: &Client) -> Result<bool> {
+    c.query_one("SELECT rolsuper FROM pg_roles WHERE rolname = current_user", &[])
+        .await
+        .map(|r| r.get(0))
+        .map_err(|e| format!("Couldn't read what this login may do: {e}"))
+}
+
+/// The authority registered in the schema's `server_ca`, None where there is none (no schema, no table, no row).
+async fn registered_ca(c: &Client, schema: &str) -> Result<Option<String>> {
+    let e = |e: tokio_postgres::Error| format!("Couldn't read the server's certificate authority: {e}");
+    let there: bool = c
+        .query_one("SELECT to_regclass(quote_ident($1::text) || '.server_ca') IS NOT NULL", &[&schema])
+        .await
+        .map_err(e)?
+        .get(0);
+    if !there {
+        return Ok(None);
+    }
+    let pem: Option<String> = c
+        .query_opt(&format!("SELECT pem FROM {schema}.server_ca WHERE id = 1"), &[])
+        .await
+        .map_err(e)?
+        .map(|r| r.get(0));
+    Ok(pem.filter(|p| p.contains("BEGIN CERTIFICATE")))
+}
+
+/// The app's login made on a server whose preparing hasn't finished (pgvector missing, say): {host, port, role,
+/// password protected}, so that Connect again goes on with that login. Gone once the settings are kept.
+const PREPARING: &str = "database-preparing.json";
+
+/// A password of the app's own making for its login: 32 letters and digits.
+fn new_password() -> Result<String> {
+    use ring::rand::SecureRandom;
+    const LETTERS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    let mut bytes = [0u8; 32];
+    ring::rand::SystemRandom::new().fill(&mut bytes).map_err(|_| "No random numbers for a password.".to_string())?;
+    Ok(bytes.iter().map(|b| LETTERS[*b as usize % LETTERS.len()] as char).collect())
+}
+
+/// As the server's administrator: the app's own login (named as its schema; not an administrator; a new
+/// password), its database (the one given, or one named as the schema when the given one is the server's own),
+/// pgvector in it and the schema, the app's login its owner. The app's login, to connect with.
+async fn prepare_as_admin(admin: &Client, checked: &Settings, given: &Settings, home: &Path) -> Result<Settings> {
+    let role = given.schema.clone();
+    let db = if ["", "postgres", "template0", "template1"].contains(&given.dbname.as_str()) {
+        given.schema.clone()
+    } else {
+        given.dbname.clone()
+    };
+    if !schema_name(&db) {
+        return Err("The database's name may have only lower-case letters, digits and _.".to_string());
+    }
+    let e = |what: &'static str| {
+        move |e: tokio_postgres::Error| {
+            format!("{what}: {}", e.as_db_error().map_or(e.to_string(), |d| d.message().to_string()))
+        }
+    };
+    let current: String =
+        admin.query_one("SELECT current_user::text", &[]).await.map_err(e("Couldn't read the login"))?.get(0);
+    let role_admin: Option<bool> = admin
+        .query_opt("SELECT rolsuper FROM pg_roles WHERE rolname = $1", &[&role])
+        .await
+        .map_err(e("Couldn't read the server's logins"))?
+        .map(|r| r.get(0));
+    if role == current || role_admin == Some(true) {
+        return Err(format!(
+            "A login named {role} is an administrator of this server: give the app's schema another name."
+        ));
+    }
+    let db_there: bool = admin
+        .query_one("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)", &[&db])
+        .await
+        .map_err(e("Couldn't read the server's databases"))?
+        .get(0);
+    // a database whose schema has the app's tables already is in use: its login stays as its devices have it
+    if db_there {
+        let on_db = open(&Settings { dbname: db.clone(), ..checked.clone() }).await?;
+        let used: bool = on_db
+            .query_one("SELECT to_regclass(quote_ident($1::text) || '.schema_version') IS NOT NULL", &[&role])
+            .await
+            .map_err(e("Couldn't read the database"))?
+            .get(0);
+        if used {
+            return Err(already_set_up(&role));
+        }
+    }
+    // A login of that name there already is never changed: other devices, of this setup or another on the same
+    // server, may log in with it. Only the one this device made in a preparing that didn't finish is taken on.
+    let password = match role_admin {
+        Some(_) => {
+            let kept: Option<serde_json::Value> =
+                std::fs::read(home.join(PREPARING)).ok().and_then(|b| serde_json::from_slice(&b).ok());
+            let mine = kept
+                .filter(|k| k["host"] == given.host.as_str() && k["port"] == given.port && k["role"] == role.as_str());
+            match mine.and_then(|k| k["password"].as_str().and_then(|p| unprotect(p).ok())) {
+                Some(p) => p,
+                None => {
+                    return Err(format!(
+                        "A login named {role} is on this server already: Connect with it (user {role} and its \
+                         password), or have this server's administrator remove it."
+                    ));
+                }
+            }
+        }
+        None => {
+            let password = new_password()?;
+            admin
+                .batch_execute(&format!(
+                    "SET password_encryption = 'scram-sha-256'; \
+                     CREATE ROLE {role} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '{password}'"
+                ))
+                .await
+                .map_err(e("The app's own login couldn't be made"))?;
+            let pending = serde_json::json!({"host": given.host, "port": given.port, "role": role,
+                                             "password": protect(&password)?});
+            write_private(&home.join(PREPARING), pending.to_string().as_bytes())?;
+            password
+        }
+    };
+    if !db_there {
+        admin
+            .batch_execute(&format!("CREATE DATABASE {db} OWNER {role}"))
+            .await
+            .map_err(e("The database couldn't be made"))?;
+    }
+    let on_db = open(&Settings { dbname: db.clone(), ..checked.clone() }).await?;
+    on_db.batch_execute("CREATE EXTENSION IF NOT EXISTS vector").await.map_err(|err| {
+        format!(
+            "pgvector isn't installed on the server, so the app can't set it up: install it (the setup guide says how \
+             for each system) and Connect again. ({})",
+            err.as_db_error().map_or(err.to_string(), |d| d.message().to_string())
+        )
+    })?;
+    on_db
+        .batch_execute(&format!("CREATE SCHEMA IF NOT EXISTS {role} AUTHORIZATION {role}"))
+        .await
+        .map_err(e("The schema couldn't be made"))?;
+    Ok(Settings {
+        host: given.host.clone(),
+        port: given.port,
+        dbname: db,
+        user: role.clone(),
+        password,
+        ca: String::new(),
+        schema: role,
+    })
+}
+
+/// As the app's own login: its schema (where it may make one), pgvector (where it may set it up), and the tables
+/// brought up to date.
+async fn prepare_as_owner(c: &mut Client, s: &Settings) -> Result<()> {
+    let schema = &s.schema;
+    let e = |e: tokio_postgres::Error| e.as_db_error().map_or(e.to_string(), |d| d.message().to_string());
+    let has_schema: bool = c
+        .query_one("SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)", &[schema])
+        .await
+        .map_err(e)?
+        .get(0);
+    if !has_schema {
+        c.batch_execute(&format!("CREATE SCHEMA {schema}")).await.map_err(|err| {
+            format!(
+                "This login can't make its schema in database {}: Connect once with the server's administrator login \
+                 (user postgres), and the app prepares the server itself. ({})",
+                s.dbname,
+                e(err)
+            )
+        })?;
+    }
+    let has_vector: bool = c
+        .query_one("SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')", &[])
+        .await
+        .map_err(e)?
+        .get(0);
+    if !has_vector {
+        c.batch_execute("CREATE EXTENSION vector").await.map_err(|err| {
+            format!(
+                "pgvector isn't set up in database {}: Connect once with the server's administrator login (user \
+                 postgres), which sets it up (pgvector must be installed on the server: the setup guide says how). ({})",
+                s.dbname,
+                e(err)
+            )
+        })?;
+    }
+    c.batch_execute(&format!("SET search_path = {schema}, public")).await.map_err(e)?;
+    migrate(c).await?;
+    Ok(())
 }
 
 /// {ok, text} for the Settings tab: connect as this device does (the tables brought up to date, the device
@@ -696,6 +972,145 @@ pub async fn test(home: &Path, device: &Device, os: &str, app_version: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Connect preparing a schema of its own on a real server, with the app's own login (`FACE_TEST_DB_HOME`, as
+    /// the server tests: without it the test says so and passes). The authority is the server's own, given to this
+    /// device as "one of your own"; a schema named `t_...` that this test made up is made by `setup` and dropped
+    /// afterwards. Nothing else on the server is touched: the administrator's path is not tried here (it makes
+    /// logins and databases), and the shared schema is never named.
+    #[test]
+    fn connect_prepares_a_schema_of_its_own_and_registers_the_authority_only_once_the_server_shows_it() {
+        let Some(s) = std::env::var_os("FACE_TEST_DB_HOME").and_then(|h| Settings::load(Path::new(&h)).ok().flatten())
+        else {
+            eprintln!("skipped: no test database (FACE_TEST_DB_HOME)");
+            return;
+        };
+        let made_up = || format!("t_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
+        let (schema, wrong) = (made_up(), made_up());
+        let fresh = |what: &str| {
+            let home = std::env::temp_dir().join(format!("face-db-prepare-{what}-{}", new_id()));
+            std::fs::create_dir_all(&home).unwrap();
+            home
+        };
+        let (home, other) = (fresh("ok"), fresh("wrong"));
+        servercert::keep_given(&home, &s.ca).unwrap();
+        servercert::make(&other, &["db.example".to_string()]).unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let outcome = futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(async {
+                // an authority the server's certificate isn't from: refused before anything is made
+                let login = join::Login::new(&s.host, s.port, &s.dbname, &s.user, &s.password, &wrong);
+                let said = setup(&login, &other).await.err().expect("refused");
+                assert!(said.contains("doesn't show a certificate from this device's certificate authority"), "{said}");
+                // the server's own: the schema made, its tables, the authority registered, the login kept
+                let login = join::Login::new(&s.host, s.port, &s.dbname, &s.user, &s.password, &schema);
+                let kept = setup(&login, &home).await.expect("prepared");
+                assert_eq!((kept.schema.as_str(), kept.user.as_str()), (schema.as_str(), s.user.as_str()));
+                assert_eq!(kept.ca.trim(), servercert::pem_of(&s.ca).unwrap().trim(), "the server's authority is kept");
+                let c = open(&kept).await.expect("checked against the authority");
+                c.batch_execute(&format!("SET search_path = {schema}, public")).await.unwrap();
+                assert_eq!(version(&c).await.unwrap(), MIGRATIONS.len() as i32, "every table");
+                assert!(registered_ca(&c, &schema).await.unwrap().is_some_and(|p| p.trim() == kept.ca.trim()));
+                // Connect again: a server set up already, taken as it is
+                assert!(setup(&login, &home).await.is_ok());
+                let none: bool = c
+                    .query_one("SELECT NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)", &[&wrong])
+                    .await
+                    .unwrap()
+                    .get(0);
+                assert!(none, "nothing was made for the refused one");
+            }))
+            .await;
+            // (only the schemas this test made up, by their names)
+            if let Ok(c) = open(&s).await {
+                for name in [&schema, &wrong] {
+                    let _ = c.batch_execute(&format!("DROP SCHEMA IF EXISTS {name} CASCADE")).await;
+                }
+            }
+            let _ = (std::fs::remove_dir_all(&home), std::fs::remove_dir_all(&other));
+            if let Err(e) = outcome {
+                std::panic::resume_unwind(e);
+            }
+        });
+    }
+
+    /// Connect preparing a NEW server from its administrator's login, against a throwaway server of a check's own
+    /// (never the shared one: it makes a login and a database). `FACE_TEST_PG_ADMIN` is "host port password" of
+    /// that server's administrator (user postgres), `FACE_TEST_PG_HOME` a private folder whose `database-server`
+    /// holds the certificates the server was set up with (made by `examples/server_certs.rs`). Without them the
+    /// test says so and passes. The login, database and schema are named `t_...` by the test and removed after.
+    #[test]
+    fn connect_prepares_a_new_server_from_its_administrator_s_login_and_keeps_only_its_own() {
+        let (Some(admin), Some(certs)) =
+            (std::env::var("FACE_TEST_PG_ADMIN").ok(), std::env::var_os("FACE_TEST_PG_HOME"))
+        else {
+            eprintln!("skipped: no throwaway server (FACE_TEST_PG_ADMIN, FACE_TEST_PG_HOME)");
+            return;
+        };
+        let parts: Vec<&str> = admin.split_whitespace().collect();
+        let (host, port, password) = (parts[0].to_string(), parts[1].parse::<u16>().unwrap(), parts[2].to_string());
+        let name = format!("t_{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
+        let home = std::env::temp_dir().join(format!("face-db-new-server-{}", new_id()));
+        std::fs::create_dir_all(home.join(servercert::FOLDER)).unwrap();
+        for f in ["root.crt", "ca.json"] {
+            std::fs::copy(Path::new(&certs).join(servercert::FOLDER).join(f), home.join(servercert::FOLDER).join(f))
+                .unwrap();
+        }
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let admin_login = |db: &str| join::Login::new(&host, port, db, "postgres", &password, &name);
+            let outcome = futures_util::FutureExt::catch_unwind(std::panic::AssertUnwindSafe(async {
+                // the database named in the form isn't there yet: made from the server's first one
+                let kept = setup(&admin_login(&name), &home).await.expect("prepared");
+                assert_eq!((kept.user.as_str(), kept.dbname.as_str(), kept.schema.as_str()), (name.as_str(), name.as_str(), name.as_str()));
+                assert_ne!(kept.password, password, "the app's own login, never the administrator's");
+                let file = std::fs::read_to_string(home.join("database.json")).unwrap();
+                assert!(!file.contains("postgres") && !file.contains(&password), "nothing of the administrator is kept");
+                assert!(!home.join(PREPARING).exists(), "nothing left half-way");
+                let c = open(&kept).await.expect("the app's login, checked against the authority");
+                c.batch_execute(&format!("SET search_path = {name}, public")).await.unwrap();
+                assert_eq!(version(&c).await.unwrap(), MIGRATIONS.len() as i32, "every table");
+                let (admin, vector): (bool, bool) = {
+                    let r = c
+                        .query_one(
+                            "SELECT rolsuper, EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') FROM pg_roles WHERE rolname = current_user",
+                            &[],
+                        )
+                        .await
+                        .unwrap();
+                    (r.get(0), r.get(1))
+                };
+                assert!(!admin && vector, "the app's login is no administrator, and pgvector is there");
+                assert_eq!(registered_ca(&c, &name).await.unwrap().map(|p| p.trim().to_string()), Some(kept.ca.trim().to_string()));
+                // set up now: the administrator's login is refused (its devices' login stays as it is) ...
+                let said = setup(&admin_login("postgres"), &home).await.err().expect("refused");
+                assert!(said.contains("set up for Face Recognizer already"), "{said}");
+                let said = setup(&admin_login(&name), &home).await.err().expect("refused");
+                assert!(said.contains("set up for Face Recognizer already"), "{said}");
+                // ... and the app's own login is taken as a joining device takes it
+                assert!(setup(&kept.login(), &home).await.is_ok());
+            }))
+            .await;
+            // (only what this test made, by the names it made up)
+            let first = Settings {
+                host: host.clone(),
+                port,
+                dbname: "postgres".into(),
+                user: "postgres".into(),
+                password: password.clone(),
+                ca: String::new(),
+                schema: name.clone(),
+            };
+            if let Ok(c) = open(&first).await {
+                let _ = c.batch_execute(&format!("DROP DATABASE IF EXISTS {name} WITH (FORCE)")).await;
+                let _ = c.batch_execute(&format!("DROP ROLE IF EXISTS {name}")).await;
+            }
+            let _ = std::fs::remove_dir_all(&home);
+            if let Err(e) = outcome {
+                std::panic::resume_unwind(e);
+            }
+        });
+    }
 
     #[test]
     fn what_settings_shows_of_the_database_never_holds_the_password() {

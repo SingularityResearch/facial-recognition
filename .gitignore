@@ -16,3 +16,9 @@
 
 # Cloudflare's tool keeps its working files here (the Store address Worker)
 .wrangler/
+
+# a developer's own Claude Code settings for this checkout
+.claude/settings.local.json
+
+# this computer's own instructions for coding assistants (the owner's local rules)
+CLAUDE.local.md

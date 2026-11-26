@@ -68,6 +68,30 @@ const SYNC: &str = "\u{0}written";
 fn main() {
     face_server::no_telemetry();
     let mut args = std::env::args().skip(1).peekable();
+    // this program at the owner's sign-in, for the shared database held on this computer: its server started,
+    // nothing else (no window, no other program; the app need not run for the database to)
+    // and as Setup's uninstaller runs it (`stop-database`): the server stopped, its data left as it is
+    let database = args.peek().cloned().filter(|a| a == "start-database" || a == "stop-database");
+    if let Some(what) = database {
+        let named: Vec<String> = args.skip(1).collect();
+        let at = |flag: &str| named.iter().position(|a| a == flag).and_then(|i| named.get(i + 1)).cloned();
+        // SAFETY: only this thread runs yet
+        unsafe {
+            std::env::set_var("FACE_ROOT", at("--root").map_or_else(paths::app_root, Into::into));
+            if let Some(home) = at("--home") {
+                std::env::set_var("FACE_HOME", home);
+            }
+        }
+        let (root, home) = (paths::root(), paths::home());
+        keep_a_log(&home);
+        if what == "start-database" {
+            face_server::dbhost::at_sign_in(&root, &home);
+        } else {
+            face_server::dbhost::uninstalled(&root, &home);
+        }
+        log_written();
+        return;
+    }
     let child = args.peek().map(String::as_str) == Some("tracker-child");
     // One folder for models and data for everything in this process (the installed app's, unless one is
     // named): parts of the programs ask for it on their own.
@@ -77,6 +101,8 @@ fn main() {
     }
     let home = paths::home();
     if !child {
+        // which version ran here before (a new copy, an update): before the log or anything else is written there
+        face_server::versionnote::note(&home);
         app::wait_for_previous(); // started again by a copy of itself: that one's ports are free first
     }
     keep_a_log(&home);

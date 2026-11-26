@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Setup</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root { color-scheme: dark; --bg: #0d1512; --panel: #111c18; --line: #24342e; --fg: #dfe8e4; --muted: #9fb2ab;
+          --soft: #7f938c; --accent: #4fc3a1; --btn: #18332a; --btn-line: #2f5a4b; --bad: #f0a08f; --warn: #e8c070;
+          --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans); overflow-y: auto; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+           display: flex; align-items: center; gap: 12px; padding: 12px 24px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header p { margin: 0; color: var(--muted); flex: 1 1 320px; }
+  main { max-width: 860px; margin: 0 auto; padding: 18px 16px 40px; display: grid; gap: 14px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px 16px 14px; display: grid; gap: 10px; }
+  .card h2 { margin: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .chip { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 1px 9px; border: 1px solid var(--line); color: var(--muted); }
+  .chip.done { color: #06231c; background: var(--accent); border-color: var(--accent); }
+  .chip.todo { color: #2a1d05; background: var(--warn); border-color: var(--warn); }
+  .chip.optional { color: var(--muted); }
+  .card p, .card ol, .card ul { margin: 0; }
+  .card ol, .card ul { padding-left: 20px; display: grid; gap: 4px; }
+  .muted { color: var(--muted); }
+  .note { color: var(--soft); font-size: 13px; }
+  .bad { color: var(--bad); }
+  .choices { display: flex; gap: 8px; flex-wrap: wrap; }
+  .b { font-size: 13px; color: var(--fg); background: var(--btn); border: 1px solid var(--btn-line); border-radius: 7px;
+       padding: 6px 12px; cursor: pointer; }
+  .b:hover { background: #1f4236; }
+  .b:disabled { opacity: .5; cursor: default; }
+  .b.quiet { background: transparent; }
+  .form { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .form label { display: grid; gap: 3px; font-size: 12px; color: var(--soft); flex: 1 1 14ch; min-width: 10ch; }
+  .form input { font-size: 14px; color: var(--fg); background: #0d1512; border: 1px solid #2c3f38; border-radius: 7px; padding: 5px 8px; width: 100%; }
+  .said { font-size: 13px; white-space: pre-wrap; }
+  pre { margin: 0; white-space: pre-wrap; font: 12.5px/1.45 ui-monospace, Consolas, monospace; color: #b7c7c1;
+        background: #0d1512; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between;
+         border-top: 1px solid #1b2924; padding-top: 8px; }
+  .row:first-of-type { border-top: 0; padding-top: 0; }
+  .row > span { flex: 1 1 300px; }
+  /* the setup guide over the page, at the part a button names (the program's own copy of docs/SETUP.md) */
+  #guidePanel { position: fixed; inset: 0; z-index: 5; background: var(--bg); display: grid; grid-template-rows: auto 1fr; }
+  #guidePanel[hidden] { display: none; }
+  #guidePanel .gbar { display: flex; align-items: center; gap: 12px; padding: 10px 24px; border-bottom: 1px solid var(--line); }
+  #guidePanel .gbar strong { flex: 1; font-size: 16px; font-weight: 600; }
+  #guidePanel iframe { border: 0; width: 100%; height: 100%; background: #14161a; }
+</style></head><body>
+<header>
+  <h1>Setup</h1>
+  <p>What is set up on this device, and what is left. What is set up stays as it is: nothing changes until you press a button, and each button says what it does.</p>
+  <button class="b" id="guide" type="button">Guide</button>
+  <button class="b" id="again" type="button">Look again</button>
+  <button class="b" id="close" type="button">Close</button>
+</header>
+<main id="cards" aria-live="polite"><p class="muted">Looking at what is set up…</p></main>
+<div id="guidePanel" hidden>
+  <div class="gbar"><strong>Setup guide</strong><button class="b" id="guideBack" type="button">Back to setup</button></div>
+  <iframe id="guideFrame" title="Setup guide"></iframe>
+</div>
+<script src="/page_store.js"></script>
+<script src="/setup.js"></script>
+</body></html>

@@ -1,22 +1,26 @@
 # Settings
 
 Every setting in Face Recognizer: what it is for, its default, and where it is kept. They are all in the app
-window's **Settings** tab (Ctrl+3), in the sections below, in the order the tab shows them: App; Face tracking
-(camera, display, expression, voice/pulse/posture, recognition and this camera, alerts, presence log); Labeling (the
-face lists, Web search, Describe photo); LM Studio; This computer; Shared database. Changes apply at once and are
-remembered; sections with switches and choices have **Reset to defaults**. The same options also stay where they are
-used: the Face tracking tab's **Controls** panel and the Labeling tab's toolbar. The programs started on their
-own (`recognize.bat` / `label.bat`, or the `.sh` ones) have no Settings tab: use those controls on each page. (`--browser` opens the whole app, Settings tab included, in the web browser.)
-The **Cameras** tab has no rows in Settings; its two choices are under [Cameras tab](#cameras-tab).
+window's **Settings** tab (Ctrl+3), grouped by what they are for, in the order below: App; Camera and recognition;
+Readings; Alerts; History and logs; Location; Labeling; AI models; Music; Devices and shared database; This
+computer. The row of buttons at the top of the tab goes straight to a group. Each group holds one or more cards, and a
+card holds everything of one kind wherever in the app it is used (the Location card has the switch, the typed place
+and the location history; the AI models group has everything about the language models). Changes apply at once and
+are remembered; cards with switches and choices have **Reset to defaults**. The same options also stay where they are
+used: the Face tracking tab's **Controls** panel, the Labeling tab's toolbar and the Analyze tab's own Settings. The
+programs started on their own (`face-server`, the tracker, and `face-server label`, the labeling tool) have no
+Settings tab: use those controls on each page. To set the app up from scratch, step by step, see
+[SETUP.md](SETUP.md). (`--browser` opens the whole app, Settings tab included, in the web browser.)
+The **Cameras** tab has no rows in Settings; its choices are under [Cameras tab](#cameras-tab).
 
 How settings are kept:
 
 | Kind | Where | Examples |
 |---|---|---|
-| Page options | the page's own storage, and its program in `%APPDATA%\FaceLabels\settings.json` (per computer); with a shared database also this device's rows there | everything under Face tracking, Labeling's display options |
+| Page options | the page's own storage, and its program in `%APPDATA%\FaceLabels\settings.json` (per computer); with a shared database also this device's rows there | everything of the Face tracking tab, Labeling's display options |
 | What the tracker learned about each person | `%APPDATA%\FaceLabels\person_signals.json`, a copy in the page's storage; with a shared database also there | usual look and signal normals (Calibrate to each person) |
-| Program settings | `%APPDATA%\FaceLabels\` (macOS `~/Library/Application Support/FaceLabels`, Linux `~/.local/share/FaceLabels`) | Describe photo (`describe.json`), Web search keys (keys protected for your user, like the database password), the shared models folder (`lmstudio.json`), alerts, photo sharing (`peer.json`) |
-| Shared database connection | `%APPDATA%\FaceLabels\` | `database.json` (server, user, protected password), `database-ca.pem`, `device.json` (this device's id and name), `secret.key` (the passphrase, protected), `device-key.json`, `peer-cert.pem`, `peer-key.pem` and `peer-key.json` (this device's own keys; the private ones protected), `sync.sqlite` (what was last synced) |
+| Program settings | `%APPDATA%\FaceLabels\` (macOS `~/Library/Application Support/FaceLabels`, Linux `~/.local/share/FaceLabels`) | the model server and Describe photo (`describe.json`), Analyze (`analyze.json`), Web search keys (keys protected for your user, like the database password), the shared models folder (`lmstudio.json`), alerts, photo sharing (`peer.json`) |
+| Shared database connection | `%APPDATA%\FaceLabels\` | `database.json` (server, user, protected password, the server's certificate authority), `database-server\` (certificates made for a new server: its certificate and key, and your certificate authority with its key protected), `device.json` (this device's id and name), `secret.key` (the passphrase, protected), `device-key.json`, `peer-cert.pem`, `peer-key.pem` and `peer-key.json` (this device's own keys; the private ones protected), `sync.sqlite` (what was last synced) |
 | Window conveniences | the page's storage only, per computer | the tab last shown, the Controls panel and Labeling list open or closed, the Cameras tab's choices |
 | Start-up choices | environment variables (end of this page) | `FACE_DEVICE`, `FACE_PORTS` |
 
@@ -31,12 +35,14 @@ Keys and the shared database's password are shown in their fields masked (`*`); 
 | **Version**, **Check for updates** | The app's version. Check for updates asks GitHub for the latest release, only when clicked, and offers its download page. |
 | **Faces, names and labels** (Open folder) | Opens the `data` folder: face prints, face pictures, labels, photo dates and tags. It stays on this computer; keep it out of any public repository. |
 | **Keys, descriptions, snapshots, log** (Open folder) | Opens the private folder above: Web search keys, photo descriptions, webcam snapshots (Collect faces), alerts, the presence log, and `app.log` (messages and errors). |
+| **Setup** (Open setup; also the **Setup** button in the tab bar) | What is set up on this device and what is left, step by step: photos, your devices and their shared database, the model servers for Describe photo and Analyze, this computer's model servers for your other devices, the optional keys, your network. It looks first: what is set up is marked done and left as it is; only what is missing is offered, each as a button that says what it does (making the database server's certificates, Connect, the model server to use, a download). After an update it first says what the update changed on this device ("What changed in this version"). It opens by itself only on a new copy's first start with nothing set up yet, or once after an update whose changes weren't seen. Which version ran before is noted in the private folder (`app-version.json`). |
+| **Switch tabs** | The keys: Ctrl+1 Face tracking, Ctrl+2 Labeling, Ctrl+3 Settings, Ctrl+4 Alerts, Ctrl+5 Analyze. |
 
 **Privacy policy** (a link in the Face tracking tab's Controls, under the camera's choice) shows the
 [privacy policy](../PRIVACY.md) inside the app, over the page, without the internet; the camera goes on behind it.
 
 The **Alerts** bell in the tab bar (Ctrl+4) lists alerts as New, Acknowledged and Archived; what raises them is set
-under *Face tracking: alerts*.
+under [Alerts](#alerts).
 
 Not settings, but the app looks after itself: a program that failed or stopped shows **Start again**; a window whose
 page stops answering for 30 s is brought back (and the app starts again in place if it stays silent); and when
@@ -48,7 +54,9 @@ half hour with the memory the window's processes hold.
 
 ---
 
-## Face tracking: camera
+## Camera and recognition
+
+### Camera
 
 On a phone the camera that faces you is the one it starts with, and a round button on the picture (bottom right)
 switches between the front and the back camera. A camera you chose stays chosen, as on a computer.
@@ -57,8 +65,19 @@ switches between the front and the back camera. A camera you chose stays chosen,
 |---|---|---|
 | **Camera** | the system's default | Which camera the tracker uses: every camera the computer sees, by name (a phone used as a webcam included). The same camera starts by itself next time unless you last stopped it (with **Keep this camera running** on, it always starts). The camera you picked stays this device's camera: at a start where it isn't there (unplugged, or not ready yet) the default camera is used meanwhile, and the picked one is gone back to as soon as it is there again. |
 | **Mirror view** | on | Shows the picture mirrored, as a mirror would. Switched on for a webcam and off for a video file when the source starts. |
+| **Keep this camera running** | on | Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. A camera that won't run (a start that hangs or is refused, or a camera that is on with no picture) is retried as described under [App](#app). Clicking Stop camera turns this off. |
+| **Stream this camera to my other devices** | on | Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on), with its live readout. Sent all the time at full rate (about 20 frames a second), watched or not, also while the window is behind others (a minimized or hidden window streams slower on a Mac); over your local network, encrypted, to your devices only; never stored. Needs a shared database and **Share my photos with my other devices** on (the peer service). |
 
-## Face tracking: display
+### Recognition
+
+| Setting | Default | What it is for |
+|---|---|---|
+| **Match strictness** | the recognizer's measured setting (0.25 to 0.75) | How alike a face must be to a known person to be named. Higher: fewer wrong names, more Unknown. The default is the measured best for the app's recognition model. |
+| **Collect faces for labeling** | off | While a face stays in view, saves a sharp picture of that face every few seconds (up to 12 per face) with who the tracker thinks it is; never the whole frame, other faces greyed out. The Labeling tab adds them by itself, for you to confirm. |
+
+### On screen
+
+What is drawn over the camera's picture.
 
 | Setting | Default | What it is for |
 |---|---|---|
@@ -72,7 +91,13 @@ switches between the front and the back camera. A camera you chose stays chosen,
 | **Blur unknown faces** | off | Blur the faces of people it doesn't know (for screen sharing or recording). |
 | **Smoothing** | 0.5 (0 to 0.9) | How much the boxes are smoothed from frame to frame: higher is steadier but lags more. |
 
-## Face tracking: expression
+---
+
+## Readings
+
+What is read from a face, a voice and a body while the camera runs.
+
+### Expression
 
 Expression readings are shown live and, with a shared database, kept there (see **Keep expression readings**); each alert also keeps what was measured when it was raised. The settings marked *evidence only* aren't measured yet: they're off by
 default and don't change the expression label until a measurement on posed sessions shows they help.
@@ -82,13 +107,13 @@ default and don't change the expression label until a measurement on posed sessi
 | **Show expression** | on | The face's expression under its name ("looks happy"), read from sharp, camera-facing frames and averaged over the last second. |
 | **Calibrate to each person** | on | Learns each named person's usual look (about a minute) and their normal for every signal; a reading that departs from it is highlighted, one that matches is marked "usual". Kept on this computer (`person_signals.json` in the private folder, and the page's storage); with a shared database every device shares them. **Forget what's learned** (Controls panel) clears it. |
 | **Show expression evidence** | on | What the expression is based on: the model's votes, face-shape cues, and why a frame was skipped. |
-| **Keep expression readings** | on | With a shared database: every 5 seconds, what each named person's face looks like (the expression shown and its share, the model's score for every expression, valence and arousal, alone or in company, how well the face matched) is kept in the database's `expression_log`, for reports later. Numbers and short labels only, never a picture or sound; never for unknown faces. It records how a face looked, not what the person felt. Nothing is kept without a shared database. Kept for the days set under **Face tracking: history** (90 unless changed): once a day each device deletes its own older rows. A person's readings are in their export and go when they are forgotten. |
+| **Keep expression readings** | on | With a shared database: every 5 seconds, what each named person's face looks like (the expression shown and its share, the model's score for every expression, valence and arousal, alone or in company, how well the face matched) is kept in the database's `expression_log`, for reports later. Numbers and short labels only, never a picture or sound; never for unknown faces. It records how a face looked, not what the person felt. Nothing is kept without a shared database. Kept for the days set under [Signal history](#signal-history) (90 unless changed): once a day each device deletes its own older rows. A person's readings are in their export and go when they are forgotten. |
 | **Skip expression while talking** | off | *Evidence only.* No expression reading while the mouth moves with speech. |
 | **Use state model for expression** | off | *Evidence only.* Smooths the label with a model of how expressions change over time. |
 | **Skip expression when a hand is on the face** | off | *Evidence only.* No reading while a hand covers part of the face. |
 | **Ask how I feel (feeling check)** | Don't ask | Every 2, 5 or 10 minutes, asks how you feel on two 1–7 scales; the answers (numbers only) are the ground truth for measuring the signals. |
 
-## Face tracking: voice, pulse and posture
+### Voice, pulse, posture and sound
 
 Signals besides the face's expression, each with its own normal per person when **Calibrate to each person** is on.
 
@@ -99,7 +124,7 @@ Signals besides the face's expression, each with its own normal per person when 
 | **Body posture** | off | Head height, shoulders, lean, body movement, breathing, hand on face and crossed arms from MediaPipe's pose model. |
 | **Chart this device's sound (speakers and microphones)** | off | For the Signals chart. While it is on and the Face tracking page is open, every audio interface of this computer (each output: what the computer itself plays; each microphone: what sounds in the room) is listened to, 4 seconds at a time, one stretch after another, and measured in memory: how loud, the background's numbers, a tempo where music sounds, and one word for what was heard (music, speech, quiet...). Only those numbers and the word are kept, for 15 minutes, in the page's memory; the sound itself is never kept. Turned off, or the page closed, the listening stops within seconds. A microphone hears the room, so this is off until you turn it on. On a phone the app can't listen to audio interfaces itself: there the page's own microphone hears, and a few seconds at a time go to the phone's own server, which measures them the same way and keeps nothing; the phone's speaker isn't charted. |
 
-## Face tracking: the Signals chart
+### The Signals chart (Face tracking tab)
 
 The **Signals** button in the Face tracking tab's header opens a drawer under the video: every sensor reading of this
 device over the last minutes as charts, one expander a section. **This device**: People in view, Camera (checks a
@@ -121,21 +146,14 @@ option is off and has a button that turns it on.
 The chart takes a reading with every check of the camera's picture, as fast as the device checks (tens a second on
 a computer with a graphics processor), whether the drawer is open or not, and keeps the last 15 minutes in the
 page's memory only: the chart stores nothing, and it starts empty when the app starts (a record of the signals over
-days is the history below, which is separate and off until you switch it on). Its choices (drawer open, which
-sections are open, 1, 5 or 15 minutes shown) are remembered in the window's storage, on this computer only. The marks
-on its Events strip (in view, left, unusual signals, unknown face, music heard) are made by the chart from its own
-readings; they are not the alerts.
+days is the [Signal history](#signal-history), which is separate and off until you switch it on). Its choices (drawer
+open, which sections are open, 1, 5 or 15 minutes shown) are remembered in the window's storage, on this computer
+only. The marks on its Events strip (in view, left, unusual signals, unknown face, music heard) are made by the chart
+from its own readings; they are not the alerts.
 
-## Face tracking: recognition
+---
 
-| Setting | Default | What it is for |
-|---|---|---|
-| **Match strictness** | the recognizer's measured setting (0.25 to 0.75) | How alike a face must be to a known person to be named. Higher: fewer wrong names, more Unknown. The default is the measured best for the app's recognition model. |
-| **Collect faces for labeling** | off | While a face stays in view, saves a sharp picture of that face every few seconds (up to 12 per face) with who the tracker thinks it is; never the whole frame, other faces greyed out. The Labeling tab adds them by itself, for you to confirm. |
-| **Keep this camera running** | on | Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. A camera that won't run (a start that hangs or is refused, or a camera that is on with no picture) is retried as described under [App](#app). Clicking Stop camera turns this off. |
-| **Stream this camera to my other devices** | on | Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on), with its live readout. Sent all the time at full rate (about 20 frames a second), watched or not, also while the window is behind others (a minimized or hidden window streams slower on a Mac); over your local network, encrypted, to your devices only; never stored. Needs a shared database and **Share my photos with my other devices** on (the peer service). |
-
-## Face tracking: alerts
+## Alerts
 
 | Setting | Default | What it is for |
 |---|---|---|
@@ -155,36 +173,26 @@ readings; they are not the alerts.
 | **Banner stays** | 30 s | How long the banner over the tabs stays (or until dismissed). |
 | **Play a sound with alerts** | on | A short sound with each alert. |
 
-## Face tracking: presence log
+---
 
-| Setting | Default | What it is for |
-|---|---|---|
-| **Keep a presence log** | off | Who was in view and when: names and times only, in the private folder's `presence\`. |
+## History and logs
 
-## Face tracking: location
+What is kept over time: in your shared database, or on this computer.
 
-Where a device is. Off for a new copy: while it is off, no location service is asked, no location is shown or
-told to your other devices, and no row is written. Each device has its own switch (a phone's is in its Controls),
-and **Copy settings from** never copies the switch or a typed place to another device.
+### Signal history
 
-| Setting | Default | What it is for |
-|---|---|---|
-| **Show and keep this device's location** | off | This device shows where it is: in the Location card of its Face tracking tab and, on your other devices, over its picture in their Cameras tab: the nearest town with its state and country, the coordinates, how sure the reading is and how old. With a shared database, its moves are kept there as its location history: a row when the switch is turned on, then a row each time the device has moved more than about 100 m (and more than the reading's own uncertainty), at most one a minute; a device that stays where it is adds nothing. Rows are deleted after the days set under **Face tracking: history** (90 unless you change it there). Without a shared database nothing is written. The place comes from the device's own location service: Windows (Settings, Privacy & security, Location must allow desktop apps), a Mac, an iPhone and an Android phone each ask you once. A computer has no GPS: its system places it by the Wi-Fi networks around it, so it needs its Wi-Fi switched on, and it says so beside its place ("Placed by the Wi-Fi networks around this computer"). With Wi-Fi off, or without any, a Windows computer is placed only roughly (to within kilometres, and it says "Placed only roughly") and a Mac not at all: switch Wi-Fi on, or type the place. Linux and a Raspberry Pi have no location service the app can count on, so there a place is typed. The town's name comes from a list of the world's towns inside the app; nothing is looked up on the internet. |
-| **This device's place, typed** | empty | Leave it empty and the device's own location service is asked. Type a place and nobody is asked: a town (`Springfield`, or with what tells it apart: `Springfield, Illinois`, `Paris, France`; of several towns of one name the largest is taken), or latitude and longitude (`39.8017, -89.6437`). What the app took it as is shown at once. The typed place is one of this device's settings, kept like them; it is told to your other devices only as the device's location, and only while the switch is on. |
-| **This device is** (information) | — | Where the device is now, as its Face tracking tab shows it, or why the app can't say (the system doesn't allow it, its location service is switched off, the typed place is not a place). |
-
-## Face tracking: history
-
-A record of every signal a device reads, in your shared database, for analysis later. Off for a new copy, and
-switched on device by device (a phone's switch is in its Controls): **Copy settings from** never copies the switch
-or the days to another device. Without a shared database nothing is kept. Nothing else in the app reads the
-history or waits for it: with it off, or with the database away, every other feature works as before.
+A record of every signal a device reads, in your shared database, for analysis later (the Analyze tab reads it).
+Off for a new copy, and switched on device by device (a phone's switch is in its Controls): **Copy settings from**
+never copies the switch or the days to another device. Without a shared database nothing is kept. Nothing else in
+the app reads the history or waits for it: with it off, or with the database away, every other feature works as
+before.
 
 | Setting | Default | What it is for |
 |---|---|---|
 | **Keep a history of every signal** | off | While it is on and the app runs: one row every 10 seconds for the device itself (checks a second, how long a check takes, faces in view, how many of them unknown, processor, memory, temperature, heat state, battery, and what each sound interface hears while its sound is charted) and, while its camera runs, one for each named person in view (recognition, expression, face, voice, body and hands, pulse and breathing, and how far each signal was from that person's usual). A row does not hold every reading but, for each signal, its average, lowest and highest in those 10 seconds and how many readings they are of; for a word (the look that won, what a sound interface heard) how often each was read. Numbers and short words only: never a picture or a sound. A face nobody is named for has no row of its own. The rows say how a face, a voice or a body looked and sounded, not what a person felt, and they are not medical readings. |
 | **Keep it for (days)** | 90 | 1 to 3650. Once a day this device deletes its own rows that are older, and those of its location history, its expression readings and its music log with them, whether or not the history itself is switched on. A smaller number deletes the older rows at the next tidying. |
 | **History** (information) | — | Whether rows are being kept, how many were written since the app started, how long after they are made they reach the database, and how long a writing takes. |
+| **Delete a device's signal history** (a device to choose, or the library's photos and videos) | — | Deletes every row that device wrote into the signal history in the shared database, from any device; or every row that was worked out from the library. It can't be undone. A device goes on writing rows while its own switch is on, and the library's rows can be worked out again. |
 
 How it is written: as fast as it can be without holding up the camera's work. The page adds each reading to
 its rows (a few millionths of a second) and hands a row to the app as soon as it is finished; the app only puts
@@ -196,24 +204,43 @@ far away, five minutes at the most). A row is usually in the database a second o
 reached the rows wait in the private folder's `signals\` and are written when it is back. Forgetting a person
 deletes that person's rows, the waiting ones too, and their export holds them.
 
-## Cameras tab
+### The library's history
 
-Every device's live camera in a grid (devices with **Stream this camera to my other devices** on), each with its
-readout, and one list of events from every camera. Over each picture's lower edge: where that device is, for a
-device whose **Show and keep this device's location** is on (what the device itself says while this tab follows
-it, else the newest row of its location history, marked "last known"). Its two choices aren't in the Settings tab; the tab remembers them
-in the window's storage, on this computer only.
+The library's part of the signal history: what your photos and videos say of the people named in them, beside what
+the cameras keep. Only with a shared database.
 
-| Choice | Default | What it is for |
+| Setting | Default | What it is for |
 |---|---|---|
-| **Show** (a tick per device, in the tab's header) | every camera | Untick a device to leave its camera out of the grid. |
-| **Events** (Hide events) | shown | The events list is a fly-out on the side; closed, the cameras take the whole width and the Events button counts what came since. |
-| **Focus** (on each camera's picture; or double-click the picture) | all cameras | That camera alone, laid out as that device's own Face tracking tab: its picture as large as the window allows, its live readout beside it with the three counts, its Signals chart in a drawer under the picture. **All cameras** in the header (or Esc) brings the grid back. The other cameras go on being fetched meanwhile. Not remembered: the tab opens on all cameras. |
-| **Signals** (under each camera) | closed | That device's Signals chart, as its own Face tracking tab shows it: every reading it sends with its readout, each with its own time, so the chart is as fast as that device checks its picture. Kept in this page's memory only, from the moment the Cameras tab is opened. A camera whose chart is open takes the whole row, and the grid scrolls. |
+| **The library in the history** (information) | — | How many photos and videos have a named face and how many rows that makes, whether a shared database is set up, and whether the rows are worked out by themselves after a folder is added (they are where this device's **Keep a history of every signal** is on). |
+| **Work out the history from the library** | — | Writes, for each photo and each video frame a face was found in, one row for each named person in it: when (the camera's own time where the photo has one, else only the file's; a video's frame that many seconds after the file's time; the row says which), how good the face's picture is, how large the face is, how many faces the picture has and how many of them are named, and how the face looks (the expression model, on the picture the library keeps of the face; a blurry face is not read). A still says less than a camera: no voice, no pulse, no movement, nothing of a person's usual. A face named automatically says so. The rows follow the labels: do it again after naming more faces; a face named otherwise since gets its row under the new name and loses the old one. It runs in the background in the import's one slot (progress and Stop at the top of the Labeling tab), and reads each face's picture once. These rows are as old as their pictures, so the days set for a device's history don't delete them; Forget removes a person's. A photo without any time has no row. |
+
+### Presence log
+
+| Setting | Default | What it is for |
+|---|---|---|
+| **Keep a presence log** | off | Who was in view and when: names and times only, in the private folder's `presence\`. |
+
+---
+
+## Location
+
+Where a device is. Off for a new copy: while it is off, no location service is asked, no location is shown or
+told to your other devices, and no row is written. Each device has its own switch (a phone's is in its Controls),
+and **Copy settings from** never copies the switch or a typed place to another device.
+
+| Setting | Default | What it is for |
+|---|---|---|
+| **Show and keep this device's location** | off | This device shows where it is: in the Location card of its Face tracking tab and, on your other devices, over its picture in their Cameras tab: the nearest town with its state and country, the coordinates, how sure the reading is and how old. With a shared database, its moves are kept there as its location history: a row when the switch is turned on, then a row each time the device has moved more than about 100 m (and more than the reading's own uncertainty), at most one a minute; a device that stays where it is adds nothing. Rows are deleted after the days set under [Signal history](#signal-history) (90 unless you change it there). Without a shared database nothing is written. The place comes from the device's own location service: Windows (Settings, Privacy & security, Location must allow desktop apps), a Mac, an iPhone and an Android phone each ask you once. A computer has no GPS: its system places it by the Wi-Fi networks around it, so it needs its Wi-Fi switched on, and it says so beside its place ("Placed by the Wi-Fi networks around this computer"). With Wi-Fi off, or without any, a Windows computer is placed only roughly (to within kilometres, and it says "Placed only roughly") and a Mac not at all: switch Wi-Fi on, or type the place. Linux and a Raspberry Pi have no location service the app can count on, so there a place is typed. The town's name comes from a list of the world's towns inside the app; nothing is looked up on the internet. |
+| **This device's place, typed** | empty | Leave it empty and the device's own location service is asked. Type a place and nobody is asked: a town (`Springfield`, or with what tells it apart: `Springfield, Illinois`, `Paris, France`; of several towns of one name the largest is taken), or latitude and longitude (`39.8017, -89.6437`). What the app took it as is shown at once. The typed place is one of this device's settings, kept like them; it is told to your other devices only as the device's location, and only while the switch is on. |
+| **This device is** (information) | — | Where the device is now, as its Face tracking tab shows it, or why the app can't say (the system doesn't allow it, its location service is switched off, the typed place is not a place). |
+| **Location history of** (a device to choose), **Where it was** | — | With a shared database: the chosen device's location history, the newest row first (up to 200 rows): when, the town, the coordinates, how sure. Only devices whose **Show and keep this device's location** is or was on have rows. |
+| **Delete a device's location history** (a device to choose) | — | Deletes every row of that device's location history in the shared database, from any device. It can't be undone. The device goes on writing rows while its own switch is on. |
 
 ---
 
 ## Labeling
+
+### Labeling
 
 | Setting | Default | What it is for |
 |---|---|---|
@@ -223,9 +250,7 @@ in the window's storage, on this computer only.
 | **Show possible faces in photos** | on | Dashed boxes on things the detector thinks may be faces (blurry, turned, partly hidden); nothing is saved until you click one. |
 | **Photo folders added** | (shown) | The folders already added; Add photos offers them as you type. |
 
----
-
-## Labeling: Web search
+### Web search
 
 Sends one face to Amazon (celebrity recognition) and its photo to Google (pages with the same picture), only when
 you click **Web search** on a face. US services, English results, each capped under $10 a month.
@@ -236,7 +261,30 @@ you click **Web search** on a face. US services, English results, each capped un
 | **Google Cloud Vision API key** | Your Google Cloud Vision key (web detection). Save an empty key to remove it. |
 | **Amazon Rekognition key** | Your AWS access key ID, secret and region (default us-east-1). |
 
-## Labeling: Describe photo
+---
+
+## AI models
+
+Everything about the language models, in one group. Describe photo and Analyze use a language model on a **model
+server**: LM Studio, Ollama, llama.cpp's server or vLLM, on this computer or another of yours. Describe photo can also
+use the built-in model, which runs inside the app. There is one model server for both; Analyze can be sent to another
+of your computers instead (**Where Analyze runs**). No kind of server is needed more than another: the last two cards
+list every model server found on this computer and on your other devices, whatever its kind.
+
+### Model server
+
+The server Describe photo and Analyze ask. Kept in `describe.json` with Describe photo's choices.
+
+| Setting | Default | What it is for |
+|---|---|---|
+| **Kind of server** | LM Studio | LM Studio, Ollama, llama.cpp's server (llama-server) or vLLM. Each is asked for its models in its own way, and the fields below are that kind's: LM Studio and Ollama say which models read pictures; llama.cpp serves the one model it was started with, and reads pictures only when it was started with that model's `--mmproj` file; vLLM doesn't say which of its models read pictures, so its model is picked. Ollama takes no API key, so it has no key field. Choosing another kind takes that kind's usual address (LM Studio 1234, Ollama 11434, llama.cpp 8080, vLLM 8000, on this computer) where the address was the usual one, and the model is picked anew. **Share Describe all** works with every kind. |
+| **Server address** | the kind's usual one | Any server listed under [Model servers on this computer](#model-servers-on-this-computer) or [on your other devices](#model-servers-on-your-other-devices) can go here, and any computer of yours that runs one of the four kinds. A server on another computer receives each photo described and each question to Analyze; the row says so. Changing the address clears its API key. |
+| **API key** | none | Not for Ollama. For llama.cpp and vLLM the key they were started with (`--api-key`), if they were; for LM Studio only if it asks for one (for example behind a proxy). Belongs to the server address; sent only there. |
+| **Check the server** (Test) | | Asks the server which models it has. |
+| **Suggested for this computer** (information) | (shown, for a server on this computer) | The model that suits this computer's graphics memory and the settings for it on the kind of server chosen: the context (4,096 tokens), how much of it goes on the graphics processor, one request at a time, and for llama.cpp and vLLM the command to start them with. A model that fits wholly on the graphics processor comes first; a mixture of experts too big for it keeps its experts in the computer's memory; a model the server already has comes before one to get, which is named. vLLM is suggested only where the whole model fits an NVIDIA card on Linux. The measurements behind it are in [MODELS_AND_HARDWARE.md](MODELS_AND_HARDWARE.md). For a server on another device, that device's own Settings suggests for its own hardware. |
+| **Load it** (button) | | Loads the suggested model with those settings: LM Studio on this computer through its own `lms` tool, Ollama anywhere through a request that loads it (it stays loaded 30 minutes after the last photo). Choosing the kind of server or the model does the same. It never downloads a model. llama.cpp and vLLM serve the model they were started with: start them with the command shown. |
+
+### Describe photo
 
 Describes a photo and reads its text with a vision model, without identifying anyone. Descriptions are kept in the
 private folder (`descriptions.json`).
@@ -244,33 +292,71 @@ private folder (`descriptions.json`).
 | Setting | Default | What it is for |
 |---|---|---|
 | **Describing with** | (shown) | Which model answers now, how many photos are described, and the built-in model's state. |
+| **Describe with** | Automatic | Automatic: the model server, or the built-in model when the server doesn't answer. Or the model server only, or the built-in model only. (The model server stays set either way: Analyze uses it.) |
+| **Model for describing** (with llama.cpp: **the one it serves**) | Automatic | Automatic: a loaded model that reads pictures, else the first that does; with vLLM, which doesn't say, its first model (pick the vision model). |
+| **Built-in model** (Download) | | Florence-2 large (0.8 GB from Hugging Face, checked by SHA-256): runs inside the app on the processor, so photos stay on this computer; plainer descriptions than a server's vision model gives. |
 | **Describe every photo as it's opened** | off | Runs Describe photo on each photo you open in the photo viewer, with the describer set here. |
-| **Describer** | Automatic | Automatic: the server, or the built-in model when the server doesn't answer. Or the server only, or the built-in model only. |
-| **Kind of server** | LM Studio | LM Studio, Ollama, llama.cpp's server (llama-server) or vLLM. Each is asked for its models in its own way, and the fields below are that kind's: LM Studio and Ollama say which models read pictures; llama.cpp serves the one model it was started with, and reads pictures only when it was started with that model's `--mmproj` file; vLLM doesn't say which of its models read pictures, so its model is picked. Ollama takes no API key, so it has no key field. Choosing another kind takes that kind's usual address (LM Studio 1234, Ollama 11434, llama.cpp 8080, vLLM 8000, on this computer) where the address was the usual one, and the model is picked anew. **Share Describe all** works with every kind. |
-| **Server address** | the kind's usual one | Any server listed under LM Studio on the network can go here, and any computer of yours that runs one of the four kinds. A server on another computer receives each photo described; the section says so. Changing the address clears its API key. |
-| **Model** (with llama.cpp: **Model it serves**) | Automatic | Automatic: a loaded model that reads pictures, else the first that does; with vLLM, which doesn't say, its first model (pick the vision model). |
-| **Suggested for this computer** (information) | (shown, for a server on this computer) | The model that suits this computer's graphics memory and the settings for it on the kind of server chosen: the context (4,096 tokens), how much of it goes on the graphics processor, one request at a time, and for llama.cpp and vLLM the command to start them with. A model that fits wholly on the graphics processor comes first; a mixture of experts too big for it keeps its experts in the computer's memory; a model the server already has comes before one to get, which is named. vLLM is suggested only where the whole model fits an NVIDIA card on Linux. The measurements behind it are in [MODELS_AND_HARDWARE.md](MODELS_AND_HARDWARE.md). For a server on another device, that device's own Settings suggests for its own hardware. |
-| **Load it** (button) | | Loads the suggested model with those settings: LM Studio on this computer through its own `lms` tool, Ollama anywhere through a request that loads it (it stays loaded 30 minutes after the last photo). Choosing the kind of server or the model does the same. It never downloads a model. llama.cpp and vLLM serve the model they were started with: start them with the command shown. |
-| **Check the server** (Test) | | Asks the server which models it has. |
-| **API key** | none | Not for Ollama. For llama.cpp and vLLM the key they were started with (`--api-key`), if they were; for LM Studio only if it asks for one (for example behind a proxy). Belongs to the server address; sent only there. |
-| **Share Describe all with other computers** | off | **Describe all** also sends photos to your other devices' servers of the same kind (LM Studio, Ollama, llama.cpp or vLLM) that have the same vision model. LM Studio's are found on the network; the other kinds are asked at each of your devices' addresses on the kind's usual port. Your other devices are the computers in your shared database, at the addresses they gave there: no other computer on the network is sent a photo, and without a shared database nothing is shared (the same model, so every description comes from one model): each takes the next photo as it finishes, one at a time, so a faster computer does more. **Each photo sent there is seen by that computer.** One that fails twice in a row is left out, its photo goes back to the others, and it is tried again every five minutes; this computer's server keeps going to the end. A single photo is described by the server above only. Measured: 40 photos in 136 s on one PC, 93 s with a second computer (RTX 4060 laptop on Wi-Fi) helping. |
+| **Share Describe all with other computers** | off | **Describe all** also sends photos to your other devices' servers of the same kind (LM Studio, Ollama, llama.cpp or vLLM) that have the same vision model. LM Studio's are found on the network; the other kinds are asked at each of your devices' addresses on the kind's usual port. Your other devices are the computers in your shared database, at the addresses they gave there: no other computer on the network is sent a photo, and without a shared database nothing is shared (the same model, so every description comes from one model): each takes the next photo as it finishes, one at a time, so a faster computer does more. **Each photo sent there is seen by that computer.** One that fails twice in a row is left out, its photo goes back to the others, and it is tried again every five minutes; this computer's server keeps going to the end. A single photo is described by the model server only. Measured: 40 photos in 136 s on one PC, 93 s with a second computer (RTX 4060 laptop on Wi-Fi) helping. |
 | **Shared with** | (shown, when on) | The computers Describe all would share with now, and their addresses. |
 | **Describe everything again** (button) | | Describes the whole library anew with the describer set above, for example after choosing a better model: every photo, and every video frame a face was found in, on all your devices. With a shared database, what is only on another device is shown by that device (as in the photo view), and the new descriptions reach every device. Asks first, saying how many, with which model and which computers. Each description is replaced when its new one arrives, so stopping loses nothing. The work is shared as Describe all's is: with **Share Describe all with other computers** on, among your devices' servers of the same kind that have the same model; with **Fully distributed system** on, also those beyond the local network. Progress and **Stop** are at the top of the Labeling tab. |
 | **Unfinished** (Carry on) | (shown, when one is) | A Describe everything again that was stopped, or that left some out (unreadable, or their device didn't answer): describes what is left, with the describer set now. When it was started and with which model is kept in the private folder (`describe.json`) until nothing is left. |
 | **Running now**, **Stop describing** | (shown, while describing) | How far Describe all or Describe everything again is and which computer did how many; Stop keeps what is described so far. |
-| **Built-in model** (Download) | | Florence-2 large (0.8 GB from Hugging Face, checked by SHA-256): runs inside the app on the processor, so photos stay on this computer; plainer descriptions than a server's vision model gives. |
 
----
+### Analyze
 
-## Labeling: history
-
-The library's part of the signal history (see **Face tracking: history**): what your photos and videos say of the
-people named in them, beside what the cameras keep. Only with a shared database.
+The Analyze tab (Ctrl+5): questions in your own words, typed or spoken, about anyone or any signal, now or over
+time, answered by a language model. The model writes its own read-only SQL over a set of tables the app makes of
+the shared database (every signal of the history, the expression readings, music, places, alerts, visits,
+sightings, photos and the faces in them), draws trend charts and shows the pictures it finds; each picture opens
+with when it was taken, who is in it, its description and what was read from it. What the devices read at this
+moment comes from their own buses. Each step shows the SQL it ran. Without a shared database it can only say what
+the devices read now. The conversation is kept in the page only, never stored. Its choices are kept in
+`analyze.json`.
 
 | Setting | Default | What it is for |
 |---|---|---|
-| **The library in the history** (information) | — | How many photos and videos have a named face and how many rows that makes, whether a shared database is set up, and whether the rows are worked out by themselves after a folder is added (they are where this device's **Keep a history of every signal** is on). |
-| **Work out the history from the library** | — | Writes, for each photo and each video frame a face was found in, one row for each named person in it: when (the camera's own time where the photo has one, else only the file's; a video's frame that many seconds after the file's time; the row says which), how good the face's picture is, how large the face is, how many faces the picture has and how many of them are named, and how the face looks (the expression model, on the picture the library keeps of the face; a blurry face is not read). A still says less than a camera: no voice, no pulse, no movement, nothing of a person's usual. A face named automatically says so. The rows follow the labels: do it again after naming more faces; a face named otherwise since gets its row under the new name and loses the old one. It runs in the background in the import's one slot (progress and Stop at the top of the Labeling tab), and reads each face's picture once. These rows are as old as their pictures, so the days set for a device's history don't delete them; Forget removes a person's. A photo without any time has no row. |
+| **Where Analyze runs** | the model server | The model server above, or one of your other computers' model servers: each device of your shared database is asked at its addresses on each kind's usual port, and the ones that answer are listed with their loaded model. Another computer keeps this one's processor and graphics for its camera (measured: a model answering on the same Windows computer cost its camera 15 to 20% of its checks; answering on another computer, none). Each question, and what it reads of your records, goes to that computer. |
+| **Model for answering** | Automatic | The model that answers, on that server. Automatic: the describer's model (else the server's loaded one). It needs to call tools: Qwen 3.6 35B-A3B does it well. |
+| **Let the model think first** | off | The model reasons before it answers: slower, sometimes better for questions that compare many things. |
+| **Pictures in an answer** | Most relevant first | The order of a gallery's pictures: most relevant first (the order the answer ranked them, for a look its reading highest first), newest first or oldest first; pictures without a date come last when ordered by date. A choice made on a gallery is kept for the next ones, and every gallery on the page follows it. The charts always show all the history; a gallery shows a page of pictures at a time (12, 24, 48 or 96, also kept). |
+| **Load the model for Analyze** (Load it) | | Loads the model with the longer context Analyze needs (16,384 tokens): LM Studio on this computer, Ollama anywhere. llama.cpp and vLLM serve what they were started with: start them with that context. |
+| **Answers come from** (information) | — | The model and the computer that answer now. |
+| **Speech** (Get the speech model; the Analyze tab's own Settings) | not downloaded | Speaking a question needs Whisper base.en (78 MB from Hugging Face, checked by SHA-256), downloaded once when you ask for it. Click the microphone, speak, click it again: the words appear in the box to check and send. The sound is made into words on this computer and never kept or sent. |
+
+With **Where Analyze runs** left on the model server and **Share Describe all with other computers** on, also your
+other computers' servers of the same kind with the model answer, when this computer's doesn't answer or is busy with
+Describe all.
+
+### Model servers on this computer
+
+Every model server on this computer, of every kind, and every one is kept open to your other devices while the app
+runs. LM Studio through its own settings and its server's switch. Ollama, llama.cpp's server and vLLM have no such
+setting: Ollama listens where its environment's `OLLAMA_HOST` says (this computer only unless it is set), llama.cpp
+and vLLM where their `--host` says. So once a minute the app looks for one of yours that listens on this computer
+only, and starts it again just as it was started (the same program, arguments, folder and environment, its models'
+folder among them) but listening on every interface: Ollama that its own app runs, through its app. One that doesn't
+answer on the network in time (90 s for Ollama, 5 minutes for llama.cpp, 20 for vLLM, which load a model first) is
+started again as it was, and isn't tried again until the app starts again. One that runs as another user or as a
+system service (Linux's `ollama.service`) can't be started again by the app: its line says how to open it. What was
+done is on the server's line of **Found here** (**Kept open by this app**). Windows asks once whether the server may
+be reached on your network. The rows about LM Studio are there only where LM Studio is installed: what the app does
+for LM Studio alone (it announces it on the network and shares its model files through a folder).
+
+| Setting | What it is for |
+|---|---|
+| **Found here** | Every app on this computer that serves language or vision models: LM Studio, Ollama, llama.cpp, vLLM, Jan and others on their usual ports, running or only installed (for LM Studio, its downloaded models), with how many models each has, which read pictures, which is loaded, and the address your other devices can use when it listens on all interfaces. Any of them can be the model server. Nothing on the network is asked. |
+| **LM Studio, kept for your devices** (where LM Studio is installed) | Whether LM Studio's server is running, and on which port. While the app runs it keeps LM Studio serving on all network interfaces and announces it on the network with its port, unless the computer already does. Lists the vision models the other LM Studio servers (or the shared folder) have and this one hasn't, and where each would come from. `FACE_LMSTUDIO=off` turns the upkeep off. |
+| **Get the same models** (button; where LM Studio is installed) | Gets those models: copied from **LM Studio's shared models folder** when they're there (the same files, each checked by SHA-256); if that copy fails in any way or the model isn't there, downloaded from the internet with LM Studio (the same model and quantization). A bar at the top of the Labeling tab shows which, how far, and how long is left. |
+| **LM Studio's shared models folder** (where LM Studio is installed) | A folder every computer can reach, for example on a NAS: `\\NAS\share\lmstudio-models` on Windows, `/mnt/nas/share/lmstudio-models` on Linux. Each computer with the app and LM Studio puts its vision models there (with a list of every file's size and SHA-256) and gets the ones it lacks from there first. Empty: not used. This computer's own setting (`lmstudio.json`). |
+
+### Model servers on your other devices
+
+| Setting | What it is for |
+|---|---|
+| **On each device** | Each of your devices (the computers in your shared database, not one removed on this device), asked at the addresses it gave there on each kind's usual port (LM Studio 1234, Ollama 11434, llama.cpp 8080, vLLM 8000): the model servers that answer, with their models and which is loaded. Any of them can be the model server, or where Analyze runs; with Share Describe all on, Describe all uses those of the same kind with the same model. The same list as **Where Analyze runs**. |
+| **LM Studio on other computers** (shown when there are any) | LM Studio servers on computers of your local network that aren't among your devices. LM Studio announces itself on the network and answers on its own port, so it can be found on any computer; the other kinds are found only on your devices. Searched only while Settings is open (and, with **Share Describe all with other computers** on, when a photo is opened in the labeling tool and during Describe all). One can be the model server (its address in **Server address**), but Describe all never sends a photo to a computer that isn't one of your devices. |
+
+---
 
 ## Music
 
@@ -282,7 +368,7 @@ kept. Nothing is listened to or logged until the switch is on, a person is chose
 | Setting | Default | What it is for |
 |---|---|---|
 | **Music** | (shown) | What plays now, whether songs are being logged and for whom, every audio interface that can be listened to (each output: what the computer itself plays; each microphone: what sounds in the room) with what it heard at the last listening, in a word (quiet, music, speech, steady background noise and its kind, activity...), and the chosen person's usual music. |
-| **Keep a log of the music that plays** | off | Each song Spotify shows as playing here is kept in the shared database when it ends: artist, song, when, for how long, what each audio interface heard meanwhile (in a word, with the background's numbers, and a song's numbers where music sounded), and how the song sits against the person's usual music. Music that an interface hears with no player naming a song is kept as "music in the room". A song seen for less than 15 seconds isn't kept. While on, the interfaces chosen under Listen on are listened to for 8 seconds every half minute, song or no song. Kept for the days set under **Face tracking: history** (90 unless changed). |
+| **Keep a log of the music that plays** | off | Each song Spotify shows as playing here is kept in the shared database when it ends: artist, song, when, for how long, what each audio interface heard meanwhile (in a word, with the background's numbers, and a song's numbers where music sounded), and how the song sits against the person's usual music. Music that an interface hears with no player naming a song is kept as "music in the room". A song seen for less than 15 seconds isn't kept. While on, the interfaces chosen under Listen on are listened to for 8 seconds every half minute, song or no song. Kept for the days set under [Signal history](#signal-history) (90 unless changed). |
 | **This device's music belongs to** | nobody | The named person whose music plays on this computer. Without one, nothing is logged. |
 | (on a Mac) | | An iPhone or iPad that macOS offers as a microphone is never listened to, by the music log, the Signals chart's sound or Listen to voice: opening it would take the phone over and stop its own app. A phone listens for itself. |
 | **Listen on** | every audio interface | While a song plays, 8 seconds every half minute: every interface (outputs and microphones), outputs only (what this computer itself plays), or none (song names only). A microphone hears the room, so it also hears a song playing on another device; the operating system may show the microphone in use. A Mac can't hear its own outputs: microphones only. |
@@ -292,55 +378,42 @@ kept. Nothing is listened to or logged until the switch is on, a person is chose
 
 ---
 
-## LM Studio
-
-LM Studio on this computer and on the local network: the servers Describe photo can use, and the vision models
-kept the same on every computer.
-
-| Setting | What it is for |
-|---|---|
-| **LM Studio on this computer** | Whether LM Studio's server is running, and on which port. While the app runs it keeps LM Studio serving on all network interfaces and announces it on the network with its port, unless the computer already does. Lists the vision models the other LM Studio servers (or the shared folder) have and this one hasn't, and where each would come from. |
-| **Get the same models** (button) | Gets those models: copied from the **Shared models folder** when they're there (the same files, each checked by SHA-256); if that copy fails in any way or the model isn't there, downloaded from the internet with LM Studio (the same model and quantization). A bar at the top of the Labeling tab shows which, how far, and how long is left. |
-| **Shared models folder** | A folder every computer can reach, for example on a NAS: `\\NAS\share\lmstudio-models` on Windows, `/mnt/nas/share/lmstudio-models` on Linux. Each computer with the app and LM Studio puts its vision models there (with a list of every file's size and SHA-256) and gets the ones it lacks from there first. Empty: not used. This computer's own setting (`lmstudio.json`). |
-| **Fully distributed system** | off | For computers that aren't all on one local network (some reached over a VPN, or over the internet). On: the search for LM Studio servers covers every network adapter of this computer, VPN tunnels and virtual networks included; this computer tells your other devices those addresses too (for their photos and cameras); and Describe all, with Share Describe all on, may send photos to LM Studio servers beyond your local network. Off: only the real adapters of your local network (Ethernet, Wi-Fi) are searched and told. This computer's own setting. |
-| **LM Studio on the network** | Every LM Studio server on the local network: each computer's name, its addresses (every network port) and port, the models it serves, which read pictures and which are loaded. Servers that announce themselves give their own port; the rest are found by trying LM Studio's port on each address of this computer's networks, only while Settings is open. With **Share Describe all with other computers** on, the same search also runs when a photo is opened in the labeling tool and during Describe all. |
-| **AI model apps found** | Apps that can run a vision model for Describe photo: LM Studio, Ollama, Jan, llama.cpp, vLLM and others on their usual ports here, the server set under Describe photo, apps installed but not running (for LM Studio, its downloaded models), and the address other computers can use when the server listens on all interfaces. |
-
----
-
-## This computer
-
-What the app found on this computer and what it does with it. See the user guide's
-[Your hardware: what the app uses](../face-recognizer/README.md#your-hardware-what-the-app-uses).
-
-| Setting | What it is for |
-|---|---|
-| **Hardware** | The processor (and threads), memory, graphics processors, NPU, and the ways ONNX Runtime can run models here (DirectML, CUDA, CoreML, CPU). |
-| **Where the work runs** | Which processor runs each job (face finding, recognition, photo quality, expression, face-shape cues, body posture), with the start-up check behind each choice: a model runs on the graphics processor only if it gives the processor's answers (within 1%), faster. On Windows, DirectML runs recognition, photo quality and expression as measured there, without that check at each start; face finding is checked on every system. Also how many photos an import works on at once. To choose yourself, set `FACE_DEVICE`. |
-
----
-
-## Shared database
+## Devices and shared database
 
 Optional: keeps every device's faces, names, labels and private data in one PostgreSQL database (with pgvector) that
 all your devices with Face Recognizer share, and each device's own settings there too. Without it, everything stays
-in each device's own files, as before. See the user guide's
-[Sharing between your devices](../face-recognizer/README.md#sharing-between-your-devices-shared-database).
+in each device's own files, as before. Setting one up from scratch, step by step (PostgreSQL and pgvector on each
+system, the certificates, the two configuration files): [SETUP.md](SETUP.md#3-a-shared-database-for-several-devices-once).
+
+### Shared database
 
 | Setting | Default | What it is for |
 |---|---|---|
-| **Shared database** (status) | Not set up | The server and database, whether it's reachable, when it last checked, how many changes made here wait to be sent (while the server can't be reached), and this device's name. |
-| **Connect** (server, port, database, user, password) | empty, 5432, `facerec` | A new server is prepared once: the app's role and database, and the server's certificate authority in its `server_ca` table. Logs in over an encrypted connection, takes the server's own certificate authority from its `server_ca` table and from then on checks the server with it on every connection. The first time, this device's data is merged in and every other device's is taken (Joining). Leave the server empty and Connect to stop using it: this device keeps its copy. Kept in `%APPDATA%\FaceLabels\database.json`; the password is protected by Windows for your user (DPAPI; on macOS and Linux the file is readable by you only). |
+| **Its state** | Not set up | The server and database, whether it's reachable, when it last checked, how many changes made here wait to be sent (while the server can't be reached), and this device's name. |
+| **Set up a new one on this computer** (Setup, Your devices, Several devices; Windows, a Mac and Linux, not a Raspberry Pi) | — | The shared database on this computer, every step done by the app at one button: it downloads PostgreSQL with pgvector from conda-forge (Windows: PostgreSQL 16.15, about 55 MB; a Mac: PostgreSQL 18.7, about 30 MB; Linux: PostgreSQL 18.7, about 45 MB; pgvector 0.8.6; each package checked by its size and SHA-256), into `database\server` in the app's folder; makes the data folder `database\data` beside it with a password for its administrator that is used once and never kept; makes the certificates (as **Certificates for a new database server** does) for this computer's addresses; lets in only encrypted connections from this computer's own networks, with a password; starts it on port 5432 (or the next free one up to 5442); and connects this device as **Connect** does with a new server. Then the administrator's way in is shut: only the app's own login reaches the server. It keeps running when the app is closed, and starts at your sign-in to this computer (Windows: a start at sign-in of your user, "Face Recognizer database", which runs the app's program without a window; a Mac: a launch agent of your user, with which macOS also starts it again should it stop; Linux: an entry in your autostart folder, `face-recognizer-database.desktop`); while the app runs it starts it again should it have stopped. No administrator rights; no service and no account are made. An update leaves it as it is; uninstalling stops it and takes its start at sign-in away, and its data stays. **Shared database → Its state** says when this computer holds it. Noted in `%APPDATA%\FaceLabels\database-host.json` (where, which port, the versions: no password); installed again into another folder, the app still finds it there. |
+| **Take it on** (Setup, Your devices; shown where the app's folder holds a database this private folder doesn't know) | — | A database this computer held, from before the app was installed again with a new private folder: the app stops it, gives its own login there a new password by PostgreSQL's single-user mode (which needs no login, only the folder's owner), starts it and connects as any device does to a server that is set up. Nothing else in the database changes. The device of the earlier install stays in the list of devices (Settings, Your devices, can remove it). |
+| **Forget it** (Setup, Your devices; shown where the database this computer held isn't in its folder any more) | — | This device stops using that database, so that a new one can be set up or another joined. Refused while the database is still there. |
+| **Certificates for a new database server** (the server's address; shown while this device has no shared database) | — | Makes a certificate authority of yours (once; kept on this device in `database-server\`, its key protected) and, under it, the server's certificate and key, with `setup-the-server.txt`: the files and the five lines of `postgresql.conf` and the line of `pg_hba.conf` the server needs. ECDSA P-256 with SHA-256, so the login's channel binding works. Made again later, the server's certificate is made under the same authority, so no device has to join again. |
+| **A certificate authority of your own** (shown while this device has no shared database) | — | Only for a server whose certificate you made yourself: paste your authority's certificate (PEM) and Connect registers it in the server. It takes the place of one made here. |
+| **Connect** (server, port, database, user, password) | empty, 5432, `facerec` | A server set up already: its own login (as your other devices have it), and this device takes the server's certificate authority from it. A new server: its administrator's login (user `postgres`) the first time. Before anything on the server is changed, the app checks that the server shows a certificate from the authority made (or given) here; then it makes its own login (`facerec`: not an administrator, with a password of the app's own making, `scram-sha-256`), the database (made from the server's first one when the database named isn't there), pgvector in it and its schema, brings the tables up to date, registers the authority in the server's `server_ca` table for every device to take, and keeps only its own login: never the administrator's. The administrator's login is refused for a server that is set up already (its devices' login stays as it is), and a login named `facerec` that is there already is never changed. A preparing that stopped half-way (pgvector missing, say) goes on where it was at the next Connect. With the app's own login on a server that has its schema, pgvector and tables but no authority yet, the app does what that login may. Every connection is encrypted and, from then on, checks the server with its authority. The first time, this device's data is merged in and every other device's is taken (Joining). Leave the server empty and Connect to stop using it: this device keeps its copy. Kept in `%APPDATA%\FaceLabels\database.json`; the password is protected by Windows for your user (DPAPI; on macOS and Linux the file is readable by you only). |
 | **Join a new device** (on a device without a shared database: **Join a shared database**; Face tracking → Controls) | — | Lets a device into your shared database without anything being typed: one device shows a join code (a QR code) and the other scans it with its camera. Either way round. A device of the database shows a code and the new device scans it (a phone's own camera app reads it too); or the new device shows one and a device of the database scans it, names the new device and asks you before anything is handed over, which is how a phone lets in a computer you are sitting at. The new device gets the database's login and, when the device that lets it in has it, the passphrase for keys: it reads everything your other devices read, and can let further devices in the same way. A code works once, for two minutes, and only between two devices on the same local network; it holds no login. A device still on version 2.2 can let a new one in too (the login alone). A device that joined is in at once, and each of your computers says so in its alert inbox within half a minute: **A new device joined your shared database**, with the device's name, its system and its app's version. |
-| **Share my photos with my other devices** | on (with a shared database) | Runs this device's peer service: lets your other devices show the original photos and videos this device has, fetched when opened and never kept there, and carries this camera's live stream (**Stream this camera**, under Face tracking: recognition). They ask this device over your local network on port 8767 (the app's ports + 3; `FACE_PEER_PORT`), encrypted (TLS, this device's own certificate, whose fingerprint is in the database and checked by the asker), and only your devices can ask (requests signed with a key made from the database password). Photos by their content only, nothing else. Also lists the devices sharing now and their addresses. Kept in `peer.json`; `FACE_PEER=off` turns it off whatever this says. |
+| **Share my photos with my other devices** | on (with a shared database) | Runs this device's peer service: lets your other devices show the original photos and videos this device has, fetched when opened and never kept there, and carries this camera's live stream (**Stream this camera**, under [Camera](#camera)). They ask this device over your local network on port 8767 (the app's ports + 3; `FACE_PEER_PORT`), encrypted (TLS, this device's own certificate, whose fingerprint is in the database and checked by the asker), and only your devices can ask (requests signed with a key made from the database password). Photos by their content only, nothing else. Also lists the devices sharing now and their addresses. Kept in `peer.json`; `FACE_PEER=off` turns it off whatever this says. |
+| **Copy settings from** | — | Takes another device's options for the Face tracking and Labeling pages and which describer and model it uses, in place of this device's. Not the settings that say where a device sends photos or fetches files (the model server's address, Share Describe all, the shared models folder, Fully distributed system): those are set on each device. Copy settings is the only way a device's settings come from the database: a device otherwise keeps its own, and puts them back if its rows there are changed by anyone else. |
+
+### Your devices
+
+| Setting | Default | What it is for |
+|---|---|---|
 | **Name a device** (a device to choose, its name) | — | What you call a device. Every device of the database then shows it under that name: in the Cameras tab, in alerts and in these lists. A phone calls itself only "iPhone", and a name tells two of them apart. A name is one device's alone, as an email address is one account's: one that another device goes by already is not taken, whatever its capitals. A device that joins calling itself what another goes by already is given a number by itself ("iPhone 2"), and its own **Join a new device** page asks whoever is at it for a name; that page shows and changes a device's own name at any time, which is how a phone is named from the phone. Saving an empty name takes the name away again. The name is only ever shown: it has nothing to do with how the devices find each other on the network. |
-| **Location history of** (a device to choose), **Where it was** | — | The chosen device's location history, the newest row first (up to 200 rows): when, the town, the coordinates, how sure. Only devices whose **Show and keep this device's location** is or was on have rows. |
-| **Delete a device's signal history** (a device to choose, or the library's photos and videos) | — | Deletes every row that device wrote into the signal history in the shared database, from any device; or every row that was worked out from the library. It can't be undone. A device goes on writing rows while its own switch is on, and the library's rows can be worked out again. |
-| **Delete a device's location history** (a device to choose) | — | Deletes every row of that device's location history in the shared database, from any device. It can't be undone. The device goes on writing rows while its own switch is on. |
-| **Remove a device, on this device only** | — | For a device of your database that this device should have nothing to do with. This device then shows nothing of it (its camera in the Cameras tab, its photos), asks it for nothing (a photo only it has, a description from its LM Studio), and answers none of its requests for this device's camera, readout and photos. It is this device's own list: nothing changes in the shared database, no password or key is changed, and your other devices go on with that device as before unless you remove it there too. The device is removed together with the certificate it has at that time, so the same machine is refused here under another id as well; adding it back forgets the certificate too. What it does not do: the removed device stays in the database and still reads what every device shares through it (names, labels, descriptions). |
+| **Remove a device, on this device only** | — | For a device of your database that this device should have nothing to do with. This device then shows nothing of it (its camera in the Cameras tab, its photos), asks it for nothing (a photo only it has, a description from its model server), and answers none of its requests for this device's camera, readout and photos. It is this device's own list: nothing changes in the shared database, no password or key is changed, and your other devices go on with that device as before unless you remove it there too. The device is removed together with the certificate it has at that time, so the same machine is refused here under another id as well; adding it back forgets the certificate too. What it does not do: the removed device stays in the database and still reads what every device shares through it (names, labels, descriptions). |
 | **Add a removed device back** (shown while a device is removed here) | — | Names the devices removed on this device. Choosing one makes it a device like the others again, here. |
-| **Copy settings from** | — | Takes another device's options for the Face tracking and Labeling pages and which describer and model it uses, in place of this device's. Not the settings that say where a device sends photos or fetches files (the describe server's address, Share Describe all, the shared models folder, Fully distributed system): those are set on each device. Copy settings is the only way a device's settings come from the database: a device otherwise keeps its own, and puts them back if its rows there are changed by anyone else. |
-| **Passphrase for keys** (typed twice, at least 10 characters) | not set | Until it's set, each device's keys stay on it alone. The Web search keys and the describe server's API key are kept in the database encrypted with it (AES-256-GCM, key from the passphrase by scrypt), on the device before they're sent. Set it once, on any device. Another device gets it only from you: type it there too (the button reads **Enter**), or use **Get the passphrase from another device**. The database password alone gets nobody the passphrase or a key. Typing a new one (twice) on a device that has it changes it: every key is encrypted again, and your devices that have the current one take the new one by themselves (a device that missed two changes needs it typed, or a code, again). Each device keeps it (`secret.key`, protected like the password), so the field shows it masked with the eye button. |
+| **Fully distributed system** | off | For devices that aren't all on one local network (some reached over a VPN, or over the internet). On: every network adapter of this computer counts, VPN tunnels and virtual networks included; this computer tells your other devices those addresses too, your devices are asked for their cameras, photos and readings at addresses beyond your local network, the search for LM Studio servers covers them, and Describe all, with Share Describe all on, may send photos to your devices' model servers beyond your local network. Off: only the real adapters of your local network (Ethernet, Wi-Fi) are searched and told. This computer's own setting. |
+
+### Passphrase for keys
+
+| Setting | Default | What it is for |
+|---|---|---|
+| **Passphrase** (typed twice, at least 10 characters) | not set | Until it's set, each device's keys stay on it alone. The Web search keys and the model server's API key are kept in the database encrypted with it (AES-256-GCM, key from the passphrase by scrypt), on the device before they're sent. Set it once, on any device. Another device gets it only from you: type it there too (the button reads **Enter**), or use **Get the passphrase from another device**. The database password alone gets nobody the passphrase or a key. Typing a new one (twice) on a device that has it changes it: every key is encrypted again, and your devices that have the current one take the new one by themselves (a device that missed two changes needs it typed, or a code, again). Each device keeps it (`secret.key`, protected like the password), so the field shows it masked with the eye button. |
 | **Get the passphrase from another device** (shown on a device that doesn't have it) | — | **Show a code** shows a one-time code on this device (8 letters and digits, for 15 minutes; **This device's code**). Type it on a device that has the passphrase and this device is given it, sealed so only it can open it. The code is how each device knows the other is yours; it is never sent to the database. |
 | **A device is asking for the passphrase** (shown on a device that has it, while another asks) | — | Names the device asking. Type the code that device shows and it is given the passphrase. If you didn't just ask on a device yourself, do nothing: without the code nobody is given anything. |
 | **Passphrase on each device** | — | Each device's fingerprint of the passphrase it has, and whether it's the current one (one-way: a fingerprint can't be turned back into it); a device counts as current when it also shows that it holds the passphrase, which nobody without it can do. Also each device's database password fingerprint. |
@@ -350,10 +423,39 @@ What is shared, and what stays each device's own:
 
 | Shared by every device | Each device's own (in the database under its id) | Only ever sent, never taken by other devices |
 |---|---|---|
-| faces (prints, pictures, boxes), labels, photos (by content), photo tags and dates, Web search answers, descriptions, Collect faces pictures, alerts (also "moved between cameras"), presence visits, expression readings (sent only, see Keep expression readings), each person's usual look and signal normals, fitted expression numbers, keys (encrypted; the passphrase sealed to each device you let in), forgotten people, Web search use per month | page options, describer choices, LM Studio shared folder, where each photo is on it (`photo_paths`), measured hardware and model numbers; the device list (name, app version, addresses and certificate fingerprint for the peer service, last seen, whether its camera streams) and who on its alert list its camera saw in the last 20 minutes (names and times, for "moved between cameras", only while that alert is on) | the location history of each device whose location is switched on and the signal history of each device whose history is switched on (both kept for the days that device has set under Face tracking: history, 90 unless changed), the app log (kept 90 days), the undo history log, posed expression tests |
+| faces (prints, pictures, boxes), labels, photos (by content), photo tags and dates, Web search answers, descriptions, Collect faces pictures, alerts (also "moved between cameras"), presence visits, expression readings (sent only, see Keep expression readings), each person's usual look and signal normals, fitted expression numbers, keys (encrypted; the passphrase sealed to each device you let in), forgotten people, Web search use per month | page options, describer choices, LM Studio shared folder, where each photo is on it (`photo_paths`), measured hardware and model numbers; the device list (name, app version, addresses and certificate fingerprint for the peer service, last seen, whether its camera streams) and who on its alert list its camera saw in the last 20 minutes (names and times, for "moved between cameras", only while that alert is on) | the location history of each device whose location is switched on and the signal history of each device whose history is switched on (both kept for the days that device has set under Signal history, 90 unless changed), the app log (kept 90 days), the undo history log, posed expression tests |
 
 Live camera pictures and readouts never go to the database: they go from device to device over the peer service, and
 stay in memory.
+
+---
+
+## This computer
+
+What the app found on this computer and what it does with it (the measurements behind its choices:
+[MODELS_AND_HARDWARE.md](MODELS_AND_HARDWARE.md)).
+
+| Setting | What it is for |
+|---|---|
+| **Hardware** | The processor (and threads), memory, graphics processors, NPU, and the ways ONNX Runtime can run models here (DirectML, CUDA, CoreML, CPU). |
+| **Where the work runs** | Which processor runs each job (face finding, recognition, photo quality, expression, face-shape cues, body posture), with the start-up check behind each choice: a model runs on the graphics processor only if it gives the processor's answers (within 1%), faster. On Windows, DirectML runs recognition, photo quality and expression as measured there, without that check at each start; face finding is checked on every system. Also how many photos an import works on at once. To choose yourself, set `FACE_DEVICE`. |
+
+---
+
+## Cameras tab
+
+Every device's live camera in a grid (devices with **Stream this camera to my other devices** on), each with its
+readout, and one list of events from every camera. Over each picture's lower edge: where that device is, for a
+device whose **Show and keep this device's location** is on (what the device itself says while this tab follows
+it, else the newest row of its location history, marked "last known"). Its choices aren't in the Settings tab; the
+tab remembers them in the window's storage, on this computer only.
+
+| Choice | Default | What it is for |
+|---|---|---|
+| **Show** (a tick per device, in the tab's header) | every camera | Untick a device to leave its camera out of the grid. |
+| **Events** (Hide events) | shown | The events list is a fly-out on the side; closed, the cameras take the whole width and the Events button counts what came since. |
+| **Focus** (on each camera's picture; or double-click the picture) | all cameras | That camera alone, laid out as that device's own Face tracking tab: its picture as large as the window allows, its live readout beside it with the three counts, its Signals chart in a drawer under the picture. **All cameras** in the header (or Esc) brings the grid back. The other cameras go on being fetched meanwhile. Not remembered: the tab opens on all cameras. |
+| **Signals** (under each camera) | closed | That device's Signals chart, as its own Face tracking tab shows it: every reading it sends with its readout, each with its own time, so the chart is as fast as that device checks its picture. Kept in this page's memory only, from the moment the Cameras tab is opened. A camera whose chart is open takes the whole row, and the grid scrolls. |
 
 ---
 
@@ -372,7 +474,9 @@ Set before starting the app (or a program) to change how it starts.
 | `FACE_LOCATION` | `on` | For a test device: its Face tracking page switches **Show and keep this device's location** on when the app starts, as if by hand (so it stays on afterwards, until it is switched off there). The system still asks for its own permission. Without it the location is on only where its owner switched it on. |
 | `FACE_HISTORY` | `on` | For a test device: its Face tracking page switches **Keep a history of every signal** on when the app starts, as if by hand (so it stays on afterwards, until it is switched off there). It is no part of `FACE_SIGNALS`: the history has a switch of its own. |
 | `FACE_HISTORY_HOLD` | seconds, 1 to 3600 | For measuring: a fixed wait between two writings of the history while somebody is in view, in place of the pace the writer sets by itself. |
-| `FACE_LMSTUDIO` | `off` (or `0`, `no`) | Don't keep LM Studio on all interfaces, announce it, or put its models in the shared models folder. |
+| `FACE_LMSTUDIO` | `off` (or `0`, `no`) | Don't keep LM Studio on all interfaces, announce it, or put its models in the shared models folder; and don't keep the other kinds of model server open either (as `FACE_KEEP_SERVERS=off`). |
+| `FACE_TEST_CONDA` | `http://127.0.0.1:<port>` only | For a check: where PostgreSQL's packages are fetched from instead of conda-forge (a stand-in on this computer). Any other value is ignored. |
+| `FACE_KEEP_SERVERS` | `off` (or `0`, `no`) | Don't start Ollama, llama.cpp's server or vLLM again to listen on every interface (LM Studio's upkeep goes on). |
 | `FACE_LLM_URL` | an address | The default Describe photo server (before one is set in Settings). |
 | `GOOGLE_VISION_API_KEY` | a key | Google key for Web search, instead of saving one. |
 | `FACE_PORTS` | a port n | The app window's ports: n to n+2 instead of 8764 to 8766 (to run a second copy). The peer service then uses n+3, Spotify's one-time answer to **Connect** n+4 (8768 by default: the redirect address of your Spotify key must name that port), and the Cameras tab's page n+5 (8769 by default; on 127.0.0.1 like the others). |
@@ -381,8 +485,6 @@ Set before starting the app (or a program) to change how it starts.
 | `FACE_UI` | `browser`, `none` | browser: open the app in the web browser instead of its window (same as `--browser`). none: start the servers only, with no window and no browser (for test copies; open `http://127.0.0.1:8764/` yourself). |
 | `FACE_ROOT` | a folder | Another folder with `models` and `data`. |
 | `FACE_HOME` | a folder | Another folder instead of the private `FaceLabels` folder. |
-| `FACE_DB` | a PostgreSQL connection string (`host=... dbname=... user=... password=...`) | Use this shared database instead of the one set in Settings (tests and test copies). |
-| `FACE_DB_SCHEMA` | a schema name | The schema in it (default `facerec`). |
 | `FACE_PEER` | `off` | Don't share this device's photos or stream its camera to the other devices (no peer service), whatever Settings says. |
 | `FACE_PEER_PORT` | a port | The peer service's port instead of the app's ports + 3 (8767, or `FACE_PORTS` + 3). |
 | `XDG_DATA_HOME` | a folder | Linux: the private folder is `FaceLabels` inside it (default `~/.local/share`), unless `FACE_HOME` is set. |
@@ -402,15 +504,20 @@ Nothing is sent anywhere by itself except as listed here.
 |---|---|
 | First start | Downloads the face models from their publishers or the project's `models-v2` release (checked by SHA-256). |
 | **Check for updates** | Asks GitHub for the latest release, when clicked. |
+| **Set up a new one on this computer** (the shared database) | Downloads PostgreSQL with pgvector from conda-forge (conda.anaconda.org/conda-forge, the packages pinned by size and SHA-256), when clicked. From then on PostgreSQL listens on your network (port 5432 or the next free one), encrypted connections with a password from this computer's own networks only, also while the app is closed. |
 | **Web search** | One face to Amazon and its photo to Google, when clicked, with your keys. |
-| **Describe photo** on another computer's server | Each photo described goes to that server. |
+| **Describe photo** with a model server on another computer | Each photo described goes to that server. |
+| **Analyze** (a question asked) | The question, the conversation before it and what the model's SQL reads of the shared database (names, readings, times, places, songs, descriptions) go to the model server (AI models, Model server: this computer by default) or to the computer chosen under **Where Analyze runs**; with the model server and Share Describe all on, also to your other computers' servers. The SQL runs on your shared database, read only. A spoken question's sound never leaves this computer. |
+| **Where Analyze runs**, **Model servers on your other devices → On each device** (the list) | When the Analyze tab loads, and while its settings or the Settings tab are shown, at most once a minute, with a shared database: each of your devices (not one removed on this device) is asked at the addresses it gave there, on each kind's usual port (LM Studio 1234, Ollama 11434, llama.cpp 8080, vLLM 8000), for its list of models. Local network only, unless **Fully distributed system** is on. No photo and no question goes with it. |
+| **Analyze → Get the speech model** | Downloads Whisper base.en from Hugging Face, when clicked. |
 | **Share Describe all with other computers** | During Describe all and Describe everything again, photos go to your other devices' servers of the same kind (LM Studio, Ollama, llama.cpp or vLLM) that have the same model: the computers in your shared database, at the addresses they gave there. For Ollama, llama.cpp and vLLM each of those addresses is asked on the kind's usual port for its models first. Never to another computer on the network, and nowhere without a shared database. |
-| **Load it**, choosing the kind of server or the model (Describe photo) | Ollama: a request to the server set, to load the suggested model (no photo). LM Studio: this computer's own `lms` tool, nothing on the network. Never a download. |
+| **Load it**, choosing the kind of server or the model (Model server, Describe photo) | Ollama: a request to the server set, to load the suggested model (no photo). LM Studio: this computer's own `lms` tool, nothing on the network. Never a download. |
 | **Describe everything again** | With a shared database: each photo or video frame only another of your devices has is asked of that device (the peer service: local network, TLS, signed) and described like the rest, so with a server on another computer or Share Describe all on it goes there too. Nothing more than Describe all sends otherwise. |
 | **Built-in model**, **Get the same models** (from the internet) | Downloads, when clicked: Hugging Face, LM Studio's sources. |
 | **Music → Spotify** (Connect), **Read my liked songs** | When clicked: Spotify's own sign-in page opens in your browser; then the app asks Spotify (accounts.spotify.com, api.spotify.com, HTTPS) for the connected account's liked songs and their artists' genres. Nothing is sent to Spotify but that question and your key. The music log itself asks nothing of the internet: the song's name comes from the Spotify app's window, the numbers from this computer's own audio interfaces. |
-| **LM Studio → LM Studio on the network** | While Settings is open (and, with Share Describe all on, when a photo is opened and during Describe all): a connection attempt to LM Studio's port on each address of this computer's local networks, each server's model list, each computer's name (mDNS or NetBIOS), and an mDNS question for announced servers. Local network only, on this computer's real adapters; with **Fully distributed system** on, every adapter's network (VPNs and virtual networks too), and servers found beyond the local network may be sent photos by Describe all and Describe everything again. |
-| **LM Studio → AI model apps found** | While Settings is open: asks the usual AI ports on this computer, and the Describe photo server set (which may be another device, with its own API key) for its models. |
+| **Model servers on your other devices → LM Studio on other computers** | While Settings is open (and, with Share Describe all on, when a photo is opened and during Describe all): a connection attempt to LM Studio's port on each address of this computer's local networks, each server's model list, each computer's name (mDNS or NetBIOS), and an mDNS question for announced servers. Local network only, on this computer's real adapters; with **Fully distributed system** on, every adapter's network (VPNs and virtual networks too), and servers found beyond the local network may be sent photos by Describe all and Describe everything again. |
+| **Model servers on this computer → Found here** | While Settings is open: asks the usual AI ports on this computer, and the model server set (which may be another device, with its own API key) for its models. |
+| Ollama, llama.cpp's server and vLLM kept open | While the app runs (every minute, nothing on the network): a server of yours on this computer that listens on this computer only is started again listening on every interface, so your other devices can use it, and anyone else on your local network could reach it too, as with LM Studio. `FACE_KEEP_SERVERS=off` (or `FACE_LMSTUDIO=off`) stops it. |
 | **LM Studio on this computer** | While the app runs (every minute): keeps this computer's LM Studio server listening on all network interfaces (restarting it with `--bind 0.0.0.0` if it listened on this computer only; CORS stays as LM Studio's own **Enable CORS** setting has it: on means a web page open in a browser may call the server too, and the app never switches it on), so other computers on the network can use it, and announces it on the local network (mDNS). `FACE_LMSTUDIO=off` stops both. |
 | **Shared models folder** | While the app runs: puts this computer's vision models in that folder (your own NAS or share); **Get the same models** copies from it. |
 | **Share my photos with my other devices** | While on (with a shared database): the peer service listens on the local network (port 8767), TLS. It answers your other devices' requests for its original photos (by content hash) and for this camera's stream. Opening a photo another device has asks that device for it. |

@@ -8,7 +8,8 @@
 ; installed, and the HEIC libraries can't be fetched by the app itself) into a folder the user may write to, and makes the
 ; Start menu and desktop icons. No administrator rights: the app keeps its face models and the data folder beside
 ; the .exe, so it can't live under Program Files. The face models are not in it: the app asks for them at its
-; first start and fetches them (79 MB).
+; first start and fetches them (with MediaPipe's runtime for the tracker page, about 90 MB). Before anything is
+; installed, Setup shows the licence (LICENSE) and goes on only when it is accepted.
 ; The app's window is shown by Microsoft's WebView2 runtime. On a computer that doesn't have it (it is part of
 ; Windows 11 and on nearly every Windows 10) Setup asks, and on a yes runs Microsoft's own small installer for it,
 ; which it carries: that downloads the runtime from Microsoft and installs it for this user, without administrator
@@ -30,6 +31,10 @@
 #endif
 #ifndef Output
   #define Output "..\..\target\dist"
+#endif
+#ifndef License
+  ; the licence as Windows shows text (build.ps1 passes a copy with Windows' line endings)
+  #define License "..\..\LICENSE"
 #endif
 #ifndef WebView2
   #error Microsoft's WebView2 bootstrapper isn't named (/DWebView2=<file>): build.ps1 fetches and checks it
@@ -70,6 +75,10 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
+; The licence, on a page of its own before anything else: Next only once "I accept the agreement" is chosen, and
+; declining ends Setup (the owner, 2026-11-25: "Setup should show the license page and accept / decline in the
+; installer"). A silent install (the Microsoft Store's, with its own licence terms) shows no page.
+LicenseFile={#License}
 OutputDir={#Output}
 OutputBaseFilename={#SetupName}
 SetupIconFile={#Icons}\icon.ico
@@ -119,6 +128,16 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; the shared database, where this computer holds it (database\, which no install, update or uninstall touches): its
+; server stopped and its start at sign-in taken away; its data stays, as models\ and data\ do
+Filename: "{app}\{#AppExe}"; Parameters: "stop-database --root ""{app}"""; Flags: runhidden waituntilterminated; RunOnceId: "StopDatabase"
+
+[Registry]
+; that start at sign-in, which the app writes for this user when it holds the shared database: Setup writes nothing
+; here, and the uninstaller takes the value away
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Face Recognizer database"; Flags: uninsdeletevalue dontcreatekey
 
 [Code]
 // The app's processes started from this folder's FaceRecognizer.exe: two while it runs, the app and the tracker it

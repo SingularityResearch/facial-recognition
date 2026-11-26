@@ -22,8 +22,11 @@ use crate::{
 };
 
 /// The POSTs answered here (for the size a body may have).
-pub const POSTS: [&str; 13] = [
+pub const POSTS: [&str; 16] = [
     "/api/db/setup",
+    "/api/db/host",
+    "/api/db/certificates",
+    "/api/db/ca",
     "/api/db/device",
     "/api/db/alias",
     "/api/db/locations/forget",
@@ -89,6 +92,13 @@ impl Labeler {
         let mut out = json!({"available": true, "config": config, "device": {"id": device.id, "name": device.name}, "sync": sync,
                              "share": face_db::peer::sharing(&self.home), "passphrase": Keys::new(&self.home, &device.id).local_key().is_some(),
                              "devices": []});
+        // certificates for a new server, made here or given (never their keys: a page sees only that they are there)
+        out["certs"] = face_db::servercert::state(&self.home);
+        // the shared database held on this computer: what it is, whether it runs, how a setting up goes
+        #[cfg(feature = "fetch")]
+        if let Some(root) = self.data.parent() {
+            out["host"] = crate::dbhost::state(root, &self.home);
+        }
         if config.is_some() && sync["state"] == "online" {
             let keys = Keys::new(&self.home, &device.id);
             // on the connection kept for short questions: Settings asks this every few seconds while it is open
@@ -191,6 +201,39 @@ impl Labeler {
         of_the_rest(&found)
     }
 
+    /// The owner's other devices by the names they go by, each with its addresses as it gave them in the shared
+    /// database, without those removed on this device: [(name, addresses)]. Empty without a shared database.
+    pub(crate) fn other_devices_named(&self) -> Vec<(String, Vec<String>)> {
+        if !matches!(Settings::load(&self.home), Ok(Some(_))) {
+            return Vec::new();
+        }
+        let removed = face_home::blocked::ids(&self.home);
+        let me = self.device().map(|d| d.id).unwrap_or_default();
+        let asked = self.kept.ask(async |client, _| {
+            let sql = format!(
+                "SELECT id::text, {}, peer_addresses FROM devices WHERE id <> $1::text::uuid",
+                face_db::DEVICE_NAME
+            );
+            let rows = client.query(&sql, &[&me]).await.map_err(|e| e.to_string())?;
+            Ok(rows
+                .iter()
+                .map(|r| {
+                    (
+                        r.get::<_, String>(0),
+                        r.get::<_, String>(1),
+                        r.get::<_, Option<Vec<String>>>(2).unwrap_or_default(),
+                    )
+                })
+                .collect::<Vec<_>>())
+        });
+        asked
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(id, _, _)| !removed.contains(id))
+            .map(|(_, name, addresses)| (name, addresses))
+            .collect()
+    }
+
     /// One Web search counted in the shared database before it is sent, so that every device's searches
     /// count toward one cap a service: Ok(Some(used this month)); Ok(None) without a shared database or
     /// while it can't be reached (this device then counts alone); Err past the cap.
@@ -228,6 +271,8 @@ impl Labeler {
         let fail = |e: String| Response::error(500, e);
         Some(match req.path.as_str() {
             "/api/db" => self.db_state().map(Response::json).map_err(fail),
+            // for the setup page: a new copy, or an update from which version
+            "/api/setup" => Ok(Response::json(crate::versionnote::read(&self.home))),
             // a device's location history, the newest row first: read on the connection kept for short
             // questions, each row checked as it is read
             "/api/db/locations" => {
@@ -267,6 +312,62 @@ impl Labeler {
         let text = |k: &str| body.get(k).and_then(Value::as_str).unwrap_or("");
         let fail = |e: String| Response::error(500, e);
         Some(match path {
+            // the certificates for a new database server, made here for its owner to put on it (the authority
+            // made once and kept; its key never leaves this device)
+            "/api/db/certificates" => {
+                let names: Vec<String> = text("server")
+                    .split(|c: char| c == ',' || c.is_whitespace())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .take(8)
+                    .collect();
+                if names.is_empty() {
+                    return Some(Err(asked("Type the server's address, as your devices reach it.")));
+                }
+                face_db::servercert::make(&self.home, &names).map_err(asked).map(|folder| {
+                    Response::json(json!({"ok": true,
+                        "message": format!("Made in {}: put server.crt and server.key on the server as setup-the-server.txt there says", folder.display()),
+                        "certs": face_db::servercert::state(&self.home)}))
+                })
+            }
+            // the shared database on this computer: fetched, made, started and connected by the app (dbhost.rs),
+            // on a thread of its own; the page asks /api/db for how it goes
+            #[cfg(feature = "fetch")]
+            "/api/db/host" => {
+                let Some(root) = self.data.parent() else {
+                    return Some(Err(fail("The app's folder isn't known.".to_string())));
+                };
+                // {"way": "new" (the default) | "take" (a database here that this private folder doesn't know) |
+                // "forget" (the one this computer held is gone)}
+                let way = text("way");
+                if way == "forget" {
+                    return Some(crate::dbhost::forget(root, &self.home).map_err(asked).map(|message| {
+                        self.sync_soon();
+                        Response::json(json!({"ok": true, "message": message}))
+                    }));
+                }
+                if face_db::config(&self.home).is_some() {
+                    return Some(Err(asked("This device has a shared database already.")));
+                }
+                let job = if way == "take" { crate::dbhost::Job::TakeOn } else { crate::dbhost::Job::SetUp };
+                // once it is set up, the sync looks at once (by itself it looks every half minute)
+                let syncer = self.syncer().cloned();
+                let done = move || {
+                    if let Some(s) = syncer {
+                        s.note();
+                    }
+                };
+                Ok(Response::json(if crate::dbhost::begin(root, &self.home, job, done) {
+                    json!({"ok": true, "message": if job == crate::dbhost::Job::TakeOn { "Taking it on." } else { "Setting it up: this takes a minute or two." }})
+                } else {
+                    json!({"ok": true, "message": "It is being set up already."})
+                }))
+            }
+            // a certificate authority of the owner's own, for a server whose certificate they made themselves
+            "/api/db/ca" => face_db::servercert::keep_given(&self.home, text("pem")).map_err(asked).map(|()| {
+                Response::json(json!({"ok": true, "message": "Kept: Connect registers it in the server",
+                                      "certs": face_db::servercert::state(&self.home)}))
+            }),
             // set up (or with no host, stop using) the shared database
             "/api/db/setup" => {
                 let or =

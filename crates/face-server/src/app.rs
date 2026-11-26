@@ -296,6 +296,10 @@ impl App {
         if self.begun.swap(true, std::sync::atomic::Ordering::SeqCst) {
             return;
         }
+        // the shared database, where this computer holds it: its server running before the sync first looks for it
+        // (it runs whether the app does or not; the app starts it again should it have ended)
+        #[cfg(all(feature = "fetch", feature = "sync"))]
+        crate::dbhost::keep(&self.root, &self.home);
         self.run_programs(&["track", "label"]);
         // LM Studio here: kept serving on all interfaces and announced (every minute; FACE_LMSTUDIO=off: never)
         #[cfg(feature = "import")]
@@ -798,6 +802,7 @@ pub fn start(root: &Path, home: &Path, pages: &Path, sync: bool) -> Result<Start
     // answering, took the next ports, and both ran on one library, each ending the other's window (a Raspberry
     // Pi, 2026-11-23: two starts eight seconds apart). The place is taken before anything else and held for
     // the run; a copy that can't take it ends here, having started nothing.
+    crate::versionnote::note(home);
     take_place(home)?;
     let ports = ports(std::env::var("FACE_PORTS").ok().as_deref())?;
     let app = App::new(root, home, pages, ports, sync);
@@ -814,21 +819,32 @@ pub fn start(root: &Path, home: &Path, pages: &Path, sync: bool) -> Result<Start
 #[cfg(feature = "fetch")]
 pub fn start_asking(root: &Path, home: &Path, pages: &Path, sync: bool, get: Option<bool>) -> Result<Started, String> {
     use face_tools::first_run::{fetch, missing};
+    // which version ran here before (a new copy, an update): before anything of the app's own is written there
+    crate::versionnote::note(home);
     // (before the question too: two copies that both ask would both begin)
     take_place(home)?;
+    // the licence first, where no installer asked for it (a Mac, Linux, the Raspberry Pi), in the app's own page:
+    // only where someone answers there (not a start that nobody watches: --get, --no-get, no window)
+    let watched = get.is_none() && std::env::var("FACE_UI").map_or(true, |ui| ui != "hidden" && ui != "none");
+    let licence = watched && crate::licence::due(home);
     let m = missing(root, true);
-    if m.is_empty() {
+    if m.is_empty() && !licence {
         return start(root, home, pages, sync);
     }
-    println!("Not on this computer yet ({}):", root.display());
-    m.lines().iter().for_each(|line| println!("  - {line}"));
+    if licence {
+        println!("The licence ({}) is asked about in the app's own page first.", crate::licence::version());
+    }
+    if !m.is_empty() {
+        println!("Not on this computer yet ({}):", root.display());
+        m.lines().iter().for_each(|line| println!("  - {line}"));
+    }
     match get {
         Some(true) if m.fetchable() => {
             fetch(root, &m, &mut |line| println!("  getting {line} ..."))?;
             println!("Done.");
         }
         None => {
-            if let Some(first) = crate::firstrun::FirstRun::due(root, home) {
+            if let Some(first) = crate::firstrun::FirstRun::due(root, home, licence) {
                 println!("Asked about in the app's own page, before anything else starts.");
                 let ports = ports(std::env::var("FACE_PORTS").ok().as_deref())?;
                 let app = App::new(root, home, pages, ports, sync);
@@ -885,8 +901,12 @@ pub fn tracker_child(mut args: impl Iterator<Item = String>) -> Result<(), Strin
     println!("Face tracker: loading ...");
     let pages = pages.unwrap_or_default(); // (none named: the program's own)
     if let Err(e) = crate::start_tracker_with(&root, &home, &pages, port, cameras) {
-        println!("Face tracker: couldn't start in its own process: {e}");
-        std::process::exit(if e.starts_with("Port ") { PORT_TAKEN } else { 1 });
+        if e.starts_with("Port ") {
+            std::process::exit(PORT_TAKEN);
+        }
+        // returned, not ended here: the program says it and waits for its log to have the line before it ends
+        // (ended here, the reason never reached the log: a fresh computer's tracker said only "exit 1")
+        return Err(e);
     }
     loop {
         std::thread::park();
@@ -986,8 +1006,23 @@ impl Service for Shell {
             return Response::error(404, "not found");
         };
         let said: Option<Value> = serde_json::from_slice(&req.body).ok();
+        // the licence accepted or declined (declined, the app ends once the page has the answer)
+        if let Some(accept) = said.as_ref().and_then(|s| s["licence"].as_bool()) {
+            let app = self.app.clone();
+            let end = Box::new(|| {
+                let _ = std::thread::Builder::new().name("licence declined".into()).spawn(|| {
+                    std::thread::sleep(Duration::from_millis(1500));
+                    std::process::exit(0);
+                });
+            });
+            first.answer_licence(accept, Box::new(move || app.begin()), end);
+            return Response::json(first.said());
+        }
         let Some(get) = said.as_ref().and_then(|s| s["get"].as_bool()) else {
-            return Response::error(400, "the answer is {\"get\": true} or {\"get\": false}");
+            return Response::error(
+                400,
+                "the answer is {\"get\": true}, {\"get\": false}, or {\"licence\": true or false}",
+            );
         };
         let app = self.app.clone();
         first.answer(get, Box::new(move || app.begin()));

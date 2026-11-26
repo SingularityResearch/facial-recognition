@@ -1148,16 +1148,18 @@ $("#psort").onchange = () => { store.set("psort", $("#psort").value); loadSummar
 $("#tilesz").value = store.get("tile") || 88; setTile($("#tilesz").value);
 $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.target.value); };
 
-// The app window's Settings tab (settings_bridge.js): this page's settings, Web search, Describe photo, LM Studio and
-// this computer's hardware, each group in its own section, in that order
+// The app window's Settings tab (settings_bridge.js): this page's settings, each in a section that is a card of the
+// tab's groups (app_ui.js LAYOUT, which names every section here; a card may hold another page's settings too)
 {
-  const c = SettingsBridge.control, L = "Labeling", W = "Labeling: Web search", P = "Labeling: Describe photo", Y = "Labeling: history",
-        U = "Music", M = "LM Studio", H = "This computer", D = "Shared database";
+  const c = SettingsBridge.control, L = "Labeling", W = "Web search", V = "Model server", P = "Describe photo",
+        Y = "The library's history", G = "Signal history", O = "Location", U = "Music", T = "Model servers on this computer",
+        X = "Model servers on your other devices", H = "This computer", D = "Shared database", N = "Your devices", K = "Passphrase for keys";
   let mus = {};
   const flag = (section, id, key, label, def, hint) => ({ section, id, label, type: "toggle", def, hint,
     get: () => (store.get(key) ?? (def ? "1" : "0")) === "1",
     set: v => { store.set(key, v ? "1" : "0"); const el = $("#" + id); if (el) el.checked = !!v; } });
   let desc = {}, job = {}, hw = {}, lms = {}, lmsOffer = false, sdb = {}, lib = {};
+  let devServers = [], elsewhereLms = [];     // the model servers of your other devices, and LM Studio on other computers
   // Describe everything again: how many, how long, and the question asked before it starts (app_ui.js asks it)
   const count = n => (+n || 0).toLocaleString();
   const describing = () => !!job.running && job.folder === "photo descriptions";
@@ -1227,13 +1229,14 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                 b.running ? `Built-in model: ${Math.floor(b.done * 100 / (b.size_mb * 1e6))}% downloaded.`
                   : b.ready ? "Built-in model: downloaded." : b.error ? `Built-in model: ${b.error}` : "Built-in model: not downloaded."].join("\n");
       } },
-    flag(P, "descauto", "describe", "Describe every photo as it's opened", false, "Runs Describe photo on each photo you open in the photo viewer, with the describer set here."),
-    { section: P, id: "describeUse", label: "Describer", type: "select", def: "auto",
-      options: () => [["auto", "Automatic: the server, or the built-in model when it doesn't answer"],
-                      ["server", "The server only"], ["builtin", "The built-in model only"]],
+    { section: P, id: "describeUse", label: "Describe with", type: "select", def: "auto",
+      hint: "The model server is set above (Analyze uses it too). The built-in model runs inside this app and needs no server.",
+      options: () => [["auto", "Automatic: the model server, or the built-in model when it doesn't answer"],
+                      ["server", "The model server only"], ["builtin", "The built-in model only"]],
       get: () => desc.config?.use || "auto",
       set: v => post("/api/describe/config", { use: v }) },
-    { section: P, id: "describePlatform", label: "Kind of server", type: "select", def: "lmstudio", hidden: () => desc.config?.use === "builtin",
+    // (the model server is Analyze's too, so its fields show whichever describer is chosen)
+    { section: V, id: "describePlatform", label: "Kind of server", type: "select", def: "lmstudio",
       hint: () => ({
         lmstudio: "LM Studio, on this computer or another of yours. It says which of its models read pictures and which is loaded.",
         ollama: "Ollama. It says which of its models read pictures (pull one that does). It takes no API key of its own.",
@@ -1243,19 +1246,19 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       options: () => (desc.platforms || [{ id: "lmstudio", name: "LM Studio" }]).map(p => [p.id, p.name]),
       get: () => desc.config?.platform || "lmstudio",
       set: v => post("/api/describe/config", { platform: v }) },
-    { section: P, id: "describeUrl", label: "Server address", type: "text", hidden: () => desc.config?.use === "builtin",
+    { section: V, id: "describeUrl", label: "Server address", type: "text",
       hint: () => {
         const c = desc.config || {};
         const base = `Empty for this kind's usual address on this computer, ${c.default_url || "http://127.0.0.1:1234"}.`;
         const served = { lmstudio: "in LM Studio there, turn on \"Serve on local network\"", ollama: "Ollama there needs OLLAMA_HOST=0.0.0.0",
                          llamacpp: "llama-server there needs --host 0.0.0.0", vllm: "vllm serve there needs --host 0.0.0.0" }[c.platform || "lmstudio"];
-        if (c.where === "your network") return base + ` This is another device on your network: each photo you describe is sent to it (${served}).`;
-        if (c.where === "the internet") return base + ` This is a server on the internet: each photo you describe is sent to it${c.unencrypted ? ", unencrypted (http): anyone on the way could see the photos; use https" : " (encrypted, https)"}. Only use a server you control.`;
+        if (c.where === "your network") return base + ` This is another device on your network: each photo you describe, and each question to Analyze, is sent to it (${served}).`;
+        if (c.where === "the internet") return base + ` This is a server on the internet: each photo you describe, and each question to Analyze, is sent to it${c.unencrypted ? ", unencrypted (http): anyone on the way could see them; use https" : " (encrypted, https)"}. Only use a server you control.`;
         return base;
       },
       get: () => desc.config?.url || "",
       set: v => post("/api/describe/config", { url: v }) },
-    { section: P, id: "describeModel", label: () => desc.config?.platform === "llamacpp" ? "Model it serves" : "Model", type: "select", def: "", hidden: () => desc.config?.use === "builtin",
+    { section: P, id: "describeModel", label: () => desc.config?.platform === "llamacpp" ? "Model for describing (the one it serves)" : "Model for describing", type: "select", def: "", hidden: () => desc.config?.use === "builtin",
       hint: () => ({
         lmstudio: "Automatic: LM Studio's loaded vision model, else its first one.",
         ollama: "Automatic: the first of Ollama's models that reads pictures, a loaded one first. Only those are listed.",
@@ -1266,8 +1269,18 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         return [["", "Automatic"], ...m.map(x => [x, x]), ...(pick && !m.includes(pick) ? [[pick, pick + " (not on the server)"]] : [])]; },
       get: () => desc.config?.model || "",
       set: v => post("/api/describe/config", { model: v }) },
-    { section: P, id: "describeSuggested", label: "Suggested for this computer", type: "info",
-      hidden: () => desc.config?.use === "builtin" || !desc.suggested,
+    { section: P, id: "descget", label: "Built-in model", type: "button",
+      button: () => `Download the built-in model (${((desc.builtin?.size_mb || 831) / 1000).toFixed(1)} GB)`,
+      hidden: () => !!(desc.builtin?.ready || desc.builtin?.running),
+      hint: "Florence-2 large, from Hugging Face; runs inside this app on the processor, so photos stay on this computer. Plainer descriptions than a model server's." },
+    flag(P, "descauto", "describe", "Describe every photo as it's opened", false, "Runs Describe photo on each photo you open in the photo viewer, with the describer set here."),
+    { section: V, id: "describeKey", label: "API key", type: "form", button: "Save key", hidden: () => desc.config?.platform === "ollama",
+      hint: () => `${desc.config?.platform === "vllm" || desc.config?.platform === "llamacpp" ? "The key the server was started with (--api-key), if it was." : "Only if the server asks for one (for example behind a proxy)."} ${desc.config?.key ? "A key is saved." : "None saved."} Save an empty key to remove it. Kept in %APPDATA%\\FaceLabels on this computer.`,
+      fields: () => [{ name: "key", placeholder: "API key", secret: true, value: sec.describe || "" }] },
+    { section: V, id: "describeTest", label: "Check the server", type: "button", button: "Test",
+      hint: "Asks the server above which models it has." },
+    { section: V, id: "describeSuggested", label: "Suggested for this computer", type: "info",
+      hidden: () => !desc.suggested,
       get: () => {
         const s = desc.suggested || {}, l = desc.loading;
         if (l?.running) setTimeout(SettingsBridge.changed, 3000);
@@ -1279,16 +1292,11 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                 `${how} ${s.command}`,
                 l ? (l.running ? "Loading now…" : (l.ok ? "Last loading: " : "Last loading failed: ") + l.said) : ""].filter(Boolean).join("\n");
       } },
-    { section: P, id: "describeLoad", label: "Load it", type: "button",
+    { section: V, id: "describeLoad", label: "Load it", type: "button",
       button: () => `Load ${desc.suggested?.model || "the suggested model"} with these settings`,
-      hidden: () => desc.config?.use === "builtin" || !desc.suggested?.here || !desc.suggested?.there
+      hidden: () => !desc.suggested?.here || !desc.suggested?.there
         || ["llamacpp", "vllm"].includes(desc.config?.platform) || !!desc.loading?.running,
       hint: "Loads the suggested model on this computer's server with the settings above (choosing the kind of server or the model does the same). It never downloads a model: one the server doesn't have yet is named above, to get first. llama.cpp and vLLM serve the model they were started with: start them with the command above." },
-    { section: P, id: "describeTest", label: "Check the server", type: "button", button: "Test", hidden: () => desc.config?.use === "builtin",
-      hint: "Asks the server above which models it has." },
-    { section: P, id: "describeKey", label: "API key", type: "form", button: "Save key", hidden: () => desc.config?.use === "builtin" || desc.config?.platform === "ollama",
-      hint: () => `${desc.config?.platform === "vllm" || desc.config?.platform === "llamacpp" ? "The key the server was started with (--api-key), if it was." : "Only if the server asks for one (for example behind a proxy)."} ${desc.config?.key ? "A key is saved." : "None saved."} Save an empty key to remove it. Kept in %APPDATA%\\FaceLabels on this computer.`,
-      fields: () => [{ name: "key", placeholder: "API key", secret: true, value: sec.describe || "" }] },
     { section: P, id: "describeSpread", label: "Share Describe all with other computers", type: "toggle", def: false,
       hidden: () => desc.config?.use === "builtin",
       hint: "Describe all (and Describe everything again, below) also sends photos to your other devices' servers of the same kind (LM Studio, Ollama, llama.cpp or vLLM) that have the same vision model, one photo at a time each. LM Studio's are found on the network, the other kinds at your devices' addresses on the kind's usual port. Your other devices are the computers in your shared database, at the addresses they gave there; no other computer on the network is sent a photo, and without a shared database nothing is shared. How it is shared: every computer takes the next photo as it finishes, so a faster one does more. Each photo sent there is seen by that computer. A computer that fails twice in a row is left out, its photo goes back to the others, and it is tried again every five minutes. Describing a single photo uses only the server above.",
@@ -1298,13 +1306,13 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       hidden: () => !desc.config?.spread || desc.config?.use === "builtin",
       get: () => { const h = desc.helpers || [];
         return h.length ? h.map(x => `${x.host} (${x.url})`).join("\n") + `\nDescribe all uses ${h.length + 1} computers.`
-          : desc.ok ? `None of your other devices (the computers in your shared database) has a ${({ ollama: "Ollama", llamacpp: "llama.cpp", vllm: "vLLM" })[desc.config?.platform] || "LM Studio"} server with ${desc.model}${(desc.config?.platform || "lmstudio") === "lmstudio" ? " (see LM Studio below)" : " on its usual port"}: Describe all uses this server alone.`
+          : desc.ok ? `None of your other devices (the computers in your shared database) has a ${({ ollama: "Ollama", llamacpp: "llama.cpp", vllm: "vLLM" })[desc.config?.platform] || "LM Studio"} server with ${desc.model}${(desc.config?.platform || "lmstudio") === "lmstudio" ? " (see Model servers on your other devices, below)" : " on its usual port"}: Describe all uses this server alone.`
           : "Nothing to share with until the describer works."; } },
     { section: P, id: "describeAgain", label: "Describe everything again", type: "button",
       button: () => `Describe all ${count(desc.again?.total)} again`,
       hidden: () => !desc.ok || !desc.again?.total || !!job.running,
       confirm: againQuestion, confirmYes: "Describe again",
-      hint: "Describes the whole library anew with the describer set above, for example after choosing a better model: every photo, and every video frame a face was found in, on all your devices. With a shared database, what is only on another device is shown by that device (as in the photo view), and the new descriptions reach every device. Each description is replaced when its new one arrives, so stopping loses nothing. The work is shared as Describe all's is: with Share Describe all with other computers on, among the LM Studio servers that have the same model, and with Fully distributed system on (under LM Studio) also those beyond your local network. Progress and Stop are at the top of the Labeling tab." },
+      hint: "Describes the whole library anew with the describer set above, for example after choosing a better model: every photo, and every video frame a face was found in, on all your devices. With a shared database, what is only on another device is shown by that device (as in the photo view), and the new descriptions reach every device. Each description is replaced when its new one arrives, so stopping loses nothing. The work is shared as Describe all's is: with Share Describe all with other computers on, among your devices' servers of the same kind that have the same model, and with Fully distributed system on (Devices and shared database, Your devices) also those beyond your local network. Progress and Stop are at the top of the Labeling tab." },
     { section: P, id: "describeAgainOn", label: "Unfinished", type: "button",
       button: () => `Carry on: ${count(desc.again?.left)} to go`,
       hidden: () => !desc.ok || !desc.again?.since || !desc.again?.left || !!job.running,
@@ -1315,10 +1323,6 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         (job.left_out?.length ? `\nLeft out: ${job.left_out.join("; ")}` : "") + "\nThe bar at the top of the Labeling tab shows the rest." },
     { section: P, id: "describeStop", label: "Stop describing", type: "button", button: "Stop", hidden: () => !describing(),
       hint: "Stops Describe all or Describe everything again; what is described so far is kept, and it carries on from there when started again." },
-    { section: P, id: "descget", label: "Built-in model", type: "button",
-      button: () => `Download the built-in model (${((desc.builtin?.size_mb || 831) / 1000).toFixed(1)} GB)`,
-      hidden: () => !!(desc.builtin?.ready || desc.builtin?.running),
-      hint: "Florence-2 large, from Hugging Face; runs inside this app on the processor, so photos stay on this computer. Plainer descriptions than LM Studio's." },
     { section: Y, id: "libHistory", label: "The library in the history", type: "info",
       get: async () => {
         lib = await get("/api/history/library");
@@ -1327,13 +1331,13 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         return [`${count(lib.named)} of ${count(lib.pictures)} photos and videos have a named face: ${count(lib.rows)} rows.`,
                 !lib.joined ? "The history is kept in your shared database, and none is set up on this device: nothing is written."
                   : lib.on ? "After a folder is added, the rows are worked out again by themselves (this device's history is switched on)."
-                  : "This device's own history is switched off (Face tracking: history), so nothing is worked out by itself after a folder is added. The button below still does it.",
+                  : "This device's own history is switched off (Signal history, above), so nothing is worked out by itself after a folder is added. The button below still does it.",
                 job.running && job.folder === "the library's history" ? `${job.stage}: ${count(job.done)} of ${count(job.total)}. The bar at the top of the Labeling tab shows the rest.` : ""].filter(Boolean).join("\n");
       } },
     { section: Y, id: "libHistoryRun", label: "Work out the history from the library", type: "button",
       button: () => `Work out ${count(lib.rows)} rows`,
       hidden: () => !lib.joined || !lib.rows || !!job.running,
-      hint: "For analysis, beside what the cameras keep (Face tracking: history): what each photo, and each video frame a face was found in, says of each named person in it. When: the camera's own time where the photo has one, else only the file's, and the row says which. How good the face's picture is, how large the face, how many faces the picture has and how many are named, and how the face looks (the expression model, on the picture the library keeps of the face). A still says less than a camera: no voice, no pulse, no movement, nothing of a person's usual, and it says how a face looked, not what the person felt. The rows follow the labels: do it again after naming more faces, and a face named otherwise since gets its row under the new name. It runs in the background like an import (progress and Stop are at the top of the Labeling tab), writes to your shared database only, and reads each face's picture once. These rows are as old as their pictures: the days set for a device's history don't delete them. Forget removes a person's." },
+      hint: "For analysis, beside what the cameras keep (Signal history, above): what each photo, and each video frame a face was found in, says of each named person in it. When: the camera's own time where the photo has one, else only the file's, and the row says which. How good the face's picture is, how large the face, how many faces the picture has and how many are named, and how the face looks (the expression model, on the picture the library keeps of the face). A still says less than a camera: no voice, no pulse, no movement, nothing of a person's usual, and it says how a face looked, not what the person felt. The rows follow the labels: do it again after naming more faces, and a face named otherwise since gets its row under the new name. It runs in the background like an import (progress and Stop are at the top of the Labeling tab), writes to your shared database only, and reads each face's picture once. These rows are as old as their pictures: the days set for a device's history don't delete them. Forget removes a person's." },
     { section: U, id: "musicstate", label: "Music", type: "info",
       hint: "Music as one more signal about a person: which song a music app on this computer shows as playing (Spotify), and how it sounds on every audio interface of this computer, each one measured by itself: every output (what the computer itself plays through speakers, a headset, a display) and every microphone (what sounds in the room, from any device). Only numbers are kept (how loud, tempo, how bright or bassy, major or minor), never the sound; they describe the music, not what anyone feels. Nothing is listened to or logged until the switch below is on, a person is chosen, and a shared database is set up to keep it in.",
       get: async () => {
@@ -1382,14 +1386,41 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
     { section: U, id: "spotifyOff", label: "Stop using Spotify", type: "button", button: "Disconnect",
       hidden: () => !mus.spotify?.connected,
       hint: "Forgets Spotify's permission on this computer (the usual music already made is kept). To take the permission back at Spotify too: your Spotify account, Apps." },
-    { section: M, id: "lmshere", label: "LM Studio on this computer", type: "info",
-      hint: "While this app runs, LM Studio here is kept serving on all network interfaces and announced on the network (mDNS: LM Studio on <this computer>, with its port), so the other computers find it. FACE_LMSTUDIO=off turns that off.",
-      get: async () => { const s = lms = await get("/api/lmstudio");
-        if (!s.installed) return "Not installed (lmstudio.ai).";
+    // Every model server on this computer, of every kind, and then your other devices' (the owner, 2026-11-25: "it
+    // might make more sense to list all the LLM servers on the computer. We are not tied directly to LM Studio
+    // anymore"). What the app does for LM Studio alone (its upkeep, the shared models folder) is rows of the first
+    // card, shown only where LM Studio is installed.
+    { section: T, id: "keepOpen", label: "Keep the model servers here open to my other devices", type: "toggle", def: false,
+      hint: "Off unless you switch it on. While it is on and the app runs, every model server on this computer is kept reachable by your other devices: LM Studio through its own settings (serve on the local network) and announced on the network; Ollama, llama.cpp's server and vLLM, which have no such setting, by starting one that listens on this computer only again just as it was started, but listening on every interface (a minute after it is found; one that doesn't come back in time is started as before). Anyone else on your local network could reach them too, as with any server that listens there. Off: the app changes nothing of theirs.",
+      get: async () => {
+        lms = await get("/api/lmstudio").catch(() => ({}));
+        if (!!(lms.missing || []).length !== lmsOffer) { lmsOffer = !!(lms.missing || []).length; setTimeout(SettingsBridge.changed, 0); }
+        return !!lms.keep_open;
+      },
+      set: v => post("/api/lmstudio/keep", { on: !!v }) },
+    { section: T, id: "hwai", label: "Found here", type: "info",
+      hint: "Every app on this computer that serves language or vision models, of any kind: LM Studio, Ollama, llama.cpp, vLLM, Jan and others on their usual ports, running or only installed, with how many models each has, which read pictures, which is loaded, and whether your other devices can reach it. Any of them can be the model server above. Nothing on the network is asked.",
+      get: async () => {
+        const h = await get("/api/hardware");
+        // (the model server set above is another device's when its address isn't this computer's: that one is not here)
+        const a = (h.ai || []).filter(e => !e.url || /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/.test(e.url));
+        if (!a.length) return "None found: no model server runs or is installed here. LM Studio (lmstudio.ai), Ollama, llama.cpp or vLLM with a vision model can be, or Describe photo uses its built-in model.";
+        return a.map(e => {
+          const state = e.running ? `running, ${e.models} model${e.models === 1 ? "" : "s"}` : "";
+          const sees = e.vision.length ? `reads pictures: ${e.vision.join(", ")}` : "";
+          const lan = e.lan?.length ? `your other devices can use it at ${e.lan.join(", ")}` : (e.running ? "this computer only" : "");
+          const kept = typeof e.kept === "string" && e.kept ? `\n  Kept open by this app: ${e.kept}` : "";
+          return `${e.app}${e.url ? ` (${e.url})` : ""}: ${[state, e.note, sees, lan].filter(Boolean).join("; ") || "not running"}${kept}`;
+        }).join("\n"); } },
+    { section: T, id: "lmshere", label: "LM Studio here", type: "info",
+      hidden: () => !lms.installed,
+      hint: "What the app does for LM Studio alone, because LM Studio can be kept and shared in these ways and the other kinds can't: with Keep the model servers here open on, LM Studio here is kept serving on all network interfaces and announced on the network (mDNS: LM Studio on <this computer>, with its port), so your other devices find it; and it can be given the vision models your other LM Studio servers have, when you click Get the same models.",
+      get: () => { const s = lms;
+        if (!s.installed) return "";
         const lines = [s.running ? `Server running on port ${s.port}, ${s.on_network ? "on all network interfaces" : "on this computer only"}` : "Server not running"];
         if (s.bind) lines.push(`Changed: ${s.bind}`);
         if (s.announced) lines.push(s.announced[0].toUpperCase() + s.announced.slice(1));
-        if (s.missing.length) lines.push("Missing vision models the other LM Studio servers have:",
+        if ((s.missing || []).length) lines.push("Missing vision models the other LM Studio servers have:",
           ...s.missing.map(m => `  ${m.variant} (on ${m.from}): ${m.in_share ? "will be copied from the shared folder; from the internet if that fails" : "will be downloaded from the internet (not in the shared folder)"}`));
         else lines.push("Has every vision model the other LM Studio servers on the network have.");
         const sh = s.shared || {};
@@ -1406,38 +1437,35 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         else if (g?.error) lines.push(`Download stopped: ${g.error}`);
         if (g?.notes?.length) lines.push(...g.notes);
         else if (g?.done?.length) lines.push(`Got: ${g.done.join(", ")}`);
-        if (!!s.missing.length !== lmsOffer) { lmsOffer = !!s.missing.length; setTimeout(SettingsBridge.changed, 0); }
         return lines.join("\n"); } },
-    { section: M, id: "lmsget", label: "Get the same models", type: "button",
+    { section: T, id: "lmsget", label: "Get the same models", type: "button",
       button: () => `Get ${lms.missing?.length || 0} model${lms.missing?.length === 1 ? "" : "s"} (shared folder first, else the internet)`,
-      hidden: () => !lmsOffer || !!lms.get?.running,
+      hidden: () => !lms.installed || !lmsOffer || !!lms.get?.running,
       hint: "Gets the vision models listed above into LM Studio's models folder, in this order: 1. copied from the Shared models folder when they're there (the very same files, each checked by SHA-256; fast on a local network); 2. if that copy fails in any way, or the model isn't there, downloaded from the internet with LM Studio (the same model and quantization; much slower). The bar at the top of the Labeling tab shows which, how far and how long. Large: tens of GB." },
-    { section: M, id: "lmsshare", label: "Shared models folder", type: "text",
+    { section: T, id: "lmsshare", label: "LM Studio's shared models folder", type: "text",
       hint: "A folder every computer can reach, for example on a NAS (\\\\SERVER\\share\\lmstudio-models on Windows, /mnt/nas/share/lmstudio-models on Linux). Each computer with this app and LM Studio puts its vision models there, and gets the ones it lacks from there before downloading them. Empty: not used.",
       hidden: () => !lms.installed,
       get: () => lms.shared?.share || "",
       set: v => post("/api/lmstudio/share", { folder: v }) },
-    { section: M, id: "lmsdist", label: "Fully distributed system", type: "toggle", def: false,
-      hint: "On: your computers may be anywhere, not only on one local network. The search for LM Studio servers then covers every network adapter of this computer (VPNs and virtual networks too, not only its real network ports), this computer tells your other devices those addresses as well, and Describe all and Describe everything again (with Share Describe all on) may send photos to LM Studio servers beyond your local network, over the internet. Off (as a new copy starts): the real adapters of your local network only.",
-      get: () => !!lms.distributed,
-      set: v => post("/api/lmstudio/distributed", { on: !!v }) },
-    { section: M, id: "hwnet", label: "LM Studio on the network", type: "info",
-      hint: "Every LM Studio server on this computer's local network: each computer's name, the addresses and port to reach it at, and the models it serves (which read pictures, which are loaded now). Found two ways, only while Settings is open: servers that announce themselves on the network (mDNS, _lmstudio._tcp) say their own address and port; the rest are found by trying LM Studio's port (1234, this computer's own LM Studio port, and any port announced) on each address of this computer's networks; Describe photo can use any of them (put its address in Server address).",
-      get: async () => { const s = (await get("/api/hardware/network")).servers || [];
-        if (!s.length) return "None found on this network (LM Studio's server must listen on all interfaces: Serve on local network).";
-        return s.map(e => {
+    { section: X, id: "aiDevices", label: "On each device", type: "info",
+      hint: "Each of your devices (the computers in your shared database, not one removed on this device), asked at the addresses it gave there on each kind's usual port (LM Studio 1234, Ollama 11434, llama.cpp 8080, vLLM 8000): the model servers that answer, with their models and which is loaded. Any of them can be the model server above, or where Analyze runs; with Share Describe all on, Describe all uses those of the same kind with the same model. Asked at most once a minute, only while Settings or Analyze's settings are open; local network only, unless Fully distributed system is on.",
+      get: async () => {
+        devServers = (await get("/api/analyze/servers")).servers || [];
+        if (!devServers.length) return "None found: none of your other devices answers on a model server's usual port (a server must listen on its network, not on that computer alone), or there is no shared database.";
+        return devServers.map(e => `${e.name}: ${e.kind} (${e.url}), ${e.models.length} model${e.models.length === 1 ? "" : "s"}${(e.loaded || []).length ? `; loaded: ${e.loaded.slice(0, 3).join(", ")}` : ""}`).join("\n");
+      } },
+    { section: X, id: "hwnet", label: "LM Studio on other computers", type: "info",
+      hidden: () => !elsewhereLms.length,
+      hint: "LM Studio servers on computers of your local network that aren't among your devices above. LM Studio announces itself on the network (mDNS, _lmstudio._tcp) and answers on its own port, so it can be found on any computer; the other kinds can't be, and are found only on your devices. Searched only while Settings is open. One of them can be the model server above (put its address in Server address), but Describe all never sends a photo to a computer that isn't one of your devices.",
+      get: async () => {
+        const s = (await get("/api/hardware/network")).servers || [];
+        // (this computer's is above, and so are your devices': a server any of whose addresses is one of theirs)
+        const host = u => { try { return new URL(u).hostname; } catch { return ""; } };
+        const mine = new Set(devServers.map(e => host(e.url)));
+        elsewhereLms = s.filter(e => !e.this_computer && !e.urls.some(u => mine.has(host(u))));
+        return elsewhereLms.map(e => {
           const ms = e.models.filter(m => m.kind !== "embeddings").map(m => `${m.id}${m.vision ? " (reads pictures)" : ""}${m.loaded ? ", loaded" : ""}`);
-          return `${e.host}${e.this_computer ? " (this computer)" : ""}: ${e.urls.join(", ")}${e.announced ? " (announces itself)" : ""}\n  ${ms.length} model${ms.length === 1 ? "" : "s"}: ${ms.join("; ") || "none"}`;
-        }).join("\n"); } },
-    { section: M, id: "hwai", label: "AI model apps found", type: "info",
-      hint: "Apps that can run a vision model for Describe photo: the usual ports on this computer (LM Studio, Ollama, Jan, llama.cpp, vLLM and others), the server set under Labeling: Describe photo (which may be another device), and apps installed but not running. Nothing else on the network is asked.",
-      get: async () => { const a = (await get("/api/hardware")).ai || [];
-        if (!a.length) return "None found: LM Studio (lmstudio.ai) with a vision model, or the built-in model under Labeling: Describe photo.";
-        return a.map(e => {
-          const state = e.running ? `running, ${e.models} model${e.models === 1 ? "" : "s"}` : "";
-          const sees = e.vision.length ? `reads pictures: ${e.vision.join(", ")}` : "";
-          const lan = e.lan?.length ? `other devices can use it at ${e.lan.join(", ")}` : (e.running && e.url?.includes("127.0.0.1") ? "this computer only" : "");
-          return `${e.app}${e.url ? ` (${e.url})` : ""}: ${[state, e.note, sees, lan].filter(Boolean).join("; ") || "not running"}`;
+          return `${e.host}: ${e.urls.join(", ")}${e.announced ? " (announces itself)" : ""}\n  ${ms.length} model${ms.length === 1 ? "" : "s"}: ${ms.join("; ") || "none"}`;
         }).join("\n"); } },
     { section: H, id: "hwhas", label: "Hardware", type: "info",
       hint: "What the app found on this computer when it started.",
@@ -1462,7 +1490,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                    `NPU: ${u.npu_note}`);
         const why = Object.entries(u.decisions).map(([m, w]) => `  ${m}: ${w}`);
         return lines.concat(why.length ? ["Checks at start:", ...why] : []).join("\n"); } },
-    { section: D, id: "dbstate", label: "Shared database", type: "info",
+    { section: D, id: "dbstate", label: "Its state", type: "info",
       get: async () => {
         sdb = await get("/api/db");
         if (!sdb.available) return sdb.why;
@@ -1473,11 +1501,28 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         return [c ? `${c.user} on ${c.host}:${c.port}, database ${c.dbname}, schema ${c.schema}` +
                     (c.ca ? " (the server is checked against its own certificate authority)" : "") : "Not set up.",
                 st.text || "", st.waiting ? `${st.waiting} changes on this device wait to be sent.` : "",
+                // the shared database held on this computer (the Setup page sets it up)
+                sdb.host?.held ? `This computer holds it: PostgreSQL ${sdb.host.postgres} with pgvector ${sdb.host.pgvector}, ${sdb.host.running ? "running" : "not running"} on port ${sdb.host.port}; it keeps running when the app is closed and starts at sign-in (data in ${sdb.host.folder}).` : "",
                 `This device: ${sdb.device?.name || ""}`].filter(Boolean).join("\n");
       } },
+    // A new server: certificates made here for its owner to put on it (or an authority of their own), then Connect
+    // with its administrator login and the app prepares the rest. Shown only while this device has no shared
+    // database: a device that has one changes nothing here.
+    { section: D, id: "dbcerts", label: "Certificates for a new database server", type: "form",
+      button: () => sdb.certs?.made ? "Make the server's certificate again" : "Make them",
+      hidden: () => !sdb.available || !!sdb.config,
+      hint: () => (sdb.certs?.made
+        ? `Made: a certificate authority of yours and the server's certificate and key, in ${sdb.certs.folder} (for ${(sdb.certs.names || []).join(", ")}). `
+        : "For a PostgreSQL server you set up yourself. The app makes a certificate authority of yours (kept on this device, its key protected) and, under it, the server's certificate and key. ") +
+        "Put server.crt and server.key on the server and set it up as setup-the-server.txt in that folder says (five lines in two files, and a restart). Then Connect below, the first time with the server's administrator login (user postgres): the app checks the server shows this certificate, makes its own login, the database, pgvector and its tables, registers the authority in the server for every device to take, and keeps only its own login. Making the server's certificate again keeps the same authority. The setup guide (docs/SETUP.md) has each step for each system.",
+      fields: () => [{ name: "server", label: "The server's address", placeholder: "as your devices reach it, e.g. 192.168.1.20", value: sec.db?.host || "" }] },
+    { section: D, id: "dbca", label: "A certificate authority of your own", type: "form", button: "Use it",
+      hidden: () => !sdb.available || !!sdb.config,
+      hint: () => `Only if you made the server's certificate yourself: paste your certificate authority's certificate (PEM, -----BEGIN CERTIFICATE----- ...) and Connect registers it in the server. ${sdb.certs?.ca && !sdb.certs?.made ? "One of yours is kept." : ""}`,
+      fields: () => [{ name: "pem", label: "Its certificate", placeholder: "-----BEGIN CERTIFICATE----- ...", value: "" }] },
     { section: D, id: "dbsetup", label: "Connect", type: "form", button: "Connect",
-      hint: "Keeps this device's faces, names, labels, Web search answers and photo descriptions in a PostgreSQL database (with pgvector) that your other devices share, and takes theirs. The data goes to that server over an encrypted connection; the password is kept on this device only (protected by Windows for your user). While the server can't be reached the app works from this device's copy and sends changes later. Leave the server empty and Connect to stop using it (this device keeps its copy).",
-      fields: () => [{ name: "host", label: "Server", placeholder: "e.g. nas.local", value: sec.db?.host || "" },
+      hint: "Keeps this device's faces, names, labels, Web search answers and photo descriptions in a PostgreSQL database (with pgvector) that your other devices share, and takes theirs. A server set up already: its own login (the user and password your other devices have), or join from one of your devices with a code. A new server: its administrator login (user postgres) the first time, and the app prepares it, then keeps only its own login. The data goes to that server over an encrypted connection; the password is kept on this device only, protected for your user. While the server can't be reached the app works from this device's copy and sends changes later. Leave the server empty and Connect to stop using it (this device keeps its copy).",
+      fields: () => [{ name: "host", label: "Server", placeholder: "e.g. 192.168.1.20", value: sec.db?.host || "" },
                      { name: "port", label: "Port", placeholder: "5432", size: 5, value: sec.db?.port || "" },
                      { name: "dbname", label: "Database", placeholder: "facerec", size: 10, value: sec.db?.dbname || "" },
                      { name: "user", label: "User", placeholder: "facerec", size: 9, value: sec.db?.user || "" },
@@ -1496,7 +1541,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       set: async v => { if (!v) return; const r = await post("/api/db/copy", { from: v });
         if (r.error) throw new Error(r.error);
         SettingsBridge.notify({ fs: "reload" }); setTimeout(() => location.reload(), 300); } },
-    { section: D, id: "dbalias", label: "Name a device", type: "form", button: "Save name",
+    { section: N, id: "dbalias", label: "Name a device", type: "form", button: "Save name",
       hidden: () => !sdb.available || !sdb.config || !(sdb.named || []).length,
       hint: () => "What you call a device. Every device of the database then shows it under that name: in the Cameras tab, in alerts and in these lists. A phone calls itself only \"iPhone\", and a name tells two of them apart. A name is one device's alone, as an email address is one account's: one that another device goes by already is not taken. Saving an empty name takes the name away again. " +
         (() => { const seen = {}; for (const d of sdb.named || []) (seen[d.name.toLowerCase()] ||= []).push(d);
@@ -1506,44 +1551,48 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       fields: () => [{ name: "device", label: "Device", options: [["", "Choose a device"],
                        ...(sdb.named || []).map(d => [d.id, d.name + (d.alias ? " (calls itself " + d.own + ")" : "") + (d.os ? ", " + d.os : "") + (d.me ? ", this device" : "")])] },
                      { name: "alias", label: "Its name", placeholder: "for example Kitchen iPhone", value: "" }] },
-    { section: D, id: "dbplaces", label: "Location history of", type: "select", def: "",
+    { section: O, id: "dbplaces", label: "Location history of", type: "select", def: "",
       hidden: () => !sdb.available || !sdb.config || !(sdb.named || []).length,
-      hint: "Where a device was, for the devices whose location you switched on (each device's own switch: Settings, Face tracking: location, or the Location card of its Face tracking tab). A row is written when the switch is turned on and then only when the device has moved more than about 100 m. Rows older than the days set on that device (the History card of its Face tracking tab; 90 unless changed) are deleted by themselves.",
+      hint: "Where a device was, for the devices whose location you switched on (each device's own switch: Show and keep this device's location, above, on that device, or the Location card of its Face tracking tab). A row is written when the switch is turned on and then only when the device has moved more than about 100 m. Rows older than the days set on that device (the History card of its Face tracking tab; 90 unless changed) are deleted by themselves.",
       options: () => [["", "Choose a device"], ...(sdb.named || []).map(d => [d.id, d.name + (d.me ? ", this device" : "")])],
       get: () => placesOf,
       set: async v => { placesOf = v || ""; places = null; if (placesOf) places = await get("/api/db/locations?device=" + encodeURIComponent(placesOf)); } },
-    { section: D, id: "dbplacesRows", label: "Where it was", type: "info", hidden: () => !placesOf,
+    { section: O, id: "dbplacesRows", label: "Where it was", type: "info", hidden: () => !placesOf,
       get: () => {
         if (!places || places.device !== placesOf) return "Reading…";
         const rows = (places.rows || []).map(placeRow).filter(Boolean);
         if (!rows.length) return "No rows: this device's location is not switched on, or it has not sent a row yet.";
         return rows.join("\n") + (places.count > rows.length ? `\n(the newest ${rows.length} of ${places.count} rows)` : "");
       } },
-    { section: D, id: "dbsignalsForget", label: "Delete a device's signal history", type: "form", button: "Delete its history",
+    { section: G, id: "dbsignalsForget", label: "Delete a device's signal history", type: "form", button: "Delete its history",
       hidden: () => !sdb.available || !sdb.config || !(sdb.named || []).length,
-      hint: "Deletes every row the chosen device wrote into the signal history (Face tracking: history) in the shared database, or every row that was worked out from the library's photos and videos (Labeling: history). This can't be undone. A device goes on writing rows while its own switch is on: switch that off on the device to stop it. The library's rows can be worked out again.",
+      hint: "Deletes every row the chosen device wrote into the signal history (above) in the shared database, or every row that was worked out from the library's photos and videos (The library's history, below). This can't be undone. A device goes on writing rows while its own switch is on: switch that off on the device to stop it. The library's rows can be worked out again.",
       fields: () => [{ name: "device", label: "Whose rows", options: [["", "Choose"],
                        ...(sdb.named || []).map(d => [d.id, d.name + (d.me ? ", this device" : "")]), ["library", "The library's photos and videos"]] }] },
-    { section: D, id: "dbplacesForget", label: "Delete a device's location history", type: "form", button: "Delete its history",
+    { section: O, id: "dbplacesForget", label: "Delete a device's location history", type: "form", button: "Delete its history",
       hidden: () => !sdb.available || !sdb.config || !(sdb.named || []).length,
       hint: "Deletes every row of the chosen device's location history in the shared database. This can't be undone. The device goes on writing rows while its own switch is on: switch that off on the device to stop it.",
       fields: () => [{ name: "device", label: "Device", options: [["", "Choose a device"],
                        ...(sdb.named || []).map(d => [d.id, d.name + (d.me ? ", this device" : "")])] }] },
-    { section: D, id: "dbremove", label: "Remove a device, on this device only", type: "select", def: "",
+    { section: N, id: "dbremove", label: "Remove a device, on this device only", type: "select", def: "",
       hidden: () => !sdb.available || !sdb.config || !(sdb.devices || []).some(d => !d.removed),
       hint: "This device then shows nothing of that device (its camera, its photos), asks it for nothing, and answers none of its requests for this device's camera and photos. Nothing changes in the shared database and no password or key is changed: that device stays in the database, your other devices go on as before, and what every device shares through the database (names, labels, descriptions) it still reads. Add it back below at any time.",
       options: () => [["", "Choose a device"], ...(sdb.devices || []).filter(d => !d.removed).map(d => [d.id, d.name + " (last seen " + localTime(d.seen) + ")"])],
       get: () => "",
       set: async v => { if (!v) return; const r = await post("/api/db/device", { device: v, removed: true });
         if (r.error) throw new Error(r.error); } },
-    { section: D, id: "dbaddback", label: "Add a removed device back", type: "select", def: "",
+    { section: N, id: "dbaddback", label: "Add a removed device back", type: "select", def: "",
       hidden: () => !sdb.available || !sdb.config || !(sdb.devices || []).some(d => d.removed),
       hint: () => "Removed on this device: " + (sdb.devices || []).filter(d => d.removed).map(d => d.name).join(", ") + ". Adding one back makes it a device like the others again, here.",
       options: () => [["", "Choose a device"], ...(sdb.devices || []).filter(d => d.removed).map(d => [d.id, d.name])],
       get: () => "",
       set: async v => { if (!v) return; const r = await post("/api/db/device", { device: v, removed: false });
         if (r.error) throw new Error(r.error); } },
-    { section: D, id: "dbpass", label: "Passphrase for keys", type: "form",
+    { section: N, id: "lmsdist", label: "Fully distributed system", type: "toggle", def: false,
+      hint: "On: your devices may be anywhere, not only on one local network. Every network adapter of this computer counts (VPNs and virtual networks too, not only its real network ports): this computer tells your other devices those addresses as well, your devices are asked for their cameras, photos and readings at addresses beyond your local network, the search for LM Studio servers covers them, and Describe all and Describe everything again (with Share Describe all on) may send photos to your devices' model servers beyond your local network, over the internet. Off (as a new copy starts): the real adapters of your local network only.",
+      get: () => !!lms.distributed,
+      set: v => post("/api/lmstudio/distributed", { on: !!v }) },
+    { section: K, id: "dbpass", label: "Passphrase", type: "form",
       button: () => !sdb.keys?.current ? "Set" : sdb.keys.here ? "Change" : "Enter",
       hidden: () => !sdb.available || !sdb.config,
       hint: () => (!sdb.keys?.current
@@ -1554,19 +1603,19 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
         "A device gets it only from you: typed on it, or approved with a code on a device that has it. The database password alone gets nobody the passphrase or a key, and the server never sees either. Each device keeps the passphrase (protected by Windows for your user), so it shows here masked; hold the eye to see it.",
       fields: () => [{ name: "passphrase", label: "Passphrase", secret: true, value: sec.passphrase || "", placeholder: "at least 10 characters" },
                      { name: "again", label: "Again", secret: true, value: sec.passphrase || "", placeholder: "the same again" }] },
-    { section: D, id: "dbask", label: "Get the passphrase from another device", type: "button",
+    { section: K, id: "dbask", label: "Get the passphrase from another device", type: "button",
       button: () => sdb.keys?.asking ? "Show a new code" : "Show a code",
       hidden: () => !sdb.keys?.current || !!sdb.keys.here,
-      hint: "Shows a one-time code on this device. Type that code on a device that has the passphrase (its Settings, Shared database) and this device is given it, sealed so only this device can open it. The code is how each device knows the other is yours; it works once, for 15 minutes, and is never sent to the database." },
-    { section: D, id: "dbcode", label: "This device's code", type: "info",
+      hint: "Shows a one-time code on this device. Type that code on a device that has the passphrase (its Settings, Passphrase for keys) and this device is given it, sealed so only this device can open it. The code is how each device knows the other is yours; it works once, for 15 minutes, and is never sent to the database." },
+    { section: K, id: "dbcode", label: "This device's code", type: "info",
       hidden: () => !sdb.keys?.asking || !!sdb.keys?.here,
-      hint: "Type it on a device that has the passphrase: Settings, Shared database, \"A device is asking for the passphrase\". This device takes the passphrase a few seconds after.",
+      hint: "Type it on a device that has the passphrase: Settings, Passphrase for keys, \"A device is asking for the passphrase\". This device takes the passphrase a few seconds after.",
       get: () => sec.request ? `${sec.request.code}\nuntil ${localTime(sec.request.until)}` : "" },
-    { section: D, id: "dbapprove", label: "A device is asking for the passphrase", type: "form", button: "Give it the passphrase",
+    { section: K, id: "dbapprove", label: "A device is asking for the passphrase", type: "form", button: "Give it the passphrase",
       hidden: () => !(sdb.keys?.waiting || []).length,
       hint: () => `Asking now: ${(sdb.keys?.waiting || []).map(w => `${w.name} (${localTime(w.asked)})`).join(", ")}. If you just asked on that device yourself, type the code it shows: it is given the passphrase, sealed so only it can open it. If you didn't, do nothing: without the code from its screen nobody is given anything.`,
       fields: () => [{ name: "code", label: "Code", placeholder: "XXXX-XXXX", size: 10, value: "" }] },
-    { section: D, id: "dbkeys", label: "Passphrase on each device", type: "info",
+    { section: K, id: "dbkeys", label: "Passphrase on each device", type: "info",
       hidden: () => !sdb.keys?.current,
       hint: "Each device's fingerprint of the passphrase it has: the same fingerprint means the same passphrase (a fingerprint can't be turned back into it). A device counts as current when it also shows that it holds the passphrase, which nobody without it can do. A device that was off when it changed takes the new one when it's back; one that missed two changes needs it typed or a code. The database password's fingerprint shows the same for each device's saved password.",
       get: () => {
@@ -1575,7 +1624,7 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
                 ...(k.devices || []).map(d => `${d.name}${d.me ? " (this device)" : ""}: ${d.fingerprint || "none"} ${d.current ? "✓ current" : d.unproved ? "✗ says it has the current one but hasn't shown it (an older version of the app?)" : d.fingerprint ? "✗ not the current one" : ""}` +
                                               (d.password ? `; database password ${d.password}` : ""))].join("\n");
       } },
-    { section: D, id: "dbrestore", label: "Restore an earlier passphrase", type: "select", def: "",
+    { section: K, id: "dbrestore", label: "Restore an earlier passphrase", type: "select", def: "",
       hidden: () => !sdb.keys?.here || (sdb.keys?.versions || []).filter(v => !v.current && v.known).length === 0,
       hint: "Undoes a wrong change: the chosen passphrase becomes the current one again, every key is encrypted again with it, and your devices that have the current one take it by themselves. The list has the passphrases this device has had itself (newest first), with who set each and when.",
       options: () => [["", "Choose one"], ...(sdb.keys?.versions || []).filter(v => !v.current && v.known)
@@ -1611,6 +1660,8 @@ $("#tilesz").oninput = e => { setTile(e.target.value); store.set("tile", e.targe
       return { ...r, message: `${r.given} was given the passphrase` }; }),
     dbsetup: saved(a => post("/api/db/setup", { host: a.host || "", port: +a.port || 5432, dbname: a.dbname || "facerec",
                                                user: a.user || "", password: a.password || "" })),
+    dbcerts: async a => { const r = await post("/api/db/certificates", { server: a.server || "" }); SettingsBridge.changed(); return r; },
+    dbca: async a => { const r = await post("/api/db/ca", { pem: a.pem || "" }); SettingsBridge.changed(); return r; },
     wsgoogle: saved(a => post("/api/websearch/key", { key: a.key || "" })),
     wsaws: saved(a => post("/api/websearch/aws", { id: a.id || "", secret: a.secret || "", region: a.region || "us-east-1" })),
     descget: () => post("/api/describe/getmodel", {}),

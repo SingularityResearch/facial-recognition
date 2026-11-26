@@ -2,7 +2,7 @@
 
 Measured on 25 November 2026 on five computers of the project, with the app's own requests (the app's own models
 also on a Raspberry Pi 4). This is the evidence
-behind what Settings suggests for Describe photo (Labeling: Describe photo, **Suggested for this computer**), and
+behind what Settings suggests for Describe photo (AI models, Model server, **Suggested for this computer**), and
 the numbers for the app's own two models, Opsis 1 and Melos 1.
 
 ## The computers

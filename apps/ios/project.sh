@@ -3,7 +3,7 @@
 # The sources are expected in ~/fr-test/rust-src (this repository's rust/ folder), the model runtime's
 # xcframework in ~/fr-test/ort-ios/x, and the first line of ~/fr-test/team.txt is the developer team's id.
 # The app's id is its permanent one, the same as the Android app's and the Mac app's (FACE_IOS_BUNDLE names
-# another, for a copy beside it); its version is the workspace's (Cargo.toml: 2.7.0 is build 20700, as on
+# another, for a copy beside it); its version is the workspace's (Cargo.toml: 2.8.0 is build 20800, as on
 # Android). It is an iPhone app (an iPad runs it as one): for the iPad's own layout the App Store wants every
 # way up, and its own screenshots.
 # The Rust library is linked by its full path: asked for by name, the linker took the dynamic one cargo builds

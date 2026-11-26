@@ -4,11 +4,29 @@
 // The Cameras page's address: its own port in the tracker's process when it has one (each address is a process of
 // its own in this window, so a busy Cameras page can't slow the tracker's page), else the tracker's own address.
 const camsUrl = s => s.cameras || new URL("cameras", s.url).href;
+const anaUrl = s => new URL("analyze", s.url).href;
+// The setup page (setup.html, the labeling tool's): over every tab from the Setup button, and by itself at a new
+// copy's first start, when the page, loaded hidden, says nothing is set up yet. It is not a tab: the watchdog
+// doesn't ask it, and closing it shows the tab that was open.
+const setupUrl = (s, auto) => new URL(auto ? "setup?auto=1" : "setup", s.url).href;
+let labelAt = null, setupOpen = false;
+function openSetup() {
+  const f = document.getElementById("f-setup");
+  if (labelAt) { const u = setupUrl(labelAt, false); if (f.src !== u) f.src = u; }
+  f.classList.add("on");
+  setupOpen = true;
+  f.focus();
+}
+function closeSetup() {
+  document.getElementById("f-setup").classList.remove("on");
+  setupOpen = false;
+  show(current);
+}
 let current = "track";
 function show(k) {
   current = k;
-  for (const t of ["track", "label", "cams", "set"]) document.getElementById("tab-" + t).setAttribute("aria-selected", t === k);
-  for (const t of ["track", "label", "cams"])
+  for (const t of ["track", "label", "cams", "ana", "set"]) document.getElementById("tab-" + t).setAttribute("aria-selected", t === k);
+  for (const t of ["track", "label", "cams", "ana"])
     document.getElementById("f-" + t).classList.toggle("on", t === k && !!document.getElementById("f-" + t).src);
   const f = document.getElementById("f-" + k);
   document.getElementById("settings").hidden = k !== "set";
@@ -18,7 +36,7 @@ function show(k) {
   else { askAll(); if (document.activeElement?.tagName === "IFRAME") document.getElementById("tab-set").focus(); }
   try { localStorage.setItem("tab", k); } catch {}
 }
-try { const t = localStorage.getItem("tab"); if (t === "label" || t === "set" || t === "cams") current = t; } catch {}
+try { const t = localStorage.getItem("tab"); if (t === "label" || t === "set" || t === "cams" || t === "ana") current = t; } catch {}
 const errors = {};
 async function poll() {                          // each program's URL once it's serving, or why it failed
   let st = {};
@@ -28,6 +46,10 @@ async function poll() {                          // each program's URL once it's
     if (s.url && !f.src) { f.src = s.url; document.getElementById("st-" + k).textContent = ""; }
     // the Cameras tab: the tracker's page of every device's camera
     if (k === "track" && s.url && !document.getElementById("f-cams").src) document.getElementById("f-cams").src = camsUrl(s);
+    // the Analyze tab: a page of the labeling tool's (it asks that program's server)
+    if (k === "label" && s.url && !document.getElementById("f-ana").src) document.getElementById("f-ana").src = anaUrl(s);
+    // the setup page, hidden: it says whether a new copy wants it (see openSetup)
+    if (k === "label" && s.url && !frame("setup").src) { labelAt = s; frame("setup").src = setupUrl(s, true); }
     if (s.error) { errors[k] = s.error; document.getElementById("st-" + k).textContent = "failed"; }
   }
   show(current);
@@ -63,10 +85,10 @@ const drop = r => { try { r?.body?.cancel().catch(() => {}); } catch {} return r
 // starting, or one being started again, has no page to answer (and a message to a frame whose page isn't there yet
 // is an error line in the log).
 const ANSWER_IN = 10000, answered = {};            // tab -> { src, at }: its page, and when that last answered or loaded
-for (const k of ["track", "label", "cams"]) document.getElementById("f-" + k).addEventListener("load", e => {
+for (const k of ["track", "label", "cams", "ana"]) document.getElementById("f-" + k).addEventListener("load", e => {
   if (e.target.getAttribute("src")) answered[k] = { src: e.target.src, at: Date.now() };
 });
-const loadedTabs = () => ["track", "label", "cams"].filter(k => { const f = document.getElementById("f-" + k); return f.src && answered[k]?.src === f.src; });
+const loadedTabs = () => ["track", "label", "cams", "ana"].filter(k => { const f = document.getElementById("f-" + k); return f.src && answered[k]?.src === f.src; });
 function silentTabs(now) {
   return loadedTabs().filter(k => now - answered[k].at > ANSWER_IN);
 }
@@ -86,7 +108,7 @@ function emptyStill(f) {
 }
 function lateTabs(now, empty) {                    // the tabs to give their address again now
   const late = [];
-  for (const k of ["track", "label", "cams"]) {
+  for (const k of ["track", "label", "cams", "ana"]) {
     const f = document.getElementById("f-" + k);
     if (!empty(f)) { delete unbegun[k]; continue; }
     const w = unbegun[k]?.src === f.src ? unbegun[k] : (unbegun[k] = { src: f.src, since: now, tries: 0 });
@@ -94,7 +116,7 @@ function lateTabs(now, empty) {                    // the tabs to give their add
   }
   return late;
 }
-const gaveUp = now => ["track", "label", "cams"].filter(k => unbegun[k]?.tries >= AGAIN && now - unbegun[k].since > START_IN * AGAIN);
+const gaveUp = now => ["track", "label", "cams", "ana"].filter(k => unbegun[k]?.tries >= AGAIN && now - unbegun[k].since > START_IN * AGAIN);
 setInterval(() => {
   for (const k of loadedTabs()) tell(k, { fs: "ping" });
   const now = Date.now(), again = lateTabs(now, emptyStill);
@@ -112,6 +134,10 @@ setInterval(async () => {
     const f = document.getElementById("f-" + k), url = st[k]?.url;
     const cams = document.getElementById("f-cams");
     if (k === "track" && url && cams.src && new URL(camsUrl(st[k])).origin !== new URL(cams.src).origin) cams.src = camsUrl(st[k]);
+    const ana = document.getElementById("f-ana");
+    if (k === "label" && url && ana.src && new URL(url).origin !== new URL(ana.src).origin) ana.src = anaUrl(st[k]);
+    const setup = frame("setup");
+    if (k === "label" && url && setup.src && new URL(url).origin !== new URL(setup.src).origin) { labelAt = st[k]; setup.src = setupUrl(st[k], !setupOpen); }
     if (!url || !f.src || new URL(url).origin === new URL(f.src).origin) continue;
     f.src = url;
   }
@@ -128,15 +154,16 @@ async function startAgain(k) {
     delete errors[j];
     frame(j).removeAttribute("src");
     if (j === "track") frame("cams").removeAttribute("src");   // the Cameras page is the tracker's: its address may change too
+    if (j === "label") frame("ana").removeAttribute("src");    // and Analyze is the labeling tool's
     STATE[j] = null;
     document.getElementById("st-" + j).textContent = "";
   }
   poll();
 }
-// Ctrl+1 / Ctrl+2 / Ctrl+3 switch tabs, Ctrl+4 the alerts. A key pressed inside a tab goes to that tab's page, not
+// Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+5 switch tabs, Ctrl+4 the alerts. A key pressed inside a tab goes to that tab's page, not
 // to this one: those pages pass these four on (settings_bridge.js, { fs: "key" }; the message listener below).
 function hotkey(key) {
-  const t = { "1": "track", "2": "label", "3": "set" }[key];
+  const t = { "1": "track", "2": "label", "3": "set", "5": "ana" }[key];
   if (t) show(t); else if (key === "4") viewAlerts();
   return !!t || key === "4";
 }
@@ -157,22 +184,36 @@ async function checkUpdate() {
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
 document.querySelectorAll("#upd, #upd2").forEach(b => b.addEventListener("click", checkUpdate));
 document.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => openDir(b.dataset.open)));
+document.querySelectorAll("#setupBtn, #setupBtn2").forEach(b => b.addEventListener("click", openSetup));
 
 // ---------------------------------------------------------------- Settings tab
 // The tracker's and the labeling tool's settings live in their own pages (their controls, their browser storage,
 // their servers), so this tab asks each page for them (settings_bridge.js, over postMessage) and sends changes back.
-const NAMES = { track: "Face tracking", label: "Labeling" }, STATE = { track: null, label: null }, waiting = {};
+const NAMES = { track: "Face tracking", label: "Labeling", ana: "Analyze" }, STATE = { track: null, label: null, ana: null }, waiting = {};
 let rid = 0;
 const frame = k => document.getElementById("f-" + k);
 const originOf = k => { try { return new URL(frame(k).src).origin; } catch { return null; } };
 function tell(k, msg) { const o = originOf(k); if (o && frame(k).contentWindow) frame(k).contentWindow.postMessage(msg, o); }
-function askAll() { for (const k of ["track", "label"]) tell(k, { fs: "get" }); drawPrograms(); }
+function askAll() { for (const k of ["track", "label", "ana"]) tell(k, { fs: "get" }); drawPrograms(); }
 function act(k, id, args) {
   return new Promise(res => { const r = ++rid; waiting[r] = res; tell(k, { fs: "act", id, args, rid: r });
     setTimeout(() => { if (waiting[r]) { delete waiting[r]; res({ ok: false, error: "No answer" }); } }, 30000); });
 }
 addEventListener("message", e => {
-  const k = ["track", "label", "cams"].find(k => frame(k).contentWindow === e.source && originOf(k) === e.origin);
+  // the setup page: open itself (a new copy), close, go to a tab (Settings at a group), or open the private folder
+  if (frame("setup").contentWindow === e.source && originOf("setup") === e.origin && e.data?.fs === "setup") {
+    const m = e.data;
+    if (m.want && !setupOpen) openSetup();
+    if (m.close) closeSetup();
+    if (["track", "label", "set"].includes(m.go)) {
+      closeSetup();
+      show(m.go);
+      if (m.go === "set" && typeof m.group === "string" && /^[a-z]+$/.test(m.group)) document.getElementById("grp-" + m.group)?.scrollIntoView({ block: "start" });
+    }
+    if (m.open === "private" || m.open === "data") openDir(m.open);
+    return;
+  }
+  const k = ["track", "label", "cams", "ana"].find(k => frame(k).contentWindow === e.source && originOf(k) === e.origin);
   const m = e.data;
   if (!k || !m) return;
   if (m.fs === "pong") { if (answered[k]) answered[k].at = Date.now(); return; }   // this tab's page runs (see silentTabs)
@@ -334,34 +375,93 @@ function secretBox(inp) {
   eye.addEventListener("keyup", () => show(false));
   return el("span", { className: "secret" }, inp, eye);
 }
+// The tab's order (the owner, 2026-11-25: "reorganize it so that everything related is grouped together. Like all AI /
+// LLM settings should go together and be easy to recognize what each one does"): groups of cards in a fixed order,
+// whichever page answers first. A card is a section name the pages give their settings, and may hold settings of
+// several pages (Location: the tracker's switch and the labeling tool's history of it), each page's in its own order.
+// A section no group names goes under More, so a setting is never lost.
+const LAYOUT = [
+  { id: "app", title: "App", cards: [] },          // (the App card is in the page itself)
+  { id: "camera", title: "Camera and recognition", cards: ["Camera", "Recognition", "On screen"] },
+  { id: "readings", title: "Readings", note: "What is read from a face, a voice and a body while the camera runs.",
+    cards: ["Expression", "Voice, pulse, posture and sound"] },
+  { id: "alerts", title: "Alerts", cards: ["Alerts"] },
+  { id: "history", title: "History and logs", note: "What is kept over time: in your shared database, or on this computer.",
+    cards: ["Signal history", "The library's history", "Presence log"] },
+  { id: "location", title: "Location", cards: ["Location"] },
+  { id: "labeling", title: "Labeling", cards: ["Labeling", "Web search"] },
+  { id: "ai", title: "AI models", note: "Describe photo and Analyze use a language model on a model server (LM Studio, Ollama, llama.cpp or vLLM), on this computer or another of yours. Describe photo can also use the built-in model, which runs inside this app.",
+    cards: ["Model server", "Describe photo", "Analyze", "Model servers on this computer", "Model servers on your other devices"] },
+  { id: "music", title: "Music", cards: ["Music"] },
+  { id: "devices", title: "Devices and shared database", cards: ["Shared database", "Your devices", "Passphrase for keys"] },
+  { id: "computer", title: "This computer", cards: ["This computer"] },
+];
+const MORE = { id: "more", title: "More", cards: [] };
+const PROGRAMS = ["track", "label", "ana"];
+const cardId = name => "card-" + String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+const resetable = name => PROGRAMS.flatMap(k => (STATE[k] || []).filter(x => x.section === name && x.def != null && !x.noReset
+  && ["toggle", "range", "select"].includes(x.type)).map(x => [k, x]));
+// (a box goes before the first one placed later than it)
+function placeIn(host, box, at) {
+  box.dataset.at = at;
+  host.insertBefore(box, [...host.children].find(n => n.dataset.at !== undefined && +n.dataset.at > at) || null);
+}
+function groupBox(g) {
+  const id = "grp-" + g.id;
+  let box = document.getElementById(id);
+  if (box) return box;
+  box = el("div", { className: "grp", id });
+  // a group of one card of its own name needs no heading over the card's
+  if (!(g.cards.length === 1 && g.cards[0] === g.title)) box.append(el("h2", { className: "gt", textContent: g.title }));
+  if (g.note) box.append(el("p", { className: "gnote", textContent: g.note }));
+  placeIn(document.getElementById("sec-programs"), box, g === MORE ? LAYOUT.length : LAYOUT.indexOf(g));
+  return box;
+}
+function cardBox(name) {
+  let sec = document.getElementById(cardId(name));
+  if (!sec) {
+    const g = LAYOUT.find(x => x.cards.includes(name)) || MORE;
+    sec = el("section", { className: "sec", id: cardId(name) });
+    sec.append(el("h3", { textContent: name }));
+    placeIn(groupBox(g), sec, g === MORE ? 999 : g.cards.indexOf(name));
+  }
+  const h = sec.firstChild;
+  if (!h.querySelector("button") && resetable(name).length) h.append(el("button", { className: "b", textContent: "Reset to defaults", type: "button",
+    onclick: async () => { if (await askUser(`Reset "${name}" to the default settings?`, "Reset")) for (const [k, x] of resetable(name)) tell(k, { fs: "set", id: x.id, value: x.def }); } }));
+  return sec;
+}
 function drawPrograms() {
-  const box = document.getElementById("sec-programs");
-  for (const k of ["track", "label"]) {
+  const waits = document.getElementById("sec-waits");
+  PROGRAMS.forEach((k, p) => {
     const items = STATE[k];
     if (!items) {                                  // not answered yet: loading, or the program failed
       const id = "sec-wait-" + k;
-      const n = document.getElementById(id) || box.appendChild(el("section", { className: "sec", id }));
-      n.replaceChildren(el("h2", { textContent: NAMES[k] }),
-        el("p", { className: "note", textContent: errors[k] ? `${NAMES[k]} couldn't start, so its settings aren't available.` : "Loading…" }));
-      continue;
+      const n = document.getElementById(id) || waits.appendChild(el("p", { className: "note", id }));
+      n.textContent = errors[k] ? `${NAMES[k]} couldn't start, so its settings aren't available.` : `${NAMES[k]}'s settings are loading…`;
+      return;
     }
     document.getElementById("sec-wait-" + k)?.remove();
-    for (const it of items) {
-      const sid = "sec-" + k + "-" + it.section;
-      let sec = document.getElementById(sid);
-      if (!sec) {
-        sec = box.appendChild(el("section", { className: "sec", id: sid }));
-        const resetable = items.filter(x => x.section === it.section && x.def != null && !x.noReset && ["toggle", "range", "select"].includes(x.type));
-        const h = el("h2", { textContent: it.section });
-        if (resetable.length) h.append(el("button", { className: "b", textContent: "Reset to defaults", type: "button",
-          onclick: async () => { if (await askUser(`Reset "${it.section}" to the default settings?`, "Reset")) for (const x of STATE[k].filter(x => x.section === it.section && x.def != null && !x.noReset && ["toggle", "range", "select"].includes(x.type))) tell(k, { fs: "set", id: x.id, value: x.def }); } }));
-        sec.append(h);
+    items.forEach((it, i) => {
+      const sec = cardBox(it.section), key = k + ":" + it.id;
+      let row = sec.querySelector(`[data-key="${CSS.escape(key)}"]`);
+      if (!row) {                                  // each page's settings in its own order, the pages in theirs
+        row = makeRow(k, it);
+        row.dataset.rank = p * 1000 + i;
+        sec.insertBefore(row, [...sec.querySelectorAll(":scope > .row")].find(r => +r.dataset.rank > p * 1000 + i) || null);
       }
-      const key = k + ":" + it.id;
-      const row = sec.querySelector(`[data-key="${CSS.escape(key)}"]`) || sec.appendChild(makeRow(k, it));
       update(row, it);
-    }
-  }
+    });
+  });
+  // the jump list: a group shows once it has a card
+  for (const b of document.querySelectorAll("#setnav button")) b.hidden = !document.getElementById(b.dataset.to);
+}
+// The jump list at the top of the tab: one button a group, in the tab's order.
+for (const g of [...LAYOUT, MORE]) {
+  const to = g.id === "app" ? "sec-app" : "grp-" + g.id;
+  const b = el("button", { type: "button", textContent: g.title, hidden: to !== "sec-app",
+    onclick: () => document.getElementById(to)?.scrollIntoView({ block: "start", behavior: "smooth" }) });
+  b.dataset.to = to;
+  document.getElementById("setnav").append(b);
 }
 // ---------------------------------------------------------------- Alerts
 // The tracker page raises them and keeps the inbox; it tells this page how many are new, and the text of

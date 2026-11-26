@@ -22,6 +22,7 @@ from this project's release "models-v2", and each has its own licence:
 - MediaPipe face, pose and hand landmark models and MediaPipe's web runtime (Google): Apache 2.0.
 - YAMNet sound classification (Google): Apache 2.0.
 - Florence-2 (Microsoft), the optional built-in photo describer: MIT.
+- Whisper base.en (OpenAI), the optional speech model of Analyze, as exported to ONNX by onnx-community: MIT.
 
 What the program itself carries:
 
@@ -36,3 +37,20 @@ What the installers carry beside the program:
 - libheif and libde265, as separate libraries: LGPL 3.0.
 - On Windows, the Microsoft Visual C++ runtime libraries and Microsoft's WebView2 Runtime bootstrapper, as
   Microsoft allows them to be redistributed.
+
+What the app downloads only when its owner sets the shared database up on that computer (Setup, "Set up a new one
+on this computer"), conda-forge's builds, each package under its own licence:
+
+- PostgreSQL (the PostgreSQL Global Development Group): the PostgreSQL Licence.
+- pgvector (Andrew Kane): the PostgreSQL Licence.
+- OpenSSL: Apache 2.0. ICU (Unicode, Inc.): the Unicode licence (MIT-like). Kerberos (MIT): MIT. libxml2 and
+  libxslt: MIT. zlib: the zlib licence. xz's liblzma: 0BSD. lz4: BSD 2-Clause. zstd: BSD 3-Clause. OpenLDAP: the
+  OpenLDAP Public License 2.8. Cyrus SASL: BSD with attribution. libc++ (LLVM): Apache 2.0 with LLVM exception.
+  The time zone database (IANA): public domain.
+- libiconv, libntlm, libxcrypt and keyutils, as separate libraries: LGPL 2.1 (or later). liburing: MIT.
+- On Linux, GCC's runtime libraries (libstdc++, libgcc, libgomp): GPL 3.0 with the GCC Runtime Library Exception,
+  which allows them to be shipped with any program.
+- On Windows, Microsoft's Visual C++ runtime (and its OpenMP runtime) beside PostgreSQL, as Microsoft allows them
+  to be redistributed.
+
+The program reads those packages with ruzstd (a zstd decoder in Rust): MIT.

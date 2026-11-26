@@ -86,7 +86,7 @@ if (Test-Path "$repo\target\root\models\mediapipe-web") {
 
 # resources and the manifest, the Java shell, its dex
 & "$bt\aapt2.exe" compile --dir "$here\res" -o "$out\res.zip"
-# the app's version is the workspace's (Cargo.toml): 2.7.0 is version name 2.7.0 and version code 20700
+# the app's version is the workspace's (Cargo.toml): 2.8.0 is version name 2.8.0 and version code 20800
 $version = (Select-String -Path "$repo\Cargo.toml" -Pattern '^version = "(\d+)\.(\d+)\.(\d+)"' | Select-Object -First 1).Matches[0].Groups
 $code = [int]$version[1].Value * 10000 + [int]$version[2].Value * 100 + [int]$version[3].Value
 $versions = @('--min-sdk-version', '26', '--target-sdk-version', '36', '--replace-version', '--version-code', "$code",

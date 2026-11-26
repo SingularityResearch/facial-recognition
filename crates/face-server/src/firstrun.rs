@@ -60,14 +60,15 @@ pub fn asks(m: &Missing, declined: &[String]) -> bool {
 }
 
 impl FirstRun {
-    /// The question for this start, or None when there is nothing to ask.
-    pub fn due(root: &Path, home: &Path) -> Option<Arc<FirstRun>> {
+    /// The question for this start, or None when there is nothing to ask. `licence`: the licence is asked about first
+    /// (`licence.rs`: where no installer asked for it, until it is accepted).
+    pub fn due(root: &Path, home: &Path, licence: bool) -> Option<Arc<FirstRun>> {
         let m = missing(root, true);
-        if !asks(&m, &declined(home)) {
+        if !licence && !asks(&m, &declined(home)) {
             return None;
         }
         let state = State {
-            stage: "asking",
+            stage: if licence { "licence" } else { "asking" },
             lines: m.lines(),
             megabytes: m.megabytes(),
             needed: m.needed(),
@@ -84,20 +85,53 @@ impl FirstRun {
         held(&self.state).stage != "done"
     }
 
-    /// What the page shows.
+    /// What the page shows (the licence's text only while it is asked about).
     pub fn said(&self) -> Value {
         let st = held(&self.state);
-        json!({"stage": st.stage, "lines": st.lines, "megabytes": st.megabytes, "needed": st.needed, "step": st.step,
-               "done": st.done, "total": st.total, "error": st.error, "folder": self.root.display().to_string()})
+        let mut out = json!({"stage": st.stage, "lines": st.lines, "megabytes": st.megabytes, "needed": st.needed, "step": st.step,
+               "done": st.done, "total": st.total, "error": st.error, "folder": self.root.display().to_string()});
+        if st.stage == "licence" {
+            out["licence"] = json!(crate::licence::for_page());
+        }
+        out
+    }
+
+    /// The licence accepted or declined. Accepted: kept, and the question goes on to what is missing, or is done
+    /// (`then`: the app may start). Declined: the question ends there ("declined"), and so does the app (`end`).
+    pub fn answer_licence(&self, accept: bool, then: Box<dyn FnOnce() + Send>, end: Box<dyn FnOnce() + Send>) {
+        let mut st = held(&self.state);
+        if st.stage != "licence" {
+            return;
+        }
+        if !accept {
+            st.stage = "declined";
+            drop(st);
+            println!("First run: the licence was declined: the app ends.");
+            return end();
+        }
+        if let Err(e) = crate::licence::accept(&self.home) {
+            st.error = format!("The acceptance couldn't be kept: {e}");
+            return;
+        }
+        println!("First run: the licence ({}) was accepted.", crate::licence::version());
+        if asks(&missing(&self.root, true), &declined(&self.home)) {
+            st.stage = "asking";
+        } else {
+            st.stage = "done";
+            drop(st);
+            then();
+        }
     }
 
     /// The answer: fetch it all (`get`), or start without. `then` runs once the app may start: at once for a
     /// "not now", after the last file for a yes, and not at all when the fetch fails (the page then asks
-    /// again). An answer while something is being fetched, or after the question is done, changes nothing.
+    /// again). An answer while something is being fetched, before the licence is accepted, or after the question
+    /// is done, changes nothing.
     pub fn answer(self: &Arc<Self>, get: bool, then: Box<dyn FnOnce() + Send>) {
         {
             let mut st = held(&self.state);
-            if st.stage == "getting" || st.stage == "done" {
+            // (only while the files are asked about: not before the licence is accepted, nor while they come)
+            if st.stage != "asking" && st.stage != "failed" {
                 return;
             }
             (st.stage, st.error) = (if get { "getting" } else { "done" }, String::new());
@@ -151,6 +185,18 @@ mod tests {
 
     use super::*;
 
+    /// What is fetched beside the model runtime and what the programs load from beside it are the same four.
+    #[cfg(windows)]
+    #[test]
+    fn the_visual_c_runtime_shipped_is_the_one_loaded() {
+        fn sorted(names: &[&'static str]) -> Vec<&'static str> {
+            let mut v = names.to_vec();
+            v.sort_unstable();
+            v
+        }
+        assert_eq!(sorted(&face_tools::parts::VC_RUNTIME), sorted(&face_core::runtime::VC_RUNTIME));
+    }
+
     #[test]
     fn the_question_is_asked_for_what_is_needed_every_time_and_for_the_rest_until_declined() {
         let needed = MODELS.iter().find(|m| !m.optional).copied().unwrap();
@@ -182,5 +228,40 @@ mod tests {
         std::fs::write(home.join(KEPT), b"[1, 2").unwrap();
         assert!(declined(&home).is_empty());
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The licence comes first: accepted, it is kept and the question goes on to what is missing; declined, the
+    /// question ends there and the app is told to end; nothing else answers it.
+    #[test]
+    fn the_licence_is_asked_first_and_its_answer_decides_the_start() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let dir = std::env::temp_dir().join(format!("face-firstrun-licence-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (root, home) = (dir.join("root"), dir.join("home"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+        let never = || -> Box<dyn FnOnce() + Send> { Box::new(|| unreachable!("not now")) };
+        // nothing missing that it would ask about, and no licence: no question
+        let first = FirstRun::due(&root, &home, true).unwrap();
+        assert_eq!(first.said()["stage"], "licence");
+        assert!(first.said()["licence"].as_str().unwrap().contains("COMMERCIAL LICENSE"));
+        // a download answer isn't a licence answer
+        first.answer(false, never());
+        assert_eq!(first.said()["stage"], "licence");
+        // accepted: kept, and on to the files this empty folder misses (the models)
+        first.answer_licence(true, never(), never());
+        assert!(crate::licence::accepted(&home));
+        assert_eq!(first.said()["stage"], "asking");
+        assert!(first.said().get("licence").is_none());
+        // declined, on another start: the question ends and the app is told to end
+        let _ = std::fs::remove_file(home.join("licence.json"));
+        let first = FirstRun::due(&root, &home, true).unwrap();
+        let ended = std::sync::Arc::new(AtomicBool::new(false));
+        let told = ended.clone();
+        first.answer_licence(false, never(), Box::new(move || told.store(true, Ordering::SeqCst)));
+        assert!(ended.load(Ordering::SeqCst));
+        assert_eq!(first.said()["stage"], "declined");
+        assert!(first.waiting() && !crate::licence::accepted(&home));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

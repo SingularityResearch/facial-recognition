@@ -557,7 +557,7 @@ pub fn uses(devices: &[(&str, Option<String>)], theirs: &(Map<String, Value>, Ma
 
 // ----------------------------------------------------------------------------- this computer's addresses
 
-/// This device's "Fully distributed system" setting (Settings, LM Studio; `HOME/lmstudio.json`, off for a
+/// This device's "Fully distributed system" setting (Settings, Your devices; `HOME/lmstudio.json`, off for a
 /// new copy): the owner's computers may be anywhere, so every network adapter counts as the device's own.
 pub fn distributed(home: &Path) -> bool {
     let kept: Option<Value> =
@@ -896,6 +896,10 @@ pub fn ai_apps(home: &Path) -> Value {
                 .collect();
             if let Some(last) = out.last_mut() {
                 last["lan"] = json!(lan);
+                // what the app's upkeep last did with it (servekeep.rs: kept open to the owner's devices)
+                if let Some(said) = crate::servekeep::said(home, port) {
+                    last["kept"] = json!(said);
+                }
             }
         }
     }

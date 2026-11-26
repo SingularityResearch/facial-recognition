@@ -35,8 +35,15 @@ use crate::{
 
 const HTML: &str = "text/html; charset=utf-8";
 const SCRIPT: &str = "text/javascript; charset=utf-8";
-pub(crate) const PAGES: [(&str, &str, &str); 7] = [
+pub(crate) const PAGES: [(&str, &str, &str); 12] = [
     ("/", "label_ui.html", HTML),
+    // Setup: what is set up and what is left, shown over the app window (it asks this server alone)
+    ("/setup", "setup.html", HTML),
+    ("/setup.js", "setup.js", SCRIPT),
+    // Analyze: a page of its own, beside the labeling page on this server (it asks this server alone)
+    ("/analyze", "analyze.html", HTML),
+    ("/analyze.js", "analyze.js", SCRIPT),
+    ("/signals_chart.js", "signals_chart.js", SCRIPT),
     ("/index.html", "label_ui.html", HTML),
     ("/label_ui.js", "label_ui.js", SCRIPT),
     ("/settings_bridge.js", "settings_bridge.js", SCRIPT),
@@ -155,6 +162,8 @@ impl Labeler {
         let data = root.join("data");
         #[cfg(feature = "import")]
         crate::florence::set_root(root); // the built-in describe model's files are beside the other models
+        #[cfg(feature = "import")]
+        crate::speech::set_root(root); // and the speech model's, for Analyze
         #[cfg(not(feature = "import"))]
         let db = LabelDb::open(&data, home, REC_MODELS[0], true, log).map_err(|e| e.to_string())?;
         // A library whose prints are of another recognition model than this version's gets every print made
@@ -615,6 +624,11 @@ impl Labeler {
         if let Some(answer) = self.settings_get(req) {
             return answer;
         }
+        // Analyze: outside the labeling data's lock, as it asks a server and the shared database
+        #[cfg(feature = "import")]
+        if let Some(answer) = self.analyze_get(req) {
+            return answer;
+        }
         // Describe photo: outside the labeling data's lock, as it asks a server
         #[cfg(feature = "import")]
         if let Some(answer) = self.describe_get(req).or_else(|| self.libhistory_get(&req.path)) {
@@ -799,6 +813,10 @@ impl Labeler {
             return self.store.update("label", &changes).map(|s| Response::json(json!({"settings": s}))).map_err(asked);
         }
         #[cfg(feature = "import")]
+        if let Some(answer) = self.analyze_post(&req.path, body) {
+            return answer;
+        }
+        #[cfg(feature = "import")]
         if let Some(answer) = self.import_post(&req.path, body).or_else(|| self.describe_post(&req.path, body)) {
             return answer;
         }
@@ -899,6 +917,8 @@ impl Service for Labeler {
         #[cfg(feature = "import")]
         let import = import || crate::describejob::POSTS.contains(&path) || path == "/api/websearch";
         #[cfg(feature = "import")]
+        let import = import || crate::analyze::POSTS.contains(&path);
+        #[cfg(feature = "import")]
         let import = import || crate::lmstudio::POSTS.contains(&path) || crate::musiclog::POSTS.contains(&path);
         let import = import || matches!(path, "/api/person/export" | "/api/person/forget" | "/api/cuda/download");
         let import = import || path == "/api/local/saved";
@@ -913,6 +933,10 @@ impl Service for Labeler {
                 Some(b) => Response::bytes(ctype, b),
                 None => Response::error(404, "not found"),
             };
+        }
+        // the setup guide, readable inside the app (a page like the others: no data, nothing of this device)
+        if req.path == "/guide" {
+            return Response::bytes(HTML, crate::guide::page().into_bytes());
         }
         self.get_route(req).unwrap_or_else(|refusal| refusal)
     }

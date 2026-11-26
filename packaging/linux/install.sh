@@ -57,6 +57,10 @@ running() {                         # the installed copy is running: its files c
 
 uninstall() {
   if running; then echo "$TITLE is running: close it first, then run this again."; exit 1; fi
+  # the shared database, where this computer holds it: its server stopped and its start at sign-in taken away (its
+  # data stays in $SHARE/$NAME/database, as the library does)
+  if [ -x "$APP/$NAME/$NAME" ]; then "$APP/$NAME/$NAME" stop-database >/dev/null 2>&1 || true; fi
+  rm -f "$(dirname "$AUTO")/face-recognizer-database.desktop"
   rm -rf "$APP"
   rm -f "$ENTRY" "$BIN/facerecognizer" "$(desktop_dir)/$NAME.desktop" "$AUTO"
   for s in $SIZES; do rm -f "$ICONS/${s}x${s}/apps/$NAME.png"; done

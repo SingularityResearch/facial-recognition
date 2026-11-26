@@ -113,7 +113,7 @@ measured: the options that would let one change the expression label (**Skip exp
 expression when a hand is on the face**, **Use state model for expression**) are off by default, and every
 `signals.js` threshold and the state model's `H_STAY` are first guesses, marked as such in the code. Only the
 quality gate (`Q_EXPR`, `MAX_TURN`) and the voting values (`X_SURE`, `X_MARGIN`, `X_MIN_VOTES`) are measured. The
-[Settings](SETTINGS.md) ("Face tracking: voice, pulse and posture") has the details.
+[Settings](SETTINGS.md) ("Voice, pulse, posture and sound") has the details.
 
 | Suggestion | Where |
 |---|---|

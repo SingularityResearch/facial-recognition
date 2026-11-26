@@ -305,6 +305,62 @@ impl Tracker {
         Response::json(self.followed.since_many(&asked, &paths, bus_wait(req), Some((&me, &self.bus))))
     }
 
+    /// What every node of the member list says now, for Analyze: each one's tree, and what it says of who is in
+    /// view and their readings within `wait` (they are said, never kept in a tree: a later subscriber hears
+    /// them only as they come). All nodes at once, each on a thread of this question's own; a node removed here
+    /// is not asked (`bus_nodes`). {nodes: [{id, name, me, whole, said, error?}]}.
+    fn now_everywhere(&self, wait: std::time::Duration) -> Value {
+        let listed = self.bus_nodes();
+        let me = listed["me"].as_str().unwrap_or("").to_string();
+        let nodes: Vec<Value> = listed["nodes"].as_array().cloned().unwrap_or_default();
+        let paths = vec!["inview".to_string(), "readings".to_string()];
+        let answers: Vec<Value> = std::thread::scope(|scope| {
+            let asked: Vec<_> = nodes
+                .iter()
+                .take(crate::busrelay::MAX_FOLLOWED)
+                .map(|n| {
+                    let id = n["id"].as_str().unwrap_or("").to_string();
+                    let name = n["name"].clone();
+                    let mine = id == me;
+                    let (bus, followed, paths) = (&self.bus, &self.followed, &paths);
+                    scope.spawn(move || {
+                        let end = std::time::Instant::now() + wait;
+                        let first = if mine {
+                            bus.since(None, &[], std::time::Duration::ZERO)
+                        } else {
+                            followed.since(&id, None, &[], wait)
+                        };
+                        let (Some(seq), Some(epoch)) = (first["seq"].as_u64(), first["epoch"].as_str()) else {
+                            return json!({"id": id, "name": name, "me": mine, "error": first["error"]});
+                        };
+                        // what it says of who is in view and their readings, until a set of readings or the wait's end
+                        let mut cursor = crate::bus::Cursor { epoch: epoch.to_string(), seq };
+                        let mut said: Vec<Value> = Vec::new();
+                        while !said.iter().any(|e| e["path"] == "readings") {
+                            let left = end.saturating_duration_since(std::time::Instant::now());
+                            if left.is_zero() {
+                                break;
+                            }
+                            let next = if mine {
+                                bus.since(Some(&cursor), paths, left)
+                            } else {
+                                followed.since(&id, Some(&cursor), paths, left)
+                            };
+                            match (next["seq"].as_u64(), next["epoch"].as_str()) {
+                                (Some(s), Some(e)) if e == cursor.epoch => cursor.seq = s,
+                                _ => break,
+                            }
+                            said.extend(next["events"].as_array().cloned().unwrap_or_default());
+                        }
+                        json!({"id": id, "name": name, "me": mine, "whole": first["whole"], "said": said, "error": first["error"]})
+                    })
+                })
+                .collect();
+            asked.into_iter().filter_map(|h| h.join().ok()).collect()
+        });
+        json!({"nodes": answers})
+    }
+
     /// The nodes this device knows of (its own member list: no server is asked), without those its owner
     /// removed here: {nodes: [{id, name, me, share}]}.
     fn bus_nodes(&self) -> Value {
@@ -1205,6 +1261,11 @@ impl Tracker {
             }
             // the port the Cameras page is served on, if it has its own
             "/api/local/cameras" => Response::json(json!({"port": trackerlink::cameras()})),
+            // what every node says now, for Analyze in the labeling tool's process
+            "/api/local/now" => {
+                let ms = req.param("wait").and_then(|w| w.parse::<u64>().ok()).unwrap_or(2500).clamp(500, 6000);
+                Response::json(self.now_everywhere(std::time::Duration::from_millis(ms)))
+            }
             _ => Response::error(404, "not found"),
         }
     }

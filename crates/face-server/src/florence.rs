@@ -271,7 +271,7 @@ pub fn download_in_background() {
 
 /// Each byte as the character the vocabulary writes it with: the printable ones as themselves, the rest
 /// as the characters from 256 on.
-fn byte_chars() -> [char; 256] {
+pub(crate) fn byte_chars() -> [char; 256] {
     let own = |b: u32| (33..=126).contains(&b) || (161..=172).contains(&b) || (174..=255).contains(&b);
     let mut out = ['\0'; 256];
     let mut n = 0;

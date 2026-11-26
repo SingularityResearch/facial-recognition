@@ -2100,11 +2100,11 @@ setInterval(() => placeStep(), PLACE_EVERY);
 for (const id of ["optLocation", "optPlace"]) $(id).addEventListener("change", () => { placeShow(); setTimeout(() => placeStep(true), 800); });
 placeStep();
 for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change", () => SettingsBridge.changed());   // the Settings tab's list
-// The app window's Settings tab (settings_bridge.js): every option of this page, in sections
+// The app window's Settings tab (settings_bridge.js): every option of this page, in sections, each a card of the tab's
+// groups (app_ui.js LAYOUT, which names every section here)
 {
-  const c = SettingsBridge.control, C = "Face tracking: camera", D = "Face tracking: display",
-        E = "Face tracking: expression", S = "Face tracking: voice, pulse and posture", R = "Face tracking: recognition",
-        A = "Face tracking: alerts", P = "Face tracking: presence log", L = "Face tracking: location", H = "Face tracking: history";
+  const c = SettingsBridge.control, C = "Camera", D = "On screen", E = "Expression", S = "Voice, pulse, posture and sound",
+        R = "Recognition", A = "Alerts", P = "Presence log", L = "Location", H = "Signal history";
   SettingsBridge.init("track", [
     c("camSelect", C, { noReset: true }),
     c("optMirror", C, { hint: "Turned on for the webcam and off for video files when the source starts." }),
@@ -2124,8 +2124,8 @@ for (const id of ["alertWho", "optAlertUnknown"]) $(id).addEventListener("change
     c("optSoundChart", S, { hint: "For the Signals chart: while this is on, every audio interface of this computer (each output: what it plays; each microphone: what sounds in the room) is listened to, 4 seconds at a time, one stretch after another, and measured in memory. Only numbers and one word (music, speech, quiet...) are kept, for 15 minutes; the sound itself is never kept. Turned off, or this page closed, the listening stops within seconds. With Stream this camera on, your other devices' Cameras tab charts the same numbers." }),
     c("optStrict", R, { hint: "Higher strictness means fewer wrong names but more \"Unknown\". The default is the measured best for the active model." }),
     c("optCollect", R, { hint: $("collectHint").textContent }),
-    c("optKeepCam", R, { label: "Keep this camera running", hint: "Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. Stop camera turns this off." }),
-    c("optStream", R, { label: "Stream this camera to my other devices", hint: "Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on here), with its live readout. Sent all the time at full rate (about 20 frames a second), over your local network, encrypted, only to your own devices; never stored. Needs a shared database and Share my photos with my other devices." }),
+    c("optKeepCam", C, { label: "Keep this camera running", hint: "Starts the camera when the app starts, and again within 10 s if it stops (unplugged, busy, an error), so this device's camera is always on in every device's Cameras tab. Stop camera turns this off." }),
+    c("optStream", C, { label: "Stream this camera to my other devices", hint: "Your other devices can watch this camera live in their Cameras tab, as this page shows it (names, boxes and every marker that's on here), with its live readout. Sent all the time at full rate (about 20 frames a second), over your local network, encrypted, only to your own devices; never stored. Needs a shared database and Share my photos with my other devices." }),
     c("optHistory", H, { hint: $("historyHint").textContent }),
     c("optHistoryDays", H, { label: "Keep the history for (days)", hint: "Rows older than this many days are deleted from your shared database, once a day: this device's signal history and its location history. From 1 to 3650 days; 90 unless you set another number. A shorter time deletes the older rows at the next daily tidying." }),
     { section: H, id: "historyNow", label: "The history on this device", type: "info",

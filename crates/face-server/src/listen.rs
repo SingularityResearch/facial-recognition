@@ -209,6 +209,19 @@ pub fn interfaces() -> (Vec<Interface>, Vec<String>) {
 /// when it can't be listened to. An output that plays nothing gives nothing at all on some systems: that is
 /// silence, as long as asked for. Kept in memory only.
 pub fn record(interface: &Interface, seconds: f64) -> Option<Vec<f32>> {
+    record_while(interface, seconds, &|| true, RATE, true)
+}
+
+/// What one interface plays or hears until `going` says no or `seconds` have passed, as one channel at `to` a
+/// second. `whole`: the full `seconds` (silence added where nothing came); else as long as it listened.
+/// Kept in memory only.
+pub fn record_while(
+    interface: &Interface,
+    seconds: f64,
+    going: &dyn Fn() -> bool,
+    to: usize,
+    whole: bool,
+) -> Option<Vec<f32>> {
     let device = &interface.from;
     let config =
         if device.supports_input() { device.default_input_config() } else { device.default_output_config() }.ok()?;
@@ -268,13 +281,18 @@ pub fn record(interface: &Interface, seconds: f64) -> Option<Vec<f32>> {
     // (a little longer than asked for at most: an interface that sends nothing is not waited for)
     while began.elapsed() < Duration::from_secs_f64(seconds + 1.0)
         && heard.lock().unwrap_or_else(|e| e.into_inner()).len() < wanted
+        && going()
     {
         std::thread::sleep(Duration::from_millis(20));
     }
     drop(stream);
     let mut x = std::mem::take(&mut *heard.lock().unwrap_or_else(|e| e.into_inner()));
-    x.resize(wanted, 0.0);
-    Some(sound::resample(&x, rate, RATE))
+    if whole {
+        x.resize(wanted, 0.0);
+    } else {
+        x.truncate(wanted);
+    }
+    Some(sound::resample(&x, rate, to))
 }
 
 /// Every interface of these kinds listened to at the same moment for `seconds`: [{name, kind, default,

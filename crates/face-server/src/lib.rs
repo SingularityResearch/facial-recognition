@@ -13,15 +13,25 @@ pub use face_home::{alerts, exprlog, presence, store};
 
 #[cfg(feature = "import")]
 mod aiserve;
+// Analyze: the owner's questions about everything the devices read, answered by a language model with tools
+#[cfg(feature = "import")]
+mod analyze;
+#[cfg(feature = "import")]
+mod analyze_tools;
+// speech into words for Analyze, on this computer
 pub mod app;
 pub mod camrelay;
 pub mod camstream;
 pub mod capture;
+#[cfg(all(feature = "fetch", feature = "sync"))]
+pub mod dbhost;
 #[cfg(feature = "import")]
 mod describe;
 #[cfg(feature = "import")]
 mod describejob;
 pub mod desktop;
+#[cfg(feature = "import")]
+pub mod speech;
 // what a device says of itself for the Signals chart: its processor, memory, warmth and battery
 pub mod bus;
 pub mod busrelay;
@@ -31,6 +41,7 @@ pub mod firstrun;
 #[cfg(feature = "import")]
 pub mod florence;
 pub mod guard;
+pub mod guide;
 pub mod hardware;
 pub mod history;
 pub mod http;
@@ -40,6 +51,7 @@ pub mod label;
 mod label_settings;
 #[cfg(feature = "import")]
 mod libhistory;
+pub mod licence;
 #[cfg(feature = "import")]
 pub mod listen;
 #[cfg(feature = "import")]
@@ -47,6 +59,7 @@ mod lmsnet;
 #[cfg(feature = "import")]
 mod lmstudio;
 pub mod location;
+pub mod markdown;
 #[cfg(feature = "import")]
 mod music;
 #[cfg(feature = "import")]
@@ -57,6 +70,8 @@ pub mod peerphoto;
 mod persondata;
 pub mod privacy;
 pub mod recorder;
+#[cfg(feature = "import")]
+mod servekeep;
 #[cfg(feature = "import")]
 pub mod songlog;
 #[cfg(feature = "sound")]
@@ -72,6 +87,7 @@ pub mod syncer;
 pub mod towns;
 pub mod tracker;
 pub mod trackerlink;
+pub mod versionnote;
 #[cfg(feature = "import")]
 mod websearch;
 

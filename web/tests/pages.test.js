@@ -214,8 +214,8 @@ test("the tab page names a tab whose page stopped answering, and only such a tab
   const code = read("app_ui.js");
   const head = code.match(/const ANSWER_IN = (\d+), answered = \{\};/), fn = code.match(/const loadedTabs = [^\n]*\nfunction silentTabs\(now\) \{\r?\n[\s\S]*?\n\}/);
   assert.ok(head && fn, "silentTabs, loadedTabs or ANSWER_IN isn't written the way this test reads it");
-  const T = "http://127.0.0.1:8766/", L = "http://127.0.0.1:8765/", C = "http://127.0.0.1:8766/cameras";
-  const frames = { "f-track": { src: T }, "f-label": { src: "" }, "f-cams": { src: C } };
+  const T = "http://127.0.0.1:8766/", L = "http://127.0.0.1:8765/", C = "http://127.0.0.1:8766/cameras", A = "http://127.0.0.1:8765/analyze";
+  const frames = { "f-track": { src: T }, "f-label": { src: "" }, "f-cams": { src: C }, "f-ana": { src: "" } };
   const ctx = { document: { getElementById: id => frames[id] } };
   vm.createContext(ctx);
   vm.runInContext(`const ANSWER_IN = ${head[1]}, answered = {}; ${fn[0]}; this.silentTabs = silentTabs; this.loadedTabs = loadedTabs; this.answered = answered;`, ctx);
@@ -561,21 +561,60 @@ test("the signal history: off as the page comes, made and sent only while its sw
 test("Describe photo's kind of server: chosen in Settings, each with its own fields", () => {
   const js = read("label_ui.js");
   const has = (text, words) => assert.ok(text.includes(words), words);
-  has(js, `{ section: P, id: "describePlatform", label: "Kind of server", type: "select", def: "lmstudio"`);
+  has(js, `{ section: V, id: "describePlatform", label: "Kind of server", type: "select", def: "lmstudio",`);
   has(js, `set: v => post("/api/describe/config", { platform: v })`);
   for (const kind of ["lmstudio:", "ollama:", "llamacpp:", "vllm:"]) has(js, kind);
   // Ollama takes no key; Describe all is shared with every kind of server
-  has(js, `hidden: () => desc.config?.use === "builtin" || desc.config?.platform === "ollama",`);
+  has(js, `{ section: V, id: "describeKey", label: "API key", type: "form", button: "Save key", hidden: () => desc.config?.platform === "ollama",`);
   has(js, `also sends photos to your other devices' servers of the same kind (LM Studio, Ollama, llama.cpp or vLLM)`);
   // the server takes the kind among the settings it changes, and knows the four
   has(read("../crates/face-server/src/describejob.rs"), `["use", "platform", "url", "model", "key", "spread"]`);
   // the suggestion for this computer, and loading it: from the button, or when the kind or model is chosen; never a download
-  has(js, `{ section: P, id: "describeSuggested", label: "Suggested for this computer", type: "info",`);
+  has(js, `{ section: V, id: "describeSuggested", label: "Suggested for this computer", type: "info",`);
   has(js, `describeLoad: async () => { await post("/api/describe/load", {});`);
   has(read("../crates/face-server/src/describejob.rs"), `let chose = changes.contains_key("platform") || changes.contains_key("model");`);
   has(read("../crates/face-server/src/aiserve.rs"), `(Settings never downloads one by itself)`);
   const kinds = read("../crates/face-home/src/describe.rs");
   for (const kind of [`("lmstudio", "LM Studio", 1234)`, `("ollama", "Ollama", 11434)`, `("llamacpp", "llama.cpp", 8080)`, `("vllm", "vLLM", 8000)`]) has(kinds, kind);
+});
+
+test("the Settings tab: every section a page names is a card of its layout, and the AI models are one group", () => {
+  const app = read("app_ui.js"), label = read("label_ui.js");
+  const layout = app.slice(app.indexOf("const LAYOUT = ["), app.indexOf("const MORE = "));
+  const cards = [...layout.matchAll(/cards: \[([^\]]*)\]/g)].flatMap(m => [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1]));
+  assert.strictEqual(new Set(cards).size, cards.length, "a card is in one group only");
+  // the section names each page gives (its constants, and SettingsBridge.control's second argument where it is a string)
+  const named = page => {
+    const js = read(page), out = new Set();
+    const block = js.slice(js.lastIndexOf("SettingsBridge.control"), js.indexOf("SettingsBridge.init(") + 1);
+    for (const m of block.matchAll(/\b[A-Z] = "([^"]+)"/g)) out.add(m[1]);
+    return out;
+  };
+  for (const page of ["tracker_ui.js", "label_ui.js"]) {
+    const sections = named(page);
+    assert.ok(sections.size >= 9, `${page}: its sections were found (${[...sections].join(", ")})`);
+    for (const s of sections) assert.ok(cards.includes(s), `${page}: "${s}" is in no group of the Settings tab`);
+  }
+  assert.ok(cards.includes("Analyze") && read("analyze.js").includes('const A = "Analyze";'));
+  // the AI models: the model server, Describe photo, Analyze, and every model server here and on your devices, of every
+  // kind (the owner: "list all the LLM servers on the computer. We are not tied directly to LM Studio anymore")
+  assert.match(layout, /title: "AI models"[^\n]*\n\s*cards: \["Model server", "Describe photo", "Analyze", "Model servers on this computer", "Model servers on your other devices"\]/);
+  assert.doesNotMatch(app + label, /"LM Studio on this computer"/, "no card is one kind of server's");
+  // LM Studio's own rows (its upkeep, its shared models folder) show only where it is installed
+  for (const id of ["lmshere", "lmsget", "lmsshare"]) {
+    const block = label.slice(label.indexOf(`id: "${id}"`), label.indexOf(`id: "${id}"`) + 900);
+    assert.match(block, /hidden: \(\) => !lms\.installed/, id);
+  }
+  // your devices' servers come from the server's own list of them, which asks no model server itself
+  assert.match(label, /get\("\/api\/analyze\/servers"\)/);
+  assert.match(read("../crates/face-server/src/analyze.rs"), /"\/api\/analyze\/servers" => \{\s*Some\(Ok\(Response::json\(json!\(\{"servers": candidates\(/);
+  // the model server is Analyze's too: choosing the built-in describer hides none of its fields
+  for (const id of ["describePlatform", "describeUrl", "describeTest", "describeSuggested"]) {
+    const line = label.split("\n").find(l => l.includes(`id: "${id}"`)) || "";
+    assert.ok(line.includes("section: V,") && !line.includes('use === "builtin"'), id);
+  }
+  // Fully distributed system is about where the devices are, not about LM Studio
+  assert.match(label, /\{ section: N, id: "lmsdist", label: "Fully distributed system"/);
 });
 
 test("the library's part of the history: started only from its own button, a job in the import's slot, and the rows deleted only at the owner's word", () => {
@@ -596,7 +635,7 @@ test("the library's part of the history: started only from its own button, a job
   // Settings deletes a device's rows, or the library's, from its own form
   assert.match(js, /post\("\/api\/db\/signals\/forget", \{ device: a\.device \}\)/);
   assert.match(read("../crates/face-server/src/label_settings.rs"), /"\/api\/db\/signals\/forget",/);
-  for (const words of ["## Face tracking: history", "## Labeling: history", "**Work out the history from the library**",
+  for (const words of ["### Signal history", "### The library's history", "**Work out the history from the library**",
                        "**Delete a device's signal history**", "**Keep it for (days)** | 90 |"]) assert.ok(docs.includes(words), words);
 });
 
