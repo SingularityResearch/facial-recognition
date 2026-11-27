@@ -47,15 +47,25 @@
   .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; display: grid;
           grid-template-columns: minmax(0, 1fr) 230px; min-height: 0; overflow: hidden; }
   .tile.solo { grid-column: 1 / -1; }
+  /* Hide readings (each camera's button): its live readout and its Signals line out of view, the picture alone */
+  .tile.bare { grid-template-columns: minmax(0, 1fr); }
+  .tile.bare > .side, .tile.bare > details.sigs { display: none; }
   /* Several cameras fill the window (cameras_ui.js fit): each row at least its share of the window's height; in each
-     camera the picture fills all the room its readout leaves (its sides cut where the room is narrower than the
-     picture), the readout as tall as the picture, the Signals line at the bottom. A row with an opened chart is as tall
-     as the chart needs. */
+     camera the picture is as wide as its own camera's shape needs at that height (a phone held upright: narrow), within
+     the room its readout leaves, and the readout takes the rest, as tall as the picture; the Signals line at the
+     bottom. A picture is never cut: where the room is narrower than the picture, it is shown whole, with black above
+     and below. A row with an opened chart is as tall as the chart needs. */
   @media (min-width: 1301px) {
     #grid.fill { grid-auto-rows: minmax(var(--row, 0px), max-content); align-items: stretch; }
     #grid.fill .tile:not(.solo):not(.charted) { grid-template-columns: var(--picw, minmax(0, 1fr)) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
     #grid.fill .tile:not(.solo):not(.charted) .vid { aspect-ratio: auto; height: 100%; min-height: 0; }
-    #grid.fill .tile:not(.solo):not(.charted) .vid img { object-fit: cover; }
+      /* a camera whose readings are hidden: its picture alone, in the whole of its camera's room */
+    #grid.fill .tile.bare:not(.solo) { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+    #grid.fill .tile.bare:not(.solo) .vid { aspect-ratio: auto; height: 100%; min-height: 0; }
+    /* a camera's message (offline, connecting) in a low picture: smaller, between the name's bar and the place line */
+    #grid.fill .tile:not(.solo):not(.charted) .vid .msg { font-size: 12px; line-height: 1.35; padding: 28px 10px 38px; }
+    #grid.fill .tile:not(.solo):not(.charted) .vid .msg.wait { gap: 6px; }
+    #grid.fill .tile:not(.solo):not(.charted) .vid .msg.wait::before { width: 20px; height: 20px; }
   }
   /* One camera alone (its Focus button, or a double-click on its picture; All cameras or Esc brings the grid back):
      laid out as that device's own Face tracking tab is. The picture is as large as the window allows, its live
@@ -63,6 +73,7 @@
   #grid.focus { grid-auto-rows: minmax(0, 1fr); align-items: stretch; overflow: hidden; height: 100%; padding: 12px 16px 16px; }
   .tile.solo, .tile.solo.charted { height: 100%; grid-template-columns: minmax(0, 1fr) minmax(360px, 44%); grid-template-rows: minmax(0, 1fr) auto;
                                    column-gap: 16px; background: none; border: 0; border-radius: 0; overflow: visible; }
+  .tile.solo.bare { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .tile.solo .vid { grid-column: 1; grid-row: 1; aspect-ratio: auto; min-height: 0; height: 100%; border-radius: 6px; overflow: hidden; }
   .tile.solo .side { grid-column: 2; grid-row: 1 / 3; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; gap: 12px; }
   .tile.solo .side .sidel { display: block; }
@@ -85,20 +96,24 @@
     .tile.solo > details.sigs[open] { height: auto; overflow: visible; }
   }
   @media (max-width: 1300px) { .tile { grid-template-columns: 1fr; } }
-  .vid { position: relative; background: #000; aspect-ratio: 16 / 9; }
+  .vid { position: relative; background: #000; aspect-ratio: 16 / 9; overflow: hidden; }   /* (its bar never spills over the readout) */
   .vid img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .vid img:not([src]) { visibility: hidden; }      /* no frame yet: neither its words nor a broken picture's sign */
   .vid .bar { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; gap: 8px;
               padding: 6px 10px; background: linear-gradient(#000a, #0000); color: #fff; font: 600 12px var(--sans); }
   .vid .st { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; }
   .vid .bar .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .vid .bar .right { display: flex; align-items: center; gap: 10px; flex: none; }
   /* where the camera's device is (place.js), for a device whose owner switched that on: one line of text */
-  .vid .place { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 10px 6px; background: linear-gradient(#0000, #000a);
+  /* (its room below the text is a border, not padding: what is cut of a third line would show in the padding) */
+  .vid .place { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 10px 0; border-bottom: 6px solid transparent; background: linear-gradient(#0000, #000a);
                 color: #fff; font: 12px var(--sans); overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .vid .place[hidden] { display: none; }
   .tile.solo .vid .place { -webkit-line-clamp: 4; }
   .fbtn { font: 600 11px var(--sans); color: #fff; background: #0008; border: 1px solid #fff6; border-radius: 5px; padding: 2px 9px; cursor: pointer; }
   .fbtn:hover, .fbtn[aria-pressed="true"] { border-color: #34d399; color: #34d399; }
+  .fbtn.icon { padding: 1px 6px; display: inline-flex; align-items: center; }
+  .fbtn.icon svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
   .side { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
   .side .sidel, .stats { display: none; }
   .vid .st::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #888; margin-right: 6px; }

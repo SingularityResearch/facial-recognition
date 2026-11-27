@@ -831,7 +831,7 @@ dependencies = [
 
 [[package]]
 name = "face-app"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "face-server",
  "jni 0.21.1",
@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "face-core"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "jpeg-encoder",
  "libloading",
@@ -853,7 +853,7 @@ dependencies = [
 
 [[package]]
 name = "face-db"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "base64 0.23.1",
  "face-core",
@@ -872,7 +872,7 @@ dependencies = [
 
 [[package]]
 name = "face-desktop"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "block2",
  "face-server",
@@ -889,7 +889,7 @@ dependencies = [
 
 [[package]]
 name = "face-files"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "base64 0.23.1",
  "serde_json",
@@ -898,7 +898,7 @@ dependencies = [
 
 [[package]]
 name = "face-home"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "chrono",
  "face-files",
@@ -908,7 +908,7 @@ dependencies = [
 
 [[package]]
 name = "face-import"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "face-core",
  "face-files",
@@ -923,7 +923,7 @@ dependencies = [
 
 [[package]]
 name = "face-library"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "face-core",
  "face-files",
@@ -936,7 +936,7 @@ dependencies = [
 
 [[package]]
 name = "face-server"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -975,7 +975,7 @@ dependencies = [
 
 [[package]]
 name = "face-sync"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "base64 0.23.1",
  "face-core",
@@ -996,7 +996,7 @@ dependencies = [
 
 [[package]]
 name = "face-tools"
-version = "2.9.1"
+version = "2.9.2"
 dependencies = [
  "face-files",
  "flate2",

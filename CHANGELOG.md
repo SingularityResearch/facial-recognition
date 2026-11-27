@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.9.2 (2026-11-27)
+
+- **Every camera's whole picture.** On the Cameras tab each picture now takes its own camera's shape: a phone held
+  upright gets a narrow picture and a wider readout beside it. Nothing is cut off, at any window size.
+- **Hide a camera's readings.** The eye on each camera's picture hides its live readout and its Signals line, and
+  the picture takes the camera's whole place (with **Focus**, the whole screen). The readings go on being taken
+  meanwhile, and each camera remembers the choice.
+- An offline camera reads cleanly: no stray words over its name, its message fits its picture, and the place line
+  under a picture shows two lines with nothing cut below them.
+
 ## 2.9.1 (2026-11-27)
 
 - **Several cameras fill the window.** On a wide window the Cameras tab shares its whole height between the rows,

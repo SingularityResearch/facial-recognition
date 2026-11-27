@@ -22,6 +22,8 @@ const saveHidden = () => { try { localStorage.setItem("cams-hidden", JSON.string
 const kept = (key, none) => { try { const v = JSON.parse(localStorage.getItem(key)); return v ?? none; } catch { return none; } };
 const keep = (key, v) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} };
 const sigOpen = new Set(kept("cams-sig", []));
+// the cameras whose readings are hidden (their readout and Signals line): the picture takes the whole camera (remembered)
+const bare = new Set(kept("cams-bare", []));
 
 async function loadDevices() {
   let r = { devices: [], why: "" };
@@ -120,12 +122,13 @@ function layout() {
 }
 
 // Several cameras fill the window: the rows share its height (a row with an opened chart is still as tall as the chart
-// needs, and the grid then scrolls), and each picture fills what its readout, SIDE_MIN wide, leaves of its camera's
-// room, or less where the row is too low for a picture that wide. Only where the readout sits beside its picture (the
-// page's style says where: WIDE).
+// needs, and the grid then scrolls), and each picture is as wide as its own camera's shape needs at the row's height
+// (a phone held upright gives a narrow one), but no wider than what its readout, SIDE_MIN wide, leaves of its camera's
+// room; the picture is never cut (the page's style shows it whole). A camera's shape is its frames' own (`shape`), and
+// 16:9 until its first frame. Only where the readout sits beside its picture (the page's style says where: WIDE).
 const SIDE_MIN = 200, GRID_GAP = 10, GRID_PAD = 10, WIDE = matchMedia("(min-width: 1301px)");
 function fit() {
-  const g = $("grid"), n = g.querySelectorAll(".tile:not([hidden])").length;
+  const g = $("grid"), shown = [...g.querySelectorAll(".tile:not([hidden])")], n = shown.length;
   const cols = n <= 1 ? 1 : n <= 4 ? 2 : 3, rows = Math.ceil(n / cols);
   const tileW = (g.clientWidth - 2 * GRID_PAD - (cols - 1) * GRID_GAP) / cols;
   const on = !solo && n > 1 && WIDE.matches && tileW >= 2 * SIDE_MIN;
@@ -133,11 +136,19 @@ function fit() {
   if (!on) return;
   const rowH = Math.floor((g.clientHeight - 2 * GRID_PAD - (rows - 1) * GRID_GAP) / rows);
   const summary = g.querySelector(".tile:not([hidden]) .sigs > summary")?.offsetHeight || 36;
-  const picW = Math.floor(Math.max(0, Math.min(tileW - SIDE_MIN, (rowH - summary - 2) * 16 / 9 * 1.4)));
   g.style.setProperty("--row", `${rowH}px`);
-  g.style.setProperty("--picw", `${picW}px`);
+  for (const t of Object.values(tiles)) {
+    const picW = Math.floor(Math.max(0, Math.min(tileW - SIDE_MIN, (rowH - summary - 2) * (t.shape || 16 / 9))));
+    t.tile.style.setProperty("--picw", `${picW}px`);
+  }
 }
 new ResizeObserver(fit).observe($("grid"));
+// A camera's shape as its frames show it: the layout is made again when it changes (the first frame, a phone turned).
+function shapeOf(t) {
+  const { naturalWidth: w, naturalHeight: h } = t.img;
+  if (!w || !h) return;
+  if (Math.abs(w / h - (t.shape || 0)) > 0.01) { t.shape = w / h; fit(); }
+}
 // This camera alone, or (null) all cameras again.
 function focusOn(id) { solo = id; setMenu(false); layout(); if (!id) $("grid").scrollTop = 0; }
 
@@ -177,14 +188,29 @@ function waiting(t) {
   t.msg.hidden = false;
 }
 
+// The Hide readings button's eye (drawn here: the page loads nothing), crossed out while the readings are hidden.
+function eye(crossed) {
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16"); svg.setAttribute("aria-hidden", "true");
+  const part = (name, attrs) => { const p = document.createElementNS(NS, name); for (const [k, v] of Object.entries(attrs)) p.setAttribute(k, v); svg.append(p); };
+  part("path", { d: "M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" });
+  part("circle", { cx: "8", cy: "8", r: "2" });
+  if (crossed) part("path", { d: "M2.5 2.5l11 11" });
+  return svg;
+}
+
 function startTile(d) {
   const img = el("img", { alt: `${d.name}'s camera` }), st = el("span", { className: "st", textContent: "connecting" });
   const msg = el("div", { className: "msg", hidden: true }), place = el("div", { className: "place", hidden: true });
   const faces = el("ul", { className: "faces", ariaLabel: `Faces on ${d.name}'s camera` }, el("li", { className: "none", textContent: "No faces in view" }));
   const focus = el("button", { className: "fbtn", type: "button", textContent: "Focus", title: "This camera alone, laid out as its own Face tracking tab: large picture, live readout, Signals under it" });
   focus.setAttribute("aria-pressed", "false");
+  // this camera's readings shown or hidden: hidden, its picture takes the whole camera; the readings go on being taken.
+  // An eye, crossed out (and the button pressed) while they are hidden: a word would crowd the camera's name out.
+  const show = el("button", { className: "fbtn icon", type: "button" });
+  show.setAttribute("aria-label", "Hide readings");
   const vid = el("div", { className: "vid", title: "Double-click: this camera alone (again: all cameras)" }, img,
-                 el("div", { className: "bar" }, el("span", { className: "nm", textContent: `${d.name}${d.me ? " (this device)" : ""}` }), el("span", { className: "right" }, st, focus)), msg, place);
+                 el("div", { className: "bar" }, el("span", { className: "nm", textContent: `${d.name}${d.me ? " (this device)" : ""}` }), el("span", { className: "right" }, st, show, focus)), msg, place);
   // beside the picture: its live readout; with the camera alone also the three counts its own tab shows
   const stat = word => { const b = el("b", { textContent: "–" }); return [b, el("div", { className: "stat" }, b, el("span", { textContent: word }))]; };
   const [nFaces, sFaces] = stat("faces"), [nKnown, sKnown] = stat("recognized"), [nChecks, sChecks] = stat("checks / sec");
@@ -197,14 +223,34 @@ function startTile(d) {
   const panel = new SignalsChart.Panel(sigBody, {
     device: d.me ? "This device" : String(d.name ?? ""), open: kept("cams-sig-open", null), onOpen: keys => keep("cams-sig-open", keys),
     window: kept("cams-sig-window", undefined), onWindow: ms => keep("cams-sig-window", ms) });
-  tile.classList.toggle("charted", sigs.open);
+  // the whole row while its chart is open (and shown)
+  const charted = () => tile.classList.toggle("charted", sigs.open && !bare.has(d.id));
+  const readings = () => {
+    const hid = bare.has(d.id);
+    tile.classList.toggle("bare", hid);
+    show.replaceChildren(eye(hid));
+    show.title = hid ? "Readings hidden: show this camera's live readout and its Signals again"
+                     : "Hide this camera's live readout and its Signals: its picture takes the whole camera (the readings go on being taken)";
+    show.setAttribute("aria-pressed", String(hid));
+    charted();
+  };
+  readings();
+  show.onclick = () => {
+    if (bare.has(d.id)) bare.delete(d.id); else bare.add(d.id);
+    keep("cams-bare", [...bare]);
+    readings();
+    fit();
+    if (!bare.has(d.id)) panel.draw();
+  };
+  show.ondblclick = e => e.stopPropagation();                   // (a quick second click is not the picture's double-click)
   sigs.ontoggle = () => {
     if (sigs.open) sigOpen.add(d.id); else sigOpen.delete(d.id);
     keep("cams-sig", [...sigOpen]);
-    tile.classList.toggle("charted", sigs.open);              // the whole row while its chart is open
+    charted();
     panel.draw();
   };
-  const t = tiles[d.id] = { tile, img, st, msg, place, faces, panel, focus, counts: [nFaces, nKnown, nChecks], seq: 0, url: null, lastFrame: 0, frames: 0, d };
+  const t = tiles[d.id] = { tile, img, st, msg, place, faces, panel, focus, counts: [nFaces, nKnown, nChecks], seq: 0, url: null, lastFrame: 0, frames: 0, shape: 0, d };
+  img.onload = () => shapeOf(t);
   vid.ondblclick = () => focusOn(solo === d.id ? null : d.id);
   focus.onclick = () => focusOn(solo === d.id ? null : d.id);
   focus.ondblclick = e => e.stopPropagation();                  // (a quick second click on the button is not the picture's double-click)
