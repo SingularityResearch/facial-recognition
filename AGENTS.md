@@ -98,7 +98,7 @@ cargo run -p face-tools --release -- get --root target/root     # models, model 
 cargo fmt --check && cargo test --workspace --release           # before every commit (no models needed)
 cargo clippy --workspace --all-targets --release                # its errors stop CI; read its warnings
 cargo deny check                                                # advisories, licences, sources (deny.toml)
-cargo about generate --offline --fail licenses/rust-libraries.hbs -o licenses/rust-libraries.txt   # Cargo.lock changed
+cargo about generate --offline --fail licenses/rust-libraries.hbs -o licenses/rust-libraries.txt && sed -i "s/\r$//" licenses/rust-libraries.txt   # Cargo.lock changed
 node --test web/tests/*.test.js crates/face-server/pages/tests/*.test.js
 ```
 

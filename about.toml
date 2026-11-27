@@ -1,6 +1,7 @@
 # What cargo-about lists in licenses/rust-libraries.txt: the Rust libraries built into the programs, each with its
 # licence's text. Made again after any change to Cargo.lock:
 #     cargo about generate --offline --fail licenses/rust-libraries.hbs -o licenses/rust-libraries.txt
+#     sed -i "s/\r$//" licenses/rust-libraries.txt   (one kind of line end: some libraries' licence files have CR LF)
 # (--offline: the libraries' licences are read from their own files and Cargo.toml only, nothing is asked of a service)
 # The licences accepted are deny.toml's (where CI holds the libraries to them).
 

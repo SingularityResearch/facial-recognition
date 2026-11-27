@@ -104,6 +104,7 @@ jobs:
           command -v cargo-about > /dev/null || cargo install cargo-about --locked --version 0.9.3 --features cli
           cargo fetch --locked   # every system's libraries (their licence files are read from them)
           cargo about generate --offline --fail licenses/rust-libraries.hbs -o licenses/rust-libraries.txt
+          sed -i "s/\r$//" licenses/rust-libraries.txt   # one kind of line end, whatever a library's licence file had
           git diff --exit-code -- licenses/rust-libraries.txt
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7.1.0
         with:
