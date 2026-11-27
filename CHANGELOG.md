@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.3 (2026-11-27)
+
+- **The licences are in the app.** **Licences**, beside **Privacy policy** on the Face tracking tab, shows the
+  licences of the other people's parts the app is made with: what it carries and downloads (`NOTICE`), and every
+  Rust library built into it with its licence's full text. It opens over the page, on computers and phones, without
+  the internet.
+- A library the window uses is updated to its fixed version.
+
 ## 2.9.2 (2026-11-27)
 
 - **Every camera's whole picture.** On the Cameras tab each picture now takes its own camera's shape: a phone held

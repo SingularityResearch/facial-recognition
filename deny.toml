@@ -22,9 +22,6 @@ no-default-features = false
 [advisories]
 # Each one set aside says why, and when it is to go.
 ignore = [
-    # cookie 0.18.2 (through wry): private cookies' nonces can repeat in a process that forks. Only cookie's default
-    # features are built, and private cookies are not one of them. To go with `cargo update -p cookie` (0.18.3 or later).
-    { id = "RUSTSEC-2026-0594", reason = "the affected private-cookie feature is not built; update cookie to 0.18.3+ at the next release" },
     # chrono is unmaintained (no known vulnerability, no maintained release): its place is to be taken by `time`,
     # already in the tree, in a change of its own.
     { id = "RUSTSEC-2026-0543", reason = "unmaintained, no known vulnerability; to be replaced by the time crate" },
