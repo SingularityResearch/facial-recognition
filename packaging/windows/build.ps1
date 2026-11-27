@@ -24,8 +24,8 @@
 param([switch]$Trial, [switch]$NoBuild, [switch]$Sign, [string]$Output, [string]$WebView2)
 $ErrorActionPreference = "Stop"
 $BootstrapperUrl = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
-$BootstrapperSize = 1826528
-$BootstrapperSha256 = "fc2972da71d43e0c57b8d85a5cb9b200ed221f723cf43052d08ca722eb0bb22e"
+$BootstrapperSize = 1841888
+$BootstrapperSha256 = "32b9a5803be0d338b20f3faf9bd0932bead82320158c03d3807eddca081494b4"
 $rust = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $root = Join-Path $rust "target\root"
 
