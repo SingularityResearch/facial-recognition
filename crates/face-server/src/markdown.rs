@@ -19,6 +19,8 @@ p, ul, ol { margin: 8px 0; } ul, ol { padding-left: 22px; } li { margin: 4px 0; 
 code { font: 13px ui-monospace, Consolas, monospace; background: #22262d; padding: 1px 4px; border-radius: 3px; } \
 pre { background: #22262d; padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 8px 0; } \
 pre code { padding: 0; background: none; white-space: pre; } \
+.text pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 ui-monospace, Consolas, monospace; } \
+.wide main { max-width: 1000px; } \
 hr { border: 0; border-top: 1px solid #333944; margin: 24px 0; } \
 .table { overflow-x: auto; margin: 10px 0; } table { border-collapse: collapse; width: 100%; font-size: 14px; } \
 th, td { text-align: left; vertical-align: top; padding: 6px 8px; border: 1px solid #333944; } th { background: #1c2026; } \
@@ -37,6 +39,27 @@ pub fn page(markdown: &str, title: &str, note: &str) -> String {
 <p class=\"where\">{}</p>\n</main></body></html>\n",
         esc(title),
         esc(note)
+    )
+}
+
+/// Texts that are not Markdown (a notice, licences) as a whole page called `title`: each under its heading, as it is
+/// written, its lines wrapped only where the page is narrower than they are (wider than the documents' pages: the
+/// notice's lines are up to 120 characters).
+pub fn text_page(title: &str, parts: &[(&str, &str)]) -> String {
+    let mut body = format!("<h1 id=\"{}\">{}</h1>\n", anchor(title), esc(title));
+    for (heading, text) in parts {
+        body.push_str(&format!(
+            "<h2 id=\"{}\">{}</h2>\n<div class=\"text\"><pre>{}</pre></div>\n",
+            anchor(heading),
+            esc(heading),
+            esc(text)
+        ));
+    }
+    format!(
+        "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+<title>{}</title><style>{STYLE}</style></head>\n<body class=\"wide\"><main>\n{body}</main></body></html>\n",
+        esc(title)
     )
 }
 

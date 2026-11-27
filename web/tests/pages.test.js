@@ -86,6 +86,21 @@ test("a phone starts with its front camera and has one button on the picture for
   assert.match(code, /\$\("optMirror"\)\.checked = stream\.getVideoTracks\(\)\[0\]\?\.getSettings\(\)\.facingMode !== "environment";/);
 });
 
+test("the licences of other people's parts are read inside the app, as the policy is", () => {
+  const page = read("tracker_ui.html"), code = read("tracker_ui.js");
+  // the server's own page, in a sheet over the tracker page (the camera goes on behind it), beside the policy's link
+  assert.match(page, /<a id="privacyLink"[^>]*>Privacy policy<\/a>\s*<a id="noticesLink" href="\/notices"/);
+  assert.match(page, /<div id="noticesSheet"[^>]*hidden>/);
+  assert.match(page, /<iframe id="noticesFrame" title="Licences"><\/iframe>/);                // loaded only when opened
+  assert.match(code, /\$\("noticesFrame"\)\.src = "\/notices";/);
+  assert.match(code, /function closeNotices\(\) \{ \$\("noticesSheet"\)\.hidden = true; \$\("noticesFrame"\)\.removeAttribute\("src"\); \}/);
+  assert.match(read("../crates/face-server/src/tracker.rs"), /"\/notices" => Response::bytes\("text\/html; charset=utf-8", crate::notices::page\(\)/);
+  // the repository's own two files, carried in the program
+  const rs = read("../crates/face-server/src/notices.rs");
+  assert.match(rs, /include_str!\("\.\.\/\.\.\/\.\.\/NOTICE"\)/);
+  assert.match(rs, /include_str!\("\.\.\/\.\.\/\.\.\/licenses\/rust-libraries\.txt"\)/);
+});
+
 test("the privacy policy is read inside the app, and the body readings say they are no medical device's", () => {
   const page = read("tracker_ui.html"), code = read("tracker_ui.js");
   // the policy: the server's own page, in a sheet over the tracker page (the camera goes on behind it)

@@ -64,6 +64,7 @@ pub mod markdown;
 mod music;
 #[cfg(feature = "import")]
 mod musiclog;
+pub mod notices;
 pub mod pagefiles;
 pub mod peer;
 pub mod peerphoto;

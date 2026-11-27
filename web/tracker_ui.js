@@ -377,6 +377,17 @@ $("privacyLink").onclick = e => {
 };
 $("privacyClose").onclick = closePrivacy;
 addEventListener("keydown", e => { if (e.key === "Escape" && !$("privacySheet").hidden) closePrivacy(); });
+// The licences of other people's parts in the app (the server's own page, /notices: NOTICE and the Rust libraries'),
+// in a sheet over this page like the policy
+function closeNotices() { $("noticesSheet").hidden = true; $("noticesFrame").removeAttribute("src"); }
+$("noticesLink").onclick = e => {
+  e.preventDefault();
+  $("noticesFrame").src = "/notices";
+  $("noticesSheet").hidden = false;
+  $("noticesClose").focus();
+};
+$("noticesClose").onclick = closeNotices;
+addEventListener("keydown", e => { if (e.key === "Escape" && !$("noticesSheet").hidden) closeNotices(); });
 // What each reading means (the server's own page, /readings, from docs/READINGS.md), in a sheet over this page like
 // the policy: from its link at the top, or at the part a name in the Signals chart asks for (its "readings" event).
 const PART = /^[a-z0-9-]{1,60}$/;

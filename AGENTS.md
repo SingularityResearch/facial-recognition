@@ -793,7 +793,10 @@ servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker,
   inside the app): the tracker's `/privacy` (`crates/face-server` `privacy.rs`) is that file, carried in the
   program and turned into a page that leads nowhere outside the app (a link stays one only to another part of
   the policy; a test says so), and the tracker page opens it in a sheet over itself, never by leaving the page
-  (the camera goes on behind it).
+  (the camera goes on behind it). The licences go with the app the same way: `NOTICE` and
+  `licenses/rust-libraries.txt` are carried in the program and shown as text at the tracker's `/notices`
+  (`crates/face-server` `notices.rs`), from the **Licences** link beside Privacy policy, in a sheet of their own.
+  A change to either file is in the next build by itself.
 - The body readings (the pulse estimate, the breathing rate) are health features to the stores (the owner's
   decision, 2026-11-22: the phones' apps keep every sensor, so they are declared, not left out). The words "not
   a medical device and does not diagnose, treat, cure or prevent any medical condition", with the reminder to
