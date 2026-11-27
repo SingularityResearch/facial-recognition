@@ -1346,7 +1346,21 @@ impl Home {
         }
         let arrived: Vec<String> = seen.difference(&self.seen_before).cloned().collect();
         self.seen_before = seen;
+        // this device as every device shows it: the name the owner gave it, else what it calls itself (never the
+        // computer's own name where the owner gave it another)
+        let mut shown: Option<String> = None;
         for name in arrived {
+            if shown.is_none() {
+                // (face_db::DEVICE_NAME, which this crate doesn't depend on: the same as `from` below)
+                let ask = "SELECT coalesce(nullif(btrim(alias), ''), name) FROM devices WHERE id = $1::text::uuid";
+                let row = client.query_opt(ask, &[me]).await.map_err(said)?;
+                shown = Some(
+                    row.map(|r| r.get::<_, String>(0))
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| here.to_string()),
+                );
+            }
+            let here = shown.as_deref().unwrap_or(here);
             let ask = "SELECT coalesce(nullif(btrim(d.alias), ''), d.name), extract(epoch FROM now() - s.last_seen)::float8
                        FROM sightings s JOIN devices d ON d.id = s.device
                        WHERE s.name = $1 AND s.device <> $2::text::uuid AND s.last_seen > now() - make_interval(secs => $3)

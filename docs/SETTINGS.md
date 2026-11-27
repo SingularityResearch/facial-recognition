@@ -160,7 +160,7 @@ from its own readings; they are not the alerts.
 | **Alert me about these people** | none | Whom to be told about; Unknown means a face nobody is named for. |
 | **They arrive** | on | Alert when one of them is first seen after being out of view at least the time below. |
 | **They leave** | off | Alert when one of them has been out of view the time below. |
-| **They move between cameras** | off | With a shared database: alert when someone on the alert list who was on another device's camera in the last 10 minutes is now on this one. Raised by the device they arrived at; every device shows it. Only people on the alert list are noted in the database for it (`sightings`, deleted after 20 minutes); with it off, nothing is noted. |
+| **They move between cameras** | off | With a shared database: alert when someone on the alert list who was on another device's camera in the last 10 minutes is now on this one. Raised by the device they arrived at; every device shows it, naming each device as every device shows it (its name in Settings, where it has one). Only people on the alert list are noted in the database for it (`sightings`, deleted after 20 minutes); with it off, nothing is noted. |
 | **Their signals are unusual for them** | off | Alert when one of their signals is far from their own normal (needs Calibrate to each person; the thresholds are guesses, not yet measured). |
 | **An unknown face stays** | off | Alert when a face nobody is named for stays in view the time below. |
 | **"Arrive": out of view at least** | 10 min | How long someone must have been away for their return to count as arriving. |

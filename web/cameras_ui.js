@@ -116,7 +116,28 @@ function layout() {
   $("allBtn").hidden = !solo;
   $("focusName").textContent = solo ? `${tiles[solo].d.name}${tiles[solo].d.me ? " (this device)" : ""}` : "";
   if (solo) tiles[solo].panel.draw();
+  fit();
 }
+
+// Several cameras fill the window: the rows share its height (a row with an opened chart is still as tall as the chart
+// needs, and the grid then scrolls), and each picture fills what its readout, SIDE_MIN wide, leaves of its camera's
+// room, or less where the row is too low for a picture that wide. Only where the readout sits beside its picture (the
+// page's style says where: WIDE).
+const SIDE_MIN = 200, GRID_GAP = 10, GRID_PAD = 10, WIDE = matchMedia("(min-width: 1301px)");
+function fit() {
+  const g = $("grid"), n = g.querySelectorAll(".tile:not([hidden])").length;
+  const cols = n <= 1 ? 1 : n <= 4 ? 2 : 3, rows = Math.ceil(n / cols);
+  const tileW = (g.clientWidth - 2 * GRID_PAD - (cols - 1) * GRID_GAP) / cols;
+  const on = !solo && n > 1 && WIDE.matches && tileW >= 2 * SIDE_MIN;
+  g.classList.toggle("fill", on);
+  if (!on) return;
+  const rowH = Math.floor((g.clientHeight - 2 * GRID_PAD - (rows - 1) * GRID_GAP) / rows);
+  const summary = g.querySelector(".tile:not([hidden]) .sigs > summary")?.offsetHeight || 36;
+  const picW = Math.floor(Math.max(0, Math.min(tileW - SIDE_MIN, (rowH - summary - 2) * 16 / 9 * 1.4)));
+  g.style.setProperty("--row", `${rowH}px`);
+  g.style.setProperty("--picw", `${picW}px`);
+}
+new ResizeObserver(fit).observe($("grid"));
 // This camera alone, or (null) all cameras again.
 function focusOn(id) { solo = id; setMenu(false); layout(); if (!id) $("grid").scrollTop = 0; }
 

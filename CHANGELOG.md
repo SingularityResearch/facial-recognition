@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.9.1 (2026-11-27)
+
+- **Several cameras fill the window.** On a wide window the Cameras tab shares its whole height between the rows,
+  and each camera's picture takes all the room its readout leaves, so nine cameras show as three rows of three with
+  no space left over. A row with an opened Signals chart is as tall as the chart needs.
+- **A move alert names devices as you do.** "Moved from one camera to another" names the camera the person arrived
+  at by the device's name in Settings, as every device shows it, never by the computer's own name.
+- A long group heading in a camera's readout ends in an ellipsis instead of widening the readout.
+- The README links to [a 13-minute video tour](https://youtu.be/xnv65x_Kbl4) of the app.
+
 ## 2.9.0 (2026-11-26)
 
 - **What each reading means**: [docs/READINGS.md](docs/READINGS.md) explains every reading the app takes, from the

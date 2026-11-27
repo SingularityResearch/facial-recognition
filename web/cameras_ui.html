@@ -47,6 +47,16 @@
   .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; display: grid;
           grid-template-columns: minmax(0, 1fr) 230px; min-height: 0; overflow: hidden; }
   .tile.solo { grid-column: 1 / -1; }
+  /* Several cameras fill the window (cameras_ui.js fit): each row at least its share of the window's height; in each
+     camera the picture fills all the room its readout leaves (its sides cut where the room is narrower than the
+     picture), the readout as tall as the picture, the Signals line at the bottom. A row with an opened chart is as tall
+     as the chart needs. */
+  @media (min-width: 1301px) {
+    #grid.fill { grid-auto-rows: minmax(var(--row, 0px), max-content); align-items: stretch; }
+    #grid.fill .tile:not(.solo):not(.charted) { grid-template-columns: var(--picw, minmax(0, 1fr)) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+    #grid.fill .tile:not(.solo):not(.charted) .vid { aspect-ratio: auto; height: 100%; min-height: 0; }
+    #grid.fill .tile:not(.solo):not(.charted) .vid img { object-fit: cover; }
+  }
   /* One camera alone (its Focus button, or a double-click on its picture; All cameras or Esc brings the grid back):
      laid out as that device's own Face tracking tab is. The picture is as large as the window allows, its live
      readout stands beside it with the three counts, and its Signals chart is a drawer under the picture. */
@@ -148,7 +158,9 @@
   .tile.solo .cells { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px; }
   .tile.solo .keys { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .tile.solo .keys b { font-size: 15px; }
-  .gl { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); flex: none; }
+  /* a group's name never pushes its readout wider: what doesn't fit of its note ends in an ellipsis */
+  .gl { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); flex: 0 1 auto;
+        min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gl em { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--warn); }
   .gp { font-size: 11px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .gp.hot { color: var(--warn); }

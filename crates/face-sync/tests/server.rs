@@ -317,9 +317,13 @@ fn private_folders_are_synced_and_what_the_server_holds_of_a_forgotten_person_go
             assert_eq!(a.count("sightings").await, 1, "Cy is on nobody's list");
             let alerts = |d: &Dev| text(d.private.join("alerts.json")).matches("\"moved\"").count();
             assert_eq!(alerts(&a), 0, "seen on one camera only");
+            // B goes by a name its owner gave it: the alert says that name, as every device shows it, never the
+            // name B calls itself (a computer's own name, which the owner chose not to show)
+            a.client.execute("UPDATE devices SET alias = 'the kitchen' WHERE id = $1::text::uuid", &[&b.device.id]).await.map_err(|e| e.to_string())?;
             b.sees(&["Ann"]).await?;
             assert_eq!((b.count("sightings").await, alerts(&b), alerts(&a)), (2, 1, 0), "the device they arrived at raises it");
-            assert!(text(b.private.join("alerts.json")).contains("Ann moved from a's camera to b's"));
+            assert!(text(b.private.join("alerts.json")).contains("Ann moved from a's camera to the kitchen's"), "{}", text(b.private.join("alerts.json")));
+            assert!(!text(b.private.join("alerts.json")).contains("to b's"));
             b.sees(&["Ann"]).await?;
             assert_eq!(alerts(&b), 1, "still there: not arrived again");
             // the alert reaches A like every other
