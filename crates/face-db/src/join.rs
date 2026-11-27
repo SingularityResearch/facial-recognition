@@ -26,6 +26,10 @@
 //! Codes of the first kind (a device of the database shows, the login alone is handed
 //! over) are still read, so a new device can join from a device that was not updated yet. None is shown.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::{
     io::{Read, Write},
     net::{IpAddr, SocketAddr, TcpListener, TcpStream, UdpSocket},

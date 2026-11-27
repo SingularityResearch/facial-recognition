@@ -9,6 +9,10 @@
 //! in another, so its requests don't grow with the number of cameras. A relay nobody asked for in `IDLE`
 //! seconds closes its connection. Frames are kept in memory only.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::{
     collections::HashMap,
     io::{Read, Write},

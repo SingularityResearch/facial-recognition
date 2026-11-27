@@ -1,7 +1,9 @@
 # Face Recognizer's CI: the tests on the four kinds of computer, and what a user installs, built from them.
 #
-# - test: cargo fmt, every unit test (no models, no camera, no network beyond 127.0.0.1) and the pages' own tests
-#   (Node), on Windows, a Mac, Linux and 64-bit ARM Linux (the Raspberry Pi's kind).
+# - test: cargo fmt, clippy (its errors stop the run; its warnings are shown), every unit test (no models, no camera,
+#   no network beyond 127.0.0.1) and the pages' own tests (Node), on Windows, a Mac, Linux and 64-bit ARM Linux (the
+#   Raspberry Pi's kind); on Linux also cargo-deny (deny.toml): no library with a known vulnerability in RustSec's
+#   advisory database, only licences that let the app be sold, crates.io only.
 # - build: the app's program for each, with what it runs with fetched by the project's own tool (each download
 #   pinned by size and SHA-256; the HEIC libraries built from their pinned sources), packed as each system's own
 #   installer: Windows' (packaging/windows), the Mac's disk image (packaging/macos), and the .run of Linux and of
@@ -44,7 +46,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
       - name: Rust
         shell: bash
-        run: rustup toolchain install stable --profile minimal --component rustfmt && rustup default stable && rustc --version
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy && rustup default stable && rustc --version
       # What cargo compiled before, of the libraries the project is built on, for this system, this compiler and
       # these versions of them (Cargo.lock): a run then compiles the project's own code and little else. The
       # project's own code is always compiled from what was checked out (its files are newer than anything
@@ -69,8 +71,25 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: Formatting
         run: cargo fmt --check
+      # clippy's errors stop the run; its warnings are shown, among them each unwrap, index and plain sum of the
+      # modules that read what other devices and the network send (a panic there ends the whole process)
+      - name: Lints (clippy)
+        run: cargo clippy --workspace --all-targets --release
       - name: Tests
         run: cargo test --workspace --release
+      # cargo-deny, at a fixed version from crates.io (its crates checked against their checksums), kept between runs;
+      # it reads the advisory database afresh each time. One system is enough: it looks at every system's libraries.
+      - name: cargo-deny, kept from before
+        if: matrix.name == 'linux-x64'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-deny
+          key: cargo-deny-0.22.2-${{ runner.os }}-${{ runner.arch }}
+      - name: The libraries' advisories, licences and sources (cargo-deny, deny.toml)
+        if: matrix.name == 'linux-x64'
+        run: |
+          command -v cargo-deny > /dev/null || cargo install cargo-deny --locked --version 0.22.2
+          cargo deny check
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7.1.0
         with:
           node-version: 24

@@ -15,6 +15,9 @@
 //! What is sent: a request for each file, to its publisher (Hugging Face, Google's model storage, GitHub,
 //! the host of Microsoft's runtime packages, the npm registry, conda-forge for `postgres`), as "model-fetch". Nothing about the user or the computer.
 
+// (this crate needs no unsafe code: the compiler holds it to that)
+#![forbid(unsafe_code)]
+
 use std::{
     io::Write,
     path::{Path, PathBuf},

@@ -7,6 +7,10 @@
 //! number). A photo is asked for by its content hash only, is at most `MAX_PHOTO` bytes, and stays in
 //! memory: shown, or described, never stored.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::{
     collections::HashMap,
     io::{ErrorKind, Read, Write},

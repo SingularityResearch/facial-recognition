@@ -21,6 +21,10 @@
 //! What goes over the wire is fixed, byte for byte in its framing: devices of every version of the app ask
 //! this service, and are asked by it.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::{
     collections::HashMap,
     io::{Read, Write},

@@ -6,6 +6,9 @@
 //! writing side so far: the schema's migrations, and a device's own row with its heartbeat. `join` is how a
 //! new device gets the login from one that has it, and `setup` keeps it.
 
+// (this crate needs no unsafe code: the compiler holds it to that)
+#![forbid(unsafe_code)]
+
 pub mod analysis;
 pub mod join;
 pub mod kept;

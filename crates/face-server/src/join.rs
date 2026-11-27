@@ -12,6 +12,10 @@
 //! Two places show a code: the tracker's own page for it (`/join`, on any device that runs this
 //! program), and `face-server pair`, a command that shows codes for several new devices one after another.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::{
     fmt::Write as _,
     path::{Path, PathBuf},

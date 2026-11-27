@@ -10,6 +10,10 @@
 //! the database's own id: the id is kept here beside the list, so the key can be made without the server.
 //! A name is only ever shown; a device is reached by its addresses and known by its certificate.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::path::Path;
 
 use serde_json::{Value, json};

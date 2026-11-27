@@ -3,6 +3,10 @@
 //! must open too. An .npz is a zip of .npy arrays; what the library holds are float32 tables, text,
 //! whole numbers and bytes.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::collections::HashMap;
 
 use crate::{Error, Result};

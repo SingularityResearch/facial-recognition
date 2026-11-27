@@ -22,7 +22,8 @@ photo library.
 ## Layout
 
 - `Cargo.toml`, `Cargo.lock`, `rustfmt.toml`, `.cargo/` — the workspace (edition 2024). On Windows the programs
-  are built with the C runtime linked in (`.cargo/config.toml`).
+  are built with the C runtime linked in (`.cargo/config.toml`). `deny.toml` — what cargo-deny holds the libraries
+  to (advisories, licences, sources).
 - `crates/` — the libraries and the two command-line programs:
   - `face-core` (the recognition core: pictures, detection, prints, the model runtime), `face-files` (folders,
     locks, JSON as the files have always been written), `face-home` (the private folder's stores), `face-library`
@@ -81,10 +82,10 @@ photo library.
   suggestions; its charts are `images/*.svg`, light and dark, drawn from the measurements: a change to
   `aiserve::CANDIDATES` or its rules goes with new measurements there), and `store/` (one file a store: its
   listing's text and the answers to its forms, so that every release says the same).
-- `.github/workflows/` — `ci.yml` (tests on four kinds of computer; the installers; signing on `main`; what cargo
-  compiled of the libraries is kept between runs, by system, compiler and `Cargo.lock`, with GitHub's own cache
-  action: the project's own code is compiled from the checkout every time, and only pushes to `main` write it),
-  `decoders.yml` (FFmpeg and the HEIC libraries built for each).
+- `.github/workflows/` — `ci.yml` (tests and clippy on four kinds of computer, cargo-deny on Linux; the installers;
+  signing on `main`; what cargo compiled of the libraries is kept between runs, by system, compiler and
+  `Cargo.lock`, with GitHub's own cache action: the project's own code is compiled from the checkout every time, and
+  only pushes to `main` write it), `decoders.yml` (FFmpeg and the HEIC libraries built for each).
 
 On the owner's computers a folder `face-recognizer/` may lie inside this checkout, untracked and ignored: it
 holds an installed app, its models and a library. Never delete it or anything in it.
@@ -95,6 +96,8 @@ holds an installed app, its models and a library. Never delete it or anything in
 cargo build --release                       # everything; the app is target/release/FaceRecognizer
 cargo run -p face-tools --release -- get --root target/root     # models, model runtime, MediaPipe, FFmpeg, HEIC
 cargo fmt --check && cargo test --workspace --release           # before every commit (no models needed)
+cargo clippy --workspace --all-targets --release                # its errors stop CI; read its warnings
+cargo deny check                                                # advisories, licences, sources (deny.toml)
 node --test web/tests/*.test.js crates/face-server/pages/tests/*.test.js
 ```
 
@@ -685,6 +688,15 @@ servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker,
   empty user's folder, the network closed) and the library is looked through for addresses it didn't have
   (`strings`, `grep -a http`); a library that wants system parts it didn't want before (a database, a
   network monitor) is looked into before it is linked. Never remove the switch or the test that holds it.
+- The libraries are held by `deny.toml` (cargo-deny, in CI): none with a known vulnerability or found unsound in
+  RustSec's advisory database, only licences that let the app be sold (never GPL, AGPL or LGPL in a crate), crates.io
+  only. An advisory is set aside there only with why and when it goes; a licence is added only once it has been read.
+- `unsafe` is for the system's and C libraries' interfaces alone. A crate that has none says so to the compiler
+  (`#![forbid(unsafe_code)]`: `face-db`, `face-sync`, `face-home`, `face-tools`); keep it so. A module that reads what
+  another device or the network sends (`peer.rs`, `bus.rs`, `busrelay.rs`, `camstream.rs`, `camrelay.rs`,
+  `peerphoto.rs`, `lmsnet.rs`, `join.rs` in `face-server` and in `face-db`, `members.rs`, `face-sync` `apply.rs`,
+  `face-core` `npy.rs`) has clippy show each of its unwraps, indexes and plain sums: a panic there ends the whole
+  process (`panic = "abort"`). A new module of that kind gets the same line at its top.
 - Downloads are pinned and checked by size and SHA-256 (`face-tools` `models.rs` and `parts.rs`, `florence.rs`;
   the Windows installer's WebView2 bootstrapper:
   `packaging/windows/build.ps1`, which also wants Microsoft's valid signature on it; the Android build's model

@@ -3,6 +3,10 @@
 //! lists hold whatever was written, by a faulty version or by whoever has the database's password, and one
 //! row that can't be used must never stop the others. Only what would break this device is refused.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::collections::HashMap;
 
 use face_files::{filejson, paths::atomic_write};

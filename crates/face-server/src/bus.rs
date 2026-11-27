@@ -17,6 +17,10 @@
 //! Nothing is stored: the tree and the last changes are in memory, and gone with the program. Every node is
 //! the only authority for its own tree; no node holds another's but as such a copy.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::{
     collections::VecDeque,
     sync::{Condvar, Mutex, MutexGuard},

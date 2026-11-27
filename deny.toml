@@ -1,0 +1,74 @@
+# What cargo-deny holds the libraries the programs are built from to (CI runs `cargo deny check` on every push):
+# - advisories: none with a known vulnerability or found unsound in RustSec's advisory database
+#   (github.com/rustsec/advisory-db, the database cargo-audit reads too);
+# - licences: only licences that let the app be sold as it is (no GPL, AGPL or LGPL, which would bind the whole: the
+#   LGPL libraries the app uses are separate files, never crates linked into a program);
+# - sources: crates.io only;
+# - bans: two versions of one library are only shown.
+
+[graph]
+# every system a program of the workspace is built for
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-linux-android",
+    "aarch64-apple-ios",
+]
+all-features = false
+no-default-features = false
+
+[advisories]
+# Each one set aside says why, and when it is to go.
+ignore = [
+    # cookie 0.18.2 (through wry): private cookies' nonces can repeat in a process that forks. Only cookie's default
+    # features are built, and private cookies are not one of them. To go with `cargo update -p cookie` (0.18.3 or later).
+    { id = "RUSTSEC-2026-0594", reason = "the affected private-cookie feature is not built; update cookie to 0.18.3+ at the next release" },
+    # chrono is unmaintained (no known vulnerability, no maintained release): its place is to be taken by `time`,
+    # already in the tree, in a change of its own.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained, no known vulnerability; to be replaced by the time crate" },
+]
+
+[licenses]
+# A library under several licences ("MIT OR Apache-2.0") passes when one of them is here. A new licence goes in only
+# once it has been read: it must allow selling the app with the library inside it.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "CC0-1.0",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    # jpeg-encoder: the program's documentation has to say it is based in part on the work of the Independent JPEG
+    # Group (NOTICE)
+    "IJG",
+    # cssparser, selectors and dtoa-short (the window's HTML on Linux), option-ext: file by file, the library's own
+    # files stay under it and their source is public; nothing of the app's own code is bound by it
+    "MPL-2.0",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+# the workspace's own crates are under the project's licence (LICENSE) and are never published
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -5,6 +5,9 @@
 //! (`server.rs`), taking them into the library (`apply.rs`), the private folder's tables (`home.rs`), what is only ever sent (`sent.rs`), and the
 //! steps themselves (`sync.rs`: joining a database, sending what changed, taking what other devices changed).
 
+// (this crate needs no unsafe code: the compiler holds it to that)
+#![forbid(unsafe_code)]
+
 pub mod apply;
 pub mod digest;
 pub mod home;

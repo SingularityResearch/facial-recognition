@@ -11,6 +11,10 @@
 //! device's own member list (`face_db::members`), and the key from what this device keeps. A follower nobody
 //! asked for in `IDLE` closes its connection and forgets the copy. Nothing is stored.
 
+// What another device or the network sends is read here, and a panic ends the whole process (`panic = "abort"`):
+// clippy shows each unwrap, index and plain sum of this module, to be looked at (not in its tests).
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::indexing_slicing, clippy::arithmetic_side_effects))]
+
 use std::{
     collections::{BTreeMap, HashMap},
     io::{Read, Write},
