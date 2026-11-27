@@ -14,6 +14,16 @@ Everything runs on your own computers. Nothing leaves them unless you send it on
 
 Written in Rust: one codebase for Windows, macOS, Linux, the Raspberry Pi, iPhone and Android.
 
+## See it working
+
+<p align="center">
+  <a href="https://youtu.be/xnv65x_Kbl4"><img src="https://img.youtube.com/vi/xnv65x_Kbl4/maxresdefault.jpg" width="720" alt="The video's thumbnail: a tour of Face Recognizer, recorded as it ran"></a>
+</p>
+
+[A 13-minute tour](https://youtu.be/xnv65x_Kbl4) of the app, recorded as it ran on demonstration data: the people
+in it are made up (generated faces, invented names). What would you measure with it? Tell us in an
+[issue](https://github.com/SingularityResearch/facial-recognition/issues).
+
 ## Why we did this
 
 Many systems that claim to read people run a classifier on single pictures, print a label, and send the
