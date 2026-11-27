@@ -1,0 +1,40 @@
+# What cargo-about lists in licenses/rust-libraries.txt: the Rust libraries built into the programs, each with its
+# licence's text. Made again after any change to Cargo.lock:
+#     cargo about generate --offline --fail licenses/rust-libraries.hbs -o licenses/rust-libraries.txt
+# (--offline: the libraries' licences are read from their own files and Cargo.toml only, nothing is asked of a service)
+# The licences accepted are deny.toml's (where CI holds the libraries to them).
+
+# every system a program of the workspace is built for
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-linux-android",
+    "aarch64-apple-ios",
+]
+# only what is in the programs: not what builds them, not what only tests them
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# the workspace's own crates are under the project's licence (LICENSE)
+private = { ignore = true }
+accepted = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "CC0-1.0",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "IJG",
+    "MPL-2.0",
+]
+# libraries whose licence files cargo-about knows how to read only with its own help
+workarounds = ["ring", "rustls"]

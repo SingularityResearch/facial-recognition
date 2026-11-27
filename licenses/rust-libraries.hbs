@@ -1,0 +1,23 @@
+The Rust libraries built into the Face Recognizer programs, and their licences
+
+Face Recognizer is Singularity Research's, under the Singularity Research Commercial License (LICENSE). The libraries
+below are other people's, built into its programs, and keep their own licences. Each licence's text follows with the
+libraries under it. A library under a choice of licences is listed under the one used here. This file is made by
+cargo-about from Cargo.lock (about.toml); NOTICE names the other parts the app carries or downloads.
+
+Licences, with how many libraries use each:
+{{#each overview}}
+- {{{name}}} ({{id}}): {{count}}
+{{/each}}
+{{#each licenses}}
+
+================================================================================
+{{{name}}} ({{id}})
+
+Used by:
+{{#each used_by}}
+- {{{crate.name}}} {{crate.version}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+{{{text}}}
+{{/each}}

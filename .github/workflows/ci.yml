@@ -90,6 +90,21 @@ jobs:
         run: |
           command -v cargo-deny > /dev/null || cargo install cargo-deny --locked --version 0.22.2
           cargo deny check
+      # licenses/rust-libraries.txt made again as cargo-about makes it (about.toml): the run stops when the file in
+      # the repository is not what Cargo.lock gives (it was not made again after a library changed)
+      - name: cargo-about, kept from before
+        if: matrix.name == 'linux-x64'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-about
+          key: cargo-about-0.9.3-${{ runner.os }}-${{ runner.arch }}
+      - name: The libraries' licences file is up to date (cargo-about, about.toml)
+        if: matrix.name == 'linux-x64'
+        run: |
+          command -v cargo-about > /dev/null || cargo install cargo-about --locked --version 0.9.3 --features cli
+          cargo fetch --locked   # every system's libraries (their licence files are read from them)
+          cargo about generate --offline --fail licenses/rust-libraries.hbs -o licenses/rust-libraries.txt
+          git diff --exit-code -- licenses/rust-libraries.txt
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1   # v7.1.0
         with:
           node-version: 24

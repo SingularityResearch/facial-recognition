@@ -23,7 +23,7 @@ photo library.
 
 - `Cargo.toml`, `Cargo.lock`, `rustfmt.toml`, `.cargo/` — the workspace (edition 2024). On Windows the programs
   are built with the C runtime linked in (`.cargo/config.toml`). `deny.toml` — what cargo-deny holds the libraries
-  to (advisories, licences, sources).
+  to (advisories, licences, sources). `about.toml` — what cargo-about lists in `licenses/rust-libraries.txt`.
 - `crates/` — the libraries and the two command-line programs:
   - `face-core` (the recognition core: pictures, detection, prints, the model runtime), `face-files` (folders,
     locks, JSON as the files have always been written), `face-home` (the private folder's stores), `face-library`
@@ -98,6 +98,7 @@ cargo run -p face-tools --release -- get --root target/root     # models, model 
 cargo fmt --check && cargo test --workspace --release           # before every commit (no models needed)
 cargo clippy --workspace --all-targets --release                # its errors stop CI; read its warnings
 cargo deny check                                                # advisories, licences, sources (deny.toml)
+cargo about generate --offline --fail licenses/rust-libraries.hbs -o licenses/rust-libraries.txt   # Cargo.lock changed
 node --test web/tests/*.test.js crates/face-server/pages/tests/*.test.js
 ```
 
@@ -1133,7 +1134,10 @@ servers' checks, `app.rs` with `apps/desktop` the app, `tracker.rs` the tracker,
   number is "measured"). Commit messages keep to the same, and say what changed in general words. Never call the project "open source" ("the source is public" is what is true), never copy
   code in that is under a licence which would bind the whole (GPL, AGPL), and take no outside contribution
   without its author's agreement (`CONTRIBUTING.md`). `licenses/Apache-2.0.txt` is the licence text of other
-  people's parts named in `NOTICE`, not a licence of this project. What the app may be sold with has to be
+  people's parts named in `NOTICE`, not a licence of this project. `licenses/rust-libraries.txt` lists the Rust
+  libraries built into the programs with their licences' texts; it is made by cargo-about (`about.toml`, the template
+  `licenses/rust-libraries.hbs`) and made again with every change to `Cargo.lock` (CI says when it is out of date).
+  What is built in from C (libjpeg-turbo) is named in `NOTICE` by hand. What the app may be sold with has to be
   licensed for that: a model's licence is checked before the model goes in (`NOTICE`). The README's "What is
   new here" names what the owner regards as the project's inventions and reserves the patent rights: never
   write "patent pending" or name a patent unless the owner says one is filed.

@@ -29,6 +29,12 @@ What the program itself carries:
 - A list of the world's towns of 5,000 people and more, with their states and countries, from GeoNames
   (geonames.org), under the Creative Commons Attribution 4.0 licence (creativecommons.org/licenses/by/4.0). The
   list is GeoNames' data put into another form: the names, places, states and countries only.
+- libjpeg-turbo (libjpeg-turbo.org), which reads JPEG photos: under the IJG licence, the Modified (3-clause) BSD
+  licence and the zlib licence. jpeg-encoder, which writes JPEG pictures, is based on the same work: under the IJG
+  licence, and MIT or Apache 2.0.
+  This software is based in part on the work of the Independent JPEG Group.
+- The Rust libraries the programs are built from, each under its own licence (MIT, Apache 2.0, ISC, BSD, zlib, the
+  Unicode licence, MPL 2.0 and others): listed in licenses/rust-libraries.txt, with every licence's full text.
 
 What the installers carry beside the program:
 
